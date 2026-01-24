@@ -129,7 +129,7 @@ const MarkdownPreview = memo(
   }, [tocMarkdown, onTocLoaded]);
 
   return (
-    <div className={cn("relative", showTocAside ? "flex gap-8" : "")}>
+    <div className={cn("relative h-full min-h-0 w-full", showTocAside ? "flex gap-8" : "")}>
       <div
         ref={ref}
         className={cn(

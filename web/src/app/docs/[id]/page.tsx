@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import CodeMirror from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
+import ReactMarkdown from "react-markdown";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,16 +17,11 @@ import {
   Download,
   Trash2,
   ChevronLeft,
-  Eye,
   Columns,
-  Edit3,
   Plus,
   RefreshCw,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
-
-type Mode = "edit" | "split" | "preview";
-const MODE_STORAGE_KEY = "mnote_editor_mode";
 
 export default function EditorPage() {
   const params = useParams();
@@ -37,8 +33,6 @@ export default function EditorPage() {
   const [title, setTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [mode, setMode] = useState<Mode>("edit");
-  const [modeReady, setModeReady] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<"tags" | "history" | "share">("tags");
   
@@ -56,6 +50,63 @@ export default function EditorPage() {
   const previewRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const scrollingSource = useRef<"editor" | "preview" | null>(null);
+
+  // TOC State
+  const [tocContent, setTocContent] = useState("");
+  const [showFloatingToc, setShowFloatingToc] = useState(false);
+
+  // TOC Helpers
+  const slugify = useCallback((value: string) => {
+    const base = value
+      .toLowerCase()
+      .trim()
+      .replace(/[^\p{L}\p{N}\s-]/gu, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return base || "section";
+  }, []);
+
+  const normalizeId = useCallback((value: string) => {
+    return value.replace(/-\d+$/, "");
+  }, []);
+
+  const normalizeText = useCallback((value: string) => {
+    return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+  }, []);
+
+  const getText = useCallback((value: React.ReactNode): string => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "string" || typeof value === "number") return String(value);
+    if (Array.isArray(value)) return value.map((item) => getText(item)).join("");
+    if (React.isValidElement<{ children?: React.ReactNode }>(value)) {
+      return getText(value.props.children);
+    }
+    return "";
+  }, []);
+
+  const getElementById = useCallback((id: string) => {
+    const container = previewRef.current;
+    if (!container) return null;
+    const safe = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id.replace(/"/g, '\\"');
+    return container.querySelector(`#${safe}`) as HTMLElement | null;
+  }, []);
+
+  const scrollToElement = useCallback((el: HTMLElement) => {
+    const container = previewRef.current;
+    if (!container) return;
+    
+    const isScrollable = container.scrollHeight > container.clientHeight + 1;
+    if (!isScrollable) {
+       // If preview not scrollable (rare in split mode but possible), maybe just scroll container
+       return;
+    }
+    
+    const containerTop = container.getBoundingClientRect().top;
+    const targetTop = el.getBoundingClientRect().top;
+    const offset = targetTop - containerTop + container.scrollTop;
+    container.scrollTo({ top: offset, behavior: "smooth" });
+  }, []);
 
   const extractTitleFromContent = useCallback((value: string) => {
     const lines = value.split("\n");
@@ -126,7 +177,7 @@ export default function EditorPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, router]);
+  }, [id, router, extractTitleFromContent]);
 
   const fetchTags = useCallback(async () => {
     try {
@@ -138,21 +189,9 @@ export default function EditorPage() {
   }, []);
 
   useEffect(() => {
-    const stored = typeof window !== "undefined" ? localStorage.getItem(MODE_STORAGE_KEY) : null;
-    if (stored === "edit" || stored === "split" || stored === "preview") {
-      setMode(stored);
-    }
-    setModeReady(true);
     fetchDoc();
     fetchTags();
   }, [fetchDoc, fetchTags]);
-
-  useEffect(() => {
-    if (!modeReady) return;
-    if (typeof window !== "undefined") {
-      localStorage.setItem(MODE_STORAGE_KEY, mode);
-    }
-  }, [mode, modeReady]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -164,10 +203,6 @@ export default function EditorPage() {
   }, [title]);
 
   useEffect(() => {
-    const previewEnabled = mode === "preview" || mode === "split";
-    if (!previewEnabled) {
-      return;
-    }
     if (previewTimerRef.current) {
       window.clearTimeout(previewTimerRef.current);
     }
@@ -184,7 +219,7 @@ export default function EditorPage() {
         window.clearTimeout(previewTimerRef.current);
       }
     };
-  }, [content, previewContent, mode, startTransition]);
+  }, [content, previewContent]);
 
   useEffect(() => {
     const preview = previewRef.current;
@@ -192,7 +227,63 @@ export default function EditorPage() {
       preview.addEventListener("scroll", handlePreviewScroll);
       return () => preview.removeEventListener("scroll", handlePreviewScroll);
     }
-  }, [mode, handlePreviewScroll]);
+  }, [handlePreviewScroll]);
+
+  // TOC Visibility Effect
+  useEffect(() => {
+    const hasToken = /\[(toc|TOC)]/.test(content);
+    if (!tocContent || !hasToken) {
+      setShowFloatingToc(false);
+      return;
+    }
+
+    const container = previewRef.current;
+    if (!container) return;
+
+    let timer: number | null = null;
+    let ticking = false;
+
+    const updateVisibility = () => {
+      ticking = false;
+      const tocEl = container.querySelector(".toc-wrapper") as HTMLElement | null;
+      if (!tocEl) {
+        setShowFloatingToc(false);
+        return;
+      }
+      const isScrollable = container.scrollHeight > container.clientHeight + 1;
+      if (isScrollable) {
+        const top = tocEl.offsetTop;
+        const bottom = top + tocEl.offsetHeight;
+        const viewTop = container.scrollTop;
+        const viewBottom = viewTop + container.clientHeight;
+        const inView = bottom > viewTop && top < viewBottom;
+        setShowFloatingToc(!inView);
+        return;
+      }
+      const rect = tocEl.getBoundingClientRect();
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const inView = rect.bottom > 0 && rect.top < viewportHeight;
+      setShowFloatingToc(!inView);
+    };
+
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(updateVisibility);
+    };
+
+    const scrollTarget = container;
+    
+    timer = window.setTimeout(updateVisibility, 120);
+    scrollTarget.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+
+    return () => {
+      scrollTarget.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [tocContent, content]);
 
   const handleSave = async () => {
     const derivedTitle = extractTitleFromContent(content);
@@ -341,7 +432,7 @@ export default function EditorPage() {
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-screen bg-background relative">
       <header className="h-14 border-b border-border flex items-center px-4 gap-4 justify-between bg-background z-20">
         <div className="flex items-center gap-4 flex-1">
           <Button variant="ghost" size="icon" onClick={() => router.push("/docs")}>
@@ -353,30 +444,6 @@ export default function EditorPage() {
             placeholder="Title from markdown (first line + ===)"
             className="font-bold font-mono border-transparent max-w-md h-9 px-2 bg-transparent"
           />
-        </div>
-
-        <div className="flex items-center gap-1 bg-muted p-1 rounded-sm">
-           <button 
-             onClick={() => setMode("edit")}
-             className={`p-1.5 rounded-sm transition-colors ${mode === "edit" ? "bg-background shadow-sm" : "hover:text-foreground text-muted-foreground"}`}
-             title="Edit"
-           >
-             <Edit3 className="h-4 w-4" />
-           </button>
-           <button 
-             onClick={() => setMode("split")}
-             className={`hidden md:block p-1.5 rounded-sm transition-colors ${mode === "split" ? "bg-background shadow-sm" : "hover:text-foreground text-muted-foreground"}`}
-             title="Split"
-           >
-             <Columns className="h-4 w-4" />
-           </button>
-           <button 
-             onClick={() => setMode("preview")}
-             className={`p-1.5 rounded-sm transition-colors ${mode === "preview" ? "bg-background shadow-sm" : "hover:text-foreground text-muted-foreground"}`}
-             title="Preview"
-           >
-             <Eye className="h-4 w-4" />
-           </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -393,8 +460,7 @@ export default function EditorPage() {
       <div className="flex-1 flex overflow-hidden min-w-0">
         <div className={`flex-1 flex flex-col md:flex-row h-full transition-all duration-300 min-w-0 ${showDetails ? "mr-80" : ""}`}>
           
-          {(mode === "edit" || mode === "split") && (
-             <div className={`h-full border-r border-border overflow-hidden min-w-0 ${mode === "split" ? "md:flex-[0_0_50%] w-full" : "w-full"}`}>
+             <div className="h-full border-r border-border overflow-hidden min-w-0 md:flex-[0_0_50%] w-full">
                 <CodeMirror
                   value={content}
                   height="100%"
@@ -415,13 +481,15 @@ export default function EditorPage() {
                   }}
                 />
              </div>
-           )}
 
-            {(mode === "preview" || mode === "split") && (
-              <div className={`h-full bg-background overflow-hidden min-w-0 ${mode === "split" ? "md:flex-[0_0_50%] w-full hidden md:block" : "w-full"}`}>
-                 <MarkdownPreview content={previewContent} className="overflow-auto" ref={previewRef} />
+              <div className="h-full bg-background overflow-hidden min-w-0 md:flex-[0_0_50%] w-full hidden md:block">
+                 <MarkdownPreview 
+                    content={previewContent} 
+                    className="h-full overflow-auto p-6" 
+                    ref={previewRef}
+                    onTocLoaded={(toc) => setTocContent(toc)}
+                 />
               </div>
-            )}
 
         </div>
 
@@ -538,6 +606,48 @@ export default function EditorPage() {
            </div>
         )}
       </div>
+
+      {showFloatingToc && !showDetails && tocContent && (
+        <div className="fixed top-24 right-8 z-50 hidden w-64 rounded-xl border border-border bg-card/95 p-4 shadow-xl backdrop-blur-sm lg:block max-h-[70vh] overflow-y-auto animate-in fade-in slide-in-from-right-4 duration-300">
+          <div className="text-xs font-mono text-muted-foreground mb-2">目录</div>
+          <div className="toc-wrapper text-sm">
+            <ReactMarkdown
+              components={{
+                a: (props) => {
+                  const href = props.href || "";
+                  const raw = href.startsWith("#") ? href.slice(1) : "";
+                  const decoded = raw ? decodeURIComponent(raw) : "";
+                  const normalized = decoded ? decoded.normalize("NFKC") : "";
+                  const candidates = [raw, decoded, normalized, slugify(decoded), slugify(normalized)].map(normalizeId);
+                  
+                  return (
+                    <a
+                      {...props}
+                      onClick={(event) => {
+                        props.onClick?.(event);
+                        if (!href.startsWith("#")) return;
+                        event.preventDefault();
+                        const rawHash = decodeURIComponent(href.slice(1));
+                        const normalizedHash = rawHash.normalize("NFKC");
+                        const targetCandidates = [rawHash, normalizedHash, slugify(rawHash), slugify(normalizedHash)];
+                        for (const candidate of targetCandidates) {
+                          const el = getElementById(candidate);
+                          if (el) {
+                            scrollToElement(el);
+                            break;
+                          }
+                        }
+                      }}
+                    />
+                  );
+                },
+              }}
+            >
+              {tocContent}
+            </ReactMarkdown>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
