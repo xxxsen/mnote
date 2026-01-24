@@ -1,0 +1,16 @@
+FROM golang:1.25
+
+WORKDIR /build
+COPY ./ ./
+RUN CGO_ENABLED=1 go build -a -tags "netgo sqlite_fts5" -ldflags "-w" -o /build/mnote ./cmd/server
+
+FROM debian:12
+
+WORKDIR /app
+COPY --from=0 /build/mnote /app/mnote
+COPY --from=0 /build/migrations /app/migrations
+
+ENV PORT=8080
+EXPOSE 8080
+
+ENTRYPOINT ["/app/mnote"]
