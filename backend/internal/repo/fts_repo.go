@@ -3,6 +3,8 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"strings"
+	"unicode"
 
 	"github.com/didi/gendry/builder"
 )
@@ -42,9 +44,13 @@ func (r *FTSRepo) Delete(ctx context.Context, userID, docID string) error {
 }
 
 func (r *FTSRepo) SearchDocIDs(ctx context.Context, userID, query string, limit uint) ([]string, error) {
+	cleaned := sanitizeFTSQuery(query)
+	if cleaned == "" {
+		return []string{}, nil
+	}
 	where := map[string]interface{}{
 		"user_id":       userID,
-		"_custom_match": builder.Custom("documents_fts MATCH ?", query),
+		"_custom_match": builder.Custom("documents_fts MATCH ?", cleaned),
 	}
 	if limit > 0 {
 		where["_limit"] = []uint{0, limit}
@@ -67,4 +73,23 @@ func (r *FTSRepo) SearchDocIDs(ctx context.Context, userID, query string, limit 
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+func sanitizeFTSQuery(input string) string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return ""
+	}
+	var builder strings.Builder
+	for _, r := range input {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			builder.WriteRune(r)
+		case unicode.IsSpace(r):
+			builder.WriteRune(' ')
+		default:
+			builder.WriteRune(' ')
+		}
+	}
+	return strings.Join(strings.Fields(builder.String()), " ")
 }
