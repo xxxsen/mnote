@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/mattn/go-sqlite3"
+	sqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 
 	"mnote/internal/model"
 	appErr "mnote/internal/pkg/errors"
@@ -31,9 +32,11 @@ func (s *TagService) Create(ctx context.Context, userID, name string) (*model.Ta
 		Mtime:  now,
 	}
 	if err := s.tags.Create(ctx, tag); err != nil {
-		var sqlErr sqlite3.Error
-		if errors.As(err, &sqlErr) && sqlErr.ExtendedCode == sqlite3.ErrConstraintUnique {
-			return nil, appErr.ErrConflict
+		var sqlErr *sqlite.Error
+		if errors.As(err, &sqlErr) {
+			if sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE || sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT {
+				return nil, appErr.ErrConflict
+			}
 		}
 		return nil, err
 	}

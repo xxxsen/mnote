@@ -2,7 +2,7 @@ FROM golang:1.25
 
 WORKDIR /build
 COPY ./ ./
-RUN CGO_ENABLED=1 go build -a -tags "netgo sqlite_fts5" -ldflags "-w" -o /build/mnote ./cmd/server
+RUN CGO_ENABLED=0 go build -a -tags "netgo sqlite_fts5" -ldflags "-w" -o /build/mnote ./cmd/server
 
 FROM debian:12
 
