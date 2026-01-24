@@ -46,6 +46,7 @@ export default function EditorPage() {
   const [previewContent, setPreviewContent] = useState(content);
   const previewTimerRef = useRef<number | null>(null);
   const [, startTransition] = useTransition();
+  const contentRef = useRef<string>("");
 
   const previewRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -168,8 +169,11 @@ export default function EditorPage() {
     try {
       const detail = await apiFetch<{ document: Document; tag_ids: string[] }>(`/documents/${id}`);
       setDoc(detail.document);
+      contentRef.current = detail.document.content;
       setContent(detail.document.content);
-      setTitle(extractTitleFromContent(detail.document.content));
+      setPreviewContent(detail.document.content);
+      const derivedTitle = extractTitleFromContent(detail.document.content);
+      setTitle(derivedTitle);
       setSelectedTagIDs(detail.tag_ids || []);
     } catch (e) {
       alert("Document not found");
@@ -202,30 +206,23 @@ export default function EditorPage() {
     }
   }, [title]);
 
-  useEffect(() => {
+
+  const schedulePreviewUpdate = useCallback(() => {
     if (previewTimerRef.current) {
       window.clearTimeout(previewTimerRef.current);
     }
-    if (content === previewContent) {
-      return;
-    }
     previewTimerRef.current = window.setTimeout(() => {
       startTransition(() => {
-        setPreviewContent(content);
+        setPreviewContent(contentRef.current);
       });
-    }, 600);
-    return () => {
-      if (previewTimerRef.current) {
-        window.clearTimeout(previewTimerRef.current);
-      }
-    };
-  }, [content, previewContent]);
+    }, 900);
+  }, [startTransition]);
 
   // preview scroll handled via MarkdownPreview onScroll
 
   // TOC Visibility Effect
   useEffect(() => {
-    const hasToken = /\[(toc|TOC)]/.test(content);
+    const hasToken = /\[(toc|TOC)]/.test(previewContent);
     if (!tocContent || !hasToken) {
       setShowFloatingToc(false);
       return;
@@ -275,10 +272,11 @@ export default function EditorPage() {
       window.removeEventListener("resize", onScroll);
       if (timer) window.clearTimeout(timer);
     };
-  }, [tocContent, content]);
+  }, [tocContent, previewContent]);
 
   const handleSave = async () => {
-    const derivedTitle = extractTitleFromContent(content);
+    const latestContent = contentRef.current;
+    const derivedTitle = extractTitleFromContent(latestContent);
     if (!derivedTitle) {
       alert("Please add a title using markdown heading (Title + ===)."
       );
@@ -288,7 +286,7 @@ export default function EditorPage() {
     try {
       await apiFetch(`/documents/${id}`, {
         method: "PUT",
-        body: JSON.stringify({ title: derivedTitle, content, tag_ids: selectedTagIDs }),
+        body: JSON.stringify({ title: derivedTitle, content: latestContent, tag_ids: selectedTagIDs }),
       });
       const detail = await apiFetch<{ document: Document; tag_ids: string[] }>(`/documents/${id}`);
       setDoc(detail.document);
@@ -312,7 +310,7 @@ export default function EditorPage() {
   };
 
   const handleExport = () => {
-    const blob = new Blob([content], { type: "text/markdown" });
+    const blob = new Blob([contentRef.current], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -415,6 +413,20 @@ export default function EditorPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [content, title]);
 
+  useEffect(() => {
+    return () => {
+      // no-op cleanup
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (previewTimerRef.current) {
+        window.clearTimeout(previewTimerRef.current);
+      }
+    };
+  }, []);
+
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
   return (
@@ -452,8 +464,8 @@ export default function EditorPage() {
                   height="100%"
                   extensions={[markdown(), EditorView.lineWrapping]}
                   onChange={(val) => {
-                    setContent(val);
-                    setTitle(extractTitleFromContent(val));
+                    contentRef.current = val;
+                    schedulePreviewUpdate();
                   }}
                   className="h-full w-full min-w-0 text-base"
                   onCreateEditor={(view) => {
