@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, forwardRef, memo } from "react";
+import React, { useMemo, forwardRef, memo, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Mermaid from "@/components/mermaid";
@@ -9,6 +9,9 @@ import { cn } from "@/lib/utils";
 interface MarkdownPreviewProps {
   content: string;
   className?: string;
+  showTocAside?: boolean;
+  tocClassName?: string;
+  onTocLoaded?: (toc: string) => void;
 }
 
 type Heading = {
@@ -99,19 +102,33 @@ const injectToc = (content: string, toc: string) => {
 };
 
 const MarkdownPreview = memo(
-  forwardRef<HTMLDivElement, MarkdownPreviewProps>(function MarkdownPreview({ content, className }, ref) {
-  const { processedContent, slugger } = useMemo(() => {
+  forwardRef<HTMLDivElement, MarkdownPreviewProps>(function MarkdownPreview(
+    { content, className, showTocAside = false, tocClassName, onTocLoaded },
+    ref
+  ) {
+  const { processedContent, slugger, tocMarkdown } = useMemo(() => {
     const headings = extractHeadings(content);
     const toc = buildTocMarkdown(headings);
     const updated = injectToc(content, toc);
-    return { processedContent: updated, slugger: createSlugger() };
+    return { processedContent: updated, slugger: createSlugger(), tocMarkdown: toc };
   }, [content]);
 
+  useEffect(() => {
+    onTocLoaded?.(tocMarkdown);
+  }, [tocMarkdown, onTocLoaded]);
+
   return (
-    <div ref={ref} className={cn("markdown-body p-8 overflow-y-auto bg-background text-foreground h-full", className)}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
+    <div className={cn("relative", showTocAside ? "flex gap-8" : "")}>
+      <div
+        ref={ref}
+        className={cn(
+          "markdown-body p-8 overflow-y-auto bg-background text-foreground h-full flex-1 min-w-0",
+          className
+        )}
+      >
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
           pre({ children, ...props }) {
             if (React.isValidElement<{ className?: string }>(children) && children.props.className?.includes("language-toc")) {
               return <>{children}</>;
@@ -173,8 +190,16 @@ const MarkdownPreview = memo(
           },
         }}
       >
-        {processedContent}
-      </ReactMarkdown>
+          {processedContent}
+        </ReactMarkdown>
+      </div>
+      {showTocAside && tocMarkdown && (
+        <aside className={cn("toc-aside hidden lg:block", tocClassName)}>
+          <div className="toc-wrapper">
+            <ReactMarkdown>{tocMarkdown}</ReactMarkdown>
+          </div>
+        </aside>
+      )}
     </div>
   );
   })

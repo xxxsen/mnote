@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
+import ReactMarkdown from "react-markdown";
 import { apiFetch } from "@/lib/api";
 import MarkdownPreview from "@/components/markdown-preview";
 import { Document } from "@/types";
@@ -12,7 +13,10 @@ export default function SharePage() {
   const [doc, setDoc] = useState<Document | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [tocContent, setTocContent] = useState("");
+  const [showFloatingToc, setShowFloatingToc] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
+  const hasTocToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
 
   const extractTitleFromContent = useCallback((value: string) => {
     const lines = value.split("\n");
@@ -145,6 +149,41 @@ export default function SharePage() {
     return () => window.clearTimeout(timer);
   }, [doc]);
 
+  useEffect(() => {
+    const hasToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
+    if (!tocContent || !hasToken) {
+      setShowFloatingToc(false);
+      return;
+    }
+
+    const container = previewRef.current;
+    if (!container) return;
+
+    let observer: IntersectionObserver | null = null;
+    const timeout = setTimeout(() => {
+      const tocEl = container.querySelector(".toc-wrapper");
+      
+      if (!tocEl) {
+        setShowFloatingToc(false);
+        return;
+      }
+
+      observer = new IntersectionObserver(
+        ([entry]) => {
+          setShowFloatingToc(!entry.isIntersecting);
+        },
+        { threshold: 0 }
+      );
+
+      observer.observe(tocEl);
+    }, 100);
+
+    return () => {
+      clearTimeout(timeout);
+      if (observer) observer.disconnect();
+    };
+  }, [tocContent, doc]);
+
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
   if (error || !doc) return <div className="flex h-screen items-center justify-center text-destructive">Document not found or link expired</div>;
 
@@ -152,12 +191,26 @@ export default function SharePage() {
     <div className="min-h-screen bg-background flex flex-col items-center p-4 md:p-8">
       <div className="w-full max-w-4xl border border-border bg-card shadow-sm min-h-[80vh] flex flex-col">
         <div className="flex-1 p-0">
-          <MarkdownPreview ref={previewRef} content={doc.content} className="h-full min-h-[500px] p-6" />
+          <MarkdownPreview
+            ref={previewRef}
+            content={doc.content}
+            className="h-full min-h-[500px] p-6"
+            onTocLoaded={(toc) => setTocContent(hasTocToken ? toc : "")}
+          />
         </div>
         <footer className="border-t border-border p-4 text-center text-xs text-muted-foreground font-mono bg-muted/30">
           Published with MNOTE
         </footer>
       </div>
+
+      {showFloatingToc && tocContent && (
+        <div className="fixed top-24 right-8 z-50 hidden w-64 rounded-xl border border-border bg-card/95 p-4 shadow-xl backdrop-blur-sm lg:block max-h-[70vh] overflow-y-auto animate-in fade-in slide-in-from-right-4 duration-300">
+          <div className="text-xs font-mono text-muted-foreground mb-2">目录</div>
+          <div className="toc-wrapper text-sm">
+            <ReactMarkdown>{tocContent}</ReactMarkdown>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
