@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, forwardRef } from "react";
+import React, { useMemo, forwardRef, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Mermaid from "@/components/mermaid";
@@ -96,7 +96,8 @@ const injectToc = (content: string, toc: string) => {
   return result.join("\n");
 };
 
-export default forwardRef<HTMLDivElement, MarkdownPreviewProps>(function MarkdownPreview({ content, className }, ref) {
+const MarkdownPreview = memo(
+  forwardRef<HTMLDivElement, MarkdownPreviewProps>(function MarkdownPreview({ content, className }, ref) {
   const { processedContent, slugger } = useMemo(() => {
     const headings = extractHeadings(content);
     const toc = buildTocMarkdown(headings);
@@ -174,4 +175,7 @@ export default forwardRef<HTMLDivElement, MarkdownPreviewProps>(function Markdow
       </ReactMarkdown>
     </div>
   );
-});
+  })
+);
+
+export default MarkdownPreview;

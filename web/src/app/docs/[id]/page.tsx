@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import CodeMirror from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
@@ -48,6 +48,10 @@ export default function EditorPage() {
   const [newTag, setNewTag] = useState("");
   const [shareUrl, setShareUrl] = useState("");
   const [activeShare, setActiveShare] = useState<Share | null>(null);
+
+  const [previewContent, setPreviewContent] = useState(content);
+  const previewTimerRef = useRef<number | null>(null);
+  const [, startTransition] = useTransition();
 
   const previewRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -158,6 +162,29 @@ export default function EditorPage() {
       document.title = "MNOTE";
     }
   }, [title]);
+
+  useEffect(() => {
+    const previewEnabled = mode === "preview" || mode === "split";
+    if (!previewEnabled) {
+      return;
+    }
+    if (previewTimerRef.current) {
+      window.clearTimeout(previewTimerRef.current);
+    }
+    if (content === previewContent) {
+      return;
+    }
+    previewTimerRef.current = window.setTimeout(() => {
+      startTransition(() => {
+        setPreviewContent(content);
+      });
+    }, 600);
+    return () => {
+      if (previewTimerRef.current) {
+        window.clearTimeout(previewTimerRef.current);
+      }
+    };
+  }, [content, previewContent, mode, startTransition]);
 
   useEffect(() => {
     const preview = previewRef.current;
@@ -390,11 +417,11 @@ export default function EditorPage() {
              </div>
            )}
 
-           {(mode === "preview" || mode === "split") && (
-             <div className={`h-full bg-background overflow-hidden min-w-0 ${mode === "split" ? "md:flex-[0_0_50%] w-full hidden md:block" : "w-full"}`}>
-                <MarkdownPreview content={content} className="overflow-auto" ref={previewRef} />
-             </div>
-           )}
+            {(mode === "preview" || mode === "split") && (
+              <div className={`h-full bg-background overflow-hidden min-w-0 ${mode === "split" ? "md:flex-[0_0_50%] w-full hidden md:block" : "w-full"}`}>
+                 <MarkdownPreview content={previewContent} className="overflow-auto" ref={previewRef} />
+              </div>
+            )}
 
         </div>
 

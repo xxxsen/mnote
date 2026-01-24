@@ -200,6 +200,24 @@ body {
   list-style-type: square;
 }
 
+.markdown-body li.task-list-item {
+  list-style-type: none;
+}
+
+.markdown-body li.task-list-item::marker {
+  content: "";
+}
+
+.markdown-body ul.contains-task-list {
+  list-style-type: none;
+  padding-left: 0;
+}
+
+.markdown-body li.task-list-item input[type="checkbox"] {
+  margin: 0 0.2em 0.25em -1.4em;
+  vertical-align: middle;
+}
+
 .markdown-body a {
   text-decoration: none;
   border-bottom: 1px solid #9ca3af;
