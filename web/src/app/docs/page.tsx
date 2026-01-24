@@ -212,8 +212,15 @@ export default function DocsPage() {
                       {doc.content || <span className="italic opacity-50">Empty</span>}
                     </div>
                     <div className="mt-2 flex flex-col gap-2 pt-2 border-t border-border/50">
-                      <div className="text-xs text-muted-foreground font-mono text-center">
-                        {formatDate(doc.mtime)}
+                      <div className="flex flex-col text-[10px] text-muted-foreground font-mono text-center leading-tight gap-0.5">
+                        <div>
+                          <span className="opacity-50 mr-1">Created:</span>
+                          {formatDate(doc.ctime)}
+                        </div>
+                        <div>
+                          <span className="opacity-50 mr-1">Updated:</span>
+                          {formatDate(doc.mtime)}
+                        </div>
                       </div>
                       <div className="flex flex-wrap gap-1 h-5 overflow-hidden justify-center">
                         {docTags.length > 0 ? (

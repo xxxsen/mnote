@@ -99,7 +99,7 @@ func (r *DocumentRepo) List(ctx context.Context, userID string, limit uint) ([]m
 	where := map[string]interface{}{
 		"user_id":  userID,
 		"state":    DocumentStateNormal,
-		"_orderby": "mtime desc",
+		"_orderby": "ctime desc",
 	}
 	if limit > 0 {
 		where["_limit"] = []uint{0, limit}
