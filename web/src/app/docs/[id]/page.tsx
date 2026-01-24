@@ -53,6 +53,16 @@ export default function EditorPage() {
   const editorViewRef = useRef<EditorView | null>(null);
   const scrollingSource = useRef<"editor" | "preview" | null>(null);
 
+  const extractTitleFromContent = useCallback((value: string) => {
+    const lines = value.split("\n");
+    if (lines.length < 2) return "";
+    const first = lines[0].trim();
+    const second = lines[1].trim();
+    if (!first) return "";
+    if (/^=+$/.test(second)) return first;
+    return "";
+  }, []);
+
   const handleEditorScroll = useCallback(() => {
     if (scrollingSource.current === "preview") return;
     const view = editorViewRef.current;
@@ -104,7 +114,7 @@ export default function EditorPage() {
       const detail = await apiFetch<{ document: Document; tag_ids: string[] }>(`/documents/${id}`);
       setDoc(detail.document);
       setContent(detail.document.content);
-      setTitle(detail.document.title);
+      setTitle(extractTitleFromContent(detail.document.content));
       setSelectedTagIDs(detail.tag_ids || []);
     } catch (e) {
       alert("Document not found");
@@ -149,15 +159,22 @@ export default function EditorPage() {
   }, [mode, handlePreviewScroll]);
 
   const handleSave = async () => {
+    const derivedTitle = extractTitleFromContent(content);
+    if (!derivedTitle) {
+      alert("Please add a title using markdown heading (Title + ===)."
+      );
+      return;
+    }
     setSaving(true);
     try {
       await apiFetch(`/documents/${id}`, {
         method: "PUT",
-        body: JSON.stringify({ title, content, tag_ids: selectedTagIDs }),
+        body: JSON.stringify({ title: derivedTitle, content, tag_ids: selectedTagIDs }),
       });
       const detail = await apiFetch<{ document: Document; tag_ids: string[] }>(`/documents/${id}`);
       setDoc(detail.document);
       setSelectedTagIDs(detail.tag_ids || []);
+      setTitle(derivedTitle);
     } catch (e) {
       alert("Failed to save");
     } finally {
@@ -296,8 +313,9 @@ export default function EditorPage() {
           </Button>
           <Input 
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="font-bold font-mono border-transparent hover:border-input focus:border-input max-w-md h-9 px-2"
+            readOnly
+            placeholder="Title from markdown (first line + ===)"
+            className="font-bold font-mono border-transparent max-w-md h-9 px-2 bg-transparent"
           />
         </div>
 
@@ -345,7 +363,10 @@ export default function EditorPage() {
                   value={content}
                   height="100%"
                   extensions={[markdown(), EditorView.lineWrapping]}
-                  onChange={(val) => setContent(val)}
+                  onChange={(val) => {
+                    setContent(val);
+                    setTitle(extractTitleFromContent(val));
+                  }}
                   className="h-full w-full min-w-0 text-base"
                   onCreateEditor={(view) => {
                     editorViewRef.current = view;

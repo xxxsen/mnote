@@ -186,17 +186,17 @@ export default function DocsPage() {
                   <div
                     key={doc.id || `${doc.title}-${doc.mtime}-${index}`}
                     onClick={() => router.push(`/docs/${doc.id}`)}
-                    className="group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer overflow-hidden"
+                    className="group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer overflow-hidden rounded-[8px]"
                   >
-                    <h3 className="font-mono font-bold text-lg mb-2 truncate pr-2">{doc.title}</h3>
+                    <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
                     <div className="text-sm text-muted-foreground line-clamp-3 flex-1 font-sans">
                       {doc.content || <span className="italic opacity-50">Empty</span>}
                     </div>
                     <div className="mt-2 flex flex-col gap-2 pt-2 border-t border-border/50">
-                      <div className="text-xs text-muted-foreground font-mono">
+                      <div className="text-xs text-muted-foreground font-mono text-center">
                         {formatDate(doc.mtime)}
                       </div>
-                      <div className="flex flex-wrap gap-1 h-5 overflow-hidden">
+                      <div className="flex flex-wrap gap-1 h-5 overflow-hidden justify-center">
                         {docTags.length > 0 ? (
                           docTags.map((tag) => (
                             <span
