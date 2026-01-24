@@ -83,6 +83,18 @@ body {
 
 .cm-scroller {
   font-family: var(--font-mono) !important;
+  padding: 0.5rem 0.75rem;
+  line-height: 1.6;
+}
+
+.cm-content {
+  padding: 0.5rem 1rem 2rem 0.5rem;
+}
+
+.cm-gutters {
+  border-right: 1px solid var(--border);
+  background: transparent;
+  padding-right: 0.5rem;
 }
 
 .markdown-body {
@@ -168,7 +180,7 @@ body {
 }
 
 .markdown-body ul, .markdown-body ol {
-  padding-left: 1.5em;
+  padding-left: 1.25em;
   margin-bottom: 0.5em;
 }
 
@@ -214,8 +226,13 @@ body {
 }
 
 .markdown-body li.task-list-item input[type="checkbox"] {
-  margin: 0 0.2em 0.25em -1.2em;
+  margin: 0 0.2em 0.15em -1.2em;
   vertical-align: middle;
+}
+
+.markdown-body li.task-list-item {
+  margin-bottom: 0.2em;
+  line-height: 1.5;
 }
 
 .markdown-body a {

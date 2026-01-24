@@ -484,7 +484,7 @@ export default function EditorPage() {
               <div className="h-full bg-background overflow-hidden min-w-0 md:flex-[0_0_50%] w-full hidden md:block">
                   <MarkdownPreview 
                      content={previewContent} 
-                     className="h-full overflow-auto p-6" 
+                     className="h-full overflow-auto p-4" 
                      ref={previewRef}
                      onScroll={handlePreviewScroll}
                      onTocLoaded={(toc) => setTocContent(toc)}
