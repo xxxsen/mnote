@@ -157,6 +157,37 @@ func (r *DocumentRepo) ListByIDs(ctx context.Context, userID string, docIDs []st
 	return docs, rows.Err()
 }
 
+func (r *DocumentRepo) SearchLike(ctx context.Context, userID, query string, limit uint) ([]model.Document, error) {
+	like := "%" + query + "%"
+	where := map[string]interface{}{
+		"user_id":        userID,
+		"state":          DocumentStateNormal,
+		"_orderby":       "mtime desc",
+		"_custom_search": builder.Custom("(title LIKE ? OR content LIKE ?)", like, like),
+	}
+	if limit > 0 {
+		where["_limit"] = []uint{0, limit}
+	}
+	sqlStr, args, err := builder.BuildSelect("documents", where, []string{"id", "user_id", "title", "content", "state", "ctime", "mtime"})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	docs := make([]model.Document, 0)
+	for rows.Next() {
+		var doc model.Document
+		if err := rows.Scan(&doc.ID, &doc.UserID, &doc.Title, &doc.Content, &doc.State, &doc.Ctime, &doc.Mtime); err != nil {
+			return nil, err
+		}
+		docs = append(docs, doc)
+	}
+	return docs, rows.Err()
+}
+
 func (r *DocumentRepo) Delete(ctx context.Context, userID, docID string, mtime int64) error {
 	where := map[string]interface{}{
 		"id":      docID,

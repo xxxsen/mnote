@@ -131,11 +131,23 @@ func (s *DocumentService) Search(ctx context.Context, userID, query string, limi
 	if query == "" {
 		return s.docs.List(ctx, userID, limit)
 	}
+	if hasNonASCII(query) {
+		return s.docs.SearchLike(ctx, userID, query, limit)
+	}
 	ids, err := s.fts.SearchDocIDs(ctx, userID, query, limit)
 	if err != nil {
-		return nil, err
+		return s.docs.SearchLike(ctx, userID, query, limit)
 	}
 	return s.docs.ListByIDs(ctx, userID, ids)
+}
+
+func hasNonASCII(input string) bool {
+	for _, r := range input {
+		if r > 127 {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *DocumentService) ListByTag(ctx context.Context, userID, tagID string) ([]model.Document, error) {
@@ -212,6 +224,20 @@ func (s *DocumentService) RevokeShare(ctx context.Context, userID, docID string)
 		return err
 	}
 	return s.shares.RevokeByDocument(ctx, userID, docID, timeutil.NowUnix())
+}
+
+func (s *DocumentService) GetActiveShare(ctx context.Context, userID, docID string) (*model.Share, error) {
+	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
+		return nil, err
+	}
+	share, err := s.shares.GetActiveByDocument(ctx, userID, docID)
+	if err == appErr.ErrNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return share, nil
 }
 
 func (s *DocumentService) GetShareByToken(ctx context.Context, token string) (*model.Share, *model.Document, error) {

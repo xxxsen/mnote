@@ -9,7 +9,7 @@ import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import MarkdownPreview from "@/components/markdown-preview";
-import { Document, Tag, DocumentVersion } from "@/types";
+import { Document, Tag, DocumentVersion, Share } from "@/types";
 import {
   Save,
   Share2,
@@ -47,6 +47,7 @@ export default function EditorPage() {
   const [selectedTagIDs, setSelectedTagIDs] = useState<string[]>([]);
   const [newTag, setNewTag] = useState("");
   const [shareUrl, setShareUrl] = useState("");
+  const [activeShare, setActiveShare] = useState<Share | null>(null);
 
   const previewRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -238,11 +239,38 @@ export default function EditorPage() {
 
   const handleShare = async () => {
     try {
-      const res = await apiFetch<{ token: string }>(`/documents/${id}/share`, { method: "POST" });
+      const res = await apiFetch<Share>(`/documents/${id}/share`, { method: "POST" });
+      setActiveShare(res);
       const url = `${window.location.origin}/share/${res.token}`;
       setShareUrl(url);
     } catch (e) {
       alert("Failed to create share link");
+    }
+  };
+
+  const loadShare = useCallback(async () => {
+    try {
+      const res = await apiFetch<{ share: Share | null }>(`/documents/${id}/share`);
+      if (res.share) {
+        setActiveShare(res.share);
+        setShareUrl(`${window.location.origin}/share/${res.share.token}`);
+      } else {
+        setActiveShare(null);
+        setShareUrl("");
+      }
+    } catch (e) {
+      setActiveShare(null);
+      setShareUrl("");
+    }
+  }, [id]);
+
+  const handleRevokeShare = async () => {
+    try {
+      await apiFetch(`/documents/${id}/share`, { method: "DELETE" });
+      setActiveShare(null);
+      setShareUrl("");
+    } catch (e) {
+      alert("Failed to revoke share link");
     }
   };
 
@@ -355,12 +383,12 @@ export default function EditorPage() {
                >
                  History
                </button>
-               <button 
-                 className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "share" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
-                 onClick={() => setActiveTab("share")}
-               >
-                 Share
-               </button>
+                <button 
+                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "share" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
+                  onClick={() => { setActiveTab("share"); loadShare(); }}
+                >
+                  Share
+                </button>
              </div>
 
              <div className="flex-1 overflow-y-auto p-4">
@@ -419,17 +447,24 @@ export default function EditorPage() {
                  </div>
                )}
 
-               {activeTab === "share" && (
-                 <div className="space-y-4">
-                   <Button onClick={handleShare} className="w-full">
-                     <Share2 className="mr-2 h-4 w-4" />
-                     Generate Share Link
-                   </Button>
-                   {shareUrl && (
-                     <div className="p-2 bg-muted border border-border break-all text-xs font-mono select-all">
-                       {shareUrl}
-                     </div>
-                   )}
+                {activeTab === "share" && (
+                  <div className="space-y-4">
+                    {activeShare ? (
+                      <Button variant="outline" className="w-full" onClick={handleRevokeShare}>
+                        <Share2 className="mr-2 h-4 w-4" />
+                        Revoke Share Link
+                      </Button>
+                    ) : (
+                      <Button onClick={handleShare} className="w-full">
+                        <Share2 className="mr-2 h-4 w-4" />
+                        Generate Share Link
+                      </Button>
+                    )}
+                    {shareUrl && (
+                      <div className="p-2 bg-muted border border-border break-all text-xs font-mono select-all">
+                        {shareUrl}
+                      </div>
+                    )}
                    <div className="pt-4 border-t border-border mt-4">
                      <Button variant="outline" className="w-full mb-2" onClick={handleExport}>
                        <Download className="mr-2 h-4 w-4" />

@@ -32,6 +32,15 @@ func (h *ShareHandler) Revoke(c *gin.Context) {
 	response.Success(c, gin.H{"ok": true})
 }
 
+func (h *ShareHandler) GetActive(c *gin.Context) {
+	share, err := h.documents.GetActiveShare(c.Request.Context(), getUserID(c), c.Param("id"))
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"share": share})
+}
+
 func (h *ShareHandler) PublicGet(c *gin.Context) {
 	_, doc, err := h.documents.GetShareByToken(c.Request.Context(), c.Param("token"))
 	if err != nil {

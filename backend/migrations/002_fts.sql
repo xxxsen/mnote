@@ -3,5 +3,6 @@ USING fts5(
   document_id,
   user_id,
   title,
-  content
+  content,
+  tokenize = 'trigram'
 );

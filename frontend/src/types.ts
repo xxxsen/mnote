@@ -24,3 +24,13 @@ export interface DocumentVersion {
   content: string;
   ctime: number;
 }
+
+export interface Share {
+  id: string;
+  user_id: string;
+  document_id: string;
+  token: string;
+  state: number;
+  ctime: number;
+  mtime: number;
+}

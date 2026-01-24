@@ -9,10 +9,14 @@ import { formatDate } from "@/lib/utils";
 import { Document, Tag } from "@/types";
 import { Plus, Search, LogOut, X } from "lucide-react";
 
+interface DocumentWithTags extends Document {
+  tag_ids?: string[];
+}
+
 export default function DocsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [docs, setDocs] = useState<Document[]>([]);
+  const [docs, setDocs] = useState<DocumentWithTags[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(searchParams.get("q") || "");
@@ -26,7 +30,17 @@ export default function DocsPage() {
       if (selectedTag) query.set("tag_id", selectedTag);
       
       const res = await apiFetch<Document[]>(`/documents?${query.toString()}`);
-      setDocs(res || []);
+      
+      const enrichedDocs = await Promise.all((res || []).map(async (doc) => {
+        try {
+          const detail = await apiFetch<{ tag_ids: string[] }>(`/documents/${doc.id}`);
+          return { ...doc, tag_ids: detail.tag_ids };
+        } catch {
+          return { ...doc, tag_ids: [] };
+        }
+      }));
+      
+      setDocs(enrichedDocs);
     } catch (e) {
       console.error(e);
     } finally {
@@ -74,6 +88,13 @@ export default function DocsPage() {
     router.push("/login");
   };
 
+  const tagCounts = docs.reduce((acc, doc) => {
+    doc.tag_ids?.forEach((id) => {
+      acc[id] = (acc[id] || 0) + 1;
+    });
+    return acc;
+  }, {} as Record<string, number>);
+
   return (
     <div className="flex h-screen flex-col md:flex-row bg-background text-foreground">
       <aside className="w-full md:w-64 border-r border-border p-4 flex-col gap-4 hidden md:flex">
@@ -83,21 +104,39 @@ export default function DocsPage() {
           <div className="flex flex-col gap-1">
             <button
               onClick={() => setSelectedTag("")}
-              className={`text-left text-sm px-2 py-1 transition-colors ${
-                selectedTag === "" ? "bg-accent text-accent-foreground font-medium" : "hover:bg-muted"
+              className={`group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm font-medium transition-all ${
+                selectedTag === "" 
+                  ? "bg-accent text-accent-foreground" 
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
             >
-              All Notes
+              <span>All Notes</span>
+              <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
+                selectedTag === ""
+                  ? "bg-background/20 text-accent-foreground"
+                  : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
+              }`}>
+                {docs.length}
+              </span>
             </button>
             {tags.map((tag) => (
               <button
                 key={tag.id}
                 onClick={() => setSelectedTag(tag.id)}
-                className={`text-left text-sm px-2 py-1 transition-colors ${
-                  selectedTag === tag.id ? "bg-accent text-accent-foreground font-medium" : "hover:bg-muted"
+                className={`group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm font-medium transition-all ${
+                  selectedTag === tag.id
+                    ? "bg-accent text-accent-foreground" 
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}
               >
-                #{tag.name}
+                <span className="truncate">#{tag.name}</span>
+                <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
+                  selectedTag === tag.id
+                    ? "bg-background/20 text-accent-foreground"
+                    : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
+                }`}>
+                  {tagCounts[tag.id] || 0}
+                </span>
               </button>
             ))}
           </div>
@@ -141,21 +180,40 @@ export default function DocsPage() {
              </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {docs.map((doc, index) => (
-                <div
-                  key={doc.id || `${doc.title}-${doc.mtime}-${index}`}
-                  onClick={() => router.push(`/docs/${doc.id}`)}
-                  className="group relative flex flex-col border border-border bg-card p-4 h-48 hover:border-foreground transition-colors cursor-pointer overflow-hidden"
-                >
-                  <h3 className="font-mono font-bold text-lg mb-2 truncate pr-2">{doc.title}</h3>
-                  <div className="text-sm text-muted-foreground line-clamp-4 flex-1 font-sans">
-                    {doc.content || <span className="italic opacity-50">Empty</span>}
+              {docs.map((doc, index) => {
+                const docTags = tags.filter((t) => doc.tag_ids?.includes(t.id));
+                return (
+                  <div
+                    key={doc.id || `${doc.title}-${doc.mtime}-${index}`}
+                    onClick={() => router.push(`/docs/${doc.id}`)}
+                    className="group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer overflow-hidden"
+                  >
+                    <h3 className="font-mono font-bold text-lg mb-2 truncate pr-2">{doc.title}</h3>
+                    <div className="text-sm text-muted-foreground line-clamp-3 flex-1 font-sans">
+                      {doc.content || <span className="italic opacity-50">Empty</span>}
+                    </div>
+                    <div className="mt-2 flex flex-col gap-2 pt-2 border-t border-border/50">
+                      <div className="text-xs text-muted-foreground font-mono">
+                        {formatDate(doc.mtime)}
+                      </div>
+                      <div className="flex flex-wrap gap-1 h-5 overflow-hidden">
+                        {docTags.length > 0 ? (
+                          docTags.map((tag) => (
+                            <span
+                              key={tag.id}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-secondary-foreground border border-border/50"
+                            >
+                              #{tag.name}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground/40 italic px-1">No tags</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div className="mt-2 text-xs text-muted-foreground font-mono pt-2 border-t border-border/50 flex justify-between">
-                    <span>{formatDate(doc.mtime)}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

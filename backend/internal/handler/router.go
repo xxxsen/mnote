@@ -40,6 +40,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	authGroup.GET("/documents/:id/versions/:version", deps.Versions.Get)
 
 	authGroup.POST("/documents/:id/share", deps.Shares.Create)
+	authGroup.GET("/documents/:id/share", deps.Shares.GetActive)
 	authGroup.DELETE("/documents/:id/share", deps.Shares.Revoke)
 
 	authGroup.POST("/tags", deps.Tags.Create)
