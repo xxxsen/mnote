@@ -246,3 +246,41 @@ body {
   border-radius: var(--radius-md);
   overflow-x: auto;
 }
+
+.toc-wrapper {
+  margin-bottom: 1.5em;
+}
+
+.markdown-body .toc-wrapper ul {
+  margin-bottom: 0;
+  padding-left: 1.5rem;
+}
+
+.markdown-body .toc-wrapper li {
+  margin-bottom: 0.2rem;
+  line-height: 1.4;
+}
+
+.markdown-body .toc-wrapper a {
+  color: #2563eb;
+  border-bottom: none;
+  font-weight: 400;
+}
+
+.markdown-body .toc-wrapper a:hover {
+  background-color: transparent;
+  text-decoration: none;
+  color: #1d4ed8;
+}
+
+.markdown-body .toc-wrapper > ul {
+  list-style-type: disc;
+}
+
+.markdown-body .toc-wrapper ul ul {
+  list-style-type: circle;
+}
+
+.markdown-body .toc-wrapper ul ul ul {
+  list-style-type: square;
+}

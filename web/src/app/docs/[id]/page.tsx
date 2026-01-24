@@ -151,6 +151,15 @@ export default function EditorPage() {
   }, [mode, modeReady]);
 
   useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (title) {
+      document.title = title;
+    } else {
+      document.title = "MNOTE";
+    }
+  }, [title]);
+
+  useEffect(() => {
     const preview = previewRef.current;
     if (preview) {
       preview.addEventListener("scroll", handlePreviewScroll);

@@ -88,7 +88,7 @@ const injectToc = (content: string, toc: string) => {
       continue;
     }
     if (!inCodeBlock && tocTokenRegex.test(trimmed)) {
-      result.push(toc);
+      result.push("```toc\n" + toc + "\n```");
       continue;
     }
     result.push(line);
@@ -109,9 +109,24 @@ export default forwardRef<HTMLDivElement, MarkdownPreviewProps>(function Markdow
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
+          pre({ children, ...props }) {
+            if (React.isValidElement<{ className?: string }>(children) && children.props.className?.includes("language-toc")) {
+              return <>{children}</>;
+            }
+            return <pre {...props}>{children}</pre>;
+          },
           code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || "");
             const isMermaid = match && match[1] === "mermaid";
+            const isToc = match && match[1] === "toc";
+
+            if (isToc) {
+              return (
+                <nav className="toc-wrapper">
+                  <ReactMarkdown>{String(children)}</ReactMarkdown>
+                </nav>
+              );
+            }
 
             if (isMermaid) {
               return <Mermaid chart={String(children).replace(/\n$/, "")} />;
