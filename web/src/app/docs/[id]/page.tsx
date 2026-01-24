@@ -55,6 +55,7 @@ export default function EditorPage() {
   // TOC State
   const [tocContent, setTocContent] = useState("");
   const [showFloatingToc, setShowFloatingToc] = useState(false);
+  const [tocCollapsed, setTocCollapsed] = useState(false);
 
   // TOC Helpers
   const slugify = useCallback((value: string) => {
@@ -607,10 +608,19 @@ export default function EditorPage() {
       </div>
 
       {showFloatingToc && !showDetails && tocContent && (
-        <div className="fixed top-24 right-8 z-50 hidden w-64 rounded-xl border border-border bg-card/95 p-4 shadow-xl backdrop-blur-sm lg:block max-h-[70vh] overflow-y-auto animate-in fade-in slide-in-from-right-4 duration-300">
-          <div className="text-xs font-mono text-muted-foreground mb-2">目录</div>
-          <div className="toc-wrapper text-sm">
-            <ReactMarkdown
+        <div className="fixed top-24 right-8 z-50 hidden w-64 rounded-xl border border-border bg-card/95 shadow-xl backdrop-blur-sm lg:block animate-in fade-in slide-in-from-right-4 duration-300">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border/60">
+            <div className="text-xs font-mono text-muted-foreground">目录</div>
+            <button
+              onClick={() => setTocCollapsed(!tocCollapsed)}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              {tocCollapsed ? "展开" : "收起"}
+            </button>
+          </div>
+          {!tocCollapsed && (
+            <div className="toc-wrapper text-sm max-h-[60vh] overflow-y-auto p-3">
+              <ReactMarkdown
               components={{
                 a: (props) => {
                   const href = props.href || "";
@@ -644,10 +654,11 @@ export default function EditorPage() {
                   );
                 },
               }}
-            >
-              {tocContent}
-            </ReactMarkdown>
-          </div>
+              >
+                {tocContent}
+              </ReactMarkdown>
+            </div>
+          )}
         </div>
       )}
     </div>
