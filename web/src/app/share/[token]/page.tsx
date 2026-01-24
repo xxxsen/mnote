@@ -39,6 +39,24 @@ export default function SharePage() {
     return base || "section";
   }, []);
 
+  const normalizeId = useCallback((value: string) => {
+    return value.replace(/-\d+$/, "");
+  }, []);
+
+  const normalizeText = useCallback((value: string) => {
+    return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+  }, []);
+
+  const getText = useCallback((value: React.ReactNode): string => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "string" || typeof value === "number") return String(value);
+    if (Array.isArray(value)) return value.map((item) => getText(item)).join("");
+    if (React.isValidElement<{ children?: React.ReactNode }>(value)) {
+      return getText(value.props.children);
+    }
+    return "";
+  }, []);
+
   const getElementById = useCallback((id: string) => {
     const container = previewRef.current;
     if (!container) return null;
@@ -134,20 +152,20 @@ export default function SharePage() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, [doc, slugify, getElementById]);
 
+
   useEffect(() => {
-    if (!doc) return;
-    const hash = typeof window !== "undefined" ? window.location.hash : "";
-    if (!hash) return;
-    const targetId = decodeURIComponent(hash.slice(1));
-    const scrollToTarget = () => {
-      const el = document.getElementById(targetId);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
+    const applyHashActive = () => {
+      const hash = typeof window !== "undefined" ? window.location.hash : "";
+      if (!hash) return;
+      const raw = decodeURIComponent(hash.slice(1));
+      const normalized = raw.normalize("NFKC");
+      const candidates = [raw, normalized, raw.toLowerCase(), slugify(raw), slugify(normalized)];
     };
-    const timer = window.setTimeout(scrollToTarget, 60);
-    return () => window.clearTimeout(timer);
-  }, [doc]);
+
+    applyHashActive();
+    window.addEventListener("hashchange", applyHashActive);
+    return () => window.removeEventListener("hashchange", applyHashActive);
+  }, [slugify]);
 
   useEffect(() => {
     const hasToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
@@ -159,28 +177,47 @@ export default function SharePage() {
     const container = previewRef.current;
     if (!container) return;
 
-    let observer: IntersectionObserver | null = null;
-    const timeout = setTimeout(() => {
-      const tocEl = container.querySelector(".toc-wrapper");
-      
+    let timer: number | null = null;
+    let ticking = false;
+
+    const updateVisibility = () => {
+      ticking = false;
+      const tocEl = container.querySelector(".toc-wrapper") as HTMLElement | null;
       if (!tocEl) {
         setShowFloatingToc(false);
         return;
       }
+      const isScrollable = container.scrollHeight > container.clientHeight + 1;
+      if (isScrollable) {
+        const top = tocEl.offsetTop;
+        const bottom = top + tocEl.offsetHeight;
+        const viewTop = container.scrollTop;
+        const viewBottom = viewTop + container.clientHeight;
+        const inView = bottom > viewTop && top < viewBottom;
+        setShowFloatingToc(!inView);
+        return;
+      }
+      const rect = tocEl.getBoundingClientRect();
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const inView = rect.bottom > 0 && rect.top < viewportHeight;
+      setShowFloatingToc(!inView);
+    };
 
-      observer = new IntersectionObserver(
-        ([entry]) => {
-          setShowFloatingToc(!entry.isIntersecting);
-        },
-        { threshold: 0 }
-      );
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(updateVisibility);
+    };
 
-      observer.observe(tocEl);
-    }, 100);
+    const scrollTarget = container.scrollHeight > container.clientHeight + 1 ? container : window;
+    timer = window.setTimeout(updateVisibility, 120);
+    scrollTarget.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
 
     return () => {
-      clearTimeout(timeout);
-      if (observer) observer.disconnect();
+      scrollTarget.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (timer) window.clearTimeout(timer);
     };
   }, [tocContent, doc]);
 
@@ -207,7 +244,40 @@ export default function SharePage() {
         <div className="fixed top-24 right-8 z-50 hidden w-64 rounded-xl border border-border bg-card/95 p-4 shadow-xl backdrop-blur-sm lg:block max-h-[70vh] overflow-y-auto animate-in fade-in slide-in-from-right-4 duration-300">
           <div className="text-xs font-mono text-muted-foreground mb-2">目录</div>
           <div className="toc-wrapper text-sm">
-            <ReactMarkdown>{tocContent}</ReactMarkdown>
+            <ReactMarkdown
+              components={{
+                a: (props) => {
+                  const href = props.href || "";
+                  const raw = href.startsWith("#") ? href.slice(1) : "";
+                  const decoded = raw ? decodeURIComponent(raw) : "";
+                  const normalized = decoded ? decoded.normalize("NFKC") : "";
+                  const candidates = [raw, decoded, normalized, slugify(decoded), slugify(normalized)].map(normalizeId);
+                  const linkText = normalizeText(getText(props.children));
+                  return (
+                    <a
+                      {...props}
+                      onClick={(event) => {
+                        props.onClick?.(event);
+                        if (!href.startsWith("#")) return;
+                        event.preventDefault();
+                        const rawHash = decodeURIComponent(href.slice(1));
+                        const normalizedHash = rawHash.normalize("NFKC");
+                        const targetCandidates = [rawHash, normalizedHash, slugify(rawHash), slugify(normalizedHash)];
+                        for (const candidate of targetCandidates) {
+                          const el = getElementById(candidate);
+                          if (el) {
+                            scrollToElement(el);
+                            break;
+                          }
+                        }
+                      }}
+                    />
+                  );
+                },
+              }}
+            >
+              {tocContent}
+            </ReactMarkdown>
           </div>
         </div>
       )}

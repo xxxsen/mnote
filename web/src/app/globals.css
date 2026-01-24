@@ -307,6 +307,14 @@ body {
   color: #1d4ed8;
 }
 
+.toc-wrapper a.toc-active,
+.toc-wrapper a[aria-current="true"] {
+  color: #111827 !important;
+  font-weight: 600;
+  text-decoration: none;
+  background: transparent;
+}
+
 .toc-wrapper > ul {
   list-style-type: disc;
 }

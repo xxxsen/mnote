@@ -17,6 +17,7 @@ interface MarkdownPreviewProps {
 type Heading = {
   level: number;
   text: string;
+  id?: string;
 };
 
 const tocTokenRegex = /^\[(toc|TOC)]$/;
@@ -70,11 +71,10 @@ const extractHeadings = (content: string) => {
 
 const buildTocMarkdown = (headings: Heading[]) => {
   if (headings.length === 0) return "";
-  const slugger = createSlugger();
   return headings
     .map((heading) => {
       const indent = "  ".repeat(Math.max(0, heading.level - 1));
-      const slug = slugger(heading.text);
+      const slug = heading.id || createSlugger()(heading.text);
       return `${indent}- [${heading.text}](#${slug})`;
     })
     .join("\n");
@@ -106,11 +106,22 @@ const MarkdownPreview = memo(
     { content, className, showTocAside = false, tocClassName, onTocLoaded },
     ref
   ) {
-  const { processedContent, slugger, tocMarkdown } = useMemo(() => {
+  const { processedContent, headingIds, tocMarkdown } = useMemo(() => {
     const headings = extractHeadings(content);
-    const toc = buildTocMarkdown(headings);
+    const slugger = createSlugger();
+    const headingsWithIds = headings.map((heading) => ({
+      ...heading,
+      id: slugger(heading.text),
+    }));
+    const toc = buildTocMarkdown(headingsWithIds);
     const updated = injectToc(content, toc);
-    return { processedContent: updated, slugger: createSlugger(), tocMarkdown: toc };
+    return { processedContent: updated, headingIds: headingsWithIds.map((h) => h.id || ""), tocMarkdown: toc };
+  }, [content]);
+
+  const headingIndexRef = React.useRef(0);
+
+  React.useEffect(() => {
+    headingIndexRef.current = 0;
   }, [content]);
 
   useEffect(() => {
@@ -160,32 +171,32 @@ const MarkdownPreview = memo(
           },
           h1({ children }) {
             const text = getText(children);
-            const id = slugger(text);
+            const id = headingIds[headingIndexRef.current++] || createSlugger()(text);
             return <h1 id={id}>{children}</h1>;
           },
           h2({ children }) {
             const text = getText(children);
-            const id = slugger(text);
+            const id = headingIds[headingIndexRef.current++] || createSlugger()(text);
             return <h2 id={id}>{children}</h2>;
           },
           h3({ children }) {
             const text = getText(children);
-            const id = slugger(text);
+            const id = headingIds[headingIndexRef.current++] || createSlugger()(text);
             return <h3 id={id}>{children}</h3>;
           },
           h4({ children }) {
             const text = getText(children);
-            const id = slugger(text);
+            const id = headingIds[headingIndexRef.current++] || createSlugger()(text);
             return <h4 id={id}>{children}</h4>;
           },
           h5({ children }) {
             const text = getText(children);
-            const id = slugger(text);
+            const id = headingIds[headingIndexRef.current++] || createSlugger()(text);
             return <h5 id={id}>{children}</h5>;
           },
           h6({ children }) {
             const text = getText(children);
-            const id = slugger(text);
+            const id = headingIds[headingIndexRef.current++] || createSlugger()(text);
             return <h6 id={id}>{children}</h6>;
           },
         }}
