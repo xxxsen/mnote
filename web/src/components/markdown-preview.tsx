@@ -24,12 +24,14 @@ const createSlugger = () => {
     const base = value
       .toLowerCase()
       .trim()
-      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/[^\p{L}\p{N}\s-]/gu, "")
       .replace(/\s+/g, "-")
-      .replace(/-+/g, "-");
-    const count = counts.get(base) || 0;
-    counts.set(base, count + 1);
-    return count === 0 ? base : `${base}-${count}`;
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const normalized = base || "section";
+    const count = counts.get(normalized) || 0;
+    counts.set(normalized, count + 1);
+    return count === 0 ? normalized : `${normalized}-${count}`;
   };
 };
 
