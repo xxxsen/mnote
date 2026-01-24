@@ -17,6 +17,7 @@ export default function DocsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [docs, setDocs] = useState<DocumentWithTags[]>([]);
+  const [allDocs, setAllDocs] = useState<DocumentWithTags[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(searchParams.get("q") || "");
@@ -39,7 +40,7 @@ export default function DocsPage() {
           return { ...doc, tag_ids: [] };
         }
       }));
-      
+
       setDocs(enrichedDocs);
     } catch (e) {
       console.error(e);
@@ -48,18 +49,36 @@ export default function DocsPage() {
     }
   }, [search, selectedTag]);
 
-  const fetchTags = async () => {
+  const fetchAllDocs = useCallback(async () => {
+    try {
+      const res = await apiFetch<Document[]>(`/documents`);
+      const enrichedDocs = await Promise.all((res || []).map(async (doc) => {
+        try {
+          const detail = await apiFetch<{ tag_ids: string[] }>(`/documents/${doc.id}`);
+          return { ...doc, tag_ids: detail.tag_ids };
+        } catch {
+          return { ...doc, tag_ids: [] };
+        }
+      }));
+      setAllDocs(enrichedDocs);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  const fetchTags = useCallback(async () => {
     try {
       const res = await apiFetch<Tag[]>("/tags");
       setTags(res || []);
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchTags();
-  }, []);
+    fetchAllDocs();
+  }, [fetchTags, fetchAllDocs]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -88,7 +107,7 @@ export default function DocsPage() {
     router.push("/login");
   };
 
-  const tagCounts = docs.reduce((acc, doc) => {
+  const tagCounts = allDocs.reduce((acc, doc) => {
     doc.tag_ids?.forEach((id) => {
       acc[id] = (acc[id] || 0) + 1;
     });
@@ -116,7 +135,7 @@ export default function DocsPage() {
                   ? "bg-background/20 text-accent-foreground"
                   : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
               }`}>
-                {docs.length}
+                {allDocs.length}
               </span>
             </button>
             {tags.map((tag) => (
