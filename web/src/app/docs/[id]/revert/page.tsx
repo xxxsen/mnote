@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { Document, DocumentVersion } from "@/types";
 import { computeDiff, DiffRow } from "@/lib/diff";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, Check, AlertTriangle } from "lucide-react";
+import { ChevronLeft, Check, AlertTriangle, ChevronUp, ChevronDown } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 export default function RevertPage() {
@@ -21,6 +21,33 @@ export default function RevertPage() {
   const [diffRows, setDiffRows] = useState<DiffRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [currentDiffIndex, setCurrentDiffIndex] = useState(-1);
+
+  const diffIndices = useMemo(() => {
+    const indices: number[] = [];
+    let inDiffBlock = false;
+    diffRows.forEach((row, i) => {
+      const isChange = (row.left?.type === 'removed') || (row.right?.type === 'added');
+      if (isChange && !inDiffBlock) {
+        indices.push(i);
+        inDiffBlock = true;
+      } else if (!isChange) {
+        inDiffBlock = false;
+      }
+    });
+    return indices;
+  }, [diffRows]);
+
+  const scrollToDiff = (index: number) => {
+    if (index < 0 || index >= diffIndices.length) return;
+    
+    const rowIdx = diffIndices[index];
+    const el = document.querySelector(`[data-diff-index="${rowIdx}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setCurrentDiffIndex(index);
+    }
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -53,6 +80,27 @@ export default function RevertPage() {
       loadData();
     }
   }, [id, versionId, router]);
+
+  useEffect(() => {
+    if (diffIndices.length === 0) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        if (currentDiffIndex > 0) {
+          scrollToDiff(currentDiffIndex - 1);
+        }
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        const nextIndex = currentDiffIndex < 0 ? 0 : currentDiffIndex + 1;
+        if (nextIndex < diffIndices.length) {
+          scrollToDiff(nextIndex);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [diffIndices, currentDiffIndex]);
 
   const handleConfirm = async () => {
     if (!selectedVersion || !doc) return;
@@ -96,6 +144,39 @@ export default function RevertPage() {
               Comparing Current vs v{selectedVersion.version} ({formatDate(selectedVersion.ctime)})
             </p>
           </div>
+          
+          {diffIndices.length > 0 && (
+            <div className="flex items-center ml-4 border border-border/60 rounded-md bg-muted/30 shadow-sm overflow-hidden">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8 rounded-none hover:bg-background" 
+                disabled={currentDiffIndex <= 0}
+                onClick={() => scrollToDiff(currentDiffIndex - 1)}
+                title="Previous Change"
+              >
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              </Button>
+              <div className="h-4 w-[1px] bg-border/60" />
+              <span className="text-[10px] font-mono font-medium px-3 text-muted-foreground min-w-[60px] text-center select-none">
+                {currentDiffIndex >= 0 ? currentDiffIndex + 1 : 0} / {diffIndices.length}
+              </span>
+              <div className="h-4 w-[1px] bg-border/60" />
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8 rounded-none hover:bg-background" 
+                disabled={currentDiffIndex >= diffIndices.length - 1}
+                onClick={() => {
+                   const nextIndex = currentDiffIndex < 0 ? 0 : currentDiffIndex + 1;
+                   scrollToDiff(nextIndex);
+                }}
+                title="Next Change"
+              >
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -147,7 +228,11 @@ export default function RevertPage() {
             <div className="flex-1 overflow-auto font-mono text-sm leading-6">
               <div className="min-w-fit">
                 {diffRows.map((row, idx) => (
-                  <div key={idx} className="flex border-b border-border/50 hover:bg-muted/30 group">
+                  <div 
+                    key={idx} 
+                    data-diff-index={idx}
+                    className="flex border-b border-border/50 hover:bg-muted/30 group"
+                  >
                     <div className={`flex-1 p-0 pl-1 border-r border-border min-w-0 ${
                       row.left?.type === 'removed' ? 'bg-red-500/10 dark:bg-red-900/20' : ''
                     }`}>
