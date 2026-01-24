@@ -169,19 +169,35 @@ body {
 
 .markdown-body ul, .markdown-body ol {
   padding-left: 1.5em;
-  margin-bottom: 1.25em;
-}
-
-.markdown-body li {
   margin-bottom: 0.5em;
 }
 
+.markdown-body li {
+  margin-bottom: 0.25em;
+}
+
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin-top: 0.2em;
+  margin-bottom: 0.2em;
+}
+
 .markdown-body ul {
-  list-style-type: square;
+  list-style-type: disc;
 }
 
 .markdown-body ol {
   list-style-type: decimal;
+}
+
+.markdown-body ul ul {
+  list-style-type: circle;
+}
+
+.markdown-body ul ul ul,
+.markdown-body ul ul ul ul,
+.markdown-body ul ul ul ul ul {
+  list-style-type: square;
 }
 
 .markdown-body a {
