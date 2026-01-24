@@ -221,13 +221,7 @@ export default function EditorPage() {
     };
   }, [content, previewContent]);
 
-  useEffect(() => {
-    const preview = previewRef.current;
-    if (preview) {
-      preview.addEventListener("scroll", handlePreviewScroll);
-      return () => preview.removeEventListener("scroll", handlePreviewScroll);
-    }
-  }, [handlePreviewScroll]);
+  // preview scroll handled via MarkdownPreview onScroll
 
   // TOC Visibility Effect
   useEffect(() => {
@@ -247,7 +241,7 @@ export default function EditorPage() {
       ticking = false;
       const tocEl = container.querySelector(".toc-wrapper") as HTMLElement | null;
       if (!tocEl) {
-        setShowFloatingToc(false);
+        setShowFloatingToc(true);
         return;
       }
       const isScrollable = container.scrollHeight > container.clientHeight + 1;
@@ -272,14 +266,12 @@ export default function EditorPage() {
       window.requestAnimationFrame(updateVisibility);
     };
 
-    const scrollTarget = container;
-    
     timer = window.setTimeout(updateVisibility, 120);
-    scrollTarget.addEventListener("scroll", onScroll, { passive: true });
+    container.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
 
     return () => {
-      scrollTarget.removeEventListener("scroll", onScroll);
+      container.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
       if (timer) window.clearTimeout(timer);
     };
@@ -340,14 +332,8 @@ export default function EditorPage() {
     }
   };
 
-  const handleRevert = async (v: DocumentVersion) => {
-    if (!confirm(`Revert to version from ${formatDate(v.ctime)}? Unsaved changes will be lost.`)) return;
-    setContent(v.content);
-    setTitle(v.title);
-    await apiFetch(`/documents/${id}`, {
-      method: "PUT",
-      body: JSON.stringify({ title: v.title, content: v.content }),
-    });
+  const handleRevert = (v: DocumentVersion) => {
+    router.push(`/docs/${id}/revert?versionId=${v.id}`);
   };
 
   const handleAddTag = async () => {
@@ -483,12 +469,13 @@ export default function EditorPage() {
              </div>
 
               <div className="h-full bg-background overflow-hidden min-w-0 md:flex-[0_0_50%] w-full hidden md:block">
-                 <MarkdownPreview 
-                    content={previewContent} 
-                    className="h-full overflow-auto p-6" 
-                    ref={previewRef}
-                    onTocLoaded={(toc) => setTocContent(toc)}
-                 />
+                  <MarkdownPreview 
+                     content={previewContent} 
+                     className="h-full overflow-auto p-6" 
+                     ref={previewRef}
+                     onScroll={handlePreviewScroll}
+                     onTocLoaded={(toc) => setTocContent(toc)}
+                  />
               </div>
 
         </div>
@@ -634,6 +621,9 @@ export default function EditorPage() {
                           const el = getElementById(candidate);
                           if (el) {
                             scrollToElement(el);
+                            requestAnimationFrame(() => {
+                              handlePreviewScroll();
+                            });
                             break;
                           }
                         }

@@ -11,6 +11,7 @@ interface MarkdownPreviewProps {
   className?: string;
   showTocAside?: boolean;
   tocClassName?: string;
+  onScroll?: React.UIEventHandler<HTMLDivElement>;
   onTocLoaded?: (toc: string) => void;
 }
 
@@ -103,7 +104,7 @@ const injectToc = (content: string, toc: string) => {
 
 const MarkdownPreview = memo(
   forwardRef<HTMLDivElement, MarkdownPreviewProps>(function MarkdownPreview(
-    { content, className, showTocAside = false, tocClassName, onTocLoaded },
+    { content, className, showTocAside = false, tocClassName, onScroll, onTocLoaded },
     ref
   ) {
   const { processedContent, headingIds, tocMarkdown } = useMemo(() => {
@@ -132,6 +133,7 @@ const MarkdownPreview = memo(
     <div className={cn("relative h-full min-h-0 w-full", showTocAside ? "flex gap-8" : "")}>
       <div
         ref={ref}
+        onScroll={onScroll}
         className={cn(
           "markdown-body p-8 overflow-y-auto bg-background text-foreground h-full flex-1 min-w-0",
           className
