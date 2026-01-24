@@ -51,6 +51,7 @@ export default function EditorPage() {
   const previewRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const scrollingSource = useRef<"editor" | "preview" | null>(null);
+  const forcePreviewSyncRef = useRef(false);
 
   // TOC State
   const [tocContent, setTocContent] = useState("");
@@ -149,6 +150,11 @@ export default function EditorPage() {
     const preview = previewRef.current;
     if (!view || !preview) return;
 
+    const editorFocused = view.dom && document.activeElement ? view.dom.contains(document.activeElement) : false;
+    if (editorFocused && !forcePreviewSyncRef.current) {
+      return;
+    }
+
     scrollingSource.current = "preview";
 
     const maxScroll = preview.scrollHeight - preview.clientHeight;
@@ -162,7 +168,8 @@ export default function EditorPage() {
     }
 
     requestAnimationFrame(() => {
-        scrollingSource.current = null;
+      scrollingSource.current = null;
+      forcePreviewSyncRef.current = false;
     });
   }, []);
 
@@ -644,6 +651,7 @@ export default function EditorPage() {
                           if (el) {
                             scrollToElement(el);
                             requestAnimationFrame(() => {
+                              forcePreviewSyncRef.current = true;
                               handlePreviewScroll();
                             });
                             break;
