@@ -6,8 +6,7 @@
   "file_store": {
     "type": "local",
     "data": {
-      "dir": "./uploads",
-      "public_url": ""
+      "dir": "./uploads"
     }
   },
   "log_config": {

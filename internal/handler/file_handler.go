@@ -62,7 +62,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "upload_failed", "failed to upload file")
 		return
 	}
-	fileURL := h.store.URL(key, requestBaseURL(c))
+	fileURL := strings.TrimSuffix(requestBaseURL(c), "/") + "/api/v1/files/" + key
 	response.Success(c, UploadResponse{
 		URL:         fileURL,
 		Name:        file.Filename,
@@ -71,10 +71,6 @@ func (h *FileHandler) Upload(c *gin.Context) {
 }
 
 func (h *FileHandler) Get(c *gin.Context) {
-	if h.store.Type() != "local" {
-		c.Status(http.StatusNotFound)
-		return
-	}
 	key := c.Param("key")
 	if key == "" || strings.Contains(key, "/") || strings.Contains(key, "\\") {
 		c.Status(http.StatusBadRequest)
@@ -91,7 +87,6 @@ func (h *FileHandler) Get(c *gin.Context) {
 		contentType = "application/octet-stream"
 	}
 	c.Header("Content-Type", contentType)
-	_, _ = file.Seek(0, 0)
 	_, _ = io.Copy(c.Writer, file)
 }
 

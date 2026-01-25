@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 
@@ -12,9 +13,7 @@ import (
 
 type Store interface {
 	Save(ctx context.Context, key string, r ReadSeekCloser, size int64) error
-	Open(ctx context.Context, key string) (ReadSeekCloser, error)
-	Type() string
-	URL(key, baseURL string) string
+	Open(ctx context.Context, key string) (io.ReadCloser, error)
 }
 
 type ReadSeekCloser interface {

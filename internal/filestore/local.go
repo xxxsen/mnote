@@ -10,13 +10,11 @@ import (
 )
 
 type localConfig struct {
-	Dir       string `json:"dir"`
-	PublicURL string `json:"public_url"`
+	Dir string `json:"dir"`
 }
 
 type localStore struct {
-	dir       string
-	publicURL string
+	dir string
 }
 
 func init() {
@@ -31,19 +29,7 @@ func createLocalStore(args interface{}) (Store, error) {
 	if config.Dir == "" {
 		return nil, fmt.Errorf("local store dir is required")
 	}
-	return &localStore{dir: config.Dir, publicURL: config.PublicURL}, nil
-}
-
-func (s *localStore) Type() string {
-	return "local"
-}
-
-func (s *localStore) URL(key, baseURL string) string {
-	key = strings.TrimPrefix(key, "/")
-	if s.publicURL != "" {
-		return strings.TrimSuffix(s.publicURL, "/") + "/" + key
-	}
-	return strings.TrimSuffix(baseURL, "/") + "/api/v1/files/" + key
+	return &localStore{dir: config.Dir}, nil
 }
 
 func (s *localStore) Save(ctx context.Context, key string, r ReadSeekCloser, size int64) error {
@@ -67,7 +53,7 @@ func (s *localStore) Save(ctx context.Context, key string, r ReadSeekCloser, siz
 	return err
 }
 
-func (s *localStore) Open(ctx context.Context, key string) (ReadSeekCloser, error) {
+func (s *localStore) Open(ctx context.Context, key string) (io.ReadCloser, error) {
 	_ = ctx
 	if strings.Contains(key, "/") || strings.Contains(key, "\\") {
 		return nil, fmt.Errorf("invalid file key")
