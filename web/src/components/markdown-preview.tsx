@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
+import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
 import Mermaid from "@/components/mermaid";
 import { cn } from "@/lib/utils";
 
@@ -27,7 +27,16 @@ type Heading = {
 const tocTokenRegex = /^\[(toc|TOC)]$/;
 const allowedHtmlTags = new Set(["span", "u", "br"]);
 
-const syntaxTheme = oneLight as Record<string, React.CSSProperties>;
+type ThemedSyntaxHighlighterProps = Omit<
+  React.ComponentProps<typeof SyntaxHighlighter>,
+  "style"
+> & {
+  style?: React.CSSProperties | Record<string, React.CSSProperties>;
+};
+
+const ThemedSyntaxHighlighter =
+  SyntaxHighlighter as unknown as React.ComponentType<ThemedSyntaxHighlighterProps>;
+
 
 const createSlugger = () => {
   const counts = new Map<string, number>();
@@ -282,9 +291,9 @@ const MarkdownPreview = memo(
                   >
                     {copiedId === blockId ? "Copied" : "Copy"}
                   </button>
-                  <SyntaxHighlighter
+                  <ThemedSyntaxHighlighter
                     language={match[1]}
-                    style={syntaxTheme}
+                    style={oneLight}
                     PreTag="pre"
                     customStyle={{
                       margin: 0,
@@ -304,7 +313,7 @@ const MarkdownPreview = memo(
                     {...rest}
                   >
                     {rawCode}
-                  </SyntaxHighlighter>
+                  </ThemedSyntaxHighlighter>
                 </div>
               );
             }

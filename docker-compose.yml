@@ -1,10 +1,6 @@
-version: "3.9"
-
 services:
-  backend:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
+  mnote-backend:
+    image: xxxsen/mnote:latest
     container_name: mnote-backend
     environment:
       - PORT=8080
@@ -13,20 +9,21 @@ services:
       - JWT_TTL_HOURS=72
     volumes:
       - backend-data:/app
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
 
   web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
+    image: xxxsen/mnote-web:latest
     container_name: mnote-web
     environment:
-      - NEXT_PUBLIC_API_BASE=http://backend:8080
+      - NEXT_PUBLIC_API_BASE=http://mnote-backend:8080/api/v1
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      - mnote-backend
+
+networks:
+  mnote:
 
 volumes:
   backend-data:
