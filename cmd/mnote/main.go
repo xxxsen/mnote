@@ -48,6 +48,7 @@ func main() {
 				int(cfg.LogConfig.KeepDays),
 				cfg.LogConfig.Console,
 			)
+			logutil.GetLogger(context.Background()).Info("config loaded", zap.String("config", configPath))
 			return runServer(cfg)
 		},
 	}
@@ -61,14 +62,22 @@ func main() {
 }
 
 func runServer(cfg *config.Config) error {
+	logutil.GetLogger(context.Background()).Info(
+		"starting server",
+		zap.Int("port", cfg.Port),
+		zap.String("db_path", cfg.DBPath),
+		zap.String("file_store", cfg.FileStore.Type),
+	)
 	db, err := repo.Open(cfg.DBPath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
+	logutil.GetLogger(context.Background()).Info("db opened")
 	migrationsDir := filepath.Join(".", "migrations")
 	if err := repo.ApplyMigrations(db, migrationsDir); err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}
+	logutil.GetLogger(context.Background()).Info("migrations applied", zap.String("dir", migrationsDir))
 
 	userRepo := repo.NewUserRepo(db)
 	docRepo := repo.NewDocumentRepo(db)
@@ -119,6 +128,7 @@ func runServer(cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("init web engine: %w", err)
 	}
+	logutil.GetLogger(context.Background()).Info("http server listening", zap.String("addr", fmt.Sprintf("0.0.0.0:%d", cfg.Port)))
 
 	if err := engine.Run(); err != nil {
 		return fmt.Errorf("server error: %w", err)
