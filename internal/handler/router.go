@@ -13,6 +13,7 @@ type RouterDeps struct {
 	Shares    *ShareHandler
 	Tags      *TagHandler
 	Export    *ExportHandler
+	Files     *FileHandler
 	JWTSecret []byte
 }
 
@@ -41,6 +42,8 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.DELETE("/tags/:id", deps.Tags.Delete)
 
 	authGroup.GET("/export", deps.Export.Export)
+	authGroup.POST("/files/upload", deps.Files.Upload)
 
 	api.GET("/public/share/:token", deps.Shares.PublicGet)
+	api.GET("/files/:key", deps.Files.Get)
 }

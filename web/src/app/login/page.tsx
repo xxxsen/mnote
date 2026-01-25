@@ -28,8 +28,9 @@ export default function LoginPage() {
 
       setAuthToken(res.token);
       router.push("/docs");
-    } catch (err: any) {
-      setError(err.message || "Login failed");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Login failed";
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -82,7 +83,7 @@ export default function LoginPage() {
         </form>
 
         <div className="mt-6 text-center text-sm text-muted-foreground">
-          Don't have an account?{" "}
+          Don&apos;t have an account?{" "}
           <Link href="/register" className="underline underline-offset-4 hover:text-primary">
             Register
           </Link>

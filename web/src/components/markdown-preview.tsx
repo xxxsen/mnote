@@ -201,6 +201,37 @@ const MarkdownPreview = memo(
             const id = headingIds[headingIndexRef.current++] || createSlugger()(text);
             return <h6 id={id}>{children}</h6>;
           },
+          img({ src, alt, title, ...props }) {
+            let filename = "";
+            if (alt && alt.startsWith("PIC:")) {
+              filename = alt.replace("PIC:", "");
+            } else if (src) {
+              try {
+                const url = new URL(src, "http://dummy.com");
+                const parts = url.pathname.split("/");
+                const last = parts[parts.length - 1];
+                if (last) filename = decodeURIComponent(last);
+              } catch {}
+            }
+
+            return (
+              <span className="inline-flex flex-col items-center max-w-full">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={src}
+                  alt={alt}
+                  title={title}
+                  {...props}
+                  style={{ marginBottom: "0.5rem" }}
+                />
+                {filename && (
+                  <span className="text-xs text-muted-foreground font-mono opacity-80 break-all px-2">
+                    [{filename}]
+                  </span>
+                )}
+              </span>
+            );
+          },
         }}
       >
           {processedContent}

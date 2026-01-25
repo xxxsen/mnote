@@ -6,7 +6,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import ReactMarkdown from "react-markdown";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, uploadFile } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import MarkdownPreview from "@/components/markdown-preview";
@@ -28,7 +28,6 @@ export default function EditorPage() {
   const router = useRouter();
   const id = params.id as string;
 
-  const [doc, setDoc] = useState<Document | null>(null);
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
   const [loading, setLoading] = useState(true);
@@ -50,6 +49,7 @@ export default function EditorPage() {
 
   const previewRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
+  const pasteHandlerRef = useRef<((event: ClipboardEvent) => void) | null>(null);
   const scrollingSource = useRef<"editor" | "preview" | null>(null);
   const forcePreviewSyncRef = useRef(false);
 
@@ -70,13 +70,6 @@ export default function EditorPage() {
     return base || "section";
   }, []);
 
-  const normalizeId = useCallback((value: string) => {
-    return value.replace(/-\d+$/, "");
-  }, []);
-
-  const normalizeText = useCallback((value: string) => {
-    return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
-  }, []);
 
   const getText = useCallback((value: React.ReactNode): string => {
     if (value === null || value === undefined) return "";
@@ -119,6 +112,23 @@ export default function EditorPage() {
     if (!first) return "";
     if (/^=+$/.test(second)) return first;
     return "";
+  }, []);
+
+  const randomString = useCallback((length: number) => {
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    if (length <= 0) return "";
+    if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+      const values = new Uint32Array(length);
+      crypto.getRandomValues(values);
+      return Array.from(values)
+        .map((v) => chars[v % chars.length])
+        .join("");
+    }
+    let out = "";
+    for (let i = 0; i < length; i += 1) {
+      out += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return out;
   }, []);
 
   const handleEditorScroll = useCallback(() => {
@@ -176,14 +186,14 @@ export default function EditorPage() {
   const fetchDoc = useCallback(async () => {
     try {
       const detail = await apiFetch<{ document: Document; tag_ids: string[] }>(`/documents/${id}`);
-      setDoc(detail.document);
       contentRef.current = detail.document.content;
       setContent(detail.document.content);
       setPreviewContent(detail.document.content);
       const derivedTitle = extractTitleFromContent(detail.document.content);
       setTitle(derivedTitle);
       setSelectedTagIDs(detail.tag_ids || []);
-    } catch (e) {
+    } catch (err) {
+      console.error(err);
       alert("Document not found");
       router.push("/docs");
     } finally {
@@ -225,6 +235,71 @@ export default function EditorPage() {
       });
     }, 900);
   }, [startTransition]);
+
+  const insertTextAtCursor = useCallback(
+    (text: string) => {
+      const view = editorViewRef.current;
+      if (!view) return;
+      const { from, to } = view.state.selection.main;
+      view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+      });
+      contentRef.current = view.state.doc.toString();
+      schedulePreviewUpdate();
+    },
+    [schedulePreviewUpdate]
+  );
+
+  const replacePlaceholder = useCallback(
+    (placeholder: string, replacement: string) => {
+      const view = editorViewRef.current;
+      if (!view) {
+        if (!contentRef.current.includes(placeholder)) return;
+        contentRef.current = contentRef.current.replace(placeholder, replacement);
+        schedulePreviewUpdate();
+        return;
+      }
+      const contentText = view.state.doc.toString();
+      const index = contentText.indexOf(placeholder);
+      if (index === -1) return;
+      view.dispatch({
+        changes: { from: index, to: index + placeholder.length, insert: replacement },
+      });
+      contentRef.current = view.state.doc.toString();
+      schedulePreviewUpdate();
+    },
+    [schedulePreviewUpdate]
+  );
+
+  const handlePaste = useCallback(
+    async (event: ClipboardEvent) => {
+      const items = event.clipboardData?.items;
+      if (!items || items.length === 0) return;
+      const fileItem = Array.from(items).find((item) => item.kind === "file");
+      if (!fileItem) return;
+      const file = fileItem.getAsFile();
+      if (!file) return;
+
+      event.preventDefault();
+      const placeholder = `file_uploading_${randomString(8)}`;
+      insertTextAtCursor(placeholder);
+      try {
+        const result = await uploadFile(file);
+        const contentType = result.content_type || file.type || "";
+        const name = result.name || file.name || "file";
+        const markdown = contentType.startsWith("image/")
+          ? `![PIC:${name}](${result.url})`
+          : `[FILE:${name}](${result.url})`;
+        replacePlaceholder(placeholder, markdown);
+      } catch (err) {
+        console.error(err);
+        replacePlaceholder(placeholder, "");
+        alert("Upload failed");
+      }
+    },
+    [insertTextAtCursor, randomString, replacePlaceholder]
+  );
 
   // preview scroll handled via MarkdownPreview onScroll
 
@@ -282,7 +357,7 @@ export default function EditorPage() {
     };
   }, [tocContent, previewContent]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     const latestContent = contentRef.current;
     const derivedTitle = extractTitleFromContent(latestContent);
     if (!derivedTitle) {
@@ -297,22 +372,23 @@ export default function EditorPage() {
         body: JSON.stringify({ title: derivedTitle, content: latestContent, tag_ids: selectedTagIDs }),
       });
       const detail = await apiFetch<{ document: Document; tag_ids: string[] }>(`/documents/${id}`);
-      setDoc(detail.document);
       setSelectedTagIDs(detail.tag_ids || []);
       setTitle(derivedTitle);
-    } catch (e) {
+    } catch (err) {
+      console.error(err);
       alert("Failed to save");
     } finally {
       setSaving(false);
     }
-  };
+  }, [extractTitleFromContent, id, selectedTagIDs]);
 
   const handleDelete = async () => {
     if (!confirm("Are you sure you want to delete this document?")) return;
     try {
       await apiFetch(`/documents/${id}`, { method: "DELETE" });
       router.push("/docs");
-    } catch (e) {
+    } catch (err) {
+      console.error(err);
       alert("Failed to delete");
     }
   };
@@ -360,7 +436,8 @@ export default function EditorPage() {
         setSelectedTagIDs([...selectedTagIDs, created.id]);
       }
       setNewTag("");
-    } catch (e) {
+    } catch (err) {
+      console.error(err);
       alert("Failed to add tag");
     }
   };
@@ -379,7 +456,8 @@ export default function EditorPage() {
       setActiveShare(res);
       const url = `${window.location.origin}/share/${res.token}`;
       setShareUrl(url);
-    } catch (e) {
+    } catch (err) {
+      console.error(err);
       alert("Failed to create share link");
     }
   };
@@ -394,7 +472,8 @@ export default function EditorPage() {
         setActiveShare(null);
         setShareUrl("");
       }
-    } catch (e) {
+    } catch (err) {
+      console.error(err);
       setActiveShare(null);
       setShareUrl("");
     }
@@ -405,7 +484,8 @@ export default function EditorPage() {
       await apiFetch(`/documents/${id}/share`, { method: "DELETE" });
       setActiveShare(null);
       setShareUrl("");
-    } catch (e) {
+    } catch (err) {
+      console.error(err);
       alert("Failed to revoke share link");
     }
   };
@@ -419,11 +499,20 @@ export default function EditorPage() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [content, title]);
+  }, [handleSave]);
 
   useEffect(() => {
     return () => {
       // no-op cleanup
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const view = editorViewRef.current;
+      if (view && pasteHandlerRef.current) {
+        view.dom.removeEventListener("paste", pasteHandlerRef.current);
+      }
     };
   }, []);
 
@@ -479,6 +568,14 @@ export default function EditorPage() {
                   onCreateEditor={(view) => {
                     editorViewRef.current = view;
                     view.scrollDOM.addEventListener("scroll", handleEditorScroll);
+                    if (pasteHandlerRef.current) {
+                      view.dom.removeEventListener("paste", pasteHandlerRef.current);
+                    }
+                    const handler = (event: ClipboardEvent) => {
+                      void handlePaste(event);
+                    };
+                    pasteHandlerRef.current = handler;
+                    view.dom.addEventListener("paste", handler);
                   }}
                   basicSetup={{
                     lineNumbers: true,
@@ -631,10 +728,6 @@ export default function EditorPage() {
               components={{
                 a: (props) => {
                   const href = props.href || "";
-                  const raw = href.startsWith("#") ? href.slice(1) : "";
-                  const decoded = raw ? decodeURIComponent(raw) : "";
-                  const normalized = decoded ? decoded.normalize("NFKC") : "";
-                  const candidates = [raw, decoded, normalized, slugify(decoded), slugify(normalized)].map(normalizeId);
                   
                   return (
                     <a

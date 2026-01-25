@@ -2,6 +2,7 @@ package handler_test
 
 import (
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/xxxsen/common/webapi"
 
+	"github.com/xxxsen/mnote/internal/config"
+	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/handler"
 	"github.com/xxxsen/mnote/internal/middleware"
 	"github.com/xxxsen/mnote/internal/repo"
@@ -35,6 +38,15 @@ func setupRouter(t *testing.T) (http.Handler, func()) {
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
 
+	tmpDir, err := os.MkdirTemp("", "mnote-upload-*")
+	require.NoError(t, err)
+
+	store, err := filestore.New(config.FileStoreConfig{
+		Type: "local",
+		Dir:  tmpDir,
+	})
+	require.NoError(t, err)
+
 	deps := handler.RouterDeps{
 		Auth:      handler.NewAuthHandler(authService),
 		Documents: handler.NewDocumentHandler(documentService),
@@ -42,6 +54,7 @@ func setupRouter(t *testing.T) (http.Handler, func()) {
 		Shares:    handler.NewShareHandler(documentService),
 		Tags:      handler.NewTagHandler(tagService),
 		Export:    handler.NewExportHandler(exportService),
+		Files:     handler.NewFileHandler(store, config.FileStoreConfig{Type: "local", Dir: tmpDir}),
 		JWTSecret: jwtSecret,
 	}
 
@@ -58,5 +71,8 @@ func setupRouter(t *testing.T) (http.Handler, func()) {
 	)
 	require.NoError(t, err)
 
-	return engine, cleanup
+	return engine, func() {
+		cleanup()
+		_ = os.RemoveAll(tmpDir)
+	}
 }

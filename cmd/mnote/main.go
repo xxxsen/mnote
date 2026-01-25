@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/xxxsen/mnote/internal/config"
+	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/handler"
 	"github.com/xxxsen/mnote/internal/middleware"
 	"github.com/xxxsen/mnote/internal/repo"
@@ -88,6 +89,11 @@ func runServer(cfg *config.Config) error {
 	shareHandler := handler.NewShareHandler(documentService)
 	tagHandler := handler.NewTagHandler(tagService)
 	exportHandler := handler.NewExportHandler(exportService)
+	store, err := filestore.New(cfg.FileStore)
+	if err != nil {
+		return fmt.Errorf("init file store: %w", err)
+	}
+	fileHandler := handler.NewFileHandler(store, cfg.FileStore)
 
 	deps := handler.RouterDeps{
 		Auth:      authHandler,
@@ -96,6 +102,7 @@ func runServer(cfg *config.Config) error {
 		Shares:    shareHandler,
 		Tags:      tagHandler,
 		Export:    exportHandler,
+		Files:     fileHandler,
 		JWTSecret: []byte(cfg.JWTSecret),
 	}
 

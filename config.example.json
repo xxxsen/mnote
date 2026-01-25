@@ -3,6 +3,21 @@
   "jwt_secret": "dev-secret",
   "port": 8080,
   "jwt_ttl_hours": 72,
+  "file_store": {
+    "type": "local",
+    "dir": "./uploads",
+    "public_url": "",
+    "s3": {
+      "endpoint": "",
+      "secret_id": "",
+      "secret_key": "",
+      "bucket": "",
+      "region": "cn",
+      "prefix": "",
+      "public_url": "",
+      "use_ssl": true
+    }
+  },
   "log_config": {
     "file": "./mnote.log",
     "level": "info",

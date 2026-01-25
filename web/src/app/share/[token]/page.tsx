@@ -40,23 +40,6 @@ export default function SharePage() {
     return base || "section";
   }, []);
 
-  const normalizeId = useCallback((value: string) => {
-    return value.replace(/-\d+$/, "");
-  }, []);
-
-  const normalizeText = useCallback((value: string) => {
-    return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
-  }, []);
-
-  const getText = useCallback((value: React.ReactNode): string => {
-    if (value === null || value === undefined) return "";
-    if (typeof value === "string" || typeof value === "number") return String(value);
-    if (Array.isArray(value)) return value.map((item) => getText(item)).join("");
-    if (React.isValidElement<{ children?: React.ReactNode }>(value)) {
-      return getText(value.props.children);
-    }
-    return "";
-  }, []);
 
   const getElementById = useCallback((id: string) => {
     const container = previewRef.current;
@@ -88,7 +71,8 @@ export default function SharePage() {
       try {
         const d = await apiFetch<Document>(`/public/share/${token}`, { requireAuth: false });
         setDoc(d);
-      } catch (e) {
+      } catch (err) {
+        console.error(err);
         setError(true);
       } finally {
         setLoading(false);
@@ -151,22 +135,7 @@ export default function SharePage() {
 
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
-  }, [doc, slugify, getElementById]);
-
-
-  useEffect(() => {
-    const applyHashActive = () => {
-      const hash = typeof window !== "undefined" ? window.location.hash : "";
-      if (!hash) return;
-      const raw = decodeURIComponent(hash.slice(1));
-      const normalized = raw.normalize("NFKC");
-      const candidates = [raw, normalized, raw.toLowerCase(), slugify(raw), slugify(normalized)];
-    };
-
-    applyHashActive();
-    window.addEventListener("hashchange", applyHashActive);
-    return () => window.removeEventListener("hashchange", applyHashActive);
-  }, [slugify]);
+  }, [doc, slugify, getElementById, scrollToElement]);
 
   useEffect(() => {
     const hasToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
@@ -258,11 +227,6 @@ export default function SharePage() {
                 components={{
                   a: (props) => {
                   const href = props.href || "";
-                  const raw = href.startsWith("#") ? href.slice(1) : "";
-                  const decoded = raw ? decodeURIComponent(raw) : "";
-                  const normalized = decoded ? decoded.normalize("NFKC") : "";
-                  const candidates = [raw, decoded, normalized, slugify(decoded), slugify(normalized)].map(normalizeId);
-                  const linkText = normalizeText(getText(props.children));
                   return (
                     <a
                       {...props}

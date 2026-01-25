@@ -97,7 +97,8 @@ export default function DocsPage() {
         }),
       });
       router.push(`/docs/${doc.id}`);
-    } catch (e) {
+    } catch (err) {
+      console.error(err);
       alert("Failed to create document");
     }
   };

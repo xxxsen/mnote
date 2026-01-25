@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { Document, DocumentVersion } from "@/types";
@@ -38,7 +38,7 @@ export default function RevertPage() {
     return indices;
   }, [diffRows]);
 
-  const scrollToDiff = (index: number) => {
+  const scrollToDiff = useCallback((index: number) => {
     if (index < 0 || index >= diffIndices.length) return;
     
     const rowIdx = diffIndices[index];
@@ -47,7 +47,7 @@ export default function RevertPage() {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       setCurrentDiffIndex(index);
     }
-  };
+  }, [diffIndices]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -100,7 +100,7 @@ export default function RevertPage() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [diffIndices, currentDiffIndex]);
+  }, [diffIndices, currentDiffIndex, scrollToDiff]);
 
   const handleConfirm = async () => {
     if (!selectedVersion || !doc) return;
@@ -115,7 +115,8 @@ export default function RevertPage() {
         }),
       });
       router.push(`/docs/${id}`);
-    } catch (e) {
+    } catch (err) {
+      console.error(err);
       alert("Failed to revert document");
       setSaving(false);
     }

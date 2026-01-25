@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { getAuthToken } from "@/lib/api";
 
@@ -10,18 +10,24 @@ export default function DocsLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const [isAuthorized, setIsAuthorized] = useState(false);
+
+  const token = useSyncExternalStore(
+    (notify) => {
+      if (typeof window === "undefined") return () => {};
+      window.addEventListener("storage", notify);
+      return () => window.removeEventListener("storage", notify);
+    },
+    () => getAuthToken(),
+    () => null
+  );
 
   useEffect(() => {
-    const token = getAuthToken();
     if (!token) {
       router.push("/login");
-    } else {
-      setIsAuthorized(true);
     }
-  }, [router]);
+  }, [router, token]);
 
-  if (!isAuthorized) {
+  if (!token) {
     return null;
   }
 
