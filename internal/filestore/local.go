@@ -9,19 +9,41 @@ import (
 	"strings"
 )
 
-type localStore struct {
-	dir string
+type localConfig struct {
+	Dir       string `json:"dir"`
+	PublicURL string `json:"public_url"`
 }
 
-func NewLocalStore(dir string) (Store, error) {
-	if dir == "" {
+type localStore struct {
+	dir       string
+	publicURL string
+}
+
+func init() {
+	Register("local", createLocalStore)
+}
+
+func createLocalStore(args interface{}) (Store, error) {
+	config := &localConfig{}
+	if err := decodeConfig(args, config); err != nil {
+		return nil, err
+	}
+	if config.Dir == "" {
 		return nil, fmt.Errorf("local store dir is required")
 	}
-	return &localStore{dir: dir}, nil
+	return &localStore{dir: config.Dir, publicURL: config.PublicURL}, nil
 }
 
 func (s *localStore) Type() string {
 	return "local"
+}
+
+func (s *localStore) URL(key, baseURL string) string {
+	key = strings.TrimPrefix(key, "/")
+	if s.publicURL != "" {
+		return strings.TrimSuffix(s.publicURL, "/") + "/" + key
+	}
+	return strings.TrimSuffix(baseURL, "/") + "/api/v1/files/" + key
 }
 
 func (s *localStore) Save(ctx context.Context, key string, r ReadSeekCloser, size int64) error {

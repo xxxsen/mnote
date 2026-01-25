@@ -7,22 +7,18 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"net/url"
-	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/xxxsen/mnote/internal/config"
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/middleware"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 )
 
 type FileHandler struct {
-	store  filestore.Store
-	config config.FileStoreConfig
+	store filestore.Store
 }
 
 type UploadResponse struct {
@@ -31,8 +27,8 @@ type UploadResponse struct {
 	ContentType string `json:"content_type"`
 }
 
-func NewFileHandler(store filestore.Store, cfg config.FileStoreConfig) *FileHandler {
-	return &FileHandler{store: store, config: cfg}
+func NewFileHandler(store filestore.Store) *FileHandler {
+	return &FileHandler{store: store}
 }
 
 func (h *FileHandler) Upload(c *gin.Context) {
@@ -66,7 +62,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "upload_failed", "failed to upload file")
 		return
 	}
-	fileURL := h.buildFileURL(c, key)
+	fileURL := h.store.URL(key, requestBaseURL(c))
 	response.Success(c, UploadResponse{
 		URL:         fileURL,
 		Name:        file.Filename,
@@ -97,45 +93,6 @@ func (h *FileHandler) Get(c *gin.Context) {
 	c.Header("Content-Type", contentType)
 	_, _ = file.Seek(0, 0)
 	_, _ = io.Copy(c.Writer, file)
-}
-
-func (h *FileHandler) buildFileURL(c *gin.Context, key string) string {
-	key = strings.TrimPrefix(key, "/")
-	switch h.config.Type {
-	case "s3":
-		base := strings.TrimSuffix(h.config.S3.PublicURL, "/")
-		if base == "" {
-			base = buildS3BaseURL(h.config.S3)
-		}
-		objectKey := key
-		if h.config.S3.Prefix != "" {
-			objectKey = path.Join(h.config.S3.Prefix, key)
-		}
-		return strings.TrimSuffix(base, "/") + "/" + strings.TrimPrefix(objectKey, "/")
-	default:
-		base := strings.TrimSuffix(h.config.PublicURL, "/")
-		if base == "" {
-			base = requestBaseURL(c) + "/api/v1/files"
-		}
-		return strings.TrimSuffix(base, "/") + "/" + key
-	}
-}
-
-func buildS3BaseURL(cfg config.S3Config) string {
-	ep := cfg.Endpoint
-	if !strings.HasPrefix(ep, "http://") && !strings.HasPrefix(ep, "https://") {
-		scheme := "http"
-		if cfg.UseSSL {
-			scheme = "https"
-		}
-		ep = scheme + "://" + ep
-	}
-	u, err := url.Parse(ep)
-	if err != nil {
-		return strings.TrimSuffix(ep, "/") + "/" + cfg.Bucket
-	}
-	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + cfg.Bucket
-	return u.String()
 }
 
 func requestBaseURL(c *gin.Context) string {

@@ -18,21 +18,8 @@ type Config struct {
 }
 
 type FileStoreConfig struct {
-	Type      string   `json:"type"`
-	Dir       string   `json:"dir"`
-	PublicURL string   `json:"public_url"`
-	S3        S3Config `json:"s3"`
-}
-
-type S3Config struct {
-	Endpoint  string `json:"endpoint"`
-	SecretID  string `json:"secret_id"`
-	SecretKey string `json:"secret_key"`
-	Bucket    string `json:"bucket"`
-	Region    string `json:"region"`
-	Prefix    string `json:"prefix"`
-	PublicURL string `json:"public_url"`
-	UseSSL    bool   `json:"use_ssl"`
+	Type string      `json:"type"`
+	Data interface{} `json:"data"`
 }
 
 func Load(path string) (*Config, error) {
@@ -63,21 +50,6 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.FileStore.Type == "" {
 		cfg.FileStore.Type = "local"
-	}
-	switch cfg.FileStore.Type {
-	case "local":
-		if cfg.FileStore.Dir == "" {
-			return nil, fmt.Errorf("file_store.dir is required for local store")
-		}
-	case "s3":
-		if cfg.FileStore.S3.Endpoint == "" || cfg.FileStore.S3.Bucket == "" || cfg.FileStore.S3.SecretID == "" || cfg.FileStore.S3.SecretKey == "" {
-			return nil, fmt.Errorf("file_store.s3 endpoint/bucket/secret_id/secret_key are required for s3 store")
-		}
-		if cfg.FileStore.S3.Region == "" {
-			cfg.FileStore.S3.Region = "cn"
-		}
-	default:
-		return nil, fmt.Errorf("file_store.type must be local or s3")
 	}
 	return &cfg, nil
 }

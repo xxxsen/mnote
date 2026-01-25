@@ -93,7 +93,7 @@ func runServer(cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("init file store: %w", err)
 	}
-	fileHandler := handler.NewFileHandler(store, cfg.FileStore)
+	fileHandler := handler.NewFileHandler(store)
 
 	deps := handler.RouterDeps{
 		Auth:      authHandler,

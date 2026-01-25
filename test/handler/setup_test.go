@@ -43,7 +43,9 @@ func setupRouter(t *testing.T) (http.Handler, func()) {
 
 	store, err := filestore.New(config.FileStoreConfig{
 		Type: "local",
-		Dir:  tmpDir,
+		Data: map[string]interface{}{
+			"dir": tmpDir,
+		},
 	})
 	require.NoError(t, err)
 
@@ -54,7 +56,7 @@ func setupRouter(t *testing.T) (http.Handler, func()) {
 		Shares:    handler.NewShareHandler(documentService),
 		Tags:      handler.NewTagHandler(tagService),
 		Export:    handler.NewExportHandler(exportService),
-		Files:     handler.NewFileHandler(store, config.FileStoreConfig{Type: "local", Dir: tmpDir}),
+		Files:     handler.NewFileHandler(store),
 		JWTSecret: jwtSecret,
 	}
 

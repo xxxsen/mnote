@@ -5,17 +5,9 @@
   "jwt_ttl_hours": 72,
   "file_store": {
     "type": "local",
-    "dir": "./uploads",
-    "public_url": "",
-    "s3": {
-      "endpoint": "",
-      "secret_id": "",
-      "secret_key": "",
-      "bucket": "",
-      "region": "cn",
-      "prefix": "",
-      "public_url": "",
-      "use_ssl": true
+    "data": {
+      "dir": "./uploads",
+      "public_url": ""
     }
   },
   "log_config": {
