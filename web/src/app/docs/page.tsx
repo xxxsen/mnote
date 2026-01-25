@@ -120,6 +120,30 @@ export default function DocsPage() {
       <aside className="w-full md:w-64 border-r border-border p-4 flex-col gap-4 hidden md:flex">
         <div className="font-mono font-bold text-xl tracking-tighter mb-4">MNOTE</div>
         <div className="flex-1 overflow-y-auto">
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2 pr-2">
+              <div className="text-xs font-bold uppercase text-muted-foreground">General</div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <button
+                onClick={() => setSelectedTag("")}
+                className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
+                  selectedTag === "" 
+                    ? "bg-accent text-accent-foreground" 
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                <span>All Notes</span>
+                <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
+                  selectedTag === ""
+                    ? "bg-background/20 text-accent-foreground"
+                    : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
+                }`}>
+                  {allDocs.length}
+                </span>
+              </button>
+            </div>
+          </div>
           <div className="flex items-center justify-between mb-2 pr-2">
             <div className="text-xs font-bold uppercase text-muted-foreground">Tags</div>
             <button 
@@ -131,23 +155,6 @@ export default function DocsPage() {
             </button>
           </div>
           <div className="flex flex-col gap-1">
-            <button
-              onClick={() => setSelectedTag("")}
-              className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
-                selectedTag === "" 
-                  ? "bg-accent text-accent-foreground" 
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              <span>All Notes</span>
-              <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
-                selectedTag === ""
-                  ? "bg-background/20 text-accent-foreground"
-                  : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
-              }`}>
-                {allDocs.length}
-              </span>
-            </button>
             {tags.map((tag) => (
               <button
                 key={tag.id}
