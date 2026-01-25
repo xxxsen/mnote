@@ -23,11 +23,14 @@ function TagEditor({ doc, allTags, onSave, onClose }: { doc: DocumentWithTags, a
   };
 
   return (
-    <div className="absolute inset-0 bg-card z-20 flex flex-col p-3 gap-2" onClick={(e) => e.stopPropagation()}>
+    <div className="absolute inset-0 bg-card z-20 flex flex-col p-3 gap-2 animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
       <div className="flex items-center justify-between">
         <span className="text-xs font-bold text-muted-foreground">Edit Tags</span>
-        <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="text-muted-foreground hover:text-foreground">
-          <X className="h-3 w-3" />
+        <button 
+          onClick={(e) => { e.stopPropagation(); onClose(); }} 
+          className="h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        >
+          <X className="h-3.5 w-3.5" />
         </button>
       </div>
       <div className="flex-1 overflow-y-auto content-start flex flex-wrap gap-1.5 p-1">
@@ -482,16 +485,18 @@ export default function DocsPage() {
                       <TagEditor doc={doc} allTags={tags} onSave={handleUpdateTags} onClose={() => setEditingDocId(null)} />
                     )}
 
-                    <button
-                      onClick={(e) => handlePinToggle(e, doc)}
-                      className={`absolute top-2 right-2 p-1.5 rounded-full transition-all z-20 ${
-                        doc.pinned 
-                          ? "text-foreground opacity-100 bg-background/80 shadow-sm" 
-                          : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
-                      }`}
-                    >
-                      <Pin className={`h-3.5 w-3.5 ${doc.pinned ? "fill-current" : ""}`} />
-                    </button>
+                    {!isEditing && (
+                      <button
+                        onClick={(e) => handlePinToggle(e, doc)}
+                        className={`absolute top-2 right-2 p-1.5 rounded-full transition-all z-20 ${
+                          doc.pinned 
+                            ? "text-foreground opacity-100 bg-background/80 shadow-sm" 
+                            : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
+                        }`}
+                      >
+                        <Pin className={`h-3.5 w-3.5 ${doc.pinned ? "fill-current" : ""}`} />
+                      </button>
+                    )}
                     <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
                     
                     <div className="relative flex-1 min-h-0 mb-2 overflow-hidden">
