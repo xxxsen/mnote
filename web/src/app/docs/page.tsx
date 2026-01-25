@@ -5,9 +5,55 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, removeAuthToken, getAuthToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatDate } from "@/lib/utils";
 import { Document, Tag } from "@/types";
-import { Plus, Search, LogOut, X, Settings, Pin } from "lucide-react";
+import { Search, LogOut, X, Settings, Pin, Pencil } from "lucide-react";
+
+function TagEditor({ doc, allTags, onSave, onClose }: { doc: DocumentWithTags, allTags: Tag[], onSave: (doc: DocumentWithTags, ids: string[]) => void, onClose: () => void }) {
+  const [selected, setSelected] = useState<string[]>(doc.tag_ids || []);
+  const toggle = (id: string) => {
+    if (selected.includes(id)) {
+      setSelected(selected.filter((tagId) => tagId !== id));
+      return;
+    }
+    if (selected.length >= 7) {
+      alert("You can only select up to 7 tags.");
+      return;
+    }
+    setSelected([...selected, id]);
+  };
+
+  return (
+    <div className="absolute inset-0 bg-card z-20 flex flex-col p-3 gap-2" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold text-muted-foreground">Edit Tags</span>
+        <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="text-muted-foreground hover:text-foreground">
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto content-start flex flex-wrap gap-1.5 p-1">
+        {allTags.map(tag => {
+           const active = selected.includes(tag.id);
+           return (
+             <button
+               key={tag.id}
+                onClick={(e) => { e.stopPropagation(); toggle(tag.id); }}
+                className={`px-2 py-0.5 rounded-xl text-[10px] border transition-colors ${active ? "bg-primary text-primary-foreground border-primary" : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"}`}
+              >
+                {tag.name}
+              </button>
+            );
+        })}
+      </div>
+      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+        <span>{selected.length}/7 selected</span>
+        <Button size="sm" className="h-7 text-xs" onClick={(e) => { e.stopPropagation(); onSave(doc, selected); }}>
+          Save Changes
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 
 function generatePixelAvatar(seed: string) {
   let hash = 0;
@@ -56,6 +102,7 @@ export default function DocsPage() {
   const [avatarUrl, setAvatarUrl] = useState<string>("");
   const [userEmail, setUserEmail] = useState<string>("");
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -187,6 +234,29 @@ export default function DocsPage() {
       alert("Failed to create document");
     }
   };
+
+  const handleUpdateTags = async (doc: DocumentWithTags, newTagIds: string[]) => {
+    const updateDocs = (prevDocs: DocumentWithTags[]) => {
+       return prevDocs.map(d => d.id === doc.id ? { ...d, tag_ids: newTagIds } : d);
+    };
+    setDocs(prev => updateDocs(prev));
+    setAllDocs(prev => updateDocs(prev));
+    setEditingDocId(null);
+
+    try {
+      await apiFetch(`/documents/${doc.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          title: doc.title,
+          content: doc.content,
+          tag_ids: newTagIds,
+        })
+      });
+    } catch (err) {
+      console.error("Failed to update tags", err);
+    }
+  };
+
 
   const handleLogout = () => {
     removeAuthToken();
@@ -359,9 +429,8 @@ export default function DocsPage() {
              )}
            </div>
             <div className="flex items-center gap-3 relative" ref={menuRef}>
-              <Button onClick={handleCreate} size="sm" className="rounded-xl bg-[#6366f1] hover:bg-[#4f46e5] text-white border-none">
-                <Plus className="mr-2 h-4 w-4" />
-                New micro note
+              <Button onClick={handleCreate} size="sm" className="rounded-xl bg-[#6366f1] hover:bg-[#4f46e5] text-white border-none font-bold tracking-wide">
+                + NEW
               </Button>
               <button 
                 onClick={() => setShowUserMenu(!showUserMenu)}
@@ -401,12 +470,18 @@ export default function DocsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {docs.map((doc, index) => {
                 const docTags = tags.filter((t) => doc.tag_ids?.includes(t.id));
+                const isEditing = editingDocId === doc.id;
+                
                 return (
                   <div
                     key={doc.id || `${doc.title}-${doc.mtime}-${index}`}
                     onClick={() => router.push(`/docs/${doc.id}`)}
                     className="group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer overflow-hidden rounded-[8px]"
                   >
+                    {isEditing && (
+                      <TagEditor doc={doc} allTags={tags} onSave={handleUpdateTags} onClose={() => setEditingDocId(null)} />
+                    )}
+
                     <button
                       onClick={(e) => handlePinToggle(e, doc)}
                       className={`absolute top-2 right-2 p-1.5 rounded-full transition-all z-20 ${
@@ -418,33 +493,41 @@ export default function DocsPage() {
                       <Pin className={`h-3.5 w-3.5 ${doc.pinned ? "fill-current" : ""}`} />
                     </button>
                     <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
-                    <div className="text-sm text-muted-foreground line-clamp-3 flex-1 font-sans">
-                      {doc.content || <span className="italic opacity-50">Empty</span>}
-                    </div>
-                    <div className="mt-2 flex flex-col gap-2 pt-2 border-t border-border/50">
-                      <div className="flex flex-col text-[10px] text-muted-foreground font-mono text-center leading-tight gap-0.5">
-                        <div>
-                          <span className="opacity-50 mr-1">Created:</span>
-                          {formatDate(doc.ctime)}
-                        </div>
-                        <div>
-                          <span className="opacity-50 mr-1">Updated:</span>
-                          {formatDate(doc.mtime)}
-                        </div>
+                    
+                    <div className="relative flex-1 min-h-0 mb-2 overflow-hidden">
+                      <div className="text-sm text-muted-foreground whitespace-pre-wrap font-sans pb-8 break-words">
+                        {doc.content || <span className="italic opacity-50">Empty</span>}
                       </div>
-                      <div className="flex flex-wrap gap-1 h-5 overflow-hidden justify-center">
-                        {docTags.length > 0 ? (
-                          docTags.map((tag) => (
-                            <span
-                              key={tag.id}
-                              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-secondary-foreground border border-border/50"
-                            >
-                              #{tag.name}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-[10px] text-muted-foreground/40 italic px-1">No tags</span>
-                        )}
+                      <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-card to-transparent pointer-events-none" />
+                    </div>
+
+                    <div className="mt-auto flex flex-col gap-1 border-t border-border/50 pt-2 z-10">
+                      <div className="text-[10px] text-muted-foreground font-mono text-center mb-1">
+                        Updated {formatRelativeTime(doc.mtime)}
+                      </div>
+                      <div className="relative group/tags flex items-center justify-center min-h-[1.5rem]">
+                         <div className="flex flex-wrap gap-1 max-h-12 overflow-hidden justify-center items-center px-4 transition-all">
+                            {docTags.length > 0 ? (
+                              docTags.map((tag) => (
+                                <span
+                                  key={tag.id}
+                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-secondary-foreground border border-border/50 whitespace-nowrap max-w-[80px] truncate"
+                                  title={tag.name}
+                                >
+                                  #{tag.name}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground/40 italic px-1">No tags</span>
+                            )}
+                         </div>
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); setEditingDocId(doc.id); }}
+                            className="absolute right-0 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground transition-all hover:bg-muted rounded-full"
+                            title="Edit tags"
+                         >
+                           <Pencil className="h-3 w-3" />
+                         </button>
                       </div>
                     </div>
                   </div>
