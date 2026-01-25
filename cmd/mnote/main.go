@@ -3,7 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -130,8 +134,16 @@ func runServer(cfg *config.Config) error {
 	}
 	logutil.GetLogger(context.Background()).Info("http server listening", zap.String("addr", fmt.Sprintf("0.0.0.0:%d", cfg.Port)))
 
-	if err := engine.Run(); err != nil {
-		return fmt.Errorf("server error: %w", err)
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		if err := engine.Run(); err != nil && err != http.ErrServerClosed {
+			logutil.GetLogger(context.Background()).Error("server error", zap.Error(err))
+		}
+	}()
+
+	<-ctx.Done()
+	logutil.GetLogger(context.Background()).Info("server stopping...")
 	return nil
 }
