@@ -4,7 +4,7 @@ import React, { useMemo, forwardRef, memo, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import Mermaid from "@/components/mermaid";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +24,8 @@ type Heading = {
 };
 
 const tocTokenRegex = /^\[(toc|TOC)]$/;
+
+const syntaxTheme = oneLight as Record<string, React.CSSProperties>;
 
 const createSlugger = () => {
   const counts = new Map<string, number>();
@@ -176,21 +178,49 @@ const MarkdownPreview = memo(
             }
 
             if (match) {
-              const { ref: _ref, ...rest } = props as any;
+              const { inline: _inline, node: _node, ...rest } =
+                props as React.HTMLAttributes<HTMLElement> & {
+                  inline?: boolean;
+                  node?: unknown;
+                };
+              void _inline;
+              void _node;
               return (
-                <SyntaxHighlighter
-                  language={match[1]}
-                  style={oneDark as any}
-                  PreTag="div"
-                  customStyle={{
+                <div
+                  style={{
                     margin: 0,
                     marginBottom: "1.5em",
+                    padding: "1rem",
                     borderRadius: "var(--radius-md)",
+                    backgroundColor: "#f6f8fa",
+                    border: "1px solid rgba(0,0,0,0.05)",
+                    boxShadow: "none",
                   }}
-                  {...rest}
                 >
-                  {String(children).replace(/\n$/, "")}
-                </SyntaxHighlighter>
+                  <SyntaxHighlighter
+                    language={match[1]}
+                    style={syntaxTheme}
+                    PreTag="pre"
+                    customStyle={{
+                      margin: 0,
+                      padding: 0,
+                      background: "transparent",
+                      boxShadow: "none",
+                      border: "none",
+                    }}
+                    codeTagProps={{
+                      style: {
+                        border: "none",
+                        boxShadow: "none",
+                        background: "transparent",
+                        padding: 0,
+                      },
+                    }}
+                    {...rest}
+                  >
+                    {String(children).replace(/\n$/, "")}
+                  </SyntaxHighlighter>
+                </div>
               );
             }
 
