@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import CodeMirror from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
+import { undo, redo } from "@codemirror/commands";
 import ReactMarkdown from "react-markdown";
 import { apiFetch, uploadFile } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -20,8 +21,49 @@ import {
   Columns,
   Plus,
   RefreshCw,
+  Bold,
+  Italic,
+  Strikethrough,
+  Underline as UnderlineIcon,
+  Heading1,
+  Heading2,
+  List,
+  ListOrdered,
+  ListTodo,
+  Quote,
+  Code,
+  FileCode,
+  Link as LinkIcon,
+  Table as TableIcon,
+  Palette,
+  Type,
+  Smile,
+  Undo,
+  Redo,
+  X
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+
+const EMOJIS = ["😀", "😂", "🥰", "😎", "🤔", "😅", "😭", "👍", "👎", "🙏", "🔥", "✨", "🎉", "🚀", "❤️", "✅", "❌", "⚠️", "💡", "📝"];
+
+const COLORS = [
+  { label: "Default", value: "" },
+  { label: "Red", value: "#ef4444" },
+  { label: "Green", value: "#22c55e" },
+  { label: "Blue", value: "#3b82f6" },
+  { label: "Yellow", value: "#eab308" },
+  { label: "Purple", value: "#a855f7" },
+  { label: "Orange", value: "#f97316" },
+  { label: "Gray", value: "#6b7280" },
+];
+
+const SIZES = [
+  { label: "Small", value: "12px" },
+  { label: "Normal", value: "16px" },
+  { label: "Medium", value: "18px" },
+  { label: "Large", value: "20px" },
+  { label: "Huge", value: "24px" },
+];
 
 export default function EditorPage() {
   const params = useParams();
@@ -57,6 +99,7 @@ export default function EditorPage() {
   const [tocContent, setTocContent] = useState("");
   const [showFloatingToc, setShowFloatingToc] = useState(false);
   const [tocCollapsed, setTocCollapsed] = useState(false);
+  const [activePopover, setActivePopover] = useState<"emoji" | "color" | "size" | null>(null);
 
   // TOC Helpers
   const slugify = useCallback((value: string) => {
@@ -251,6 +294,69 @@ export default function EditorPage() {
     [schedulePreviewUpdate]
   );
 
+  const handleFormat = useCallback(
+    (type: "wrap" | "line", prefix: string, suffix = "") => {
+      const view = editorViewRef.current;
+      if (!view) return;
+      const { from, to } = view.state.selection.main;
+      const doc = view.state.doc;
+
+      if (type === "line") {
+        const startLine = doc.lineAt(from);
+        const endLine = doc.lineAt(to);
+        let allHavePrefix = true;
+
+        for (let i = startLine.number; i <= endLine.number; i++) {
+          if (!doc.line(i).text.startsWith(prefix)) {
+            allHavePrefix = false;
+            break;
+          }
+        }
+
+        const changes = [];
+        for (let i = startLine.number; i <= endLine.number; i++) {
+          const line = doc.line(i);
+          if (allHavePrefix) {
+            changes.push({ from: line.from, to: line.from + prefix.length, insert: "" });
+          } else if (!line.text.startsWith(prefix)) {
+            changes.push({ from: line.from, to: line.from, insert: prefix });
+          }
+        }
+        view.dispatch({ changes });
+      } else {
+        const extendedFrom = from - prefix.length;
+        const extendedTo = to + suffix.length;
+        const rangeText = doc.sliceString(Math.max(0, extendedFrom), Math.min(doc.length, extendedTo));
+        const isWrapped =
+          rangeText.startsWith(prefix) && rangeText.endsWith(suffix) && extendedFrom >= 0;
+
+        if (isWrapped) {
+          view.dispatch({
+            changes: {
+              from: extendedFrom,
+              to: extendedTo,
+              insert: doc.sliceString(from, to),
+            },
+            selection: { anchor: extendedFrom, head: extendedFrom + (to - from) },
+          });
+        } else {
+          const text = doc.sliceString(from, to);
+          view.dispatch({
+            changes: { from, to, insert: prefix + text + suffix },
+            selection: {
+              anchor: from + prefix.length,
+              head: from + prefix.length + text.length,
+            },
+          });
+        }
+      }
+      contentRef.current = view.state.doc.toString();
+      schedulePreviewUpdate();
+      view.focus();
+    },
+    [schedulePreviewUpdate]
+  );
+
   const replacePlaceholder = useCallback(
     (placeholder: string, replacement: string) => {
       const view = editorViewRef.current;
@@ -300,6 +406,46 @@ export default function EditorPage() {
     },
     [insertTextAtCursor, randomString, replacePlaceholder]
   );
+
+  const handleUndo = useCallback(() => {
+    setActivePopover(null);
+    const view = editorViewRef.current;
+    if (view) {
+      undo(view);
+      view.focus();
+    }
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    setActivePopover(null);
+    const view = editorViewRef.current;
+    if (view) {
+      redo(view);
+      view.focus();
+    }
+  }, []);
+
+  const handleInsertTable = useCallback(() => {
+    setActivePopover(null);
+    const tableTemplate = `
+| Header 1 | Header 2 |
+| -------- | -------- |
+| Cell 1   | Cell 2   |
+`;
+    insertTextAtCursor(tableTemplate);
+  }, [insertTextAtCursor]);
+
+  const handleColor = useCallback((color: string) => {
+    setActivePopover(null);
+    if (!color) return;
+    handleFormat("wrap", `<span style="color: ${color}">`, "</span>");
+  }, [handleFormat]);
+
+  const handleSize = useCallback((size: string) => {
+    setActivePopover(null);
+    if (!size) return;
+    handleFormat("wrap", `<span style="font-size: ${size}">`, "</span>");
+  }, [handleFormat]);
 
   // preview scroll handled via MarkdownPreview onScroll
 
@@ -555,10 +701,99 @@ export default function EditorPage() {
       <div className="flex-1 flex overflow-hidden min-w-0">
         <div className={`flex-1 flex flex-col md:flex-row h-full transition-all duration-300 min-w-0 ${showDetails ? "mr-80" : ""}`}>
           
-             <div className="h-full border-r border-border overflow-hidden min-w-0 md:flex-[0_0_50%] w-full">
-                <CodeMirror
-                  value={content}
-                  height="100%"
+             <div className="h-full border-r border-border overflow-hidden min-w-0 md:flex-[0_0_50%] w-full flex flex-col relative">
+                <div className="flex items-center gap-1 p-2 border-b border-border bg-background/50 backdrop-blur-sm sticky top-0 z-10 flex-none overflow-x-auto no-scrollbar">
+                  <div className="flex items-center gap-0.5">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleUndo} title="Undo"><Undo className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleRedo} title="Redo"><Redo className="h-4 w-4" /></Button>
+                  </div>
+                  <div className="w-px h-4 bg-border mx-1 shrink-0" />
+
+                  <div className="flex items-center gap-0.5">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "# ")} title="Heading 1"><Heading1 className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "## ")} title="Heading 2"><Heading2 className="h-4 w-4" /></Button>
+                  </div>
+                  <div className="w-px h-4 bg-border mx-1 shrink-0" />
+
+                  <div className="flex items-center gap-0.5">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "**", "**")} title="Bold"><Bold className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "*", "*")} title="Italic"><Italic className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "~~", "~~")} title="Strikethrough"><Strikethrough className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "<u>", "</u>")} title="Underline"><UnderlineIcon className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "color" ? "text-primary bg-accent" : "text-muted-foreground"}`} onClick={() => setActivePopover(activePopover === "color" ? null : "color")} title="Text Color"><Palette className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "size" ? "text-primary bg-accent" : "text-muted-foreground"}`} onClick={() => setActivePopover(activePopover === "size" ? null : "size")} title="Font Size"><Type className="h-4 w-4" /></Button>
+                  </div>
+                  <div className="w-px h-4 bg-border mx-1 shrink-0" />
+
+                  <div className="flex items-center gap-0.5">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- ")} title="Bullet List"><List className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "1. ")} title="Ordered List"><ListOrdered className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- [ ] ")} title="Todo List"><ListTodo className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "> ")} title="Quote"><Quote className="h-4 w-4" /></Button>
+                  </div>
+                  <div className="w-px h-4 bg-border mx-1 shrink-0" />
+
+                  <div className="flex items-center gap-0.5">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "`", "`")} title="Inline Code"><Code className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "```\n", "\n```")} title="Code Block"><FileCode className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "[", "](url)")} title="Link"><LinkIcon className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleInsertTable} title="Table"><TableIcon className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "emoji" ? "text-primary bg-accent" : "text-muted-foreground"}`} onClick={() => setActivePopover(activePopover === "emoji" ? null : "emoji")} title="Emoji"><Smile className="h-4 w-4" /></Button>
+                  </div>
+                </div>
+
+                {activePopover && (
+                  <div className="absolute top-12 left-2 z-50 p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
+                    <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
+                        <span className="text-xs font-bold uppercase text-muted-foreground">
+                            {activePopover === "color" ? "Select Color" : activePopover === "size" ? "Select Size" : "Insert Emoji"}
+                        </span>
+                        <Button size="icon" variant="ghost" className="h-4 w-4" onClick={() => setActivePopover(null)}><X className="h-3 w-3" /></Button>
+                    </div>
+                    {activePopover === "emoji" && (
+                        <div className="grid grid-cols-5 gap-1 w-64">
+                            {EMOJIS.map(emoji => (
+                                <button key={emoji} onClick={() => { insertTextAtCursor(emoji); setActivePopover(null); }} className="text-xl p-2 hover:bg-accent rounded transition-colors text-center">
+                                    {emoji}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    {activePopover === "color" && (
+                        <div className="grid grid-cols-4 gap-2 w-48">
+                            {COLORS.map(c => (
+                                <button 
+                                    key={c.value || "default"} 
+                                    onClick={() => handleColor(c.value)}
+                                    className="h-8 w-full rounded border border-input hover:scale-105 transition-transform flex items-center justify-center"
+                                    style={{ backgroundColor: c.value || "transparent" }}
+                                    title={c.label}
+                                >
+                                    {!c.value && <span className="text-xs">A</span>}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    {activePopover === "size" && (
+                        <div className="flex flex-col gap-1 w-32">
+                            {SIZES.map(s => (
+                                <button 
+                                    key={s.value} 
+                                    onClick={() => handleSize(s.value)}
+                                    className="text-sm px-2 py-1 hover:bg-accent rounded text-left transition-colors flex items-center gap-2"
+                                >
+                                    <span style={{ fontSize: s.value }}>Aa</span>
+                                    <span className="text-xs text-muted-foreground ml-auto">{s.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                  </div>
+                )}
+                <div className="flex-1 overflow-hidden min-h-0">
+                  <CodeMirror
+                    value={content}
+                    height="100%"
                   extensions={[markdown(), EditorView.lineWrapping]}
                   onChange={(val) => {
                     contentRef.current = val;
@@ -583,6 +818,7 @@ export default function EditorPage() {
                     highlightActiveLine: false,
                   }}
                 />
+              </div>
              </div>
 
               <div className="h-full bg-background overflow-hidden min-w-0 md:flex-[0_0_50%] w-full hidden md:block">

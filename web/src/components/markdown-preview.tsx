@@ -3,6 +3,7 @@
 import React, { useMemo, forwardRef, memo, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import Mermaid from "@/components/mermaid";
@@ -145,6 +146,7 @@ const MarkdownPreview = memo(
       >
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeRaw]}
           components={{
           pre({ children, ...props }) {
             if (
