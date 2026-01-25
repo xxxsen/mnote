@@ -106,7 +106,7 @@ export default function TagsPage() {
         <Button variant="ghost" size="icon" onClick={handleBack}>
           <ChevronLeft className="h-5 w-5" />
         </Button>
-        <div className="font-bold font-mono text-lg">Manage Tags</div>
+        <div className="font-bold font-mono text-lg">micro note tags</div>
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-4xl mx-auto w-full">

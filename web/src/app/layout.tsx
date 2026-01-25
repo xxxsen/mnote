@@ -17,8 +17,11 @@ const mono = Space_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "mnote",
+  title: "Micro Note",
   description: "Minimal Markdown Notes",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({

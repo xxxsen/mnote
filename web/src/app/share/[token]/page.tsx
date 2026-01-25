@@ -206,7 +206,7 @@ export default function SharePage() {
           />
         </div>
         <footer className="border-t border-border p-4 text-center text-xs text-muted-foreground font-mono bg-muted/30">
-          Published with MNOTE
+          Published with Micro Note
         </footer>
       </div>
 

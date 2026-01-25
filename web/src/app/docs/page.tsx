@@ -1,13 +1,33 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch, removeAuthToken } from "@/lib/api";
+import { apiFetch, removeAuthToken, getAuthToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate } from "@/lib/utils";
 import { Document, Tag } from "@/types";
 import { Plus, Search, LogOut, X, Settings } from "lucide-react";
+
+function generatePixelAvatar(seed: string) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
+  const color = "#" + "00000".substring(0, 6 - c.length) + c;
+  
+  let rects = "";
+  for (let y = 0; y < 5; y++) {
+    for (let x = 0; x < 3; x++) {
+      if ((hash >> (y * 3 + x)) & 1) {
+        rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${color}" />`;
+        if (x < 2) rects += `<rect x="${4 - x}" y="${y}" width="1" height="1" fill="${color}" />`;
+      }
+    }
+  }
+  return `data:image/svg+xml;base64,${btoa(`<svg viewBox="0 0 5 5" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">${rects}</svg>`)}`;
+}
 
 interface DocumentWithTags extends Document {
   tag_ids?: string[];
@@ -23,6 +43,38 @@ export default function DocsPage() {
   const [search, setSearch] = useState(searchParams.get("q") || "");
   const [selectedTag, setSelectedTag] = useState(searchParams.get("tag_id") || "");
   const [tagSearch, setTagSearch] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string>("");
+  const [userEmail, setUserEmail] = useState<string>("");
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const token = getAuthToken();
+    if (token) {
+       try {
+         const payload = JSON.parse(atob(token.split('.')[1]));
+         const email = payload.email || payload.sub || "user";
+         setUserEmail(email);
+         setAvatarUrl(generatePixelAvatar(email));
+       } catch {
+         setAvatarUrl(generatePixelAvatar("anon"));
+       }
+    } else {
+        setAvatarUrl(generatePixelAvatar("anon"));
+    }
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const fetchDocs = useCallback(async () => {
     setLoading(true);
@@ -133,7 +185,9 @@ export default function DocsPage() {
   return (
     <div className="flex h-screen flex-col md:flex-row bg-background text-foreground">
       <aside className="w-full md:w-64 border-r border-border p-4 flex-col gap-4 hidden md:flex">
-        <div className="font-mono font-bold text-xl tracking-tighter mb-4">MNOTE</div>
+        <div className="font-mono font-bold text-xl tracking-tighter mb-4">
+          Micro Note
+        </div>
         <div className="flex-1 overflow-y-auto">
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2 pr-2">
@@ -272,10 +326,36 @@ export default function DocsPage() {
                </button>
              )}
            </div>
-            <Button onClick={handleCreate} size="sm" className="rounded-xl">
-              <Plus className="mr-2 h-4 w-4" />
-              New Note
-            </Button>
+            <div className="flex items-center gap-3 relative" ref={menuRef}>
+              <Button onClick={handleCreate} size="sm" className="rounded-xl bg-[#6366f1] hover:bg-[#4f46e5] text-white border-none">
+                <Plus className="mr-2 h-4 w-4" />
+                New micro note
+              </Button>
+              <button 
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="w-8 h-8 rounded-full overflow-hidden border border-border hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                title={userEmail || "User menu"}
+              >
+                {avatarUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={avatarUrl} alt="User" className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
+                )}
+              </button>
+              {showUserMenu && (
+                <div className="absolute right-0 top-full mt-2 w-48 rounded-md border border-border bg-popover p-1 shadow-md z-50 animate-in fade-in zoom-in-95 duration-200">
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground truncate border-b border-border/50 mb-1">
+                    {userEmail || "Signed in"}
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Sign out</span>
+                  </button>
+                </div>
+              )}
+            </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
@@ -283,7 +363,7 @@ export default function DocsPage() {
              <div className="flex justify-center py-20 text-muted-foreground animate-pulse">Loading...</div>
           ) : docs.length === 0 ? (
              <div className="text-center py-20 text-muted-foreground">
-               No documents found.
+               No micro notes found.
              </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

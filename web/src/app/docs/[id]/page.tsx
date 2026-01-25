@@ -292,7 +292,7 @@ export default function EditorPage() {
     if (title) {
       document.title = title;
     } else {
-      document.title = "MNOTE";
+      document.title = "micro note";
     }
   }, [title]);
 
