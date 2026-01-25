@@ -1,0 +1,65 @@
+name: build_tag
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-mnote-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get git tag
+        id: tag
+        uses: dawidd6/action-get-tag@v1
+        with:
+          strip_v: false
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+      - name: Login to DockerHub
+        uses: docker/login-action@v1 
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          ref: ${{steps.tag.outputs.tag}}
+      - name: Build mnote-backend
+        uses: docker/build-push-action@v2
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          file: Dockerfile.downloader
+          tags: ${{ secrets.DOCKER_USER }}/mnote:latest,${{ secrets.DOCKER_USER }}/mnote:${{steps.tag.outputs.tag}}
+
+  build-mnote-web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get git tag
+        id: tag
+        uses: dawidd6/action-get-tag@v1
+        with:
+          strip_v: false
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+      - name: Login to DockerHub
+        uses: docker/login-action@v1 
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          ref: ${{steps.tag.outputs.tag}}
+      - name: Build mnote-web
+        uses: docker/build-push-action@v2
+        with:
+          platforms: linux/amd64,linux/arm64
+          push: true
+          file: Dockerfile.uploader
+          tags: ${{ secrets.DOCKER_USER }}/mnote-web:latest,${{ secrets.DOCKER_USER }}/mnote-web:${{steps.tag.outputs.tag}}
