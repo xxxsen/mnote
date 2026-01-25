@@ -2,17 +2,13 @@ services:
   mnote-backend:
     image: xxxsen/mnote:latest
     container_name: mnote-backend
-    environment:
-      - PORT=8080
-      - DB_PATH=/app/data.db
-      - JWT_SECRET=dev-secret
-      - JWT_TTL_HOURS=72
     volumes:
-      - backend-data:/app
+      - ./config:/config  
     expose:
       - "8080"
+    command: run --config=/config/config.json  
 
-  web:
+  mnote-web:
     image: xxxsen/mnote-web:latest
     container_name: mnote-web
     environment:
