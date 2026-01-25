@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate } from "@/lib/utils";
 import { Document, Tag } from "@/types";
-import { Plus, Search, LogOut, X } from "lucide-react";
+import { Plus, Search, LogOut, X, Settings } from "lucide-react";
 
 interface DocumentWithTags extends Document {
   tag_ids?: string[];
@@ -120,7 +120,16 @@ export default function DocsPage() {
       <aside className="w-full md:w-64 border-r border-border p-4 flex-col gap-4 hidden md:flex">
         <div className="font-mono font-bold text-xl tracking-tighter mb-4">MNOTE</div>
         <div className="flex-1 overflow-y-auto">
-          <div className="text-xs font-bold uppercase text-muted-foreground mb-2">Tags</div>
+          <div className="flex items-center justify-between mb-2 pr-2">
+            <div className="text-xs font-bold uppercase text-muted-foreground">Tags</div>
+            <button 
+              onClick={() => router.push("/tags")}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              title="Manage Tags"
+            >
+              <Settings className="h-3 w-3" />
+            </button>
+          </div>
           <div className="flex flex-col gap-1">
             <button
               onClick={() => setSelectedTag("")}

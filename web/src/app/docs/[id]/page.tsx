@@ -608,11 +608,24 @@ export default function EditorPage() {
   const handleAddTag = async () => {
     const trimmed = newTag.trim();
     if (!trimmed) return;
+    if (!/^[a-z0-9]{1,16}$/.test(trimmed)) {
+      alert("Tags must be lowercase letters or numbers only and at most 16 characters.");
+      return;
+    }
+    
+    const existing = allTags.find((tag) => tag.name === trimmed);
+    const willSelect = !existing || !selectedTagIDs.includes(existing.id);
+
+    if (willSelect && selectedTagIDs.length >= 7) {
+      alert("You can only select up to 7 tags.");
+      return;
+    }
+
     try {
-      const existing = allTags.find((tag) => tag.name === trimmed);
       if (existing) {
         if (!selectedTagIDs.includes(existing.id)) {
           setSelectedTagIDs([...selectedTagIDs, existing.id]);
+          setHasUnsavedChanges(true);
         }
       } else {
         const created = await apiFetch<Tag>("/tags", {
@@ -621,6 +634,7 @@ export default function EditorPage() {
         });
         setAllTags([...allTags, created]);
         setSelectedTagIDs([...selectedTagIDs, created.id]);
+        setHasUnsavedChanges(true);
       }
       setNewTag("");
     } catch (err) {
@@ -632,10 +646,17 @@ export default function EditorPage() {
   const toggleTag = (tagID: string) => {
     if (selectedTagIDs.includes(tagID)) {
       setSelectedTagIDs(selectedTagIDs.filter((id) => id !== tagID));
+      setHasUnsavedChanges(true);
     } else {
+      if (selectedTagIDs.length >= 7) {
+        alert("You can only select up to 7 tags.");
+        return;
+      }
       setSelectedTagIDs([...selectedTagIDs, tagID]);
+      setHasUnsavedChanges(true);
     }
   };
+
 
   const handleShare = async () => {
     try {
@@ -911,11 +932,17 @@ export default function EditorPage() {
                  <div className="space-y-4">
                    <div className="flex gap-2">
                      <Input 
-                       placeholder="New tag..." 
-                       value={newTag} 
-                       onChange={(e) => setNewTag(e.target.value)}
-                       onKeyDown={(e) => e.key === "Enter" && handleAddTag()}
-                     />
+                        placeholder="New tag..." 
+                        value={newTag} 
+                        onChange={(e) => {
+                          const next = e.target.value
+                            .toLowerCase()
+                            .replace(/[^a-z0-9]/g, "")
+                            .slice(0, 16);
+                          setNewTag(next);
+                        }}
+                        onKeyDown={(e) => e.key === "Enter" && handleAddTag()}
+                      />
                      <Button size="icon" variant="secondary" onClick={handleAddTag}>
                        <Plus className="h-4 w-4" />
                      </Button>
@@ -925,19 +952,32 @@ export default function EditorPage() {
                         <div className="text-sm text-muted-foreground">No tags yet</div>
                       ) : (
                         allTags.map((tag) => (
-                          <button
+                          <div
                             key={tag.id}
-                            onClick={() => toggleTag(tag.id)}
-                            className={`px-2 py-1 text-sm border ${
+                            className={`inline-flex items-center gap-1 px-2 py-1 text-sm border rounded-full transition-colors cursor-pointer select-none ${
                               selectedTagIDs.includes(tag.id)
                                 ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-secondary text-secondary-foreground border-input"
+                                : "bg-secondary text-secondary-foreground border-input hover:bg-muted"
                             }`}
+                            onClick={() => toggleTag(tag.id)}
                           >
-                            #{tag.name}
-                          </button>
+                            <span>
+                              #{tag.name}
+                            </span>
+                          </div>
                         ))
                       )}
+                    </div>
+                    
+                    <div className="pt-4 mt-4 border-t border-border">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="w-full text-xs" 
+                          onClick={() => router.push("/tags")}
+                        >
+                          Manage Tags
+                        </Button>
                     </div>
                  </div>
                )}
