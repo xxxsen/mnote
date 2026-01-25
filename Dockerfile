@@ -8,10 +8,9 @@ FROM alpine:3.21
 
 WORKDIR /app
 COPY --from=0 /build/mnote /app/mnote
-COPY config.example.json /app/config.json
 
 ENV PORT=8080
 EXPOSE 8080
 
 ENTRYPOINT ["/app/mnote"]
-CMD ["run", "--config", "/app/config.json"]
+CMD ["run", "--config", "/config/config.json"]
