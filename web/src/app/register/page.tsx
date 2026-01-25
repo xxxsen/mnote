@@ -39,11 +39,8 @@ export default function RegisterPage() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-sm border border-border bg-card p-8 shadow-sm">
         <div className="mb-8 text-center">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <svg width="24" height="24" viewBox="0 0 5 5" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className="text-[#6366f1]">
-              <path d="M0 0h1v5h-1zM4 0h1v5h-1zM1 1h1v1h-1zM3 1h1v1h-1zM2 2h1v1h-1z" />
-            </svg>
-            <h1 className="text-2xl font-bold font-mono tracking-tighter">micro note</h1>
+          <div className="flex items-center justify-center mb-2">
+            <h1 className="text-2xl font-bold font-mono tracking-tighter">Micro Note</h1>
           </div>
           <p className="text-muted-foreground text-sm">Create an account</p>
         </div>

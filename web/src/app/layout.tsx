@@ -21,6 +21,7 @@ export const metadata: Metadata = {
   description: "Minimal Markdown Notes",
   icons: {
     icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
   },
 };
 
