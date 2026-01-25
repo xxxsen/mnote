@@ -23,6 +23,8 @@ export default function DocsLayout({
 
   useEffect(() => {
     if (!token) {
+      const current = getAuthToken();
+      if (current) return;
       router.push("/login");
     }
   }, [router, token]);
