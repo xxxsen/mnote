@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import CodeMirror from "@uiw/react-codemirror";
-import { EditorView } from "@codemirror/view";
+import { EditorView, placeholder } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { undo, redo } from "@codemirror/commands";
 import ReactMarkdown from "react-markdown";
@@ -709,12 +709,11 @@ export default function EditorPage() {
           <Button variant="ghost" size="icon" onClick={() => router.push("/docs")}>
             <ChevronLeft className="h-5 w-5" />
           </Button>
-          <Input 
-            value={title}
-            readOnly
-            placeholder="Title from markdown (first line + ===)"
-            className="font-bold font-mono border-transparent max-w-md h-9 px-2 bg-transparent"
-          />
+          {title && (
+            <div className="font-bold font-mono truncate text-muted-foreground max-w-md px-2 select-none text-sm">
+              {title}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -824,7 +823,11 @@ export default function EditorPage() {
                   <CodeMirror
                     value={content}
                     height="100%"
-                  extensions={[markdown(), EditorView.lineWrapping]}
+                  extensions={[
+                    markdown(), 
+                    EditorView.lineWrapping, 
+                    placeholder("start by entering a title here\n===\n\nhere is the body of note.")
+                  ]}
                   onChange={(val) => {
                     contentRef.current = val;
                     schedulePreviewUpdate();
