@@ -116,6 +116,20 @@ export default function DocsPage() {
     return acc;
   }, {} as Record<string, number>);
 
+  const formatRelativeTime = useCallback((timestamp?: number) => {
+    if (!timestamp) return "";
+    const now = Math.floor(Date.now() / 1000);
+    const diff = Math.max(0, now - timestamp);
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  }, []);
+
+  const recentDocs = [...allDocs]
+    .sort((a, b) => (b.mtime || 0) - (a.mtime || 0))
+    .slice(0, 5);
+
   return (
     <div className="flex h-screen flex-col md:flex-row bg-background text-foreground">
       <aside className="w-full md:w-64 border-r border-border p-4 flex-col gap-4 hidden md:flex">
@@ -145,6 +159,49 @@ export default function DocsPage() {
               </button>
             </div>
           </div>
+
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2 pr-2">
+              <div className="text-xs font-bold uppercase text-muted-foreground">RECENT UPDATES</div>
+            </div>
+            <style dangerouslySetInnerHTML={{__html: `
+              @keyframes marquee {
+                0% { transform: translateX(0); }
+                100% { transform: translateX(-100%); }
+              }
+              .group:hover .marquee-text {
+                animation: marquee 5s linear infinite;
+              }
+            `}} />
+            <div className="flex flex-col gap-1">
+              {recentDocs.length === 0 ? (
+                <div className="px-2 py-1.5 text-sm text-muted-foreground italic opacity-50">
+                  No recent notes
+                </div>
+              ) : (
+                recentDocs.map((doc) => (
+                  <button
+                    key={doc.id}
+                    onClick={() => router.push(`/docs/${doc.id}`)}
+                    className="group relative flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-all text-left overflow-hidden"
+                  >
+                    <div className="relative flex-1 overflow-hidden mr-2">
+                      <div className="truncate marquee-text w-fit">
+                        {doc.title || "Untitled"}
+                      </div>
+                      <div className="absolute left-0 top-full mt-1 z-50 hidden group-hover:block bg-popover text-popover-foreground text-[10px] px-2 py-1 rounded border shadow-md whitespace-nowrap pointer-events-none">
+                        {doc.title || "Untitled"}
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-[10px] bg-muted-foreground/10 px-1.5 py-0.5 rounded-lg opacity-70 group-hover:opacity-100 transition-opacity">
+                      {formatRelativeTime(doc.mtime)}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+
           <div className="flex items-center justify-between mb-2 pr-2">
             <div className="text-xs font-bold uppercase text-muted-foreground">Tags</div>
             <button 
