@@ -88,6 +88,7 @@ export default function EditorPage() {
   const previewTimerRef = useRef<number | null>(null);
   const [, startTransition] = useTransition();
   const contentRef = useRef<string>("");
+  const lastSavedContentRef = useRef<string>("");
 
   const previewRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -100,6 +101,9 @@ export default function EditorPage() {
   const [showFloatingToc, setShowFloatingToc] = useState(false);
   const [tocCollapsed, setTocCollapsed] = useState(false);
   const [activePopover, setActivePopover] = useState<"emoji" | "color" | "size" | null>(null);
+  const handleTocLoaded = useCallback((toc: string) => {
+    setTocContent(toc);
+  }, []);
 
   // TOC Helpers
   const slugify = useCallback((value: string) => {
@@ -230,6 +234,7 @@ export default function EditorPage() {
     try {
       const detail = await apiFetch<{ document: Document; tag_ids: string[] }>(`/documents/${id}`);
       contentRef.current = detail.document.content;
+      lastSavedContentRef.current = detail.document.content;
       setContent(detail.document.content);
       setPreviewContent(detail.document.content);
       const derivedTitle = extractTitleFromContent(detail.document.content);
@@ -503,6 +508,32 @@ export default function EditorPage() {
     };
   }, [tocContent, previewContent]);
 
+  const handleAutoSave = useCallback(async () => {
+    const latestContent = contentRef.current;
+    if (latestContent === lastSavedContentRef.current || saving) return;
+
+    const derivedTitle = extractTitleFromContent(latestContent);
+    if (!derivedTitle) return;
+
+    try {
+      await apiFetch(`/documents/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ title: derivedTitle, content: latestContent, tag_ids: selectedTagIDs }),
+      });
+      lastSavedContentRef.current = latestContent;
+      setTitle(derivedTitle);
+    } catch (err) {
+      console.error("Autosave error", err);
+    }
+  }, [extractTitleFromContent, id, saving, selectedTagIDs]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      handleAutoSave();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [handleAutoSave]);
+
   const handleSave = useCallback(async () => {
     const latestContent = contentRef.current;
     const derivedTitle = extractTitleFromContent(latestContent);
@@ -517,8 +548,7 @@ export default function EditorPage() {
         method: "PUT",
         body: JSON.stringify({ title: derivedTitle, content: latestContent, tag_ids: selectedTagIDs }),
       });
-      const detail = await apiFetch<{ document: Document; tag_ids: string[] }>(`/documents/${id}`);
-      setSelectedTagIDs(detail.tag_ids || []);
+      lastSavedContentRef.current = latestContent;
       setTitle(derivedTitle);
     } catch (err) {
       console.error(err);
@@ -827,7 +857,7 @@ export default function EditorPage() {
                      className="h-full overflow-auto p-4" 
                      ref={previewRef}
                      onScroll={handlePreviewScroll}
-                     onTocLoaded={(toc) => setTocContent(toc)}
+                      onTocLoaded={handleTocLoaded}
                   />
               </div>
 
