@@ -3,10 +3,10 @@ package service
 import (
 	"context"
 
-	"mnote/internal/model"
-	appErr "mnote/internal/pkg/errors"
-	"mnote/internal/pkg/timeutil"
-	"mnote/internal/repo"
+	"github.com/xxxsen/mnote/internal/model"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
+	"github.com/xxxsen/mnote/internal/pkg/timeutil"
+	"github.com/xxxsen/mnote/internal/repo"
 )
 
 type DocumentService struct {

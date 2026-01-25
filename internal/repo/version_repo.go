@@ -6,8 +6,8 @@ import (
 
 	"github.com/didi/gendry/builder"
 
-	"mnote/internal/model"
-	appErr "mnote/internal/pkg/errors"
+	"github.com/xxxsen/mnote/internal/model"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 )
 
 type VersionRepo struct {

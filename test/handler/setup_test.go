@@ -6,10 +6,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"mnote/internal/handler"
-	"mnote/internal/repo"
-	"mnote/internal/service"
-	"mnote/test/testutil"
+	"github.com/xxxsen/mnote/internal/handler"
+	"github.com/xxxsen/mnote/internal/repo"
+	"github.com/xxxsen/mnote/internal/service"
+	"github.com/xxxsen/mnote/test/testutil"
 )
 
 func setupRouter(t *testing.T) (*gin.Engine, func()) {

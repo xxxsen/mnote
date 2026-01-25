@@ -8,12 +8,12 @@ import (
 	sqlite "modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 
-	"mnote/internal/model"
-	appErr "mnote/internal/pkg/errors"
-	"mnote/internal/pkg/jwt"
-	"mnote/internal/pkg/password"
-	"mnote/internal/pkg/timeutil"
-	"mnote/internal/repo"
+	"github.com/xxxsen/mnote/internal/model"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
+	"github.com/xxxsen/mnote/internal/pkg/jwt"
+	"github.com/xxxsen/mnote/internal/pkg/password"
+	"github.com/xxxsen/mnote/internal/pkg/timeutil"
+	"github.com/xxxsen/mnote/internal/repo"
 )
 
 type AuthService struct {

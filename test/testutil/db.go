@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"mnote/internal/repo"
+	"github.com/xxxsen/mnote/internal/repo"
 )
 
 func OpenTestDB(t *testing.T) (*sql.DB, func()) {

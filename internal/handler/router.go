@@ -3,7 +3,7 @@ package handler
 import (
 	"github.com/gin-gonic/gin"
 
-	"mnote/internal/middleware"
+	"github.com/xxxsen/mnote/internal/middleware"
 )
 
 type RouterDeps struct {

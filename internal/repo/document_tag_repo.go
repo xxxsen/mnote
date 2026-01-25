@@ -6,7 +6,7 @@ import (
 
 	"github.com/didi/gendry/builder"
 
-	"mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/model"
 )
 
 type DocumentTagRepo struct {

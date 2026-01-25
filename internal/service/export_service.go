@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 
-	"mnote/internal/model"
-	"mnote/internal/repo"
+	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/repo"
 )
 
 type ExportPayload struct {

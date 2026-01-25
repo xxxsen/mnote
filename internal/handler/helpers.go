@@ -6,8 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	appErr "mnote/internal/pkg/errors"
-	"mnote/internal/pkg/response"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
+	"github.com/xxxsen/mnote/internal/pkg/response"
 )
 
 func getUserID(c *gin.Context) string {

@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"mnote/internal/config"
-	"mnote/internal/handler"
-	"mnote/internal/repo"
-	"mnote/internal/service"
+	"github.com/xxxsen/mnote/internal/config"
+	"github.com/xxxsen/mnote/internal/handler"
+	"github.com/xxxsen/mnote/internal/repo"
+	"github.com/xxxsen/mnote/internal/service"
 )
 
 func main() {

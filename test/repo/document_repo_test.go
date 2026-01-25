@@ -6,11 +6,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"mnote/internal/model"
-	appErr "mnote/internal/pkg/errors"
-	"mnote/internal/pkg/timeutil"
-	"mnote/internal/repo"
-	"mnote/test/testutil"
+	"github.com/xxxsen/mnote/internal/model"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
+	"github.com/xxxsen/mnote/internal/pkg/timeutil"
+	"github.com/xxxsen/mnote/internal/repo"
+	"github.com/xxxsen/mnote/test/testutil"
 )
 
 func TestDocumentRepoCRUDAndIsolation(t *testing.T) {

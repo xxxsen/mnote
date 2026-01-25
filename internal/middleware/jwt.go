@@ -6,8 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"mnote/internal/pkg/jwt"
-	"mnote/internal/pkg/response"
+	"github.com/xxxsen/mnote/internal/pkg/jwt"
+	"github.com/xxxsen/mnote/internal/pkg/response"
 )
 
 const ContextUserIDKey = "user_id"

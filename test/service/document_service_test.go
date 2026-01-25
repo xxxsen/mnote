@@ -6,9 +6,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"mnote/internal/repo"
-	"mnote/internal/service"
-	"mnote/test/testutil"
+	"github.com/xxxsen/mnote/internal/repo"
+	"github.com/xxxsen/mnote/internal/service"
+	"github.com/xxxsen/mnote/test/testutil"
 )
 
 func TestDocumentServiceVersioningAndDelete(t *testing.T) {

@@ -1,4 +1,4 @@
-module mnote
+module github.com/xxxsen/mnote
 
 go 1.25.5
 

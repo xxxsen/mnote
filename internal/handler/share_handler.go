@@ -3,8 +3,8 @@ package handler
 import (
 	"github.com/gin-gonic/gin"
 
-	"mnote/internal/pkg/response"
-	"mnote/internal/service"
+	"github.com/xxxsen/mnote/internal/pkg/response"
+	"github.com/xxxsen/mnote/internal/service"
 )
 
 type ShareHandler struct {
