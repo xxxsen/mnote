@@ -1,4 +1,4 @@
-.PHONY: build-image build-web-image build run-web run
+.PHONY: build-image build-web-image build run-web run test
 
 build-image:
 	./scripts/build-image.sh
@@ -17,3 +17,6 @@ run:
 
 run-dev-docker:
 	docker compose -f docker/docker-compose.yml up --build
+
+test:
+	go test ./...
