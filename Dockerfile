@@ -4,7 +4,7 @@ WORKDIR /build
 COPY ./ ./
 RUN CGO_ENABLED=0 go build -a -tags "netgo" -ldflags "-w" -o /build/mnote ./cmd/mnote
 
-FROM debian:12
+FROM alpine:3.12
 
 WORKDIR /app
 COPY --from=0 /build/mnote /app/mnote

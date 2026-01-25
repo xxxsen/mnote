@@ -8,3 +8,4 @@ web/coverage/
 web/.turbo/
 .vscode/
 __debug_bin*
+/bin
