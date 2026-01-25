@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/xxxsen/common/logger"
+	"github.com/xxxsen/common/logutil"
+	"go.uber.org/zap"
 
 	"github.com/xxxsen/mnote/internal/config"
 	"github.com/xxxsen/mnote/internal/handler"
@@ -33,6 +36,14 @@ func main() {
 			if err != nil {
 				return err
 			}
+			logger.Init(
+				cfg.LogConfig.File,
+				cfg.LogConfig.Level,
+				int(cfg.LogConfig.FileCount),
+				int(cfg.LogConfig.FileSize),
+				int(cfg.LogConfig.KeepDays),
+				cfg.LogConfig.Console,
+			)
 			return runServer(cfg)
 		},
 	}
@@ -41,7 +52,7 @@ func main() {
 	rootCmd.AddCommand(runCmd)
 
 	if err := rootCmd.Execute(); err != nil {
-		log.Fatalf("startup error: %v", err)
+		logutil.GetLogger(context.Background()).Fatal("startup error", zap.Error(err))
 	}
 }
 

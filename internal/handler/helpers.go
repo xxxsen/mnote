@@ -1,10 +1,11 @@
 package handler
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/xxxsen/common/logutil"
+	"go.uber.org/zap"
 
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/response"
@@ -20,7 +21,14 @@ func handleError(c *gin.Context, err error) {
 	if err != nil {
 		requestID, _ := c.Get("request_id")
 		userID, _ := c.Get("user_id")
-		log.Printf("request_id=%v method=%s path=%s user_id=%v error=%v", requestID, c.Request.Method, c.Request.URL.Path, userID, err)
+		logutil.GetLogger(c.Request.Context()).Error(
+			"request error",
+			zap.Any("request_id", requestID),
+			zap.String("method", c.Request.Method),
+			zap.String("path", c.Request.URL.Path),
+			zap.Any("user_id", userID),
+			zap.Error(err),
+		)
 	}
 	switch {
 	case err == nil:

@@ -2,5 +2,13 @@
   "db_path": "./data.db",
   "jwt_secret": "dev-secret",
   "port": 8080,
-  "jwt_ttl_hours": 72
+  "jwt_ttl_hours": 72,
+  "log_config": {
+    "file": "./mnote.log",
+    "level": "info",
+    "file_count": 7,
+    "file_size": 10485760,
+    "keep_days": 7,
+    "console": true
+  }
 }

@@ -4,13 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/xxxsen/common/logger"
 )
 
 type Config struct {
-	DBPath      string `json:"db_path"`
-	JWTSecret   string `json:"jwt_secret"`
-	Port        int    `json:"port"`
-	JWTTTLHours int    `json:"jwt_ttl_hours"`
+	DBPath      string           `json:"db_path"`
+	JWTSecret   string           `json:"jwt_secret"`
+	Port        int              `json:"port"`
+	JWTTTLHours int              `json:"jwt_ttl_hours"`
+	LogConfig   logger.LogConfig `json:"log_config"`
 }
 
 func Load(path string) (*Config, error) {
@@ -35,6 +38,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.JWTTTLHours == 0 {
 		cfg.JWTTTLHours = 72
+	}
+	if cfg.LogConfig.Level == "" {
+		cfg.LogConfig.Level = "info"
 	}
 	return &cfg, nil
 }
