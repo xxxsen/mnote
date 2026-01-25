@@ -134,6 +134,49 @@ const MarkdownPreview = memo(
     onTocLoaded?.(tocMarkdown);
   }, [tocMarkdown, onTocLoaded]);
 
+  const [copiedId, setCopiedId] = React.useState<string | null>(null);
+  const copyTimeoutRef = React.useRef<number | null>(null);
+
+  const handleCopy = React.useCallback((id: string, text: string) => {
+    if (copyTimeoutRef.current) {
+      window.clearTimeout(copyTimeoutRef.current);
+    }
+    const onSuccess = () => {
+      setCopiedId(id);
+      copyTimeoutRef.current = window.setTimeout(() => setCopiedId(null), 1200);
+    };
+    const fallbackCopy = () => {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "absolute";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      if (ok) {
+        onSuccess();
+      }
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(onSuccess).catch(fallbackCopy);
+    } else {
+      fallbackCopy();
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        window.clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  let codeBlockIndex = 0;
+
   return (
     <div className={cn("relative h-full min-h-0 w-full", showTocAside ? "flex gap-8" : "")}>
       <div
@@ -187,6 +230,10 @@ const MarkdownPreview = memo(
                 };
               void _inline;
               void _node;
+              const rawCode = Array.isArray(children)
+                ? children.join("")
+                : String(children).replace(/\n$/, "");
+              const blockId = `${match[1]}-${codeBlockIndex++}`;
               return (
                 <div
                   style={{
@@ -197,8 +244,20 @@ const MarkdownPreview = memo(
                     backgroundColor: "#f6f8fa",
                     border: "1px solid rgba(0,0,0,0.05)",
                     boxShadow: "none",
+                    position: "relative",
                   }}
                 >
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      handleCopy(blockId, rawCode);
+                    }}
+                    className="absolute top-2 right-2 z-10 pointer-events-auto text-xs px-2 py-1 rounded border border-border bg-background/80 text-muted-foreground hover:text-foreground hover:bg-background"
+                  >
+                    {copiedId === blockId ? "Copied" : "Copy"}
+                  </button>
                   <SyntaxHighlighter
                     language={match[1]}
                     style={syntaxTheme}
@@ -220,7 +279,7 @@ const MarkdownPreview = memo(
                     }}
                     {...rest}
                   >
-                    {String(children).replace(/\n$/, "")}
+                    {rawCode}
                   </SyntaxHighlighter>
                 </div>
               );
