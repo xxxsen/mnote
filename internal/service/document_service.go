@@ -41,6 +41,7 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 		Title:   input.Title,
 		Content: input.Content,
 		State:   repo.DocumentStateNormal,
+		Pinned:  0,
 		Ctime:   now,
 		Mtime:   now,
 	}
@@ -73,6 +74,13 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 		}
 	}
 	return doc, nil
+}
+
+func (s *DocumentService) UpdatePinned(ctx context.Context, userID, docID string, pinned int) error {
+	if pinned != 0 && pinned != 1 {
+		return appErr.ErrInvalid
+	}
+	return s.docs.UpdatePinned(ctx, userID, docID, pinned)
 }
 
 func (s *DocumentService) Update(ctx context.Context, userID, docID string, input DocumentUpdateInput) error {

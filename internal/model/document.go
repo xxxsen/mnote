@@ -6,6 +6,7 @@ type Document struct {
 	Title   string `json:"title"`
 	Content string `json:"content"`
 	State   int    `json:"state"`
+	Pinned  int    `json:"pinned"`
 	Ctime   int64  `json:"ctime"`
 	Mtime   int64  `json:"mtime"`
 }

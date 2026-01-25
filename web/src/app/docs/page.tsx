@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate } from "@/lib/utils";
 import { Document, Tag } from "@/types";
-import { Plus, Search, LogOut, X, Settings } from "lucide-react";
+import { Plus, Search, LogOut, X, Settings, Pin } from "lucide-react";
 
 function generatePixelAvatar(seed: string) {
   let hash = 0;
@@ -32,6 +32,16 @@ function generatePixelAvatar(seed: string) {
 interface DocumentWithTags extends Document {
   tag_ids?: string[];
 }
+
+
+const sortDocs = (docs: DocumentWithTags[]) => {
+  return [...docs].sort((a, b) => {
+    if ((b.pinned || 0) !== (a.pinned || 0)) {
+      return (b.pinned || 0) - (a.pinned || 0);
+    }
+    return (b.ctime || 0) - (a.ctime || 0);
+  });
+};
 
 export default function DocsPage() {
   const router = useRouter();
@@ -94,7 +104,7 @@ export default function DocsPage() {
         }
       }));
 
-      setDocs(enrichedDocs);
+      setDocs(sortDocs(enrichedDocs));
     } catch (e) {
       console.error(e);
     } finally {
@@ -113,7 +123,7 @@ export default function DocsPage() {
           return { ...doc, tag_ids: [] };
         }
       }));
-      setAllDocs(enrichedDocs);
+      setAllDocs(sortDocs(enrichedDocs));
     } catch (e) {
       console.error(e);
     }
@@ -139,6 +149,28 @@ export default function DocsPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [fetchDocs]);
+
+  const handlePinToggle = async (e: React.MouseEvent, doc: DocumentWithTags) => {
+    e.stopPropagation();
+    const newPinned = doc.pinned ? 0 : 1;
+    
+    const updateDocs = (prevDocs: DocumentWithTags[]) => {
+       const updated = prevDocs.map(d => d.id === doc.id ? { ...d, pinned: newPinned } : d);
+       return sortDocs(updated);
+    };
+
+    setDocs(prev => updateDocs(prev));
+    setAllDocs(prev => updateDocs(prev));
+
+    try {
+      await apiFetch(`/documents/${doc.id}/pin`, {
+        method: "PUT",
+        body: JSON.stringify({ pinned: newPinned === 1 })
+      });
+    } catch (err) {
+      console.error("Failed to pin document", err);
+    }
+  };
 
   const handleCreate = async () => {
     try {
@@ -375,6 +407,16 @@ export default function DocsPage() {
                     onClick={() => router.push(`/docs/${doc.id}`)}
                     className="group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer overflow-hidden rounded-[8px]"
                   >
+                    <button
+                      onClick={(e) => handlePinToggle(e, doc)}
+                      className={`absolute top-2 right-2 p-1.5 rounded-full transition-all z-20 ${
+                        doc.pinned 
+                          ? "text-foreground opacity-100 bg-background/80 shadow-sm" 
+                          : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
+                      }`}
+                    >
+                      <Pin className={`h-3.5 w-3.5 ${doc.pinned ? "fill-current" : ""}`} />
+                    </button>
                     <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
                     <div className="text-sm text-muted-foreground line-clamp-3 flex-1 font-sans">
                       {doc.content || <span className="italic opacity-50">Empty</span>}

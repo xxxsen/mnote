@@ -117,6 +117,27 @@ func (h *DocumentHandler) Update(c *gin.Context) {
 	response.Success(c, gin.H{"ok": true})
 }
 
+type pinRequest struct {
+	Pinned bool `json:"pinned"`
+}
+
+func (h *DocumentHandler) Pin(c *gin.Context) {
+	var req pinRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
+	pinnedValue := 0
+	if req.Pinned {
+		pinnedValue = 1
+	}
+	if err := h.documents.UpdatePinned(c.Request.Context(), getUserID(c), c.Param("id"), pinnedValue); err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
+}
+
 func (h *DocumentHandler) Delete(c *gin.Context) {
 	if err := h.documents.Delete(c.Request.Context(), getUserID(c), c.Param("id")); err != nil {
 		handleError(c, err)

@@ -4,6 +4,7 @@ export interface Document {
   title: string;
   content: string;
   state: number;
+  pinned: number;
   ctime: number;
   mtime: number;
 }

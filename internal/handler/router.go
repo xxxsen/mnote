@@ -28,6 +28,7 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.GET("/documents", deps.Documents.List)
 	authGroup.GET("/documents/:id", deps.Documents.Get)
 	authGroup.PUT("/documents/:id", deps.Documents.Update)
+	authGroup.PUT("/documents/:id/pin", deps.Documents.Pin)
 	authGroup.DELETE("/documents/:id", deps.Documents.Delete)
 
 	authGroup.GET("/documents/:id/versions", deps.Versions.List)
