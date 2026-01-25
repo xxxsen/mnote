@@ -23,7 +23,6 @@
 ```text
 ├── cmd/mnote/          # 后端程序入口
 ├── internal/           # 后端代码逻辑
-├── migrations/         # 数据库初始化脚本
 ├── web/                # 前端代码
 ├── docker/             # Docker 部署配置文件
 └── Makefile            # 常用命令

@@ -17,8 +17,7 @@ func OpenTestDB(t *testing.T) (*sql.DB, func()) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	migrationsDir := filepath.Join("..", "..", "migrations")
-	if err := repo.ApplyMigrations(db, migrationsDir); err != nil {
+	if err := repo.ApplyMigrations(db); err != nil {
 		t.Fatalf("migrations: %v", err)
 	}
 	return db, func() {

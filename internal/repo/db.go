@@ -2,13 +2,16 @@ package repo
 
 import (
 	"database/sql"
-	"os"
-	"path/filepath"
+	"embed"
+	"io/fs"
 	"sort"
 	"strings"
 
 	_ "modernc.org/sqlite"
 )
+
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
 
 func Open(dbPath string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", dbPath)
@@ -21,54 +24,36 @@ func Open(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-func ApplyMigrations(db *sql.DB, migrationsDir string) error {
-	files, err := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
+func ApplyMigrations(db *sql.DB) error {
+	entries, err := fs.ReadDir(migrationsFS, "migrations")
 	if err != nil {
 		return err
 	}
+	var files []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
+			files = append(files, entry.Name())
+		}
+	}
 	sort.Strings(files)
 	for _, file := range files {
-		if strings.HasSuffix(file, "003_add_pinned.sql") {
-			exists, err := columnExists(db, "documents", "pinned")
-			if err != nil {
-				return err
-			}
-			if exists {
-				continue
-			}
-		}
-		content, err := os.ReadFile(file)
+		content, err := fs.ReadFile(migrationsFS, "migrations/"+file)
 		if err != nil {
 			return err
 		}
-		if _, err := db.Exec(string(content)); err != nil {
-			return err
+		queries := strings.Split(string(content), ";")
+		for _, q := range queries {
+			q = strings.TrimSpace(q)
+			if q == "" {
+				continue
+			}
+			if _, err := db.Exec(q); err != nil {
+				if strings.Contains(err.Error(), "duplicate column name") {
+					continue
+				}
+				return err
+			}
 		}
 	}
 	return nil
-}
-
-func columnExists(db *sql.DB, tableName, columnName string) (bool, error) {
-	rows, err := db.Query("PRAGMA table_info(" + tableName + ")")
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notnull int
-		var dfltValue sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
-			return false, err
-		}
-		if name == columnName {
-			return true, nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return false, err
-	}
-	return false, nil
 }

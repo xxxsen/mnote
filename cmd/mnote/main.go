@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -53,7 +53,15 @@ func main() {
 				cfg.LogConfig.Console,
 			)
 			logutil.GetLogger(context.Background()).Info("config loaded", zap.String("config", configPath))
-			return runServer(cfg)
+
+			db, err := repo.Open(cfg.DBPath)
+			if err != nil {
+				return fmt.Errorf("open db: %w", err)
+			}
+			if err := repo.ApplyMigrations(db); err != nil {
+				return fmt.Errorf("migrations: %w", err)
+			}
+			return runServer(cfg, db)
 		},
 	}
 
@@ -65,23 +73,13 @@ func main() {
 	}
 }
 
-func runServer(cfg *config.Config) error {
+func runServer(cfg *config.Config, db *sql.DB) error {
 	logutil.GetLogger(context.Background()).Info(
 		"starting server",
 		zap.Int("port", cfg.Port),
 		zap.String("db_path", cfg.DBPath),
 		zap.String("file_store", cfg.FileStore.Type),
 	)
-	db, err := repo.Open(cfg.DBPath)
-	if err != nil {
-		return fmt.Errorf("open db: %w", err)
-	}
-	logutil.GetLogger(context.Background()).Info("db opened")
-	migrationsDir := filepath.Join(".", "migrations")
-	if err := repo.ApplyMigrations(db, migrationsDir); err != nil {
-		return fmt.Errorf("migrations: %w", err)
-	}
-	logutil.GetLogger(context.Background()).Info("migrations applied", zap.String("dir", migrationsDir))
 
 	userRepo := repo.NewUserRepo(db)
 	docRepo := repo.NewDocumentRepo(db)

@@ -3,6 +3,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+    image: xxxsen/mnote:latest
     container_name: mnote-backend
     volumes:
       - ./mnote:/config
