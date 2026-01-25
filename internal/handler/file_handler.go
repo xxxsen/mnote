@@ -62,7 +62,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "upload_failed", "failed to upload file")
 		return
 	}
-	fileURL := strings.TrimSuffix(requestBaseURL(c), "/") + "/api/v1/files/" + key
+	fileURL := "/api/v1/files/" + key
 	response.Success(c, UploadResponse{
 		URL:         fileURL,
 		Name:        file.Filename,
@@ -88,22 +88,6 @@ func (h *FileHandler) Get(c *gin.Context) {
 	}
 	c.Header("Content-Type", contentType)
 	_, _ = io.Copy(c.Writer, file)
-}
-
-func requestBaseURL(c *gin.Context) string {
-	proto := c.GetHeader("X-Forwarded-Proto")
-	if proto == "" {
-		if c.Request.TLS != nil {
-			proto = "https"
-		} else {
-			proto = "http"
-		}
-	}
-	host := c.GetHeader("X-Forwarded-Host")
-	if host == "" {
-		host = c.Request.Host
-	}
-	return proto + "://" + host
 }
 
 func ensureReadSeekCloser(file filestore.ReadSeekCloser) (filestore.ReadSeekCloser, string, error) {
