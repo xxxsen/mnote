@@ -1,18 +1,22 @@
 package handler_test
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
+	"github.com/xxxsen/common/webapi"
 
 	"github.com/xxxsen/mnote/internal/handler"
+	"github.com/xxxsen/mnote/internal/middleware"
 	"github.com/xxxsen/mnote/internal/repo"
 	"github.com/xxxsen/mnote/internal/service"
 	"github.com/xxxsen/mnote/test/testutil"
 )
 
-func setupRouter(t *testing.T) (*gin.Engine, func()) {
+func setupRouter(t *testing.T) (http.Handler, func()) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -31,7 +35,7 @@ func setupRouter(t *testing.T) (*gin.Engine, func()) {
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
 
-	router := handler.NewRouter(handler.RouterDeps{
+	deps := handler.RouterDeps{
 		Auth:      handler.NewAuthHandler(authService),
 		Documents: handler.NewDocumentHandler(documentService),
 		Versions:  handler.NewVersionHandler(documentService),
@@ -39,7 +43,20 @@ func setupRouter(t *testing.T) (*gin.Engine, func()) {
 		Tags:      handler.NewTagHandler(tagService),
 		Export:    handler.NewExportHandler(exportService),
 		JWTSecret: jwtSecret,
-	})
+	}
 
-	return router, cleanup
+	engine, err := webapi.NewEngine(
+		"/api/v1",
+		"",
+		webapi.WithRegister(func(group *gin.RouterGroup) {
+			handler.RegisterRoutes(group, deps)
+		}),
+		webapi.WithExtraMiddlewares(
+			middleware.RequestID(),
+			middleware.CORS(),
+		),
+	)
+	require.NoError(t, err)
+
+	return engine, cleanup
 }

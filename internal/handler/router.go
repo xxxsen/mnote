@@ -16,14 +16,7 @@ type RouterDeps struct {
 	JWTSecret []byte
 }
 
-func NewRouter(deps RouterDeps) *gin.Engine {
-	router := gin.New()
-	router.Use(gin.Logger())
-	router.Use(gin.Recovery())
-	router.Use(middleware.RequestID())
-	router.Use(middleware.CORS())
-
-	api := router.Group("/api/v1")
+func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	api.POST("/auth/register", deps.Auth.Register)
 	api.POST("/auth/login", deps.Auth.Login)
 	api.POST("/auth/logout", deps.Auth.Logout)
@@ -50,6 +43,4 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	authGroup.GET("/export", deps.Export.Export)
 
 	api.GET("/public/share/:token", deps.Shares.PublicGet)
-
-	return router
 }

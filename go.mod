@@ -44,6 +44,7 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
+	github.com/xxxsen/s3verify v0.0.5 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/mock v0.5.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
