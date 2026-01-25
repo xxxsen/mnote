@@ -123,7 +123,7 @@ export default function DocsPage() {
           <div className="flex items-center justify-between mb-2 pr-2">
             <div className="text-xs font-bold uppercase text-muted-foreground">Tags</div>
             <button 
-              onClick={() => router.push("/tags")}
+              onClick={() => router.push(`/tags?return=${encodeURIComponent("/docs")}`)}
               className="text-muted-foreground hover:text-foreground transition-colors"
               title="Manage Tags"
             >
@@ -133,7 +133,7 @@ export default function DocsPage() {
           <div className="flex flex-col gap-1">
             <button
               onClick={() => setSelectedTag("")}
-              className={`group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm font-medium transition-all ${
+              className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
                 selectedTag === "" 
                   ? "bg-accent text-accent-foreground" 
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -152,7 +152,7 @@ export default function DocsPage() {
               <button
                 key={tag.id}
                 onClick={() => setSelectedTag(tag.id)}
-                className={`group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm font-medium transition-all ${
+                className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
                   selectedTag === tag.id
                     ? "bg-accent text-accent-foreground" 
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -194,10 +194,10 @@ export default function DocsPage() {
                </button>
              )}
            </div>
-           <Button onClick={handleCreate} size="sm">
-             <Plus className="mr-2 h-4 w-4" />
-             New Note
-           </Button>
+            <Button onClick={handleCreate} size="sm" className="rounded-xl">
+              <Plus className="mr-2 h-4 w-4" />
+              New Note
+            </Button>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,10 +14,12 @@ interface TagWithUsage extends Tag {
 
 export default function TagsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [tags, setTags] = useState<TagWithUsage[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const returnTo = searchParams.get("return");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -65,6 +67,18 @@ export default function TagsPage() {
     fetchData();
   }, [fetchData]);
 
+  const handleBack = useCallback(() => {
+    if (returnTo) {
+      router.push(returnTo);
+      return;
+    }
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push("/docs");
+  }, [returnTo, router]);
+
   const handleDelete = async (tag: TagWithUsage) => {
     if (tag.usageCount > 0) return;
     
@@ -89,7 +103,7 @@ export default function TagsPage() {
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">
       <header className="h-14 border-b border-border flex items-center px-4 gap-4 bg-background z-20">
-        <Button variant="ghost" size="icon" onClick={() => router.push("/docs")}>
+        <Button variant="ghost" size="icon" onClick={handleBack}>
           <ChevronLeft className="h-5 w-5" />
         </Button>
         <div className="font-bold font-mono text-lg">Manage Tags</div>
@@ -140,7 +154,7 @@ export default function TagsPage() {
                   size="sm" 
                   disabled={tag.usageCount > 0 || deletingId === tag.id}
                   onClick={() => handleDelete(tag)}
-                  className={tag.usageCount > 0 ? "text-muted-foreground opacity-50 cursor-not-allowed hover:bg-transparent hover:text-muted-foreground" : ""}
+                  className={tag.usageCount > 0 ? "text-muted-foreground opacity-50 cursor-not-allowed hover:bg-transparent hover:text-muted-foreground rounded-xl" : "rounded-xl"}
                   title={tag.usageCount > 0 ? "Cannot delete tag in use" : "Delete tag"}
                 >
                   {deletingId === tag.id ? (

@@ -88,6 +88,7 @@ export default function EditorPage() {
 
   const [previewContent, setPreviewContent] = useState(content);
   const previewTimerRef = useRef<number | null>(null);
+  const draftTimerRef = useRef<number | null>(null);
   const [, startTransition] = useTransition();
   const contentRef = useRef<string>("");
   const lastSavedContentRef = useRef<string>("");
@@ -244,6 +245,24 @@ export default function EditorPage() {
       setTitle(derivedTitle);
       setSelectedTagIDs(detail.tag_ids || []);
       setLastSavedAt(detail.document.mtime);
+
+      if (typeof window !== "undefined") {
+        const draft = window.localStorage.getItem(`mnote:draft:${id}`);
+        if (draft) {
+          try {
+            const parsed = JSON.parse(draft) as { content?: string };
+            if (parsed.content && parsed.content !== detail.document.content) {
+              contentRef.current = parsed.content;
+              setContent(parsed.content);
+              setPreviewContent(parsed.content);
+              setTitle(extractTitleFromContent(parsed.content));
+              setHasUnsavedChanges(true);
+            }
+          } catch {
+            window.localStorage.removeItem(`mnote:draft:${id}`);
+          }
+        }
+      }
     } catch (err) {
       console.error(err);
       alert("Document not found");
@@ -531,6 +550,9 @@ export default function EditorPage() {
       setTitle(derivedTitle);
       setLastSavedAt(Math.floor(Date.now() / 1000));
       setHasUnsavedChanges(false);
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(`mnote:draft:${id}`);
+      }
     } catch (err) {
       console.error("Autosave error", err);
     }
@@ -561,6 +583,9 @@ export default function EditorPage() {
       setTitle(derivedTitle);
       setLastSavedAt(Math.floor(Date.now() / 1000));
       setHasUnsavedChanges(false);
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(`mnote:draft:${id}`);
+      }
     } catch (err) {
       console.error(err);
       alert("Failed to save");
@@ -725,12 +750,36 @@ export default function EditorPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (draftTimerRef.current) {
+      window.clearTimeout(draftTimerRef.current);
+    }
+    draftTimerRef.current = window.setTimeout(() => {
+      if (!hasUnsavedChanges) {
+        window.localStorage.removeItem(`mnote:draft:${id}`);
+        return;
+      }
+      const payload = JSON.stringify({ content: contentRef.current, updatedAt: Date.now() });
+      window.localStorage.setItem(`mnote:draft:${id}`, payload);
+    }, 400);
+    return () => {
+      if (draftTimerRef.current) {
+        window.clearTimeout(draftTimerRef.current);
+      }
+    };
+  }, [hasUnsavedChanges, id]);
+
+  useEffect(() => {
     return () => {
       if (previewTimerRef.current) {
         window.clearTimeout(previewTimerRef.current);
       }
+      if (typeof window !== "undefined" && hasUnsavedChanges) {
+        const payload = JSON.stringify({ content: contentRef.current, updatedAt: Date.now() });
+        window.localStorage.setItem(`mnote:draft:${id}`, payload);
+      }
     };
-  }, []);
+  }, [hasUnsavedChanges, id]);
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
@@ -754,7 +803,7 @@ export default function EditorPage() {
                Last saved: {formatDate(lastSavedAt)}
              </span>
            )}
-          <Button size="sm" onClick={handleSave} disabled={saving || !hasUnsavedChanges} className="rounded-full">
+          <Button size="sm" onClick={handleSave} disabled={saving || !hasUnsavedChanges} className="rounded-xl">
              {saving ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
              Save
            </Button>
@@ -819,7 +868,7 @@ export default function EditorPage() {
                     {activePopover === "emoji" && (
                         <div className="grid grid-cols-5 gap-1 w-64">
                             {EMOJIS.map(emoji => (
-                                <button key={emoji} onClick={() => { insertTextAtCursor(emoji); setActivePopover(null); }} className="text-xl p-2 hover:bg-accent rounded transition-colors text-center">
+                                <button key={emoji} onClick={() => { insertTextAtCursor(emoji); setActivePopover(null); }} className="text-xl p-2 hover:bg-accent rounded-lg transition-colors text-center">
                                     {emoji}
                                 </button>
                             ))}
@@ -831,7 +880,7 @@ export default function EditorPage() {
                                 <button 
                                     key={c.value || "default"} 
                                     onClick={() => handleColor(c.value)}
-                                    className="h-8 w-full rounded border border-input hover:scale-105 transition-transform flex items-center justify-center"
+                                    className="h-8 w-full rounded-lg border border-input hover:scale-105 transition-transform flex items-center justify-center"
                                     style={{ backgroundColor: c.value || "transparent" }}
                                     title={c.label}
                                 >
@@ -846,7 +895,7 @@ export default function EditorPage() {
                                 <button 
                                     key={s.value} 
                                     onClick={() => handleSize(s.value)}
-                                    className="text-sm px-2 py-1 hover:bg-accent rounded text-left transition-colors flex items-center gap-2"
+                                    className="text-sm px-2 py-1 hover:bg-accent rounded-lg text-left transition-colors flex items-center gap-2"
                                 >
                                     <span style={{ fontSize: s.value }}>Aa</span>
                                     <span className="text-xs text-muted-foreground ml-auto">{s.label}</span>
@@ -973,8 +1022,8 @@ export default function EditorPage() {
                         <Button 
                           variant="outline" 
                           size="sm" 
-                          className="w-full text-xs" 
-                          onClick={() => router.push("/tags")}
+                          className="w-full text-xs rounded-xl" 
+                          onClick={() => router.push(`/tags?return=${encodeURIComponent(`/docs/${id}`)}`)}
                         >
                           Manage Tags
                         </Button>
