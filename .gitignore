@@ -6,3 +6,4 @@ web/out/
 web/.env*
 web/coverage/
 web/.turbo/
+.vscode/

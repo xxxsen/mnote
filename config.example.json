@@ -1,0 +1,6 @@
+{
+  "db_path": "./data.db",
+  "jwt_secret": "dev-secret",
+  "port": 8080,
+  "jwt_ttl_hours": 72
+}

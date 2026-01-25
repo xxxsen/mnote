@@ -1,30 +1,58 @@
 package main
 
 import (
+	"fmt"
 	"log"
-	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
+	"github.com/spf13/cobra"
+
+	"mnote/internal/config"
 	"mnote/internal/handler"
 	"mnote/internal/repo"
 	"mnote/internal/service"
 )
 
 func main() {
-	dbPath := getEnv("DB_PATH", "./data.db")
-	jwtSecret := []byte(getEnv("JWT_SECRET", "dev-secret"))
-	port := getEnv("PORT", "8080")
-	jwtTTL := getEnvDuration("JWT_TTL_HOURS", 72)
+	var configPath string
 
-	db, err := repo.Open(dbPath)
+	rootCmd := &cobra.Command{
+		Use:   "mnote",
+		Short: "mnote backend server",
+	}
+
+	runCmd := &cobra.Command{
+		Use:   "run",
+		Short: "run mnote server",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if configPath == "" {
+				return fmt.Errorf("--config is required")
+			}
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				return err
+			}
+			return runServer(cfg)
+		},
+	}
+
+	runCmd.Flags().StringVar(&configPath, "config", "", "path to config.json")
+	rootCmd.AddCommand(runCmd)
+
+	if err := rootCmd.Execute(); err != nil {
+		log.Fatalf("startup error: %v", err)
+	}
+}
+
+func runServer(cfg *config.Config) error {
+	db, err := repo.Open(cfg.DBPath)
 	if err != nil {
-		log.Fatalf("open db: %v", err)
+		return fmt.Errorf("open db: %w", err)
 	}
 	migrationsDir := filepath.Join(".", "migrations")
 	if err := repo.ApplyMigrations(db, migrationsDir); err != nil {
-		log.Fatalf("migrations: %v", err)
+		return fmt.Errorf("migrations: %w", err)
 	}
 
 	userRepo := repo.NewUserRepo(db)
@@ -35,7 +63,7 @@ func main() {
 	shareRepo := repo.NewShareRepo(db)
 	ftsRepo := repo.NewFTSRepo(db)
 
-	authService := service.NewAuthService(userRepo, jwtSecret, time.Hour*time.Duration(jwtTTL))
+	authService := service.NewAuthService(userRepo, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours))
 	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, ftsRepo, shareRepo)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
@@ -54,26 +82,11 @@ func main() {
 		Shares:    shareHandler,
 		Tags:      tagHandler,
 		Export:    exportHandler,
-		JWTSecret: jwtSecret,
+		JWTSecret: []byte(cfg.JWTSecret),
 	})
 
-	if err := router.Run("0.0.0.0:" + port); err != nil {
-		log.Fatalf("server error: %v", err)
+	if err := router.Run(fmt.Sprintf("0.0.0.0:%d", cfg.Port)); err != nil {
+		return fmt.Errorf("server error: %w", err)
 	}
-}
-
-func getEnv(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func getEnvDuration(key string, fallbackHours int) int {
-	if value := os.Getenv(key); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
-			return parsed
-		}
-	}
-	return fallbackHours
+	return nil
 }
