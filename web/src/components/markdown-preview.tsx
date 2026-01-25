@@ -25,6 +25,7 @@ type Heading = {
 };
 
 const tocTokenRegex = /^\[(toc|TOC)]$/;
+const allowedHtmlTags = new Set(["span", "u", "br"]);
 
 const syntaxTheme = oneLight as Record<string, React.CSSProperties>;
 
@@ -107,6 +108,28 @@ const injectToc = (content: string, toc: string) => {
   return result.join("\n");
 };
 
+const escapeUnsupportedHtml = (content: string) => {
+  const lines = content.split("\n");
+  let inCodeBlock = false;
+  return lines
+    .map((line) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("```")) {
+        inCodeBlock = !inCodeBlock;
+        return line;
+      }
+      if (inCodeBlock) return line;
+      return line.replace(/<\/?([a-zA-Z0-9-]+)([^>]*)>/g, (match, tagName) => {
+        const name = String(tagName).toLowerCase();
+        if (allowedHtmlTags.has(name)) {
+          return match;
+        }
+        return match.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      });
+    })
+    .join("\n");
+};
+
 const MarkdownPreview = memo(
   forwardRef<HTMLDivElement, MarkdownPreviewProps>(function MarkdownPreview(
     { content, className, showTocAside = false, tocClassName, onScroll, onTocLoaded },
@@ -121,7 +144,8 @@ const MarkdownPreview = memo(
     }));
     const toc = buildTocMarkdown(headingsWithIds);
     const updated = injectToc(content, toc);
-    return { processedContent: updated, headingIds: headingsWithIds.map((h) => h.id || ""), tocMarkdown: toc };
+    const safeContent = escapeUnsupportedHtml(updated);
+    return { processedContent: safeContent, headingIds: headingsWithIds.map((h) => h.id || ""), tocMarkdown: toc };
   }, [content]);
 
   const headingIndexRef = React.useRef(0);
