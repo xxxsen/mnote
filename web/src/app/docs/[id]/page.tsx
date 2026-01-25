@@ -85,6 +85,7 @@ export default function EditorPage() {
   const [activeShare, setActiveShare] = useState<Share | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const isComposingRef = useRef(false);
 
   const [previewContent, setPreviewContent] = useState(content);
   const previewTimerRef = useRef<number | null>(null);
@@ -633,8 +634,8 @@ export default function EditorPage() {
   const handleAddTag = async () => {
     const trimmed = newTag.trim();
     if (!trimmed) return;
-    if (!/^[a-z0-9]{1,16}$/.test(trimmed)) {
-      alert("Tags must be lowercase letters or numbers only and at most 16 characters.");
+    if (!/^[\p{Script=Han}A-Za-z0-9]{1,16}$/u.test(trimmed)) {
+      alert("Tags must be letters, numbers, or Chinese characters, and at most 16 characters.");
       return;
     }
     
@@ -984,10 +985,23 @@ export default function EditorPage() {
                         placeholder="New tag..." 
                         value={newTag} 
                         onChange={(e) => {
-                          const next = e.target.value
-                            .toLowerCase()
-                            .replace(/[^a-z0-9]/g, "")
-                            .slice(0, 16);
+                          const raw = e.target.value;
+                          if (isComposingRef.current) {
+                            setNewTag(raw);
+                            return;
+                          }
+                          const filtered = raw.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "");
+                          const next = Array.from(filtered).slice(0, 16).join("");
+                          setNewTag(next);
+                        }}
+                        onCompositionStart={() => {
+                          isComposingRef.current = true;
+                        }}
+                        onCompositionEnd={(e) => {
+                          isComposingRef.current = false;
+                          const raw = e.currentTarget.value;
+                          const filtered = raw.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "");
+                          const next = Array.from(filtered).slice(0, 16).join("");
                           setNewTag(next);
                         }}
                         onKeyDown={(e) => e.key === "Enter" && handleAddTag()}

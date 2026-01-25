@@ -22,6 +22,7 @@ export default function DocsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(searchParams.get("q") || "");
   const [selectedTag, setSelectedTag] = useState(searchParams.get("tag_id") || "");
+  const [tagSearch, setTagSearch] = useState("");
 
   const fetchDocs = useCallback(async () => {
     setLoading(true);
@@ -154,8 +155,21 @@ export default function DocsPage() {
               <Settings className="h-3 w-3" />
             </button>
           </div>
+          <div className="mb-2 pr-2">
+             <div className="relative">
+               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <Input 
+                  placeholder="Filter tags..." 
+                  value={tagSearch}
+                  onChange={(e) => setTagSearch(e.target.value)}
+                  className="h-7 text-xs pl-7 bg-background/50 border-border focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0"
+                />
+             </div>
+          </div>
           <div className="flex flex-col gap-1">
-            {tags.map((tag) => (
+            {tags
+              .filter(tag => !tagSearch || tag.name.toLowerCase().includes(tagSearch.toLowerCase()))
+              .map((tag) => (
               <button
                 key={tag.id}
                 onClick={() => setSelectedTag(tag.id)}
