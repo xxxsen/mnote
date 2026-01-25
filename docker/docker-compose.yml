@@ -1,0 +1,36 @@
+services:
+  mnote-backend:
+    image: xxxsen/mnote:latest
+    container_name: mnote-backend
+    volumes:
+      - ./mnote:/config  
+      - ./data:/data
+    expose:
+      - "8080"
+    networks:
+      - mnote  
+    command: run --config=/config/config.json  
+
+  mnote-web:
+    image: xxxsen/mnote-web:latest
+    container_name: mnote-web
+    expose:
+      - "3000"
+    depends_on:
+      - mnote-backend
+    networks:
+      - mnote  
+  mnote-gateway:
+    # remark: 这里的gateway仅用于演示, 线上环境下, 用户可以用自己的nginx进行转发
+    image: nginx:alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - mnote-web
+      - mnote-backend
+    networks:
+      - mnote  
+networks:
+  mnote:      

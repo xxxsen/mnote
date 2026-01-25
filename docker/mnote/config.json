@@ -1,0 +1,16 @@
+{
+    "db_path": "/data/db/data.db",
+    "jwt_secret": "dev-secret",
+    "port": 8080,
+    "jwt_ttl_hours": 72,
+    "log_config": {
+        "level": "debug",
+        "console": true
+    },
+    "file_store": {
+        "type": "local",
+        "data": {
+            "dir": "/data/uploads"
+        }
+    }
+}
