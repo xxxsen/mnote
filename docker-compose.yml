@@ -7,6 +7,8 @@ services:
     expose:
       - "8080"
     command: run --config=/config/config.json  
+    networks:
+      - mnote
 
   mnote-web:
     image: xxxsen/mnote-web:latest
@@ -17,6 +19,8 @@ services:
       - "3000:3000"
     depends_on:
       - mnote-backend
+    networks:
+      - mnote  
 
 networks:
   mnote:
