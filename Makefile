@@ -14,3 +14,6 @@ run-web:
 
 run:
 	./scripts/run.sh $(CONFIG)
+
+run-dev-docker:
+	docker compose -f docker/docker-compose.yml up --build
