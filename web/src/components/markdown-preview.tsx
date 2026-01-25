@@ -3,6 +3,8 @@
 import React, { useMemo, forwardRef, memo, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import Mermaid from "@/components/mermaid";
 import { cn } from "@/lib/utils";
 
@@ -143,8 +145,16 @@ const MarkdownPreview = memo(
           remarkPlugins={[remarkGfm]}
           components={{
           pre({ children, ...props }) {
-            if (React.isValidElement<{ className?: string }>(children) && children.props.className?.includes("language-toc")) {
-              return <>{children}</>;
+            if (
+              React.isValidElement<{ className?: string }>(children) &&
+              children.props.className
+            ) {
+              const className = children.props.className;
+              const isToc = className.includes("language-toc");
+              const isMermaid = className.includes("language-mermaid");
+              if (isToc || (className.includes("language-") && !isMermaid)) {
+                return <>{children}</>;
+              }
             }
             return <pre {...props}>{children}</pre>;
           },
@@ -163,6 +173,25 @@ const MarkdownPreview = memo(
 
             if (isMermaid) {
               return <Mermaid chart={String(children).replace(/\n$/, "")} />;
+            }
+
+            if (match) {
+              const { ref: _ref, ...rest } = props as any;
+              return (
+                <SyntaxHighlighter
+                  language={match[1]}
+                  style={oneDark as any}
+                  PreTag="div"
+                  customStyle={{
+                    margin: 0,
+                    marginBottom: "1.5em",
+                    borderRadius: "var(--radius-md)",
+                  }}
+                  {...rest}
+                >
+                  {String(children).replace(/\n$/, "")}
+                </SyntaxHighlighter>
+              );
             }
 
             return (
@@ -207,7 +236,7 @@ const MarkdownPreview = memo(
               filename = alt.replace("PIC:", "");
             } else if (src) {
               try {
-                const url = new URL(src, "http://dummy.com");
+                const url = new URL(src as string, "http://dummy.com");
                 const parts = url.pathname.split("/");
                 const last = parts[parts.length - 1];
                 if (last) filename = decodeURIComponent(last);
