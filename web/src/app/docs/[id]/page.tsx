@@ -83,6 +83,8 @@ export default function EditorPage() {
   const [newTag, setNewTag] = useState("");
   const [shareUrl, setShareUrl] = useState("");
   const [activeShare, setActiveShare] = useState<Share | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const [previewContent, setPreviewContent] = useState(content);
   const previewTimerRef = useRef<number | null>(null);
@@ -237,9 +239,11 @@ export default function EditorPage() {
       lastSavedContentRef.current = detail.document.content;
       setContent(detail.document.content);
       setPreviewContent(detail.document.content);
+      setHasUnsavedChanges(false);
       const derivedTitle = extractTitleFromContent(detail.document.content);
       setTitle(derivedTitle);
       setSelectedTagIDs(detail.tag_ids || []);
+      setLastSavedAt(detail.document.mtime);
     } catch (err) {
       console.error(err);
       alert("Document not found");
@@ -294,6 +298,7 @@ export default function EditorPage() {
         selection: { anchor: from + text.length },
       });
       contentRef.current = view.state.doc.toString();
+      setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
       schedulePreviewUpdate();
     },
     [schedulePreviewUpdate]
@@ -356,6 +361,7 @@ export default function EditorPage() {
         }
       }
       contentRef.current = view.state.doc.toString();
+      setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
       schedulePreviewUpdate();
       view.focus();
     },
@@ -378,6 +384,7 @@ export default function EditorPage() {
         changes: { from: index, to: index + placeholder.length, insert: replacement },
       });
       contentRef.current = view.state.doc.toString();
+      setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
       schedulePreviewUpdate();
     },
     [schedulePreviewUpdate]
@@ -522,6 +529,8 @@ export default function EditorPage() {
       });
       lastSavedContentRef.current = latestContent;
       setTitle(derivedTitle);
+      setLastSavedAt(Math.floor(Date.now() / 1000));
+      setHasUnsavedChanges(false);
     } catch (err) {
       console.error("Autosave error", err);
     }
@@ -550,6 +559,8 @@ export default function EditorPage() {
       });
       lastSavedContentRef.current = latestContent;
       setTitle(derivedTitle);
+      setLastSavedAt(Math.floor(Date.now() / 1000));
+      setHasUnsavedChanges(false);
     } catch (err) {
       console.error(err);
       alert("Failed to save");
@@ -717,7 +728,12 @@ export default function EditorPage() {
         </div>
 
         <div className="flex items-center gap-2">
-           <Button size="sm" onClick={handleSave} disabled={saving}>
+           {lastSavedAt && (
+             <span className="text-xs text-muted-foreground hidden sm:inline-block mr-2 font-mono">
+               Last saved: {formatDate(lastSavedAt)}
+             </span>
+           )}
+          <Button size="sm" onClick={handleSave} disabled={saving || !hasUnsavedChanges} className="rounded-full">
              {saving ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
              Save
            </Button>
@@ -830,6 +846,7 @@ export default function EditorPage() {
                   ]}
                   onChange={(val) => {
                     contentRef.current = val;
+                    setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
                     schedulePreviewUpdate();
                   }}
                   className="h-full w-full min-w-0 text-base"
