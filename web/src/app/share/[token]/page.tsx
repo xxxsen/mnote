@@ -21,11 +21,19 @@ export default function SharePage() {
 
   const extractTitleFromContent = useCallback((value: string) => {
     const lines = value.split("\n");
-    if (lines.length < 2) return "";
-    const first = lines[0].trim();
-    const second = lines[1].trim();
-    if (!first) return "";
-    if (/^=+$/.test(second)) return first;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      const h1Match = line.match(/^#\s+(.+)$/);
+      if (h1Match) return h1Match[1].trim();
+      
+      if (i + 1 < lines.length && /^=+$/.test(lines[i + 1].trim())) {
+        return line;
+      }
+      
+      return line.length > 50 ? line.slice(0, 50) + "..." : line;
+    }
     return "";
   }, []);
 
