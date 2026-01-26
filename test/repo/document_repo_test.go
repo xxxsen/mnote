@@ -48,20 +48,3 @@ func TestDocumentRepoCRUDAndIsolation(t *testing.T) {
 	_, err = docs.GetByID(context.Background(), "user-1", "doc-1")
 	require.ErrorIs(t, err, appErr.ErrNotFound)
 }
-
-func TestFTSRepoUpsertDelete(t *testing.T) {
-	db, cleanup := testutil.OpenTestDB(t)
-	defer cleanup()
-
-	fts := repo.NewFTSRepo(db)
-	require.NoError(t, fts.Upsert(context.Background(), "doc-1", "user-1", "hello", "world"))
-	ids, err := fts.SearchDocIDs(context.Background(), "user-1", "hello", 10)
-	require.NoError(t, err)
-	require.Len(t, ids, 1)
-	require.Equal(t, "doc-1", ids[0])
-
-	require.NoError(t, fts.Delete(context.Background(), "user-1", "doc-1"))
-	ids, err = fts.SearchDocIDs(context.Background(), "user-1", "hello", 10)
-	require.NoError(t, err)
-	require.Len(t, ids, 0)
-}

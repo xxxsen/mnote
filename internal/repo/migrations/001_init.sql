@@ -12,11 +12,13 @@ CREATE TABLE IF NOT EXISTS documents (
   title TEXT NOT NULL,
   content TEXT NOT NULL,
   state INTEGER NOT NULL,
+  pinned INTEGER NOT NULL DEFAULT 0,
   ctime INTEGER NOT NULL,
   mtime INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_documents_user_mtime ON documents(user_id, mtime);
+CREATE INDEX IF NOT EXISTS idx_documents_user_pinned_ctime ON documents(user_id, pinned, ctime);
 
 CREATE TABLE IF NOT EXISTS document_versions (
   id TEXT PRIMARY KEY,

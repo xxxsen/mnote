@@ -18,10 +18,9 @@ func TestDocumentServiceVersioningAndDelete(t *testing.T) {
 	docRepo := repo.NewDocumentRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
-	ftsRepo := repo.NewFTSRepo(db)
 	shareRepo := repo.NewShareRepo(db)
 
-	docs := service.NewDocumentService(docRepo, versionRepo, docTagRepo, ftsRepo, shareRepo)
+	docs := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo)
 
 	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})
 	require.NoError(t, err)
@@ -50,10 +49,9 @@ func TestDocumentServiceShareState(t *testing.T) {
 	docRepo := repo.NewDocumentRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
-	ftsRepo := repo.NewFTSRepo(db)
 	shareRepo := repo.NewShareRepo(db)
 
-	docs := service.NewDocumentService(docRepo, versionRepo, docTagRepo, ftsRepo, shareRepo)
+	docs := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo)
 
 	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})
 	require.NoError(t, err)

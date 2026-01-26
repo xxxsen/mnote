@@ -30,11 +30,10 @@ func setupRouter(t *testing.T) (http.Handler, func()) {
 	tagRepo := repo.NewTagRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
-	ftsRepo := repo.NewFTSRepo(db)
 
 	jwtSecret := []byte("test-secret")
 	authService := service.NewAuthService(userRepo, jwtSecret, time.Hour)
-	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, ftsRepo, shareRepo)
+	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
 

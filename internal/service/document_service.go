@@ -13,12 +13,11 @@ type DocumentService struct {
 	docs     *repo.DocumentRepo
 	versions *repo.VersionRepo
 	tags     *repo.DocumentTagRepo
-	fts      *repo.FTSRepo
 	shares   *repo.ShareRepo
 }
 
-func NewDocumentService(docs *repo.DocumentRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, fts *repo.FTSRepo, shares *repo.ShareRepo) *DocumentService {
-	return &DocumentService{docs: docs, versions: versions, tags: tags, fts: fts, shares: shares}
+func NewDocumentService(docs *repo.DocumentRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo) *DocumentService {
+	return &DocumentService{docs: docs, versions: versions, tags: tags, shares: shares}
 }
 
 type DocumentCreateInput struct {
@@ -58,9 +57,6 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 		Ctime:      now,
 	}
 	if err := s.versions.Create(ctx, version); err != nil {
-		return nil, err
-	}
-	if err := s.fts.Upsert(ctx, doc.ID, userID, doc.Title, doc.Content); err != nil {
 		return nil, err
 	}
 	if input.TagIDs != nil {
@@ -111,9 +107,6 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 	if err := s.versions.Create(ctx, version); err != nil {
 		return err
 	}
-	if err := s.fts.Upsert(ctx, docID, userID, input.Title, input.Content); err != nil {
-		return err
-	}
 	if input.TagIDs != nil {
 		if err := s.tags.DeleteByDoc(ctx, userID, docID); err != nil {
 			return err
@@ -139,23 +132,7 @@ func (s *DocumentService) Search(ctx context.Context, userID, query string, limi
 	if query == "" {
 		return s.docs.List(ctx, userID, limit)
 	}
-	if hasNonASCII(query) {
-		return s.docs.SearchLike(ctx, userID, query, limit)
-	}
-	ids, err := s.fts.SearchDocIDs(ctx, userID, query, limit)
-	if err != nil {
-		return s.docs.SearchLike(ctx, userID, query, limit)
-	}
-	return s.docs.ListByIDs(ctx, userID, ids)
-}
-
-func hasNonASCII(input string) bool {
-	for _, r := range input {
-		if r > 127 {
-			return true
-		}
-	}
-	return false
+	return s.docs.SearchLike(ctx, userID, query, limit)
 }
 
 func (s *DocumentService) ListByTag(ctx context.Context, userID, tagID string) ([]model.Document, error) {
@@ -176,9 +153,6 @@ func (s *DocumentService) ListTagIDs(ctx context.Context, userID, docID string) 
 func (s *DocumentService) Delete(ctx context.Context, userID, docID string) error {
 	now := timeutil.NowUnix()
 	if err := s.docs.Delete(ctx, userID, docID, now); err != nil {
-		return err
-	}
-	if err := s.fts.Delete(ctx, userID, docID); err != nil {
 		return err
 	}
 	if err := s.shares.RevokeByDocument(ctx, userID, docID, now); err != nil {
