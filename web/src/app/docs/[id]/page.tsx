@@ -45,7 +45,11 @@ import {
   Smile,
   Undo,
   Redo,
-  X
+  X,
+  Command,
+  AlertTriangle,
+  Copy,
+  Check
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
@@ -107,7 +111,9 @@ export default function EditorPage() {
   const [showQuickOpen, setShowQuickOpen] = useState(false);
   const [otherDocs, setOtherDocs] = useState<Document[]>([]);
   const [shareUrl, setShareUrl] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [activeShare, setActiveShare] = useState<Share | null>(null);
+  const [copied, setCopied] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const isComposingRef = useRef(false);
@@ -728,6 +734,13 @@ export default function EditorPage() {
   const handleAddTag = async () => {
     const trimmed = newTag.trim();
     if (!trimmed) return;
+    
+    // Validate length properly before attempting to create
+    if (Array.from(trimmed).length > 16) {
+       alert("Tag is too long (max 16 characters)");
+       return;
+    }
+
     if (!/^[\p{Script=Han}A-Za-z0-9]{1,16}$/u.test(trimmed)) {
       alert("Tags must be letters, numbers, or Chinese characters, and at most 16 characters.");
       return;
@@ -817,6 +830,13 @@ export default function EditorPage() {
       alert("Failed to revoke share link");
     }
   };
+
+  const handleCopyLink = useCallback(() => {
+    if (!shareUrl) return;
+    navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [shareUrl]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -963,102 +983,142 @@ export default function EditorPage() {
                     ))}
                     <button 
                        onClick={() => setShowQuickOpen(true)}
-                       className="px-2 py-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                       title="Open Document"
+                       className="px-2 py-1.5 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                       title="Quick Open (Cmd+K)"
                     >
-                       <Plus className="h-3.5 w-3.5" />
+                       <Command className="h-3 w-3" />
+                       <span className="text-[9px] font-bold">OPEN</span>
                     </button>
                  </div>
                  <div className="flex items-center gap-1 p-2 border-b border-border bg-background/50 backdrop-blur-sm sticky top-0 z-10 flex-none overflow-x-auto no-scrollbar">
 
-                  <div className="flex items-center gap-0.5">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleUndo} title="Undo"><Undo className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleRedo} title="Redo"><Redo className="h-4 w-4" /></Button>
-                  </div>
-                  <div className="w-px h-4 bg-border mx-1 shrink-0" />
+                   <div className="flex items-center gap-0.5">
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleUndo} title="Undo"><Undo className="h-4 w-4" /></Button>
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleRedo} title="Redo"><Redo className="h-4 w-4" /></Button>
+                   </div>
+                   <div className="w-px h-4 bg-border mx-1 shrink-0" />
 
-                  <div className="flex items-center gap-0.5">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "# ")} title="Heading 1"><Heading1 className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "## ")} title="Heading 2"><Heading2 className="h-4 w-4" /></Button>
-                  </div>
-                  <div className="w-px h-4 bg-border mx-1 shrink-0" />
+                   <div className="flex items-center gap-0.5">
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "# ")} title="Heading 1"><Heading1 className="h-4 w-4" /></Button>
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "## ")} title="Heading 2"><Heading2 className="h-4 w-4" /></Button>
+                   </div>
+                   <div className="w-px h-4 bg-border mx-1 shrink-0" />
 
-                  <div className="flex items-center gap-0.5">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "**", "**")} title="Bold"><Bold className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "*", "*")} title="Italic"><Italic className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "~~", "~~")} title="Strikethrough"><Strikethrough className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "<u>", "</u>")} title="Underline"><UnderlineIcon className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "color" ? "text-primary bg-accent" : "text-muted-foreground"}`} onClick={() => setActivePopover(activePopover === "color" ? null : "color")} title="Text Color"><Palette className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "size" ? "text-primary bg-accent" : "text-muted-foreground"}`} onClick={() => setActivePopover(activePopover === "size" ? null : "size")} title="Font Size"><Type className="h-4 w-4" /></Button>
-                  </div>
-                  <div className="w-px h-4 bg-border mx-1 shrink-0" />
+                   <div className="flex items-center gap-0.5">
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "**", "**")} title="Bold"><Bold className="h-4 w-4" /></Button>
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "*", "*")} title="Italic"><Italic className="h-4 w-4" /></Button>
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "~~", "~~")} title="Strikethrough"><Strikethrough className="h-4 w-4" /></Button>
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "<u>", "</u>")} title="Underline"><UnderlineIcon className="h-4 w-4" /></Button>
+                     <div className="relative">
+                        <Button 
+                           variant="ghost" 
+                           size="icon" 
+                           className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "color" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
+                           onClick={() => setActivePopover(activePopover === "color" ? null : "color")} 
+                           title="Text Color"
+                        >
+                           <Palette className="h-4 w-4" />
+                        </Button>
+                        {activePopover === "color" && (
+                           <div className="absolute top-full left-0 mt-2 z-50 p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
+                              <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
+                                 <span className="text-[10px] font-bold uppercase text-muted-foreground">Select Color</span>
+                                 <Button size="icon" variant="ghost" className="h-4 w-4" onClick={() => setActivePopover(null)}><X className="h-3 w-3" /></Button>
+                              </div>
+                              <div className="grid grid-cols-4 gap-2 w-48">
+                                 {COLORS.map(c => (
+                                    <button 
+                                          key={c.value || "default"} 
+                                          onClick={() => handleColor(c.value)}
+                                          className="h-8 w-full rounded-lg border border-input hover:scale-105 transition-transform flex items-center justify-center"
+                                          style={{ backgroundColor: c.value || "transparent" }}
+                                          title={c.label}
+                                    >
+                                          {!c.value && <span className="text-xs">A</span>}
+                                    </button>
+                                 ))}
+                              </div>
+                           </div>
+                        )}
+                     </div>
+                     <div className="relative">
+                        <Button 
+                           variant="ghost" 
+                           size="icon" 
+                           className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "size" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
+                           onClick={() => setActivePopover(activePopover === "size" ? null : "size")} 
+                           title="Font Size"
+                        >
+                           <Type className="h-4 w-4" />
+                        </Button>
+                        {activePopover === "size" && (
+                           <div className="absolute top-full left-0 mt-2 z-50 p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
+                              <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
+                                 <span className="text-[10px] font-bold uppercase text-muted-foreground">Select Size</span>
+                                 <Button size="icon" variant="ghost" className="h-4 w-4" onClick={() => setActivePopover(null)}><X className="h-3 w-3" /></Button>
+                              </div>
+                              <div className="flex flex-col gap-1 w-32">
+                                 {SIZES.map(s => (
+                                    <button 
+                                          key={s.value} 
+                                          onClick={() => handleSize(s.value)}
+                                          className="text-sm px-2 py-1 hover:bg-accent rounded-lg text-left transition-colors flex items-center gap-2"
+                                    >
+                                          <span style={{ fontSize: s.value }}>Aa</span>
+                                          <span className="text-xs text-muted-foreground ml-auto">{s.label}</span>
+                                    </button>
+                                 ))}
+                              </div>
+                           </div>
+                        )}
+                     </div>
+                   </div>
+                   <div className="w-px h-4 bg-border mx-1 shrink-0" />
 
-                  <div className="flex items-center gap-0.5">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- ")} title="Bullet List"><List className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "1. ")} title="Ordered List"><ListOrdered className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- [ ] ")} title="Todo List"><ListTodo className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "> ")} title="Quote"><Quote className="h-4 w-4" /></Button>
-                  </div>
-                  <div className="w-px h-4 bg-border mx-1 shrink-0" />
+                   <div className="flex items-center gap-0.5">
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- ")} title="Bullet List"><List className="h-4 w-4" /></Button>
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "1. ")} title="Ordered List"><ListOrdered className="h-4 w-4" /></Button>
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- [ ] ")} title="Todo List"><ListTodo className="h-4 w-4" /></Button>
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "> ")} title="Quote"><Quote className="h-4 w-4" /></Button>
+                   </div>
+                   <div className="w-px h-4 bg-border mx-1 shrink-0" />
 
-                  <div className="flex items-center gap-0.5">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "`", "`")} title="Inline Code"><Code className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "```\n", "\n```")} title="Code Block"><FileCode className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "[", "](url)")} title="Link"><LinkIcon className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleInsertTable} title="Table"><TableIcon className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "emoji" ? "text-primary bg-accent" : "text-muted-foreground"}`} onClick={() => setActivePopover(activePopover === "emoji" ? null : "emoji")} title="Emoji"><Smile className="h-4 w-4" /></Button>
-                  </div>
-                </div>
+                   <div className="flex items-center gap-0.5">
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "`", "`")} title="Inline Code"><Code className="h-4 w-4" /></Button>
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "```\n", "\n```")} title="Code Block"><FileCode className="h-4 w-4" /></Button>
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "[", "](url)")} title="Link"><LinkIcon className="h-4 w-4" /></Button>
+                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleInsertTable} title="Table"><TableIcon className="h-4 w-4" /></Button>
+                     <div className="relative">
+                        <Button 
+                           variant="ghost" 
+                           size="icon" 
+                           className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "emoji" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
+                           onClick={() => setActivePopover(activePopover === "emoji" ? null : "emoji")} 
+                           title="Emoji"
+                        >
+                           <Smile className="h-4 w-4" />
+                        </Button>
+                        {activePopover === "emoji" && (
+                           <div className="absolute top-full right-0 mt-2 z-50 p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
+                              <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
+                                 <span className="text-[10px] font-bold uppercase text-muted-foreground">Insert Emoji</span>
+                                 <Button size="icon" variant="ghost" className="h-4 w-4" onClick={() => setActivePopover(null)}><X className="h-3 w-3" /></Button>
+                              </div>
+                              <div className="grid grid-cols-5 gap-1 w-64">
+                                 {EMOJIS.map(emoji => (
+                                    <button key={emoji} onClick={() => { insertTextAtCursor(emoji); setActivePopover(null); }} className="text-xl p-2 hover:bg-accent rounded-lg transition-colors text-center">
+                                          {emoji}
+                                    </button>
+                                 ))}
+                              </div>
+                           </div>
+                        )}
+                     </div>
+                   </div>
+                 </div>
 
-                {activePopover && (
-                  <div className="absolute top-12 left-2 z-50 p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
-                    <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
-                        <span className="text-xs font-bold uppercase text-muted-foreground">
-                            {activePopover === "color" ? "Select Color" : activePopover === "size" ? "Select Size" : "Insert Emoji"}
-                        </span>
-                        <Button size="icon" variant="ghost" className="h-4 w-4" onClick={() => setActivePopover(null)}><X className="h-3 w-3" /></Button>
-                    </div>
-                    {activePopover === "emoji" && (
-                        <div className="grid grid-cols-5 gap-1 w-64">
-                            {EMOJIS.map(emoji => (
-                                <button key={emoji} onClick={() => { insertTextAtCursor(emoji); setActivePopover(null); }} className="text-xl p-2 hover:bg-accent rounded-lg transition-colors text-center">
-                                    {emoji}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                    {activePopover === "color" && (
-                        <div className="grid grid-cols-4 gap-2 w-48">
-                            {COLORS.map(c => (
-                                <button 
-                                    key={c.value || "default"} 
-                                    onClick={() => handleColor(c.value)}
-                                    className="h-8 w-full rounded-lg border border-input hover:scale-105 transition-transform flex items-center justify-center"
-                                    style={{ backgroundColor: c.value || "transparent" }}
-                                    title={c.label}
-                                >
-                                    {!c.value && <span className="text-xs">A</span>}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                    {activePopover === "size" && (
-                        <div className="flex flex-col gap-1 w-32">
-                            {SIZES.map(s => (
-                                <button 
-                                    key={s.value} 
-                                    onClick={() => handleSize(s.value)}
-                                    className="text-sm px-2 py-1 hover:bg-accent rounded-lg text-left transition-colors flex items-center gap-2"
-                                >
-                                    <span style={{ fontSize: s.value }}>Aa</span>
-                                    <span className="text-xs text-muted-foreground ml-auto">{s.label}</span>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                  </div>
-                )}
-                <div className="flex-1 overflow-hidden min-h-0">
+                 <div className="flex-1 overflow-hidden min-h-0">
+
                    <CodeMirror
                      value={content}
                      height="100%"
@@ -1238,31 +1298,32 @@ export default function EditorPage() {
                {activeTab === "tags" && (
                  <div className="space-y-4">
                    <div className="flex gap-2">
-                     <Input 
-                        placeholder="New tag..." 
-                        value={newTag} 
-                        onChange={(e) => {
-                          const raw = e.target.value;
-                          if (isComposingRef.current) {
-                            setNewTag(raw);
-                            return;
-                          }
-                          const filtered = raw.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "");
-                          const next = Array.from(filtered).slice(0, 16).join("");
-                          setNewTag(next);
-                        }}
-                        onCompositionStart={() => {
+                      <Input 
+                         placeholder="New tag..." 
+                         value={newTag} 
+                         maxLength={16}
+                         onChange={(e) => {
+                           const raw = e.target.value;
+                           if (isComposingRef.current) {
+                             setNewTag(raw);
+                             return;
+                           }
+                           const filtered = raw.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "");
+                           setNewTag(filtered);
+                         }}
+                         onCompositionStart={() => {
+
                           isComposingRef.current = true;
                         }}
-                        onCompositionEnd={(e) => {
-                          isComposingRef.current = false;
-                          const raw = e.currentTarget.value;
-                          const filtered = raw.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "");
-                          const next = Array.from(filtered).slice(0, 16).join("");
-                          setNewTag(next);
-                        }}
-                        onKeyDown={(e) => e.key === "Enter" && handleAddTag()}
-                      />
+                         onCompositionEnd={(e) => {
+                           isComposingRef.current = false;
+                           const raw = e.currentTarget.value;
+                           const filtered = raw.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "");
+                           setNewTag(filtered.slice(0, 16));
+                         }}
+                         onKeyDown={(e) => e.key === "Enter" && handleAddTag()}
+                       />
+
                      <Button size="icon" variant="secondary" onClick={handleAddTag}>
                        <Plus className="h-4 w-4" />
                      </Button>
@@ -1323,35 +1384,49 @@ export default function EditorPage() {
                )}
 
                 {activeTab === "share" && (
-                  <div className="space-y-4">
-                    {activeShare ? (
-                      <Button variant="outline" className="w-full" onClick={handleRevokeShare}>
-                        <Share2 className="mr-2 h-4 w-4" />
-                        Revoke Share Link
+                   <div className="space-y-4">
+                     {activeShare ? (
+                       <Button variant="outline" className="w-full text-xs font-bold" onClick={handleRevokeShare}>
+                         <X className="mr-2 h-3.5 w-3.5" />
+                         Revoke Share Link
+                       </Button>
+                     ) : (
+                       <Button onClick={handleShare} className="w-full text-xs font-bold">
+                         <Share2 className="mr-2 h-3.5 w-3.5" />
+                         Generate Share Link
+                       </Button>
+                     )}
+                     {shareUrl && (
+                       <div 
+                         onClick={handleCopyLink}
+                         className="group p-3 bg-muted border border-border rounded-lg break-all text-[10px] font-mono cursor-pointer hover:bg-accent transition-colors relative"
+                       >
+                         <div className="mb-1 text-muted-foreground uppercase tracking-tighter flex items-center justify-between">
+                            <span>Share Link</span>
+                            <Copy className="h-3 w-3 opacity-50 group-hover:opacity-100" />
+                         </div>
+                         <div className="text-foreground leading-relaxed select-all">{shareUrl}</div>
+                         <div className={`absolute inset-0 flex items-center justify-center bg-accent/90 transition-opacity rounded-lg ${copied ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+                            <div className="flex items-center gap-2">
+                               <Check className="h-3.5 w-3.5 text-primary" />
+                               <span className="text-[10px] font-bold">COPIED TO CLIPBOARD</span>
+                            </div>
+                         </div>
+                       </div>
+                     )}
+                    <div className="pt-4 border-t border-border mt-4">
+                      <Button variant="outline" className="w-full mb-2 text-xs font-bold" onClick={handleExport}>
+                        <Download className="mr-2 h-3.5 w-3.5" />
+                        Export Markdown
                       </Button>
-                    ) : (
-                      <Button onClick={handleShare} className="w-full">
-                        <Share2 className="mr-2 h-4 w-4" />
-                        Generate Share Link
+                      <Button variant="destructive" className="w-full text-xs font-bold" onClick={() => setShowDeleteConfirm(true)}>
+                        <Trash2 className="mr-2 h-3.5 w-3.5" />
+                        Delete Document
                       </Button>
-                    )}
-                    {shareUrl && (
-                      <div className="p-2 bg-muted border border-border break-all text-xs font-mono select-all">
-                        {shareUrl}
-                      </div>
-                    )}
-                   <div className="pt-4 border-t border-border mt-4">
-                     <Button variant="outline" className="w-full mb-2" onClick={handleExport}>
-                       <Download className="mr-2 h-4 w-4" />
-                       Export Markdown
-                     </Button>
-                     <Button variant="destructive" className="w-full" onClick={handleDelete}>
-                       <Trash2 className="mr-2 h-4 w-4" />
-                       Delete Document
-                     </Button>
-                   </div>
-                 </div>
-               )}
+                    </div>
+                  </div>
+                )}
+
              </div>
            </div>
         )}
@@ -1382,6 +1457,31 @@ export default function EditorPage() {
         </div>
       </footer>
 
+      {showDeleteConfirm && (
+         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
+            <div className="relative w-full max-w-sm bg-background border border-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+               <div className="p-6 text-center">
+                  <div className="w-12 h-12 bg-destructive/10 text-destructive rounded-full flex items-center justify-center mx-auto mb-4">
+                     <AlertTriangle className="h-6 w-6" />
+                  </div>
+                  <h3 className="text-lg font-bold mb-2">Delete Document?</h3>
+                  <p className="text-sm text-muted-foreground mb-6">
+                     This action cannot be undone. All versions of <span className="font-mono font-bold text-foreground">"{title || "Untitled"}"</span> will be permanently removed.
+                  </p>
+                  <div className="flex gap-3">
+                     <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setShowDeleteConfirm(false)}>
+                        Cancel
+                     </Button>
+                     <Button variant="destructive" className="flex-1 rounded-xl font-bold" onClick={handleDelete}>
+                        Delete
+                     </Button>
+                  </div>
+               </div>
+            </div>
+         </div>
+      )}
+
       {showQuickOpen && (
          <div className="fixed inset-0 z-[150] flex items-start justify-center pt-[15vh] px-4">
             <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowQuickOpen(false)} />
@@ -1396,9 +1496,10 @@ export default function EditorPage() {
                   />
                   <X className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => setShowQuickOpen(false)} />
                </div>
-               <div className="max-h-[50vh] overflow-y-auto p-2">
-                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 py-2">Recent Documents</div>
+                     <div className="max-h-[50vh] overflow-y-auto p-2">
+                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 py-2">Switch to Document</div>
                   {otherDocs.length === 0 ? (
+
                      <div className="px-2 py-4 text-sm text-muted-foreground italic">No other documents found</div>
                   ) : (
                      <div className="space-y-0.5">
