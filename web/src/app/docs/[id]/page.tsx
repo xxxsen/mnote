@@ -18,8 +18,13 @@ import {
   Download,
   Trash2,
   ChevronLeft,
+  ChevronRight,
+  Home,
+  Folder,
   Columns,
+  Menu,
   Plus,
+  Search,
   RefreshCw,
   Bold,
   Italic,
@@ -65,10 +70,25 @@ const SIZES = [
   { label: "Huge", value: "24px" },
 ];
 
+const SLASH_COMMANDS = [
+  { id: "h1", label: "Heading 1", icon: <Heading1 className="h-4 w-4" />, action: (s: any) => s.handleFormat("line", "# ") },
+  { id: "h2", label: "Heading 2", icon: <Heading2 className="h-4 w-4" />, action: (s: any) => s.handleFormat("line", "## ") },
+  { id: "bold", label: "Bold", icon: <Bold className="h-4 w-4" />, action: (s: any) => s.handleFormat("wrap", "**", "**") },
+  { id: "italic", label: "Italic", icon: <Italic className="h-4 w-4" />, action: (s: any) => s.handleFormat("wrap", "*", "*") },
+  { id: "list", label: "Bullet List", icon: <List className="h-4 w-4" />, action: (s: any) => s.handleFormat("line", "- ") },
+  { id: "numlist", label: "Numbered List", icon: <ListOrdered className="h-4 w-4" />, action: (s: any) => s.handleFormat("line", "1. ") },
+  { id: "todo", label: "Todo List", icon: <ListTodo className="h-4 w-4" />, action: (s: any) => s.handleFormat("line", "- [ ] ") },
+  { id: "code", label: "Code Block", icon: <FileCode className="h-4 w-4" />, action: (s: any) => s.handleFormat("wrap", "```\n", "\n```") },
+  { id: "table", label: "Table", icon: <TableIcon className="h-4 w-4" />, action: (s: any) => s.handleInsertTable() },
+  { id: "quote", label: "Quote", icon: <Quote className="h-4 w-4" />, action: (s: any) => s.handleFormat("line", "> ") },
+  { id: "divider", label: "Divider", icon: <div className="h-0.5 w-4 bg-muted-foreground opacity-50" />, action: (s: any) => s.insertTextAtCursor("\n---\n") },
+];
+
 export default function EditorPage() {
   const params = useParams();
   const router = useRouter();
-  const id = params.id as string;
+  const [id, setId] = useState(params.id as string);
+  const [tabs, setTabs] = useState<{ id: string; title: string }[]>([]);
 
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
@@ -81,6 +101,11 @@ export default function EditorPage() {
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [selectedTagIDs, setSelectedTagIDs] = useState<string[]>([]);
   const [newTag, setNewTag] = useState("");
+  const [typewriterMode, setTypewriterMode] = useState(false);
+  const [slashMenu, setSlashMenu] = useState<{ open: boolean; x: number; y: number; filter: string }>({ open: false, x: 0, y: 0, filter: "" });
+  const [hoverImage, setHoverImage] = useState<{ url: string; x: number; y: number } | null>(null);
+  const [showQuickOpen, setShowQuickOpen] = useState(false);
+  const [otherDocs, setOtherDocs] = useState<Document[]>([]);
   const [shareUrl, setShareUrl] = useState("");
   const [activeShare, setActiveShare] = useState<Share | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
@@ -105,6 +130,10 @@ export default function EditorPage() {
   const [showFloatingToc, setShowFloatingToc] = useState(false);
   const [tocCollapsed, setTocCollapsed] = useState(false);
   const [activePopover, setActivePopover] = useState<"emoji" | "color" | "size" | null>(null);
+  const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+  const [wordCount, setWordCount] = useState(0);
+  const [charCount, setCharCount] = useState(0);
+  
   const handleTocLoaded = useCallback((toc: string) => {
     setTocContent(toc);
   }, []);
@@ -284,6 +313,26 @@ export default function EditorPage() {
     }
   }, [id, router, extractTitleFromContent]);
 
+  const fetchOtherDocs = useCallback(async () => {
+    try {
+      const docs = await apiFetch<Document[]>("/documents?limit=20");
+      setOtherDocs(docs || []);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!id) return;
+    setTabs(prev => {
+       const exists = prev.find(t => t.id === id);
+       if (exists) {
+          return prev.map(t => t.id === id ? { ...t, title: title || t.title } : t);
+       }
+       return [...prev, { id, title: title || "Untitled" }];
+    });
+  }, [id, title]);
+
   const fetchTags = useCallback(async () => {
     try {
       const t = await apiFetch<Tag[]>("/tags");
@@ -296,15 +345,29 @@ export default function EditorPage() {
   useEffect(() => {
     fetchDoc();
     fetchTags();
-  }, [fetchDoc, fetchTags]);
+    fetchOtherDocs();
+  }, [fetchDoc, fetchTags, fetchOtherDocs]);
+
+  useEffect(() => {
+    const text = content || "";
+    setCharCount(text.length);
+    const words = text.trim().split(/\s+/).filter(w => w.length > 0);
+    setWordCount(words.length);
+  }, [content]);
+
+  const updateCursorInfo = useCallback((view: EditorView) => {
+    const state = view.state;
+    const pos = state.selection.main.head;
+    const line = state.doc.lineAt(pos);
+    setCursorPos({
+      line: line.number,
+      col: pos - line.from + 1
+    });
+  }, []);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
-    if (title) {
-      document.title = title;
-    } else {
-      document.title = "micro note";
-    }
+    document.title = title ? `${title} - Micro Note` : "micro note";
   }, [title]);
 
 
@@ -477,6 +540,26 @@ export default function EditorPage() {
 `;
     insertTextAtCursor(tableTemplate);
   }, [insertTextAtCursor]);
+
+  const handleSlashAction = useCallback((action: (s: any) => void) => {
+    const view = editorViewRef.current;
+    if (!view) return;
+    
+    const { from, to } = view.state.selection.main;
+    const line = view.state.doc.lineAt(from);
+    const lineText = line.text;
+    const relativePos = from - line.from;
+    const lastSlashIndex = lineText.lastIndexOf("/", relativePos - 1);
+    
+    if (lastSlashIndex !== -1) {
+       view.dispatch({
+          changes: { from: line.from + lastSlashIndex, to: from, insert: "" }
+       });
+    }
+    
+    action({ handleFormat, handleInsertTable, insertTextAtCursor });
+    setSlashMenu(prev => ({ ...prev, open: false }));
+  }, [handleFormat, handleInsertTable, insertTextAtCursor]);
 
   const handleColor = useCallback((color: string) => {
     setActivePopover(null);
@@ -797,39 +880,97 @@ export default function EditorPage() {
 
   return (
     <div className="flex flex-col h-screen bg-background relative">
-      <header className="h-14 border-b border-border flex items-center px-4 gap-4 justify-between bg-background z-20">
-        <div className="flex items-center gap-4 flex-1">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/docs")}>
-            <ChevronLeft className="h-5 w-5" />
+      <style jsx global>{`
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
+        
+        .cm-editor { font-family: 'JetBrains Mono', 'Fira Code', monospace !important; }
+        .cm-scroller { scroll-behavior: smooth; }
+        
+        .prose h1, .prose h2, .prose h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
+        .prose p { margin-bottom: 1em; line-height: 1.7; }
+      `}</style>
+      <header className={`h-14 border-b border-border flex items-center px-4 gap-4 justify-between bg-background/80 backdrop-blur-md z-40 sticky top-0 transition-all duration-300`}>
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <Button variant="ghost" size="icon" onClick={() => router.push("/docs")} className="h-8 w-8">
+            <ChevronLeft className="h-4 w-4" />
           </Button>
-          {title && (
-            <div className="font-bold font-mono truncate text-muted-foreground max-w-md px-2 select-none text-sm">
-              {title}
+          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground overflow-hidden">
+            <div className="flex items-center gap-1 hover:text-foreground cursor-pointer transition-colors shrink-0" onClick={() => router.push("/docs")}>
+              <Home className="h-3 w-3" />
+              <span className="hidden sm:inline">My Notes</span>
             </div>
-          )}
+            <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
+            <div className="flex items-center gap-1 shrink-0">
+              <Folder className="h-3 w-3 opacity-70" />
+              <span className="hidden sm:inline">General</span>
+            </div>
+            <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
+            <div className="font-bold font-mono truncate text-foreground select-none max-w-[120px] sm:max-w-[200px] md:max-w-md">
+              {title || "Untitled"}
+            </div>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
-           {lastSavedAt && (
-             <span className="text-xs text-muted-foreground hidden sm:inline-block mr-2 font-mono">
-               Last saved: {formatDate(lastSavedAt)}
-             </span>
-           )}
-          <Button size="sm" onClick={handleSave} disabled={saving || !hasUnsavedChanges} className="rounded-xl">
-             {saving ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-             Save
-           </Button>
-           <Button variant="ghost" size="icon" onClick={() => { setShowDetails(!showDetails); if (!showDetails) loadVersions(); }}>
-             <Columns className="h-5 w-5 rotate-90" />
-           </Button>
+            {lastSavedAt && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 text-[10px] text-muted-foreground font-mono hidden md:flex">
+                <div className={`w-1.5 h-1.5 rounded-full ${hasUnsavedChanges ? "bg-amber-400 animate-pulse" : "bg-green-500"}`} />
+                {hasUnsavedChanges ? "Unsaved Changes" : `Saved: ${formatDate(lastSavedAt)}`}
+              </div>
+            )}
+            <Button size="sm" onClick={handleSave} disabled={saving || !hasUnsavedChanges} className="rounded-xl h-8 text-xs font-bold px-3">
+              {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+              {saving ? "Saving..." : "Save"}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => { setShowDetails(!showDetails); if (!showDetails) loadVersions(); }} className={`h-8 w-8 ${showDetails ? "bg-accent text-foreground" : "text-muted-foreground"}`}>
+              <Columns className="h-4 w-4 rotate-90" />
+            </Button>
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden min-w-0">
+      <div className="flex-1 flex overflow-hidden min-w-0 relative">
         <div className={`flex-1 flex flex-col md:flex-row h-full transition-all duration-300 min-w-0 ${showDetails ? "mr-80" : ""}`}>
           
-             <div className="h-full border-r border-border overflow-hidden min-w-0 md:flex-[0_0_50%] w-full flex flex-col relative">
-                <div className="flex items-center gap-1 p-2 border-b border-border bg-background/50 backdrop-blur-sm sticky top-0 z-10 flex-none overflow-x-auto no-scrollbar">
+              <div className="h-full border-r border-border overflow-hidden min-w-0 md:flex-[0_0_50%] w-full flex flex-col relative">
+                 <div className="flex items-center gap-1 px-1 pt-1 bg-muted/30 border-b border-border overflow-x-auto no-scrollbar shrink-0">
+                    {tabs.map(tab => (
+                       <div 
+                          key={tab.id}
+                          onClick={() => { if (tab.id !== id) router.push(`/docs/${tab.id}`); }}
+                          className={`group flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-t-lg border-x border-t transition-all cursor-pointer select-none ${tab.id === id ? "bg-background border-border text-foreground" : "bg-transparent border-transparent text-muted-foreground hover:bg-muted"}`}
+                       >
+                          <span className="truncate max-w-[100px]">{tab.title || "Untitled"}</span>
+                          {tabs.length > 1 && (
+                             <button 
+                                onClick={(e) => {
+                                   e.stopPropagation();
+                                   const nextTabs = tabs.filter(t => t.id !== tab.id);
+                                   setTabs(nextTabs);
+                                   if (tab.id === id && nextTabs.length > 0) router.push(`/docs/${nextTabs[0].id}`);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                             >
+                                <X className="h-3 w-3" />
+                             </button>
+                          )}
+                       </div>
+                    ))}
+                    <button 
+                       onClick={() => setShowQuickOpen(true)}
+                       className="px-2 py-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                       title="Open Document"
+                    >
+                       <Plus className="h-3.5 w-3.5" />
+                    </button>
+                 </div>
+                 <div className="flex items-center gap-1 p-2 border-b border-border bg-background/50 backdrop-blur-sm sticky top-0 z-10 flex-none overflow-x-auto no-scrollbar">
+
                   <div className="flex items-center gap-0.5">
                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleUndo} title="Undo"><Undo className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleRedo} title="Redo"><Redo className="h-4 w-4" /></Button>
@@ -918,39 +1059,136 @@ export default function EditorPage() {
                   </div>
                 )}
                 <div className="flex-1 overflow-hidden min-h-0">
-                  <CodeMirror
-                    value={content}
-                    height="100%"
-                  extensions={[
-                    markdown(), 
-                    EditorView.lineWrapping, 
-                    placeholder("start by entering a title here\n===\n\nhere is the body of note.")
-                  ]}
-                  onChange={(val) => {
-                    contentRef.current = val;
-                    setContent(val);
-                    setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
-                    schedulePreviewUpdate();
-                  }}
-                  className="h-full w-full min-w-0 text-base"
-                  onCreateEditor={(view) => {
-                    editorViewRef.current = view;
-                    view.scrollDOM.addEventListener("scroll", handleEditorScroll);
-                    if (pasteHandlerRef.current) {
-                      view.dom.removeEventListener("paste", pasteHandlerRef.current);
-                    }
-                    const handler = (event: ClipboardEvent) => {
-                      void handlePaste(event);
-                    };
-                    pasteHandlerRef.current = handler;
-                    view.dom.addEventListener("paste", handler);
-                  }}
-                  basicSetup={{
-                    lineNumbers: true,
-                    foldGutter: true,
-                    highlightActiveLine: false,
-                  }}
-                />
+                   <CodeMirror
+                     value={content}
+                     height="100%"
+                   extensions={[
+                     markdown(), 
+                     EditorView.lineWrapping, 
+                     EditorView.domEventHandlers({
+                       mousemove: (event, view) => {
+                         const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+                         if (pos === null) {
+                           setHoverImage(null);
+                           return;
+                         }
+                         const line = view.state.doc.lineAt(pos);
+                         const lineText = line.text;
+                         const imgRegex = /!\[.*?\]\((.*?)\)/g;
+                         let match;
+                         while ((match = imgRegex.exec(lineText)) !== null) {
+                           const start = line.from + match.index;
+                           const end = start + match[0].length;
+                           if (pos >= start && pos <= end) {
+                             setHoverImage({ url: match[1], x: event.clientX, y: event.clientY });
+                             return;
+                           }
+                         }
+                         setHoverImage(null);
+                       },
+                       mouseleave: () => setHoverImage(null),
+                     }),
+                     EditorView.scrollMargins.of((view) => {
+                        if (!typewriterMode) return null;
+                        const height = view.scrollDOM.clientHeight;
+                        return { top: height / 2 - 10, bottom: height / 2 - 10 };
+                     }),
+                     EditorView.updateListener.of((update) => {
+                       if (update.selectionSet || update.docChanged) {
+                         updateCursorInfo(update.view);
+                         
+                         if (update.docChanged) {
+                            const state = update.view.state;
+                            const pos = state.selection.main.head;
+                            const line = state.doc.lineAt(pos);
+                            const lineText = line.text;
+                            const relativePos = pos - line.from;
+                            
+                            const lastSlashIndex = lineText.lastIndexOf("/", relativePos - 1);
+                            if (lastSlashIndex !== -1 && (lastSlashIndex === 0 || lineText[lastSlashIndex - 1] === " ")) {
+                               const filter = lineText.slice(lastSlashIndex + 1, relativePos);
+                               if (!filter.includes(" ")) {
+                                  const coords = update.view.coordsAtPos(pos);
+                                  if (coords) {
+                                     setSlashMenu({
+                                        open: true,
+                                        x: coords.left,
+                                        y: coords.bottom + 5,
+                                        filter: filter
+                                     });
+                                     return;
+                                  }
+                               }
+                            }
+                            setSlashMenu(prev => ({ ...prev, open: false }));
+                         }
+                       }
+                     }),
+                     placeholder("start by entering a title here\n===\n\nhere is the body of note.")
+                   ]}
+                    onChange={(val) => {
+                      contentRef.current = val;
+                      setContent(val);
+                      setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
+                      schedulePreviewUpdate();
+                    }}
+                    className={`h-full w-full min-w-0 text-base`}
+                    onCreateEditor={(view) => {
+                      editorViewRef.current = view;
+                      view.scrollDOM.addEventListener("scroll", handleEditorScroll);
+                      if (pasteHandlerRef.current) {
+                        view.dom.removeEventListener("paste", pasteHandlerRef.current);
+                      }
+                      const handler = (event: ClipboardEvent) => {
+                        void handlePaste(event);
+                      };
+                      pasteHandlerRef.current = handler;
+                      view.dom.addEventListener("paste", handler);
+                    }}
+                    basicSetup={{
+                      lineNumbers: true,
+                      foldGutter: true,
+                      highlightActiveLine: false,
+                    }}
+                  />
+
+                 
+                 {hoverImage && (
+                    <div 
+                      className="fixed z-[70] pointer-events-none p-1 bg-background border border-border rounded-lg shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+                      style={{ left: hoverImage.x + 20, top: hoverImage.y - 100 }}
+                    >
+                       {/* eslint-disable-next-line @next/next/no-img-element */}
+                       <img src={hoverImage.url} alt="Preview" className="max-w-[200px] max-h-[200px] rounded object-contain" />
+                    </div>
+                 )}
+                 
+                 {slashMenu.open && (
+                    <div 
+                      className="fixed z-[60] bg-popover border border-border rounded-lg shadow-2xl p-1 w-48 animate-in fade-in zoom-in-95 duration-200"
+                      style={{ left: slashMenu.x, top: slashMenu.y }}
+                    >
+                       <div className="text-[10px] font-bold text-muted-foreground px-2 py-1 uppercase tracking-widest border-b border-border mb-1">Commands</div>
+                       <div className="max-h-64 overflow-y-auto no-scrollbar">
+                          {SLASH_COMMANDS
+                            .filter(cmd => cmd.label.toLowerCase().includes(slashMenu.filter.toLowerCase()))
+                            .map(cmd => (
+                             <button
+                                key={cmd.id}
+                                onClick={() => handleSlashAction(cmd.action)}
+                                className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md hover:bg-accent hover:text-accent-foreground text-left transition-colors"
+                             >
+                                <span className="opacity-70">{cmd.icon}</span>
+                                <span className="font-medium">{cmd.label}</span>
+                             </button>
+                          ))}
+                          {SLASH_COMMANDS.filter(cmd => cmd.label.toLowerCase().includes(slashMenu.filter.toLowerCase())).length === 0 && (
+                             <div className="px-2 py-2 text-xs text-muted-foreground italic">No commands found</div>
+                          )}
+                       </div>
+                    </div>
+                 )}
+
               </div>
              </div>
 
@@ -966,9 +1204,16 @@ export default function EditorPage() {
 
         </div>
 
-        {showDetails && (
-           <div className="w-80 border-l border-border bg-background flex flex-col absolute right-0 top-14 bottom-0 z-30 shadow-xl">
-             <div className="flex items-center border-b border-border">
+         {showDetails && (
+            <div className="w-80 border-l border-border bg-background flex flex-col absolute right-0 top-0 bottom-0 z-[100] shadow-xl">
+              <div className="flex items-center justify-between p-3 border-b border-border">
+                 <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground px-1">Details</span>
+                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowDetails(false)}>
+                    <X className="h-4 w-4" />
+                 </Button>
+              </div>
+              <div className="flex items-center border-b border-border bg-muted/20">
+
                <button 
                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "tags" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
                  onClick={() => setActiveTab("tags")}
@@ -1111,6 +1356,81 @@ export default function EditorPage() {
            </div>
         )}
       </div>
+
+      <footer className={`h-8 border-t border-border bg-background/50 backdrop-blur-sm flex items-center px-4 justify-between text-[10px] font-mono text-muted-foreground z-20 transition-all duration-300`}>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <span className="opacity-50">LN</span> {cursorPos.line}
+            <span className="opacity-50">COL</span> {cursorPos.col}
+          </div>
+          <div className="w-px h-3 bg-border opacity-50" />
+          <div className="flex items-center gap-1.5">
+            <span>{wordCount} words</span>
+            <span>{charCount} chars</span>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+             <div className={`w-1.5 h-1.5 rounded-full ${hasUnsavedChanges ? "bg-amber-400" : "bg-green-500"}`} />
+             <span>{hasUnsavedChanges ? "UNSAVED" : "SYNCED"}</span>
+          </div>
+          <div className="w-px h-3 bg-border opacity-50" />
+          <div className="flex items-center gap-1.5 hover:text-foreground cursor-pointer transition-colors" onClick={() => setTypewriterMode(!typewriterMode)}>
+            <span className={typewriterMode ? "text-primary" : "opacity-50"}>TYPEWRITER</span>
+          </div>
+        </div>
+      </footer>
+
+      {showQuickOpen && (
+         <div className="fixed inset-0 z-[150] flex items-start justify-center pt-[15vh] px-4">
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowQuickOpen(false)} />
+            <div className="relative w-full max-w-lg bg-popover border border-border rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+               <div className="flex items-center px-4 py-3 border-b border-border gap-3">
+                  <Search className="h-4 w-4 text-muted-foreground" />
+                  <input 
+                     autoFocus
+                     placeholder="Quick open document..."
+                     className="bg-transparent border-none focus:ring-0 text-sm flex-1 outline-none"
+                     onKeyDown={(e) => e.key === "Escape" && setShowQuickOpen(false)}
+                  />
+                  <X className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => setShowQuickOpen(false)} />
+               </div>
+               <div className="max-h-[50vh] overflow-y-auto p-2">
+                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 py-2">Recent Documents</div>
+                  {otherDocs.length === 0 ? (
+                     <div className="px-2 py-4 text-sm text-muted-foreground italic">No other documents found</div>
+                  ) : (
+                     <div className="space-y-0.5">
+                        {otherDocs.map(doc => (
+                           <button
+                              key={doc.id}
+                              onClick={() => {
+                                 router.push(`/docs/${doc.id}`);
+                                 setShowQuickOpen(false);
+                              }}
+                              className="flex items-center w-full px-3 py-2 text-sm rounded-lg hover:bg-accent hover:text-accent-foreground text-left transition-colors group"
+                           >
+                              <div className="flex flex-col min-w-0">
+                                 <span className="font-medium truncate">{doc.title || "Untitled"}</span>
+                                 <span className="text-[10px] text-muted-foreground truncate">{formatDate(doc.mtime)}</span>
+                              </div>
+                              <ChevronRight className="h-3.5 w-3.5 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+                           </button>
+                        ))}
+                     </div>
+                  )}
+               </div>
+               <div className="p-3 bg-muted/30 border-t border-border flex justify-between items-center text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">
+                  <span>Tip: Select to switch tab or open</span>
+                  <div className="flex items-center gap-1">
+                     <span className="border border-border bg-background px-1 rounded shadow-sm font-bold">ESC</span>
+                     <span>to close</span>
+                  </div>
+               </div>
+            </div>
+         </div>
+      )}
 
       {showFloatingToc && !showDetails && tocContent && (
         <div className="fixed top-24 right-8 z-50 hidden w-64 rounded-xl border border-border bg-card/95 shadow-xl backdrop-blur-sm lg:block animate-in fade-in slide-in-from-right-4 duration-300">
