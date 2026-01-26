@@ -128,11 +128,11 @@ func (s *DocumentService) List(ctx context.Context, userID string, limit uint) (
 	return s.docs.List(ctx, userID, limit)
 }
 
-func (s *DocumentService) Search(ctx context.Context, userID, query string, limit uint) ([]model.Document, error) {
-	if query == "" {
+func (s *DocumentService) Search(ctx context.Context, userID, query, tagID string, limit uint) ([]model.Document, error) {
+	if query == "" && tagID == "" {
 		return s.docs.List(ctx, userID, limit)
 	}
-	return s.docs.SearchLike(ctx, userID, query, limit)
+	return s.docs.SearchLike(ctx, userID, query, tagID, limit)
 }
 
 func (s *DocumentService) ListByTag(ctx context.Context, userID, tagID string) ([]model.Document, error) {

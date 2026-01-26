@@ -60,15 +60,7 @@ func (h *DocumentHandler) List(c *gin.Context) {
 			limit = uint(parsed)
 		}
 	}
-	var (
-		docs any
-		err  error
-	)
-	if tagID != "" {
-		docs, err = h.documents.ListByTag(c.Request.Context(), userID, tagID)
-	} else {
-		docs, err = h.documents.Search(c.Request.Context(), userID, query, limit)
-	}
+	docs, err := h.documents.Search(c.Request.Context(), userID, query, tagID, limit)
 	if err != nil {
 		handleError(c, err)
 		return

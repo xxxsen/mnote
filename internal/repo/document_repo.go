@@ -186,13 +186,18 @@ func (r *DocumentRepo) ListByIDs(ctx context.Context, userID string, docIDs []st
 	return docs, rows.Err()
 }
 
-func (r *DocumentRepo) SearchLike(ctx context.Context, userID, query string, limit uint) ([]model.Document, error) {
+func (r *DocumentRepo) SearchLike(ctx context.Context, userID, query, tagID string, limit uint) ([]model.Document, error) {
 	like := "%" + query + "%"
 	where := map[string]interface{}{
-		"user_id":        userID,
-		"state":          DocumentStateNormal,
-		"_orderby":       "mtime desc",
-		"_custom_search": builder.Custom("(title LIKE ? OR content LIKE ?)", like, like),
+		"user_id":  userID,
+		"state":    DocumentStateNormal,
+		"_orderby": "mtime desc",
+	}
+	if query != "" {
+		where["_custom_search"] = builder.Custom("(title LIKE ? OR content LIKE ?)", like, like)
+	}
+	if tagID != "" {
+		where["_custom_tag"] = builder.Custom("id IN (SELECT document_id FROM document_tags WHERE tag_id = ? AND user_id = ?)", tagID, userID)
 	}
 	if limit > 0 {
 		where["_limit"] = []uint{0, limit}

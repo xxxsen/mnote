@@ -105,8 +105,17 @@ export default function DocsPage() {
   const [avatarUrl, setAvatarUrl] = useState<string>("");
   const [userEmail, setUserEmail] = useState<string>("");
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showTagSelector, setShowTagSelector] = useState(false);
+  const [activeTagIndex, setActiveTagIndex] = useState(0);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const tagSelectorRef = useRef<HTMLDivElement>(null);
+
+  const filteredTags = tags.filter(t => t.name.toLowerCase().includes(search.slice(1).toLowerCase()));
+
+  useEffect(() => {
+    setActiveTagIndex(0);
+  }, [search, showTagSelector]);
 
   useEffect(() => {
     const token = getAuthToken();
@@ -128,6 +137,9 @@ export default function DocsPage() {
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowUserMenu(false);
+      }
+      if (tagSelectorRef.current && !tagSelectorRef.current.contains(event.target as Node)) {
+        setShowTagSelector(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -417,18 +429,89 @@ export default function DocsPage() {
 
       <main className="flex-1 flex flex-col min-w-0">
         <header className="h-14 border-b border-border flex items-center px-4 gap-4 justify-between bg-background z-10">
-           <div className="flex items-center gap-2 flex-1 max-w-md">
-             <Search className="h-4 w-4 text-muted-foreground" />
-             <Input 
-               placeholder="Search..." 
-               className="border-none shadow-none focus-visible:ring-0 px-0 h-9"
-               value={search}
-               onChange={(e) => setSearch(e.target.value)}
-             />
-             {search && (
-               <button onClick={() => setSearch("")}>
+           <div className="flex items-center gap-2 flex-1 max-w-md relative">
+             <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+             <div className="flex items-center gap-1.5 flex-1 min-w-0">
+               {selectedTag && (
+                 <div className="flex items-center gap-1 bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap">
+                   #{tags.find(t => t.id === selectedTag)?.name || "tag"}
+                   <button onClick={() => setSelectedTag("")} className="hover:text-primary/70">
+                     <X className="h-2.5 w-2.5" />
+                   </button>
+                 </div>
+               )}
+               <Input 
+                 placeholder={selectedTag ? "Search in tag..." : "Search... (type / for tags)"} 
+                 className="border-none shadow-none focus-visible:ring-0 px-0 h-9 flex-1 min-w-[50px]"
+                 value={search}
+                 onChange={(e) => {
+                   setSearch(e.target.value);
+                   if (e.target.value.startsWith("/")) {
+                     setShowTagSelector(true);
+                   } else {
+                     setShowTagSelector(false);
+                   }
+                 }}
+                 onKeyDown={(e) => {
+                   if (e.key === "Escape") {
+                     setShowTagSelector(false);
+                   } else if (showTagSelector) {
+                     if (e.key === "ArrowDown") {
+                       e.preventDefault();
+                       setActiveTagIndex(prev => (prev + 1) % (filteredTags.length || 1));
+                     } else if (e.key === "ArrowUp") {
+                       e.preventDefault();
+                       setActiveTagIndex(prev => (prev - 1 + (filteredTags.length || 1)) % (filteredTags.length || 1));
+                     } else if (e.key === "Enter") {
+                       if (filteredTags.length > 0) {
+                         e.preventDefault();
+                         const tag = filteredTags[activeTagIndex];
+                         if (tag) {
+                           setSelectedTag(tag.id);
+                           setSearch("");
+                           setShowTagSelector(false);
+                         }
+                       }
+                     }
+                   }
+                 }}
+               />
+             </div>
+             {search && !showTagSelector && (
+               <button onClick={() => setSearch("")} className="shrink-0">
                  <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
                </button>
+             )}
+
+             {showTagSelector && (
+               <div 
+                 ref={tagSelectorRef}
+                 className="absolute top-full left-0 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-200"
+               >
+                 <div className="p-1">
+                   {filteredTags.map((tag, index) => (
+                       <button
+                         key={tag.id}
+                         onClick={() => {
+                           setSelectedTag(tag.id);
+                           setSearch("");
+                           setShowTagSelector(false);
+                         }}
+                         className={`flex w-full items-center px-3 py-2 text-sm rounded-md text-left transition-colors ${
+                           index === activeTagIndex 
+                             ? "bg-accent text-accent-foreground" 
+                             : "hover:bg-accent/50 hover:text-accent-foreground"
+                         }`}
+                       >
+                         <span className="font-mono text-muted-foreground mr-2">#</span>
+                         {tag.name}
+                       </button>
+                     ))}
+                   {filteredTags.length === 0 && (
+                     <div className="px-3 py-2 text-sm text-muted-foreground italic">No tags found</div>
+                   )}
+                 </div>
+               </div>
              )}
            </div>
             <div className="flex items-center gap-3 relative" ref={menuRef}>
