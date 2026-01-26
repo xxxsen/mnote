@@ -35,3 +35,9 @@ export interface Share {
   ctime: number;
   mtime: number;
 }
+
+export interface PublicShareDetail {
+  document: Document;
+  author: string;
+  tags: Tag[];
+}

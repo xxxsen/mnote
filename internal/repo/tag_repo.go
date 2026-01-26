@@ -56,6 +56,31 @@ func (r *TagRepo) List(ctx context.Context, userID string) ([]model.Tag, error) 
 	return tags, rows.Err()
 }
 
+func (r *TagRepo) ListByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error) {
+	if len(ids) == 0 {
+		return []model.Tag{}, nil
+	}
+	where := map[string]interface{}{"user_id": userID, "id": ids, "_orderby": "mtime desc"}
+	sqlStr, args, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "ctime", "mtime"})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	tags := make([]model.Tag, 0)
+	for rows.Next() {
+		var tag model.Tag
+		if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Ctime, &tag.Mtime); err != nil {
+			return nil, err
+		}
+		tags = append(tags, tag)
+	}
+	return tags, rows.Err()
+}
+
 func (r *TagRepo) Delete(ctx context.Context, userID, tagID string) error {
 	where := map[string]interface{}{
 		"id":      tagID,

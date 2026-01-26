@@ -10,9 +10,9 @@ export default function Home() {
   useEffect(() => {
     const token = getAuthToken();
     if (token) {
-      router.push("/docs");
+      router.replace("/docs");
     } else {
-      router.push("/login");
+      router.replace("/login");
     }
   }, [router]);
 

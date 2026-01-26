@@ -89,7 +89,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	shareRepo := repo.NewShareRepo(db)
 
 	authService := service.NewAuthService(userRepo, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours))
-	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo)
+	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
 

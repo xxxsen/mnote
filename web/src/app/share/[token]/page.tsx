@@ -2,40 +2,38 @@
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import { apiFetch } from "@/lib/api";
 import MarkdownPreview from "@/components/markdown-preview";
-import { Document } from "@/types";
+import { PublicShareDetail, Tag as TagType } from "@/types";
+import { formatDate, generatePixelAvatar } from "@/lib/utils";
+import { Clock, User, Tag as TagIcon, ArrowUp, Link2, Download, Menu, X, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function SharePage() {
   const params = useParams();
   const token = params.token as string;
-  const [doc, setDoc] = useState<Document | null>(null);
+  const [detail, setDetail] = useState<PublicShareDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [tocContent, setTocContent] = useState("");
   const [showFloatingToc, setShowFloatingToc] = useState(false);
   const [tocCollapsed, setTocCollapsed] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [showMobileToc, setShowMobileToc] = useState(false);
+  
   const previewRef = useRef<HTMLDivElement>(null);
+  const doc = detail?.document;
   const hasTocToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
 
-  const extractTitleFromContent = useCallback((value: string) => {
-    const lines = value.split("\n");
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      
-      const h1Match = line.match(/^#\s+(.+)$/);
-      if (h1Match) return h1Match[1].trim();
-      
-      if (i + 1 < lines.length && /^=+$/.test(lines[i + 1].trim())) {
-        return line;
-      }
-      
-      return line.length > 50 ? line.slice(0, 50) + "..." : line;
-    }
-    return "";
-  }, []);
+  const estimateReadingTime = (content: string) => {
+    const wordsPerMinute = 200;
+    const wordCount = content.trim().split(/\s+/).length;
+    return Math.ceil(wordCount / wordsPerMinute);
+  };
 
   const slugify = useCallback((value: string) => {
     const base = value
@@ -64,21 +62,33 @@ export default function SharePage() {
     }
     const isScrollable = container.scrollHeight > container.clientHeight + 1;
     if (!isScrollable) {
-      const top = window.scrollY + el.getBoundingClientRect().top - 16;
+      const top = window.scrollY + el.getBoundingClientRect().top - 80;
       window.scrollTo({ top, behavior: "smooth" });
       return;
     }
     const containerTop = container.getBoundingClientRect().top;
     const targetTop = el.getBoundingClientRect().top;
-    const offset = targetTop - containerTop + container.scrollTop;
+    const offset = targetTop - containerTop + container.scrollTop - 80;
     container.scrollTo({ top: offset, behavior: "smooth" });
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
+      if (totalHeight > 0) {
+        setScrollProgress((window.scrollY / totalHeight) * 100);
+      }
+      setShowScrollTop(window.scrollY > 400);
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   useEffect(() => {
     const fetchDoc = async () => {
       try {
-        const d = await apiFetch<Document>(`/public/share/${token}`, { requireAuth: false });
-        setDoc(d);
+        const d = await apiFetch<PublicShareDetail>(`/public/share/${token}`, { requireAuth: false });
+        setDetail(d);
       } catch (err) {
         console.error(err);
         setError(true);
@@ -91,11 +101,42 @@ export default function SharePage() {
 
   useEffect(() => {
     if (!doc) return;
-    const derivedTitle = extractTitleFromContent(doc.content) || doc.title || "MNOTE";
+    const extractTitle = (value: string) => {
+       const lines = value.split("\n");
+       for (let i = 0; i < lines.length; i++) {
+         const line = lines[i].trim();
+         if (!line) continue;
+         const h1Match = line.match(/^#\s+(.+)$/);
+         if (h1Match) return h1Match[1].trim();
+         if (i + 1 < lines.length && /^=+$/.test(lines[i + 1].trim())) return line;
+         return line.length > 50 ? line.slice(0, 50) + "..." : line;
+       }
+       return "";
+    };
+    const derivedTitle = extractTitle(doc.content) || doc.title || "MNOTE";
     if (typeof document !== "undefined") {
       document.title = derivedTitle;
     }
-  }, [doc, extractTitleFromContent]);
+  }, [doc]);
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    setToast("Link copied to clipboard!");
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleExport = () => {
+    if (!doc) return;
+    const blob = new Blob([doc.content], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${doc.title || "untitled"}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   useEffect(() => {
     if (!doc) return;
@@ -200,37 +241,176 @@ export default function SharePage() {
   }, [tocContent, doc]);
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
-  if (error || !doc) return <div className="flex h-screen items-center justify-center text-destructive">Document not found or link expired</div>;
+  if (error || !doc || !detail) return <div className="flex h-screen items-center justify-center text-destructive">Document not found or link expired</div>;
+
+  const readingTime = estimateReadingTime(doc.content);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center p-4 md:p-8">
-      <div className="w-full max-w-4xl border border-border bg-card shadow-sm min-h-[80vh] flex flex-col">
-        <div className="flex-1 p-0">
-          <MarkdownPreview
-            ref={previewRef}
-            content={doc.content}
-            className="h-full min-h-[500px] p-6"
-            onTocLoaded={(toc) => setTocContent(hasTocToken ? toc : "")}
-          />
-        </div>
-        <footer className="border-t border-border p-4 text-center text-xs text-muted-foreground font-mono bg-muted/30">
-          Published with Micro Note
+    <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center selection:bg-indigo-100">
+      <div className="fixed top-0 left-0 w-full h-1 z-50 bg-transparent">
+        <div 
+          className="h-full bg-indigo-500 transition-all duration-150 ease-out"
+          style={{ width: `${scrollProgress}%` }}
+        />
+      </div>
+
+      <div className="fixed bottom-8 right-8 flex flex-col gap-3 z-40">
+        {showScrollTop && (
+          <Button
+            size="icon"
+            variant="outline"
+            className="rounded-full shadow-lg bg-background/80 backdrop-blur-sm border-border hover:bg-background"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          >
+            <ArrowUp className="h-4 w-4" />
+          </Button>
+        )}
+        <Button
+          size="icon"
+          variant="outline"
+          className="rounded-full shadow-lg bg-background/80 backdrop-blur-sm border-border hover:bg-background xl:hidden"
+          onClick={() => setShowMobileToc(true)}
+          title="Table of Contents"
+        >
+          <Menu className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="outline"
+          className="rounded-full shadow-lg bg-background/80 backdrop-blur-sm border-border hover:bg-background"
+          onClick={handleCopyLink}
+          title="Copy Link"
+        >
+          <Link2 className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="outline"
+          className="rounded-full shadow-lg bg-background/80 backdrop-blur-sm border-border hover:bg-background"
+          onClick={handleExport}
+          title="Export Markdown"
+        >
+          <Download className="h-4 w-4" />
+        </Button>
+      </div>
+
+      <div className="w-full max-w-5xl px-4 md:px-8 py-12 md:py-20 flex flex-col items-center">
+        {/* Article Header */}
+        <header className="w-full max-w-4xl mb-12 flex flex-col">
+          <div className="flex items-center gap-2 text-indigo-600 font-mono text-xs mb-4 font-bold uppercase tracking-wider">
+            <span>Public Note</span>
+            <ChevronRight className="h-3 w-3" />
+            <span className="text-muted-foreground">{doc.id.slice(0, 8)}</span>
+          </div>
+          
+          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-8 leading-tight">
+            {doc.title}
+          </h1>
+
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 text-sm text-slate-500 border-y border-slate-200/60 py-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full border border-slate-200 overflow-hidden shrink-0">
+                <img 
+                  src={generatePixelAvatar(detail.author)} 
+                  alt="Author" 
+                  className="w-full h-full object-cover"
+                  style={{ imageRendering: "pixelated" }} 
+                />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-slate-900 font-bold leading-none mb-1 truncate whitespace-nowrap">{detail.author}</span>
+                <span className="text-[10px] text-slate-400 font-mono uppercase tracking-tight">Verified Creator</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-6 md:justify-end">
+              <div className="flex items-center gap-2 whitespace-nowrap">
+                <Clock className="h-4 w-4 opacity-70" />
+                <span>{formatDate(doc.mtime)}</span>
+              </div>
+
+              <div className="flex items-center gap-2 whitespace-nowrap">
+                <User className="h-4 w-4 opacity-70" />
+                <span>{readingTime} min read</span>
+              </div>
+            </div>
+          </div>
+
+          {detail.tags && detail.tags.length > 0 && (
+            <div className="flex items-center gap-2 mt-6">
+              <TagIcon className="h-4 w-4 opacity-70 shrink-0" />
+              <div className="flex flex-wrap gap-1.5">
+                {detail.tags.map(tag => (
+                  <span 
+                    key={tag.id}
+                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100"
+                  >
+                    #{tag.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </header>
+
+        {/* Content Container */}
+        <article className="w-full max-w-4xl bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 relative overflow-visible">
+          <div className="p-8 md:p-16">
+            <MarkdownPreview
+              ref={previewRef}
+              content={doc.content}
+              className="prose prose-slate max-w-none prose-headings:scroll-mt-24 prose-img:rounded-xl text-slate-800"
+              onTocLoaded={(toc) => setTocContent(hasTocToken ? toc : "")}
+            />
+          </div>
+        </article>
+
+        <footer className="w-full max-w-4xl mt-16 pt-12 border-t border-slate-200 flex flex-col items-center gap-6">
+           <Link href="/" className="flex items-center gap-3 grayscale opacity-60 hover:grayscale-0 hover:opacity-100 transition-all cursor-pointer">
+              <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white font-bold text-xl shadow-lg">M</div>
+              <div className="flex flex-col">
+                <span className="font-bold text-slate-900 leading-none">Micro Note</span>
+                <span className="text-[10px] text-slate-500 font-mono tracking-wider">PERSONAL KNOWLEDGE BASE</span>
+              </div>
+           </Link>
+           
+           <p className="text-slate-400 text-xs font-medium tracking-wide uppercase">
+             Published with Micro Note &bull; {new Date().getFullYear()}
+           </p>
+
+           <Link href="/">
+             <Button 
+               variant="outline" 
+               className="rounded-full px-6 border-slate-200 hover:bg-slate-50 transition-colors"
+             >
+               Create your own note
+             </Button>
+           </Link>
         </footer>
       </div>
 
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="bg-slate-900 text-white px-4 py-2 rounded-full text-sm font-medium shadow-2xl flex items-center gap-2">
+            <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+            {toast}
+          </div>
+        </div>
+      )}
+
       {showFloatingToc && tocContent && (
-        <div className="fixed top-24 right-8 z-50 hidden w-64 rounded-xl border border-border bg-card/95 shadow-xl backdrop-blur-sm lg:block animate-in fade-in slide-in-from-right-4 duration-300">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border/60">
-            <div className="text-xs font-mono text-muted-foreground">目录</div>
+        <div className="fixed top-24 right-8 z-30 hidden w-72 rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md xl:block animate-in fade-in slide-in-from-right-4 duration-500">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">On this page</div>
             <button
               onClick={() => setTocCollapsed(!tocCollapsed)}
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className="p-1 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all"
             >
-              {tocCollapsed ? "展开" : "收起"}
+              {tocCollapsed ? <Menu className="h-3 w-3" /> : <X className="h-3 w-3" />}
             </button>
           </div>
           {!tocCollapsed && (
-            <div className="toc-wrapper text-sm max-h-[60vh] overflow-y-auto p-3">
+            <div className="toc-wrapper text-sm max-h-[60vh] overflow-y-auto p-4 custom-scrollbar">
               <ReactMarkdown
                 components={{
                   a: (props) => {
@@ -238,6 +418,7 @@ export default function SharePage() {
                   return (
                     <a
                       {...props}
+                      className="text-slate-500 hover:text-indigo-600 transition-colors py-1 block no-underline"
                       onClick={(event) => {
                         props.onClick?.(event);
                         if (!href.startsWith("#")) return;
@@ -262,6 +443,43 @@ export default function SharePage() {
               </ReactMarkdown>
             </div>
           )}
+        </div>
+      )}
+      {showMobileToc && (
+        <div className="fixed inset-0 z-50 flex justify-end xl:hidden">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowMobileToc(false)} />
+          <div className="relative w-80 bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+              <span className="font-bold text-slate-900">Contents</span>
+              <Button size="icon" variant="ghost" onClick={() => setShowMobileToc(false)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+              <ReactMarkdown
+                components={{
+                  a: (props) => (
+                    <a
+                      {...props}
+                      className="text-slate-600 hover:text-indigo-600 transition-colors py-2 block border-b border-slate-50 last:border-0"
+                      onClick={(event) => {
+                        if (!props.href?.startsWith("#")) return;
+                        event.preventDefault();
+                        const id = decodeURIComponent(props.href.slice(1));
+                        const el = getElementById(id) || getElementById(slugify(id));
+                        if (el) {
+                          scrollToElement(el);
+                          setShowMobileToc(false);
+                        }
+                      }}
+                    />
+                  ),
+                }}
+              >
+                {tocContent}
+              </ReactMarkdown>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -42,10 +42,10 @@ func (h *ShareHandler) GetActive(c *gin.Context) {
 }
 
 func (h *ShareHandler) PublicGet(c *gin.Context) {
-	_, doc, err := h.documents.GetShareByToken(c.Request.Context(), c.Param("token"))
+	detail, err := h.documents.GetShareByToken(c.Request.Context(), c.Param("token"))
 	if err != nil {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, doc)
+	response.Success(c, detail)
 }

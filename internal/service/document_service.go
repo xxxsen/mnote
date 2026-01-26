@@ -14,10 +14,18 @@ type DocumentService struct {
 	versions *repo.VersionRepo
 	tags     *repo.DocumentTagRepo
 	shares   *repo.ShareRepo
+	tagRepo  *repo.TagRepo
+	userRepo *repo.UserRepo
 }
 
-func NewDocumentService(docs *repo.DocumentRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo) *DocumentService {
-	return &DocumentService{docs: docs, versions: versions, tags: tags, shares: shares}
+func NewDocumentService(docs *repo.DocumentRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo, tagRepo *repo.TagRepo, userRepo *repo.UserRepo) *DocumentService {
+	return &DocumentService{docs: docs, versions: versions, tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo}
+}
+
+type PublicShareDetail struct {
+	Document *model.Document `json:"document"`
+	Author   string          `json:"author"`
+	Tags     []model.Tag     `json:"tags"`
 }
 
 type DocumentCreateInput struct {
@@ -222,17 +230,33 @@ func (s *DocumentService) GetActiveShare(ctx context.Context, userID, docID stri
 	return share, nil
 }
 
-func (s *DocumentService) GetShareByToken(ctx context.Context, token string) (*model.Share, *model.Document, error) {
+func (s *DocumentService) GetShareByToken(ctx context.Context, token string) (*PublicShareDetail, error) {
 	share, err := s.shares.GetByToken(ctx, token)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if share.State != repo.ShareStateActive {
-		return nil, nil, appErr.ErrNotFound
+		return nil, appErr.ErrNotFound
 	}
 	doc, err := s.docs.GetByID(ctx, share.UserID, share.DocumentID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return share, doc, nil
+	user, err := s.userRepo.GetByID(ctx, share.UserID)
+	if err != nil {
+		return nil, err
+	}
+	tagIDs, err := s.tags.ListTagIDs(ctx, share.UserID, share.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+	tags, err := s.tagRepo.ListByIDs(ctx, share.UserID, tagIDs)
+	if err != nil {
+		return nil, err
+	}
+	return &PublicShareDetail{
+		Document: doc,
+		Author:   user.Email,
+		Tags:     tags,
+	}, nil
 }
