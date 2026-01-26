@@ -1120,6 +1120,7 @@ export default function EditorPage() {
                  <div className="flex-1 overflow-hidden min-h-0">
 
                    <CodeMirror
+                     key={`editor-${typewriterMode}`}
                      value={content}
                      height="100%"
                    extensions={[
