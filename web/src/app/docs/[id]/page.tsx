@@ -314,7 +314,6 @@ export default function EditorPage() {
     }
     previewTimerRef.current = window.setTimeout(() => {
       startTransition(() => {
-        setContent(contentRef.current);
         setPreviewContent(contentRef.current);
       });
     }, 300);
@@ -559,7 +558,6 @@ export default function EditorPage() {
         method: "PUT",
         body: JSON.stringify({ title: derivedTitle, content: latestContent, tag_ids: selectedTagIDs }),
       });
-      setContent(latestContent);
       lastSavedContentRef.current = latestContent;
       setTitle(derivedTitle);
       setLastSavedAt(Math.floor(Date.now() / 1000));
@@ -593,7 +591,6 @@ export default function EditorPage() {
         method: "PUT",
         body: JSON.stringify({ title: derivedTitle, content: latestContent, tag_ids: selectedTagIDs }),
       });
-      setContent(latestContent);
       lastSavedContentRef.current = latestContent;
       setTitle(derivedTitle);
       setLastSavedAt(Math.floor(Date.now() / 1000));
@@ -931,6 +928,7 @@ export default function EditorPage() {
                   ]}
                   onChange={(val) => {
                     contentRef.current = val;
+                    setContent(val);
                     setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
                     schedulePreviewUpdate();
                   }}
