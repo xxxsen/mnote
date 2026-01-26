@@ -246,7 +246,9 @@ const MarkdownPreview = memo(
             if (isToc) {
               return (
                 <nav className="toc-wrapper">
-                  <ReactMarkdown>{String(children)}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                    {String(children)}
+                  </ReactMarkdown>
                 </nav>
               );
             }

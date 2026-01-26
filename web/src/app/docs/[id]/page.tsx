@@ -157,11 +157,22 @@ export default function EditorPage() {
 
   const extractTitleFromContent = useCallback((value: string) => {
     const lines = value.split("\n");
-    if (lines.length < 2) return "";
-    const first = lines[0].trim();
-    const second = lines[1].trim();
-    if (!first) return "";
-    if (/^=+$/.test(second)) return first;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      // Check for # Heading
+      const h1Match = line.match(/^#\s+(.+)$/);
+      if (h1Match) return h1Match[1].trim();
+      
+      // Check for Title \n ===
+      if (i + 1 < lines.length && /^=+$/.test(lines[i + 1].trim())) {
+        return line;
+      }
+      
+      // Use first non-empty line as title fallback
+      return line.length > 50 ? line.slice(0, 50) + "..." : line;
+    }
     return "";
   }, []);
 
@@ -303,9 +314,10 @@ export default function EditorPage() {
     }
     previewTimerRef.current = window.setTimeout(() => {
       startTransition(() => {
+        setContent(contentRef.current);
         setPreviewContent(contentRef.current);
       });
-    }, 900);
+    }, 300);
   }, [startTransition]);
 
   const insertTextAtCursor = useCallback(
@@ -547,6 +559,7 @@ export default function EditorPage() {
         method: "PUT",
         body: JSON.stringify({ title: derivedTitle, content: latestContent, tag_ids: selectedTagIDs }),
       });
+      setContent(latestContent);
       lastSavedContentRef.current = latestContent;
       setTitle(derivedTitle);
       setLastSavedAt(Math.floor(Date.now() / 1000));
@@ -580,6 +593,7 @@ export default function EditorPage() {
         method: "PUT",
         body: JSON.stringify({ title: derivedTitle, content: latestContent, tag_ids: selectedTagIDs }),
       });
+      setContent(latestContent);
       lastSavedContentRef.current = latestContent;
       setTitle(derivedTitle);
       setLastSavedAt(Math.floor(Date.now() / 1000));
