@@ -185,6 +185,15 @@ body {
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 
+.markdown-body blockquote p {
+  margin-bottom: 0;
+}
+
+.markdown-body center {
+  display: block;
+  text-align: center;
+}
+
 .markdown-body ul, .markdown-body ol {
   padding-left: 1.25em;
   margin-bottom: 0.4em;

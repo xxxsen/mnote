@@ -27,7 +27,34 @@ type Heading = {
 };
 
 const tocTokenRegex = /^\[(toc|TOC)]$/;
-const allowedHtmlTags = new Set(["span", "u", "br", "details", "summary"]);
+const allowedHtmlTags = new Set(["span", "u", "br", "details", "summary", "center", "div"]);
+
+const escapeUnsupportedHtml = (content: string) => {
+  const lines = content.split("\n");
+  let inCodeBlock = false;
+  return lines
+    .map((line) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("```")) {
+        inCodeBlock = !inCodeBlock;
+        return line;
+      }
+      if (inCodeBlock) return line;
+
+      return line.replace(/<(\/?)([a-zA-Z0-9-]+)([^>]*)>/g, (match, slash, tagName, attrs) => {
+        const name = String(tagName).toLowerCase();
+        if (allowedHtmlTags.has(name)) {
+          const lowerAttrs = attrs.toLowerCase();
+          if (lowerAttrs.includes("on") || lowerAttrs.includes("javascript:")) {
+            return `<${slash}${name}>`;
+          }
+          return match;
+        }
+        return match.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      });
+    })
+    .join("\n");
+};
 
 type ThemedSyntaxHighlighterProps = Omit<
   React.ComponentProps<typeof SyntaxHighlighter>,
@@ -125,28 +152,6 @@ const injectToc = (content: string, toc: string) => {
     result.push(line);
   }
   return result.join("\n");
-};
-
-const escapeUnsupportedHtml = (content: string) => {
-  const lines = content.split("\n");
-  let inCodeBlock = false;
-  return lines
-    .map((line) => {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("```")) {
-        inCodeBlock = !inCodeBlock;
-        return line;
-      }
-      if (inCodeBlock) return line;
-      return line.replace(/<\/?([a-zA-Z0-9-]+)([^>]*)>/g, (match, tagName) => {
-        const name = String(tagName).toLowerCase();
-        if (allowedHtmlTags.has(name)) {
-          return match;
-        }
-        return match.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      });
-    })
-    .join("\n");
 };
 
 interface CodeBlockProps {
