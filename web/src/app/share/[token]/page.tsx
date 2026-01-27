@@ -374,8 +374,8 @@ export default function SharePage() {
                 />
               </div>
               <div className="flex flex-col min-w-0">
-                <span className="text-slate-900 font-bold leading-none mb-1 truncate whitespace-nowrap">{detail.author}</span>
-                <span className="text-[10px] text-slate-400 font-mono uppercase tracking-tight">Verified Creator</span>
+                <span className="text-slate-900 font-bold leading-normal mb-0.5 truncate whitespace-nowrap">{detail.author}</span>
+                <span className="text-[10px] text-slate-400 font-mono uppercase tracking-tight leading-normal">Verified Creator</span>
               </div>
             </div>
 
