@@ -1282,7 +1282,7 @@ export default function EditorPage() {
                           <div 
                              key={tab.id}
                              onClick={() => { if (tab.id !== id) router.push(`/docs/${tab.id}`); }}
-                             className={`group flex items-center gap-2 px-3 h-full text-[10px] font-bold uppercase tracking-wider rounded-t-md border-x border-t transition-all cursor-pointer select-none shrink-0 ${tab.id === id ? "bg-background border-border text-foreground translate-y-[1px] z-10" : "bg-transparent border-transparent text-muted-foreground hover:bg-muted/50"}`}
+                             className={`group flex items-center gap-2 px-3 h-full text-xs font-bold uppercase tracking-wider rounded-t-md border-x border-t transition-all cursor-pointer select-none shrink-0 ${tab.id === id ? "bg-background border-border text-foreground translate-y-[1px] z-10" : "bg-transparent border-transparent text-muted-foreground hover:bg-muted/50"}`}
                           >
                              <span className="truncate max-w-none">{tab.title || "Untitled"}</span>
                              {tabs.length > 1 && (
@@ -1456,15 +1456,15 @@ export default function EditorPage() {
               </div>
              </div>
 
-              <div className="h-full bg-background overflow-hidden min-w-0 md:flex-[0_0_50%] w-full hidden md:block">
-                  <MarkdownPreview 
-                     content={previewContent} 
-                     className="h-full overflow-auto p-4" 
-                     ref={previewRef}
-                     onScroll={handlePreviewScroll}
-                      onTocLoaded={handleTocLoaded}
-                  />
-              </div>
+               <div className="h-full bg-background overflow-hidden min-w-0 md:flex-[0_0_50%] w-full hidden md:block">
+                   <MarkdownPreview 
+                      content={previewContent} 
+                      className="h-full overflow-auto" 
+                      ref={previewRef}
+                      onScroll={handlePreviewScroll}
+                       onTocLoaded={handleTocLoaded}
+                   />
+               </div>
 
         </div>
 

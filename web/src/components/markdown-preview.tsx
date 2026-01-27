@@ -514,7 +514,7 @@ const MarkdownPreview = memo(
         ref={ref}
         onScroll={onScroll}
         className={cn(
-          "markdown-body p-8 overflow-y-auto bg-background text-foreground h-full flex-1 min-w-0",
+          "markdown-body px-6 py-4 overflow-y-auto bg-background text-foreground h-full flex-1 min-w-0",
           className
         )}
       >
