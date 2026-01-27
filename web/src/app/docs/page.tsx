@@ -447,12 +447,6 @@ export default function DocsPage() {
             ))}
           </div>
         </div>
-        <div className="pt-4 border-t border-border">
-           <Button variant="ghost" className="w-full justify-start pl-0" onClick={handleLogout}>
-             <LogOut className="mr-2 h-4 w-4" />
-             Logout
-           </Button>
-        </div>
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0">
