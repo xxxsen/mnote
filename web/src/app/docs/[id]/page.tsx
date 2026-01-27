@@ -22,7 +22,6 @@ import {
   Home,
   Folder,
   Columns,
-  Menu,
   Plus,
   Search,
   RefreshCw,
@@ -74,24 +73,37 @@ const SIZES = [
   { label: "Huge", value: "24px" },
 ];
 
-const SLASH_COMMANDS = [
-  { id: "h1", label: "Heading 1", icon: <Heading1 className="h-4 w-4" />, action: (s: any) => s.handleFormat("line", "# ") },
-  { id: "h2", label: "Heading 2", icon: <Heading2 className="h-4 w-4" />, action: (s: any) => s.handleFormat("line", "## ") },
-  { id: "bold", label: "Bold", icon: <Bold className="h-4 w-4" />, action: (s: any) => s.handleFormat("wrap", "**", "**") },
-  { id: "italic", label: "Italic", icon: <Italic className="h-4 w-4" />, action: (s: any) => s.handleFormat("wrap", "*", "*") },
-  { id: "list", label: "Bullet List", icon: <List className="h-4 w-4" />, action: (s: any) => s.handleFormat("line", "- ") },
-  { id: "numlist", label: "Numbered List", icon: <ListOrdered className="h-4 w-4" />, action: (s: any) => s.handleFormat("line", "1. ") },
-  { id: "todo", label: "Todo List", icon: <ListTodo className="h-4 w-4" />, action: (s: any) => s.handleFormat("line", "- [ ] ") },
-  { id: "code", label: "Code Block", icon: <FileCode className="h-4 w-4" />, action: (s: any) => s.handleFormat("wrap", "```\n", "\n```") },
-  { id: "table", label: "Table", icon: <TableIcon className="h-4 w-4" />, action: (s: any) => s.handleInsertTable() },
-  { id: "quote", label: "Quote", icon: <Quote className="h-4 w-4" />, action: (s: any) => s.handleFormat("line", "> ") },
-  { id: "divider", label: "Divider", icon: <div className="h-0.5 w-4 bg-muted-foreground opacity-50" />, action: (s: any) => s.insertTextAtCursor("\n---\n") },
+type SlashActionContext = {
+  handleFormat: (type: "wrap" | "line", prefix: string, suffix?: string) => void;
+  handleInsertTable: () => void;
+  insertTextAtCursor: (text: string) => void;
+};
+
+type SlashCommand = {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  action: (ctx: SlashActionContext) => void;
+};
+
+const SLASH_COMMANDS: SlashCommand[] = [
+  { id: "h1", label: "Heading 1", icon: <Heading1 className="h-4 w-4" />, action: (s) => s.handleFormat("line", "# ") },
+  { id: "h2", label: "Heading 2", icon: <Heading2 className="h-4 w-4" />, action: (s) => s.handleFormat("line", "## ") },
+  { id: "bold", label: "Bold", icon: <Bold className="h-4 w-4" />, action: (s) => s.handleFormat("wrap", "**", "**") },
+  { id: "italic", label: "Italic", icon: <Italic className="h-4 w-4" />, action: (s) => s.handleFormat("wrap", "*", "*") },
+  { id: "list", label: "Bullet List", icon: <List className="h-4 w-4" />, action: (s) => s.handleFormat("line", "- ") },
+  { id: "numlist", label: "Numbered List", icon: <ListOrdered className="h-4 w-4" />, action: (s) => s.handleFormat("line", "1. ") },
+  { id: "todo", label: "Todo List", icon: <ListTodo className="h-4 w-4" />, action: (s) => s.handleFormat("line", "- [ ] ") },
+  { id: "code", label: "Code Block", icon: <FileCode className="h-4 w-4" />, action: (s) => s.handleFormat("wrap", "```\n", "\n```") },
+  { id: "table", label: "Table", icon: <TableIcon className="h-4 w-4" />, action: (s) => s.handleInsertTable() },
+  { id: "quote", label: "Quote", icon: <Quote className="h-4 w-4" />, action: (s) => s.handleFormat("line", "> ") },
+  { id: "divider", label: "Divider", icon: <div className="h-0.5 w-4 bg-muted-foreground opacity-50" />, action: (s) => s.insertTextAtCursor("\n---\n") },
 ];
 
 export default function EditorPage() {
   const params = useParams();
   const router = useRouter();
-  const [id, setId] = useState(params.id as string);
+  const [id] = useState(params.id as string);
   const [tabs, setTabs] = useState<{ id: string; title: string }[]>([]);
 
   const [content, setContent] = useState("");
@@ -109,6 +121,7 @@ export default function EditorPage() {
   const [slashMenu, setSlashMenu] = useState<{ open: boolean; x: number; y: number; filter: string }>({ open: false, x: 0, y: 0, filter: "" });
   const [hoverImage, setHoverImage] = useState<{ url: string; x: number; y: number } | null>(null);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
+  const [quickOpenQuery, setQuickOpenQuery] = useState("");
   const [otherDocs, setOtherDocs] = useState<Document[]>([]);
   const [shareUrl, setShareUrl] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -376,6 +389,18 @@ export default function EditorPage() {
     document.title = title ? `${title} - Micro Note` : "micro note";
   }, [title]);
 
+  useEffect(() => {
+    const handleQuickOpen = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setQuickOpenQuery("");
+        setShowQuickOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handleQuickOpen);
+    return () => window.removeEventListener("keydown", handleQuickOpen);
+  }, []);
+
 
   const schedulePreviewUpdate = useCallback(() => {
     if (previewTimerRef.current) {
@@ -398,8 +423,10 @@ export default function EditorPage() {
         selection: { anchor: from + text.length },
       });
       contentRef.current = view.state.doc.toString();
+      setContent(contentRef.current);
       setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
       schedulePreviewUpdate();
+      view.focus();
     },
     [schedulePreviewUpdate]
   );
@@ -461,6 +488,7 @@ export default function EditorPage() {
         }
       }
       contentRef.current = view.state.doc.toString();
+      setContent(contentRef.current);
       setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
       schedulePreviewUpdate();
       view.focus();
@@ -484,6 +512,7 @@ export default function EditorPage() {
         changes: { from: index, to: index + placeholder.length, insert: replacement },
       });
       contentRef.current = view.state.doc.toString();
+      setContent(contentRef.current);
       setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
       schedulePreviewUpdate();
     },
@@ -547,11 +576,11 @@ export default function EditorPage() {
     insertTextAtCursor(tableTemplate);
   }, [insertTextAtCursor]);
 
-  const handleSlashAction = useCallback((action: (s: any) => void) => {
+  const handleSlashAction = useCallback((action: (ctx: SlashActionContext) => void) => {
     const view = editorViewRef.current;
     if (!view) return;
     
-    const { from, to } = view.state.selection.main;
+    const { from } = view.state.selection.main;
     const line = view.state.doc.lineAt(from);
     const lineText = line.text;
     const relativePos = from - line.from;
@@ -696,7 +725,6 @@ export default function EditorPage() {
   }, [extractTitleFromContent, id, selectedTagIDs]);
 
   const handleDelete = async () => {
-    if (!confirm("Are you sure you want to delete this document?")) return;
     try {
       await apiFetch(`/documents/${id}`, { method: "DELETE" });
       router.push("/docs");
@@ -838,6 +866,16 @@ export default function EditorPage() {
     setTimeout(() => setCopied(false), 2000);
   }, [shareUrl]);
 
+  const handleOpenQuickOpen = useCallback(() => {
+    setQuickOpenQuery("");
+    setShowQuickOpen(true);
+  }, []);
+
+  const handleCloseQuickOpen = useCallback(() => {
+    setShowQuickOpen(false);
+    setQuickOpenQuery("");
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
@@ -897,6 +935,12 @@ export default function EditorPage() {
   }, [hasUnsavedChanges, id]);
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
+
+  const filteredQuickOpenDocs = otherDocs.filter((doc) => {
+    if (!quickOpenQuery.trim()) return true;
+    const haystack = `${doc.title || ""}`.toLowerCase();
+    return haystack.includes(quickOpenQuery.trim().toLowerCase());
+  });
 
   return (
     <div className="flex flex-col h-screen bg-background relative">
@@ -982,7 +1026,7 @@ export default function EditorPage() {
                        </div>
                     ))}
                     <button 
-                       onClick={() => setShowQuickOpen(true)}
+                       onClick={handleOpenQuickOpen}
                        className="px-2 py-1.5 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
                        title="Quick Open (Cmd+K)"
                     >
@@ -1422,7 +1466,7 @@ export default function EditorPage() {
                       </Button>
                       <Button variant="destructive" className="w-full text-xs font-bold" onClick={() => setShowDeleteConfirm(true)}>
                         <Trash2 className="mr-2 h-3.5 w-3.5" />
-                        Delete Document
+                        Delete Note
                       </Button>
                     </div>
                   </div>
@@ -1466,9 +1510,9 @@ export default function EditorPage() {
                   <div className="w-12 h-12 bg-destructive/10 text-destructive rounded-full flex items-center justify-center mx-auto mb-4">
                      <AlertTriangle className="h-6 w-6" />
                   </div>
-                  <h3 className="text-lg font-bold mb-2">Delete Document?</h3>
+                  <h3 className="text-lg font-bold mb-2">Delete Note?</h3>
                   <p className="text-sm text-muted-foreground mb-6">
-                     This action cannot be undone. All versions of <span className="font-mono font-bold text-foreground">"{title || "Untitled"}"</span> will be permanently removed.
+                     This action cannot be undone. All versions of <span className="font-mono font-bold text-foreground">&ldquo;{title || "Untitled"}&rdquo;</span> will be permanently removed.
                   </p>
                   <div className="flex gap-3">
                      <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setShowDeleteConfirm(false)}>
@@ -1485,31 +1529,34 @@ export default function EditorPage() {
 
       {showQuickOpen && (
          <div className="fixed inset-0 z-[150] flex items-start justify-center pt-[15vh] px-4">
-            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowQuickOpen(false)} />
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={handleCloseQuickOpen} />
             <div className="relative w-full max-w-lg bg-popover border border-border rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                <div className="flex items-center px-4 py-3 border-b border-border gap-3">
                   <Search className="h-4 w-4 text-muted-foreground" />
                   <input 
                      autoFocus
-                     placeholder="Quick open document..."
+                     placeholder="Quick open note..."
                      className="bg-transparent border-none focus:ring-0 text-sm flex-1 outline-none"
-                     onKeyDown={(e) => e.key === "Escape" && setShowQuickOpen(false)}
+                     value={quickOpenQuery}
+                     onChange={(e) => setQuickOpenQuery(e.target.value)}
+                     onKeyDown={(e) => e.key === "Escape" && handleCloseQuickOpen()}
                   />
-                  <X className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => setShowQuickOpen(false)} />
+                  <X className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground" onClick={handleCloseQuickOpen} />
                </div>
-                     <div className="max-h-[50vh] overflow-y-auto p-2">
-                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 py-2">Switch to Document</div>
-                  {otherDocs.length === 0 ? (
-
-                     <div className="px-2 py-4 text-sm text-muted-foreground italic">No other documents found</div>
+                      <div className="max-h-[50vh] overflow-y-auto p-2">
+                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 py-2">Switch to Note</div>
+                  {filteredQuickOpenDocs.length === 0 ? (
+                     <div className="px-2 py-4 text-sm text-muted-foreground italic">
+                       {quickOpenQuery ? "No matching notes found" : "No other notes found"}
+                     </div>
                   ) : (
                      <div className="space-y-0.5">
-                        {otherDocs.map(doc => (
+                        {filteredQuickOpenDocs.map(doc => (
                            <button
                               key={doc.id}
                               onClick={() => {
                                  router.push(`/docs/${doc.id}`);
-                                 setShowQuickOpen(false);
+                                 handleCloseQuickOpen();
                               }}
                               className="flex items-center w-full px-3 py-2 text-sm rounded-lg hover:bg-accent hover:text-accent-foreground text-left transition-colors group"
                            >

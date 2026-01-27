@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import mermaid from "mermaid";
 
 interface MermaidProps {
@@ -28,7 +28,7 @@ export default function Mermaid({ chart }: MermaidProps) {
   useEffect(() => {
     if (!chart || !ref.current) return;
 
-    const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+    const id = `mermaid-${Math.random().toString(36).slice(2, 11)}`;
     const normalized = chart.trim();
 
     mermaid

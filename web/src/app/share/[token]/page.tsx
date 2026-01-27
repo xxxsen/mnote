@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import { apiFetch } from "@/lib/api";
 import MarkdownPreview from "@/components/markdown-preview";
-import { PublicShareDetail, Tag as TagType } from "@/types";
+import { PublicShareDetail } from "@/types";
 import { formatDate, generatePixelAvatar } from "@/lib/utils";
 import { Clock, User, Tag as TagIcon, ArrowUp, Link2, Download, Menu, X, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -241,7 +241,30 @@ export default function SharePage() {
   }, [tocContent, doc]);
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
-  if (error || !doc || !detail) return <div className="flex h-screen items-center justify-center text-destructive">Document not found or link expired</div>;
+  if (error || !doc || !detail) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center px-4 py-16">
+        <div className="w-full max-w-md bg-white border border-slate-200/70 rounded-2xl shadow-xl p-8 text-center">
+          <div className="mx-auto w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center text-xl font-bold">
+            M
+          </div>
+          <div className="mt-4 text-xs font-mono text-slate-500 uppercase tracking-widest">Micro Note</div>
+          <h1 className="mt-3 text-xl font-bold text-slate-900">Share link unavailable</h1>
+          <p className="mt-2 text-sm text-slate-500">
+            This note may have been deleted, moved, or the link has expired.
+          </p>
+          <div className="mt-6 flex items-center justify-center gap-3">
+            <Link href="/">
+              <Button className="rounded-full px-5">Go Home</Button>
+            </Link>
+            <Link href="/login">
+              <Button variant="outline" className="rounded-full px-5">Sign In</Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const readingTime = estimateReadingTime(doc.content);
 
@@ -310,6 +333,7 @@ export default function SharePage() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 text-sm text-slate-500 border-y border-slate-200/60 py-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full border border-slate-200 overflow-hidden shrink-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img 
                   src={generatePixelAvatar(detail.author)} 
                   alt="Author" 
