@@ -24,8 +24,8 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-sans), "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", sans-serif;
-  --font-mono: var(--font-mono), "JetBrains Mono", "SF Mono", "Monaco", "Menlo", "Consolas", "Liberation Mono", "Courier New", "Source Han Sans HW SC", "Noto Sans CJK SC", monospace;
+  --font-sans: var(--font-inter), "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: var(--font-inter), "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -78,8 +78,7 @@ body {
   height: 100%;
   width: 100%;
   font-family: var(--font-mono) !important;
-  font-size: 14px;
-  font-variant-ligatures: contextual;
+  font-size: 16px;
 }
 
 .cm-scroller {
@@ -94,7 +93,6 @@ body {
   color: #374151;
   max-width: 100%;
   overflow-wrap: break-word;
-  font-feature-settings: "cv11" 1, "cv01" 1;
 }
 
 .markdown-body code, .markdown-body pre {
