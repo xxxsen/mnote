@@ -62,6 +62,9 @@ type HastNode = {
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   properties?: Record<string, any>;
   children?: HastNode[];
+  data?: {
+    meta?: string;
+  };
 };
 
 const getHastText = (node: HastNode): string => {
@@ -144,6 +147,103 @@ const escapeUnsupportedHtml = (content: string) => {
     .join("\n");
 };
 
+interface CodeBlockProps {
+  language: string;
+  fileName: string;
+  rawCode: string;
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  [key: string]: any;
+}
+
+const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps) => {
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopyLocal = React.useCallback(() => {
+    const onSuccess = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(rawCode).then(onSuccess).catch(() => {
+        const textarea = document.createElement("textarea");
+        textarea.value = rawCode;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "absolute";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(textarea);
+        if (ok) onSuccess();
+      });
+    }
+  }, [rawCode]);
+
+  const displayLanguage = language.toLowerCase();
+  const displayTitle = fileName || displayLanguage;
+
+  return (
+    <div
+      className="group"
+      style={{
+        margin: 0,
+        marginBottom: "1.5em",
+        borderRadius: "var(--radius-md)",
+        backgroundColor: "#f8f9fa",
+        border: "1px solid rgba(0,0,0,0.06)",
+        boxShadow: "none",
+        position: "relative",
+        overflow: "hidden"
+      }}
+    >
+      <div className="flex items-center justify-between px-3 h-8 bg-black/[0.02] border-b border-black/[0.03]">
+        <span className="text-[10px] font-bold text-muted-foreground/50 tracking-wide font-mono">
+          {displayTitle}
+        </span>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            handleCopyLocal();
+          }}
+          className="text-[10px] px-2 h-5 flex items-center justify-center rounded border border-transparent hover:border-border bg-transparent hover:bg-background text-muted-foreground/40 hover:text-foreground transition-all min-w-[50px] font-medium"
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <div className="p-3 pt-2">
+        <ThemedSyntaxHighlighter
+          language={language}
+          style={oneLight}
+          PreTag="pre"
+          customStyle={{
+            margin: 0,
+            padding: 0,
+            background: "transparent",
+            boxShadow: "none",
+            border: "none",
+          }}
+          codeTagProps={{
+            style: {
+              border: "none",
+              boxShadow: "none",
+              background: "transparent",
+              padding: 0,
+            },
+          }}
+          {...rest}
+        >
+          {rawCode}
+        </ThemedSyntaxHighlighter>
+      </div>
+    </div>
+  );
+});
+
+CodeBlock.displayName = "CodeBlock";
+
 const MarkdownPreview = memo(
   forwardRef<HTMLDivElement, MarkdownPreviewProps>(function MarkdownPreview(
     { content, className, showTocAside = false, tocClassName, onScroll, onTocLoaded },
@@ -185,49 +285,6 @@ const MarkdownPreview = memo(
     onTocLoaded?.(tocMarkdown);
   }, [tocMarkdown, onTocLoaded]);
 
-  const [copiedId, setCopiedId] = React.useState<string | null>(null);
-  const copyTimeoutRef = React.useRef<number | null>(null);
-
-  const handleCopy = React.useCallback((id: string, text: string) => {
-    if (copyTimeoutRef.current) {
-      window.clearTimeout(copyTimeoutRef.current);
-    }
-    const onSuccess = () => {
-      setCopiedId(id);
-      copyTimeoutRef.current = window.setTimeout(() => setCopiedId(null), 1200);
-    };
-    const fallbackCopy = () => {
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.setAttribute("readonly", "");
-      textarea.style.position = "absolute";
-      textarea.style.left = "-9999px";
-      document.body.appendChild(textarea);
-      textarea.select();
-      const ok = document.execCommand("copy");
-      document.body.removeChild(textarea);
-      if (ok) {
-        onSuccess();
-      }
-    };
-
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text).then(onSuccess).catch(fallbackCopy);
-    } else {
-      fallbackCopy();
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (copyTimeoutRef.current) {
-        window.clearTimeout(copyTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  let codeBlockIndex = 0;
-
   return (
     <div className={cn("relative h-full min-h-0 w-full", showTocAside ? "flex gap-8" : "")}>
       <div
@@ -257,7 +314,7 @@ const MarkdownPreview = memo(
             return <pre {...props}>{children}</pre>;
           },
           code({ className, children, ...props }) {
-            const match = /language-(\w+)/.exec(className || "");
+            const match = /language-(\S+)/.exec(className || "");
             const isMermaid = match && match[1] === "mermaid";
             const isToc = match && match[1] === "toc";
 
@@ -279,62 +336,33 @@ const MarkdownPreview = memo(
               const { inline: _inline, node: _node, ...rest } =
                 props as React.HTMLAttributes<HTMLElement> & {
                   inline?: boolean;
-                  node?: unknown;
+                  node?: HastNode;
                 };
               void _inline;
-              void _node;
+              
+              const languageMatch = match[1];
+              let language = languageMatch;
+              let fileName = "";
+
+              if (language.includes(":")) {
+                const parts = language.split(":");
+                language = parts[0];
+                fileName = parts[1];
+              } else if (_node?.data?.meta) {
+                fileName = _node.data.meta;
+              }
+
               const rawCode = Array.isArray(children)
                 ? children.join("")
                 : String(children).replace(/\n$/, "");
-              const blockId = `${match[1]}-${codeBlockIndex++}`;
+
               return (
-                <div
-                  style={{
-                    margin: 0,
-                    marginBottom: "1.5em",
-                    padding: "1rem",
-                    borderRadius: "var(--radius-md)",
-                    backgroundColor: "#f6f8fa",
-                    border: "1px solid rgba(0,0,0,0.05)",
-                    boxShadow: "none",
-                    position: "relative",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      handleCopy(blockId, rawCode);
-                    }}
-                    className="absolute top-2 right-2 z-10 pointer-events-auto text-xs px-2 py-1 rounded border border-border bg-background/80 text-muted-foreground hover:text-foreground hover:bg-background"
-                  >
-                    {copiedId === blockId ? "Copied" : "Copy"}
-                  </button>
-                  <ThemedSyntaxHighlighter
-                    language={match[1]}
-                    style={oneLight}
-                    PreTag="pre"
-                    customStyle={{
-                      margin: 0,
-                      padding: 0,
-                      background: "transparent",
-                      boxShadow: "none",
-                      border: "none",
-                    }}
-                    codeTagProps={{
-                      style: {
-                        border: "none",
-                        boxShadow: "none",
-                        background: "transparent",
-                        padding: 0,
-                      },
-                    }}
-                    {...rest}
-                  >
-                    {rawCode}
-                  </ThemedSyntaxHighlighter>
-                </div>
+                <CodeBlock
+                  language={language}
+                  fileName={fileName}
+                  rawCode={rawCode}
+                  {...rest}
+                />
               );
             }
 
