@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useRef, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
 import CodeMirror from "@uiw/react-codemirror";
 import { EditorView, placeholder } from "@codemirror/view";
@@ -129,6 +130,7 @@ export default function EditorPage() {
   const [copied, setCopied] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [popoverAnchor, setPopoverAnchor] = useState<{ top: number; left: number } | null>(null);
   const isComposingRef = useRef(false);
 
   const [previewContent, setPreviewContent] = useState(content);
@@ -141,6 +143,10 @@ export default function EditorPage() {
   const previewRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const pasteHandlerRef = useRef<((event: ClipboardEvent) => void) | null>(null);
+  const typewriterRafRef = useRef<number | null>(null);
+  const colorButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sizeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
   const scrollingSource = useRef<"editor" | "preview" | null>(null);
   const forcePreviewSyncRef = useRef(false);
 
@@ -390,6 +396,54 @@ export default function EditorPage() {
   }, [title]);
 
   useEffect(() => {
+    if (!activePopover) return;
+    const updateAnchor = () => {
+      const ref =
+        activePopover === "color"
+          ? colorButtonRef.current
+          : activePopover === "size"
+          ? sizeButtonRef.current
+          : emojiButtonRef.current;
+      if (!ref) return;
+      const rect = ref.getBoundingClientRect();
+      setPopoverAnchor({ top: rect.bottom + 8, left: rect.left });
+    };
+    updateAnchor();
+    window.addEventListener("resize", updateAnchor);
+    window.addEventListener("scroll", updateAnchor, true);
+    return () => {
+      window.removeEventListener("resize", updateAnchor);
+      window.removeEventListener("scroll", updateAnchor, true);
+    };
+  }, [activePopover]);
+
+  useEffect(() => {
+    if (!activePopover) return;
+    const handlePointer = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest("[data-popover-panel]") || target.closest("[data-popover-trigger]")) return;
+      setActivePopover(null);
+    };
+    window.addEventListener("pointerdown", handlePointer);
+    return () => window.removeEventListener("pointerdown", handlePointer);
+  }, [activePopover]);
+
+  const renderPopover = (content: React.ReactNode) => {
+    if (!popoverAnchor || typeof document === "undefined") return null;
+    return createPortal(
+      <div
+        data-popover-panel
+        className="fixed z-[200]"
+        style={{ top: popoverAnchor.top, left: popoverAnchor.left }}
+      >
+        {content}
+      </div>,
+      document.body
+    );
+  };
+
+  useEffect(() => {
     const handleQuickOpen = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -413,6 +467,28 @@ export default function EditorPage() {
     }, 300);
   }, [startTransition]);
 
+  const centerCursorInView = useCallback((view: EditorView) => {
+    if (!typewriterMode) return;
+    if (typewriterRafRef.current) {
+      window.cancelAnimationFrame(typewriterRafRef.current);
+    }
+    typewriterRafRef.current = window.requestAnimationFrame(() => {
+      const pos = view.state.selection.main.head;
+      const coords = view.coordsAtPos(pos);
+      const scrollDom = view.scrollDOM;
+      if (!coords) {
+        view.dispatch({
+          effects: EditorView.scrollIntoView(pos, { y: "center" }),
+        });
+        return;
+      }
+      const rect = scrollDom.getBoundingClientRect();
+      const offset = coords.top - rect.top;
+      const target = scrollDom.scrollTop + offset - scrollDom.clientHeight / 2;
+      scrollDom.scrollTop = Math.max(0, target);
+    });
+  }, [typewriterMode]);
+
   const insertTextAtCursor = useCallback(
     (text: string) => {
       const view = editorViewRef.current;
@@ -424,6 +500,7 @@ export default function EditorPage() {
       });
       contentRef.current = view.state.doc.toString();
       setContent(contentRef.current);
+      setPreviewContent(contentRef.current);
       setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
       schedulePreviewUpdate();
       view.focus();
@@ -489,6 +566,7 @@ export default function EditorPage() {
       }
       contentRef.current = view.state.doc.toString();
       setContent(contentRef.current);
+      setPreviewContent(contentRef.current);
       setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
       schedulePreviewUpdate();
       view.focus();
@@ -513,6 +591,7 @@ export default function EditorPage() {
       });
       contentRef.current = view.state.doc.toString();
       setContent(contentRef.current);
+      setPreviewContent(contentRef.current);
       setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
       schedulePreviewUpdate();
     },
@@ -927,6 +1006,9 @@ export default function EditorPage() {
       if (previewTimerRef.current) {
         window.clearTimeout(previewTimerRef.current);
       }
+      if (typewriterRafRef.current) {
+        window.cancelAnimationFrame(typewriterRafRef.current);
+      }
       if (typeof window !== "undefined" && hasUnsavedChanges) {
         const payload = JSON.stringify({ content: contentRef.current, updatedAt: Date.now() });
         window.localStorage.setItem(`mnote:draft:${id}`, payload);
@@ -943,7 +1025,7 @@ export default function EditorPage() {
   });
 
   return (
-    <div className="flex flex-col h-screen bg-background relative">
+    <div className={`flex flex-col h-screen bg-background relative ${typewriterMode ? "typewriter-mode" : ""}`}>
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -955,6 +1037,7 @@ export default function EditorPage() {
         
         .cm-editor { font-family: 'JetBrains Mono', 'Fira Code', monospace !important; }
         .cm-scroller { scroll-behavior: smooth; }
+        .typewriter-mode .cm-scroller { scroll-behavior: auto; }
         
         .prose h1, .prose h2, .prose h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
         .prose p { margin-bottom: 1em; line-height: 1.7; }
@@ -998,10 +1081,10 @@ export default function EditorPage() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden min-w-0 relative">
+      <div className="flex-1 flex overflow-hidden min-w-0 relative pb-8">
         <div className={`flex-1 flex flex-col md:flex-row h-full transition-all duration-300 min-w-0 ${showDetails ? "mr-80" : ""}`}>
           
-              <div className="h-full border-r border-border overflow-hidden min-w-0 md:flex-[0_0_50%] w-full flex flex-col relative">
+               <div className="h-full border-r border-border overflow-hidden min-w-0 md:flex-[0_0_50%] w-full flex flex-col relative">
                  <div className="flex items-center gap-1 px-1 pt-1 bg-muted/30 border-b border-border overflow-x-auto no-scrollbar shrink-0">
                     {tabs.map(tab => (
                        <div 
@@ -1034,7 +1117,7 @@ export default function EditorPage() {
                        <span className="text-[9px] font-bold">OPEN</span>
                     </button>
                  </div>
-                 <div className="flex items-center gap-1 p-2 border-b border-border bg-background/50 backdrop-blur-sm sticky top-0 z-10 flex-none overflow-x-auto no-scrollbar">
+                 <div className="flex items-center gap-1 p-2 border-b border-border bg-background/50 backdrop-blur-sm sticky top-0 z-10 flex-none overflow-x-auto overflow-y-visible no-scrollbar">
 
                    <div className="flex items-center gap-0.5">
                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleUndo} title="Undo"><Undo className="h-4 w-4" /></Button>
@@ -1053,69 +1136,32 @@ export default function EditorPage() {
                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "*", "*")} title="Italic"><Italic className="h-4 w-4" /></Button>
                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "~~", "~~")} title="Strikethrough"><Strikethrough className="h-4 w-4" /></Button>
                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "<u>", "</u>")} title="Underline"><UnderlineIcon className="h-4 w-4" /></Button>
-                     <div className="relative">
-                        <Button 
-                           variant="ghost" 
-                           size="icon" 
-                           className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "color" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
-                           onClick={() => setActivePopover(activePopover === "color" ? null : "color")} 
-                           title="Text Color"
-                        >
-                           <Palette className="h-4 w-4" />
-                        </Button>
-                        {activePopover === "color" && (
-                           <div className="absolute top-full left-0 mt-2 z-50 p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
-                              <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
-                                 <span className="text-[10px] font-bold uppercase text-muted-foreground">Select Color</span>
-                                 <Button size="icon" variant="ghost" className="h-4 w-4" onClick={() => setActivePopover(null)}><X className="h-3 w-3" /></Button>
-                              </div>
-                              <div className="grid grid-cols-4 gap-2 w-48">
-                                 {COLORS.map(c => (
-                                    <button 
-                                          key={c.value || "default"} 
-                                          onClick={() => handleColor(c.value)}
-                                          className="h-8 w-full rounded-lg border border-input hover:scale-105 transition-transform flex items-center justify-center"
-                                          style={{ backgroundColor: c.value || "transparent" }}
-                                          title={c.label}
-                                    >
-                                          {!c.value && <span className="text-xs">A</span>}
-                                    </button>
-                                 ))}
-                              </div>
-                           </div>
-                        )}
-                     </div>
-                     <div className="relative">
-                        <Button 
-                           variant="ghost" 
-                           size="icon" 
-                           className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "size" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
-                           onClick={() => setActivePopover(activePopover === "size" ? null : "size")} 
-                           title="Font Size"
-                        >
-                           <Type className="h-4 w-4" />
-                        </Button>
-                        {activePopover === "size" && (
-                           <div className="absolute top-full left-0 mt-2 z-50 p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
-                              <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
-                                 <span className="text-[10px] font-bold uppercase text-muted-foreground">Select Size</span>
-                                 <Button size="icon" variant="ghost" className="h-4 w-4" onClick={() => setActivePopover(null)}><X className="h-3 w-3" /></Button>
-                              </div>
-                              <div className="flex flex-col gap-1 w-32">
-                                 {SIZES.map(s => (
-                                    <button 
-                                          key={s.value} 
-                                          onClick={() => handleSize(s.value)}
-                                          className="text-sm px-2 py-1 hover:bg-accent rounded-lg text-left transition-colors flex items-center gap-2"
-                                    >
-                                          <span style={{ fontSize: s.value }}>Aa</span>
-                                          <span className="text-xs text-muted-foreground ml-auto">{s.label}</span>
-                                    </button>
-                                 ))}
-                              </div>
-                           </div>
-                        )}
-                     </div>
+                      <div className="relative">
+                         <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "color" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
+                            onClick={() => setActivePopover(activePopover === "color" ? null : "color")} 
+                            title="Text Color"
+                            data-popover-trigger
+                            ref={colorButtonRef}
+                         >
+                            <Palette className="h-4 w-4" />
+                         </Button>
+                      </div>
+                      <div className="relative">
+                         <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "size" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
+                            onClick={() => setActivePopover(activePopover === "size" ? null : "size")} 
+                            title="Font Size"
+                            data-popover-trigger
+                            ref={sizeButtonRef}
+                         >
+                            <Type className="h-4 w-4" />
+                         </Button>
+                      </div>
                    </div>
                    <div className="w-px h-4 bg-border mx-1 shrink-0" />
 
@@ -1132,32 +1178,19 @@ export default function EditorPage() {
                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "```\n", "\n```")} title="Code Block"><FileCode className="h-4 w-4" /></Button>
                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "[", "](url)")} title="Link"><LinkIcon className="h-4 w-4" /></Button>
                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleInsertTable} title="Table"><TableIcon className="h-4 w-4" /></Button>
-                     <div className="relative">
-                        <Button 
-                           variant="ghost" 
-                           size="icon" 
-                           className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "emoji" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
-                           onClick={() => setActivePopover(activePopover === "emoji" ? null : "emoji")} 
-                           title="Emoji"
-                        >
-                           <Smile className="h-4 w-4" />
-                        </Button>
-                        {activePopover === "emoji" && (
-                           <div className="absolute top-full right-0 mt-2 z-50 p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
-                              <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
-                                 <span className="text-[10px] font-bold uppercase text-muted-foreground">Insert Emoji</span>
-                                 <Button size="icon" variant="ghost" className="h-4 w-4" onClick={() => setActivePopover(null)}><X className="h-3 w-3" /></Button>
-                              </div>
-                              <div className="grid grid-cols-5 gap-1 w-64">
-                                 {EMOJIS.map(emoji => (
-                                    <button key={emoji} onClick={() => { insertTextAtCursor(emoji); setActivePopover(null); }} className="text-xl p-2 hover:bg-accent rounded-lg transition-colors text-center">
-                                          {emoji}
-                                    </button>
-                                 ))}
-                              </div>
-                           </div>
-                        )}
-                     </div>
+                      <div className="relative">
+                         <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "emoji" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
+                            onClick={() => setActivePopover(activePopover === "emoji" ? null : "emoji")} 
+                            title="Emoji"
+                            data-popover-trigger
+                            ref={emojiButtonRef}
+                         >
+                            <Smile className="h-4 w-4" />
+                         </Button>
+                      </div>
                    </div>
                  </div>
 
@@ -1198,11 +1231,14 @@ export default function EditorPage() {
                         const height = view.scrollDOM.clientHeight;
                         return { top: height / 2 - 10, bottom: height / 2 - 10 };
                      }),
-                     EditorView.updateListener.of((update) => {
-                       if (update.selectionSet || update.docChanged) {
-                         updateCursorInfo(update.view);
-                         
-                         if (update.docChanged) {
+                      EditorView.updateListener.of((update) => {
+                        if (update.selectionSet || update.docChanged) {
+                          updateCursorInfo(update.view);
+                          if (typewriterMode) {
+                            centerCursorInView(update.view);
+                          }
+                          
+                          if (update.docChanged) {
                             const state = update.view.state;
                             const pos = state.selection.main.head;
                             const line = state.doc.lineAt(pos);
@@ -1477,7 +1513,7 @@ export default function EditorPage() {
         )}
       </div>
 
-      <footer className={`h-8 border-t border-border bg-background/50 backdrop-blur-sm flex items-center px-4 justify-between text-[10px] font-mono text-muted-foreground z-20 transition-all duration-300`}>
+      <footer className={`h-8 border-t border-border bg-background/80 backdrop-blur-sm flex items-center px-4 justify-between text-[10px] font-mono text-muted-foreground z-50 fixed bottom-0 left-0 right-0 transition-all duration-300`}>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
             <span className="opacity-50">LN</span> {cursorPos.line}
@@ -1632,6 +1668,81 @@ export default function EditorPage() {
           )}
         </div>
       )}
+
+      {activePopover === "color" &&
+        renderPopover(
+          <div className="p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
+              <span className="text-[10px] font-bold uppercase text-muted-foreground">Select Color</span>
+              <Button size="icon" variant="ghost" className="h-4 w-4" onClick={() => setActivePopover(null)}>
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+            <div className="grid grid-cols-4 gap-2 w-48">
+              {COLORS.map((c) => (
+                <button
+                  key={c.value || "default"}
+                  onClick={() => handleColor(c.value)}
+                  className="h-8 w-full rounded-lg border border-input hover:scale-105 transition-transform flex items-center justify-center"
+                  style={{ backgroundColor: c.value || "transparent" }}
+                  title={c.label}
+                >
+                  {!c.value && <span className="text-xs">A</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+      {activePopover === "size" &&
+        renderPopover(
+          <div className="p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
+              <span className="text-[10px] font-bold uppercase text-muted-foreground">Select Size</span>
+              <Button size="icon" variant="ghost" className="h-4 w-4" onClick={() => setActivePopover(null)}>
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+            <div className="flex flex-col gap-1 w-32">
+              {SIZES.map((s) => (
+                <button
+                  key={s.value}
+                  onClick={() => handleSize(s.value)}
+                  className="text-sm px-2 py-1 hover:bg-accent rounded-lg text-left transition-colors flex items-center gap-2"
+                >
+                  <span style={{ fontSize: s.value }}>Aa</span>
+                  <span className="text-xs text-muted-foreground ml-auto">{s.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+      {activePopover === "emoji" &&
+        renderPopover(
+          <div className="p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
+              <span className="text-[10px] font-bold uppercase text-muted-foreground">Insert Emoji</span>
+              <Button size="icon" variant="ghost" className="h-4 w-4" onClick={() => setActivePopover(null)}>
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+            <div className="grid grid-cols-5 gap-1 w-64">
+              {EMOJIS.map((emoji) => (
+                <button
+                  key={emoji}
+                  onClick={() => {
+                    insertTextAtCursor(emoji);
+                    setActivePopover(null);
+                  }}
+                  className="text-xl p-2 hover:bg-accent rounded-lg transition-colors text-center"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
     </div>
   );
 }
