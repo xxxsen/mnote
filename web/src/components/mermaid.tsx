@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import mermaid from "mermaid";
 
 interface MermaidProps {
   chart: string;
 }
 
-export default function Mermaid({ chart }: MermaidProps) {
+const svgCache = new Map<string, string>();
+
+const Mermaid = memo(({ chart }: MermaidProps) => {
   const ref = useRef<HTMLDivElement>(null);
-  const [svg, setSvg] = useState<string>("");
+  const [svg, setSvg] = useState<string>(() => svgCache.get(chart) || "");
   const [error, setError] = useState<boolean>(false);
+  const [isRendered, setIsRendered] = useState(() => svgCache.has(chart));
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -27,21 +30,35 @@ export default function Mermaid({ chart }: MermaidProps) {
 
   useEffect(() => {
     if (!chart || !ref.current) return;
+    
+    if (svgCache.has(chart) && svg === svgCache.get(chart)) {
+      return;
+    }
 
     const id = `mermaid-${Math.random().toString(36).slice(2, 11)}`;
     const normalized = chart.trim();
 
+    let isMounted = true;
+
     mermaid
       .render(id, normalized)
-      .then(({ svg }) => {
-        setSvg(svg);
+      .then(({ svg: renderedSvg }) => {
+        if (!isMounted) return;
+        svgCache.set(chart, renderedSvg);
+        setSvg(renderedSvg);
         setError(false);
+        setIsRendered(true);
       })
       .catch((err) => {
+        if (!isMounted) return;
         console.error("Mermaid render error:", err);
         setError(true);
       });
-  }, [chart]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [chart, svg]);
 
   if (error) {
     return (
@@ -54,8 +71,16 @@ export default function Mermaid({ chart }: MermaidProps) {
   return (
     <div
       ref={ref}
-      className="mermaid-container flex justify-center w-full overflow-x-auto"
+      className="mermaid-container flex justify-center w-full overflow-hidden"
+      style={{ 
+        minHeight: isRendered ? "auto" : "120px",
+        transition: "min-height 0.3s ease" 
+      }}
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );
-}
+});
+
+Mermaid.displayName = "Mermaid";
+
+export default Mermaid;

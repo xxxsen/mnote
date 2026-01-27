@@ -377,6 +377,137 @@ const MarkdownPreview = memo(
     onTocLoaded?.(tocMarkdown);
   }, [tocMarkdown, onTocLoaded]);
 
+  const markdownComponents = useMemo(
+    () => ({
+      pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
+        if (
+          React.isValidElement<{ className?: string }>(children) &&
+          children.props.className
+        ) {
+          const className = children.props.className;
+          const isToc = className.includes("language-toc");
+          const isMermaid = className.includes("language-mermaid");
+          if (isToc || isMermaid || className.includes("language-")) {
+            return <>{children}</>;
+          }
+        }
+        return <pre {...props}>{children}</pre>;
+      },
+      code({ className, children, ...props }: React.HTMLAttributes<HTMLElement>) {
+        const match = /language-(\S+)/.exec(className || "");
+        const isMermaid = match && match[1] === "mermaid";
+        const isToc = match && match[1] === "toc";
+
+        if (isToc) {
+          return (
+            <nav className="toc-wrapper">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                {String(children)}
+              </ReactMarkdown>
+            </nav>
+          );
+        }
+
+        if (isMermaid) {
+          return <MermaidBlock chart={String(children).replace(/\n$/, "")} />;
+        }
+
+        if (match) {
+          const { inline: _inline, node: _node, ...rest } =
+            props as React.HTMLAttributes<HTMLElement> & {
+              inline?: boolean;
+              node?: HastNode;
+            };
+          void _inline;
+          
+          const languageMatch = match[1];
+          let language = languageMatch;
+          let fileName = "";
+
+          if (language.includes(":")) {
+            const parts = language.split(":");
+            language = parts[0];
+            fileName = parts[1];
+          } else if (_node?.data?.meta) {
+            fileName = _node.data.meta;
+          }
+
+          const rawCode = Array.isArray(children)
+            ? children.join("")
+            : String(children).replace(/\n$/, "");
+
+          return (
+            <CodeBlock
+              language={language}
+              fileName={fileName}
+              rawCode={rawCode}
+              {...rest}
+            />
+          );
+        }
+
+        return (
+          <code className={className} {...props}>
+            {children}
+          </code>
+        );
+      },
+      h1({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
+        return <h1 id={id}>{children}</h1>;
+      },
+      h2({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
+        return <h2 id={id}>{children}</h2>;
+      },
+      h3({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
+        return <h3 id={id}>{children}</h3>;
+      },
+      h4({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
+        return <h4 id={id}>{children}</h4>;
+      },
+      h5({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
+        return <h5 id={id}>{children}</h5>;
+      },
+      h6({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
+        return <h6 id={id}>{children}</h6>;
+      },
+      img({ src, alt, title, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) {
+        let filename = "";
+        if (alt && alt.startsWith("PIC:")) {
+          filename = alt.replace("PIC:", "");
+        } else if (src) {
+          try {
+            const url = new URL(src as string, "http://dummy.com");
+            const parts = url.pathname.split("/");
+            const last = parts[parts.length - 1];
+            if (last) filename = decodeURIComponent(last);
+          } catch {}
+        }
+
+        return (
+          <span className="inline-flex flex-col items-center max-w-full">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={src}
+              alt={alt}
+              title={title}
+              {...props}
+              style={{ marginBottom: "0.5rem" }}
+            />
+            {filename && (
+              <span className="text-xs text-muted-foreground font-mono opacity-80 break-all px-2">
+                [{filename}]
+              </span>
+            )}
+          </span>
+        );
+      },
+    }),
+    []
+  );
+
+  const remarkPlugins = useMemo(() => [remarkGfm], []);
+  const rehypePlugins = useMemo(() => [rehypeRaw, rehypeSlugger], [rehypeSlugger]);
+
   return (
     <div className={cn("relative h-full min-h-0 w-full", showTocAside ? "flex gap-8" : "")}>
       <div
@@ -388,133 +519,10 @@ const MarkdownPreview = memo(
         )}
       >
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeRaw, rehypeSlugger]}
-          components={{
-          pre({ children, ...props }) {
-            if (
-              React.isValidElement<{ className?: string }>(children) &&
-              children.props.className
-            ) {
-              const className = children.props.className;
-              const isToc = className.includes("language-toc");
-              const isMermaid = className.includes("language-mermaid");
-              if (isToc || isMermaid || className.includes("language-")) {
-                return <>{children}</>;
-              }
-            }
-            return <pre {...props}>{children}</pre>;
-          },
-          code({ className, children, ...props }) {
-            const match = /language-(\S+)/.exec(className || "");
-            const isMermaid = match && match[1] === "mermaid";
-            const isToc = match && match[1] === "toc";
-
-            if (isToc) {
-              return (
-                <nav className="toc-wrapper">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                    {String(children)}
-                  </ReactMarkdown>
-                </nav>
-              );
-            }
-
-            if (isMermaid) {
-              return <MermaidBlock chart={String(children).replace(/\n$/, "")} />;
-            }
-
-            if (match) {
-              const { inline: _inline, node: _node, ...rest } =
-                props as React.HTMLAttributes<HTMLElement> & {
-                  inline?: boolean;
-                  node?: HastNode;
-                };
-              void _inline;
-              
-              const languageMatch = match[1];
-              let language = languageMatch;
-              let fileName = "";
-
-              if (language.includes(":")) {
-                const parts = language.split(":");
-                language = parts[0];
-                fileName = parts[1];
-              } else if (_node?.data?.meta) {
-                fileName = _node.data.meta;
-              }
-
-              const rawCode = Array.isArray(children)
-                ? children.join("")
-                : String(children).replace(/\n$/, "");
-
-              return (
-                <CodeBlock
-                  language={language}
-                  fileName={fileName}
-                  rawCode={rawCode}
-                  {...rest}
-                />
-              );
-            }
-
-            return (
-              <code className={className} {...props}>
-                {children}
-              </code>
-            );
-          },
-          h1({ id, children }) {
-            return <h1 id={id}>{children}</h1>;
-          },
-          h2({ id, children }) {
-            return <h2 id={id}>{children}</h2>;
-          },
-          h3({ id, children }) {
-            return <h3 id={id}>{children}</h3>;
-          },
-          h4({ id, children }) {
-            return <h4 id={id}>{children}</h4>;
-          },
-          h5({ id, children }) {
-            return <h5 id={id}>{children}</h5>;
-          },
-          h6({ id, children }) {
-            return <h6 id={id}>{children}</h6>;
-          },
-          img({ src, alt, title, ...props }) {
-            let filename = "";
-            if (alt && alt.startsWith("PIC:")) {
-              filename = alt.replace("PIC:", "");
-            } else if (src) {
-              try {
-                const url = new URL(src as string, "http://dummy.com");
-                const parts = url.pathname.split("/");
-                const last = parts[parts.length - 1];
-                if (last) filename = decodeURIComponent(last);
-              } catch {}
-            }
-
-            return (
-              <span className="inline-flex flex-col items-center max-w-full">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={src}
-                  alt={alt}
-                  title={title}
-                  {...props}
-                  style={{ marginBottom: "0.5rem" }}
-                />
-                {filename && (
-                  <span className="text-xs text-muted-foreground font-mono opacity-80 break-all px-2">
-                    [{filename}]
-                  </span>
-                )}
-              </span>
-            );
-          },
-        }}
-      >
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={rehypePlugins}
+          components={markdownComponents}
+        >
           {processedContent}
         </ReactMarkdown>
       </div>

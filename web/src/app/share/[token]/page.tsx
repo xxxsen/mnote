@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, memo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -10,6 +10,27 @@ import { PublicShareDetail } from "@/types";
 import { formatDate, generatePixelAvatar } from "@/lib/utils";
 import { Clock, User, Tag as TagIcon, ArrowUp, Link2, Download, Menu, X, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+interface SharedContentProps {
+  previewRef: React.RefObject<HTMLDivElement | null>;
+  content: string;
+  handleTocLoaded: (toc: string) => void;
+}
+
+const SharedContent = memo(({ previewRef, content, handleTocLoaded }: SharedContentProps) => (
+  <article className="w-full bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 relative overflow-visible">
+    <div className="p-6 md:p-12 lg:p-16">
+      <MarkdownPreview
+        ref={previewRef}
+        content={content}
+        className="prose prose-slate max-w-none prose-headings:scroll-mt-24 prose-img:rounded-xl text-slate-800"
+        onTocLoaded={handleTocLoaded}
+      />
+    </div>
+  </article>
+));
+
+SharedContent.displayName = "SharedContent";
 
 export default function SharePage() {
   const params = useParams();
@@ -73,14 +94,21 @@ export default function SharePage() {
   }, []);
 
   useEffect(() => {
+    let ticking = false;
     const handleScroll = () => {
-      const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
-      if (totalHeight > 0) {
-        setScrollProgress((window.scrollY / totalHeight) * 100);
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
+          if (totalHeight > 0) {
+            setScrollProgress((window.scrollY / totalHeight) * 100);
+          }
+          setShowScrollTop(window.scrollY > 400);
+          ticking = false;
+        });
+        ticking = true;
       }
-      setShowScrollTop(window.scrollY > 400);
     };
-    window.addEventListener("scroll", handleScroll);
+    window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
@@ -240,6 +268,10 @@ export default function SharePage() {
     };
   }, [tocContent, doc]);
 
+  const handleTocLoaded = useCallback((toc: string) => {
+    setTocContent(hasTocToken ? toc : "");
+  }, [hasTocToken]);
+
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
   if (error || !doc || !detail) {
     return (
@@ -378,16 +410,11 @@ export default function SharePage() {
         </header>
 
         {/* Content Container */}
-        <article className="w-full bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 relative overflow-visible">
-          <div className="p-6 md:p-12 lg:p-16">
-            <MarkdownPreview
-              ref={previewRef}
-              content={doc.content}
-              className="prose prose-slate max-w-none prose-headings:scroll-mt-24 prose-img:rounded-xl text-slate-800"
-              onTocLoaded={(toc) => setTocContent(hasTocToken ? toc : "")}
-            />
-          </div>
-        </article>
+        <SharedContent 
+          previewRef={previewRef}
+          content={doc.content}
+          handleTocLoaded={handleTocLoaded}
+        />
 
         <footer className="w-full mt-16 pt-12 border-t border-slate-200 flex flex-col items-center gap-6 px-4">
            <Link href="/" className="flex items-center gap-3 grayscale opacity-60 hover:grayscale-0 hover:opacity-100 transition-all cursor-pointer">

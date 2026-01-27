@@ -440,7 +440,7 @@ export default function EditorPage() {
   }, []);
 
   const handleEditorScroll = useCallback(() => {
-    if (scrollingSource.current === "preview") return;
+    if (scrollingSource.current === "preview" || loading) return;
     const view = editorViewRef.current;
     const preview = previewRef.current;
     if (!view || !preview) return;
@@ -452,19 +452,19 @@ export default function EditorPage() {
     const percentage = scrollInfo.scrollTop / maxScroll;
     const targetTop = percentage * (preview.scrollHeight - preview.clientHeight);
     
-    if (Math.abs(preview.scrollTop - targetTop) > 2) {
+    if (Math.abs(preview.scrollTop - targetTop) > 5) {
       scrollingSource.current = "editor";
       preview.scrollTop = targetTop;
       
       if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current);
       previewTimerRef.current = window.setTimeout(() => {
         scrollingSource.current = null;
-      }, 50);
+      }, 100);
     }
-  }, []);
+  }, [loading]);
 
   const handlePreviewScroll = useCallback(() => {
-    if (scrollingSource.current === "editor") return;
+    if (scrollingSource.current === "editor" || loading) return;
     const view = editorViewRef.current;
     const preview = previewRef.current;
     if (!view || !preview) return;
@@ -476,7 +476,7 @@ export default function EditorPage() {
     const scrollInfo = view.scrollDOM;
     const targetTop = percentage * (scrollInfo.scrollHeight - scrollInfo.clientHeight);
 
-    if (Math.abs(scrollInfo.scrollTop - targetTop) > 2) {
+    if (Math.abs(scrollInfo.scrollTop - targetTop) > 5) {
       scrollingSource.current = "preview";
       scrollInfo.scrollTop = targetTop;
 
@@ -484,9 +484,9 @@ export default function EditorPage() {
       previewTimerRef.current = window.setTimeout(() => {
         scrollingSource.current = null;
         forcePreviewSyncRef.current = false;
-      }, 50);
+      }, 100);
     }
-  }, []);
+  }, [loading]);
 
   const fetchDoc = useCallback(async () => {
     try {
