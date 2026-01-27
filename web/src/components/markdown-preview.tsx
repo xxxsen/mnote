@@ -3,7 +3,9 @@
 import React, { useMemo, forwardRef, memo, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import rehypeRaw from "rehype-raw";
+import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
 import Mermaid from "@/components/mermaid";
@@ -350,7 +352,13 @@ const MarkdownPreview = memo(
     }));
     const toc = buildTocMarkdown(headingsWithIds);
     const updated = injectToc(content, toc);
-    const safeContent = escapeUnsupportedHtml(updated);
+    
+    // Support \( ... \) and \[ ... \] by converting them to $ ... $ and $$ ... $$
+    const mathFixed = updated
+      .replace(/\\\((.*?)\\\)/g, '$$$1$$')
+      .replace(/\\\[(.*?)\\\]/g, '$$$$$1$$$$');
+    
+    const safeContent = escapeUnsupportedHtml(mathFixed);
     return { processedContent: safeContent, tocMarkdown: toc };
   }, [content]);
 
@@ -505,8 +513,10 @@ const MarkdownPreview = memo(
     []
   );
 
-  const remarkPlugins = useMemo(() => [remarkGfm], []);
-  const rehypePlugins = useMemo(() => [rehypeRaw, rehypeSlugger], [rehypeSlugger]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const remarkPlugins = useMemo<any[]>(() => [remarkGfm, [remarkMath, { singleDollarTextMath: true }]], []);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rehypePlugins = useMemo<any[]>(() => [rehypeRaw, [rehypeKatex, { strict: "warn" }], rehypeSlugger], [rehypeSlugger]);
 
   return (
     <div className={cn("relative h-full min-h-0 w-full", showTocAside ? "flex gap-8" : "")}>
