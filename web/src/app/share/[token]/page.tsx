@@ -317,16 +317,16 @@ export default function SharePage() {
         </Button>
       </div>
 
-      <div className="w-full max-w-5xl px-4 md:px-8 py-12 md:py-20 flex flex-col items-center">
+      <div className="w-full max-w-4xl px-4 md:px-0 py-12 md:py-20 flex flex-col items-center">
         {/* Article Header */}
-        <header className="w-full max-w-4xl mb-12 flex flex-col">
+        <header className="w-full mb-12 flex flex-col px-4 md:px-0">
           <div className="flex items-center gap-2 text-indigo-600 font-mono text-xs mb-4 font-bold uppercase tracking-wider">
             <span>Public Note</span>
             <ChevronRight className="h-3 w-3" />
             <span className="text-muted-foreground">{doc.id.slice(0, 8)}</span>
           </div>
           
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-8 leading-tight">
+          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-8 leading-tight">
             {doc.title}
           </h1>
 
@@ -378,8 +378,8 @@ export default function SharePage() {
         </header>
 
         {/* Content Container */}
-        <article className="w-full max-w-4xl bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 relative overflow-visible">
-          <div className="p-8 md:p-16">
+        <article className="w-full bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 relative overflow-visible">
+          <div className="p-6 md:p-12 lg:p-16">
             <MarkdownPreview
               ref={previewRef}
               content={doc.content}
@@ -389,7 +389,7 @@ export default function SharePage() {
           </div>
         </article>
 
-        <footer className="w-full max-w-4xl mt-16 pt-12 border-t border-slate-200 flex flex-col items-center gap-6">
+        <footer className="w-full mt-16 pt-12 border-t border-slate-200 flex flex-col items-center gap-6 px-4">
            <Link href="/" className="flex items-center gap-3 grayscale opacity-60 hover:grayscale-0 hover:opacity-100 transition-all cursor-pointer">
               <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white font-bold text-xl shadow-lg">M</div>
               <div className="flex flex-col">
