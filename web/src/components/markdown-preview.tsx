@@ -27,7 +27,7 @@ type Heading = {
 };
 
 const tocTokenRegex = /^\[(toc|TOC)]$/;
-const allowedHtmlTags = new Set(["span", "u", "br", "details", "summary", "center", "div"]);
+const allowedHtmlTags = new Set(["span", "u", "br", "details", "summary", "center"]);
 
 const escapeUnsupportedHtml = (content: string) => {
   const lines = content.split("\n");
