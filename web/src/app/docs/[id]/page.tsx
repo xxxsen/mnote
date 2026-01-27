@@ -945,8 +945,7 @@ export default function EditorPage() {
     setQuickOpenQuery("");
     setQuickOpenIndex(0);
     setShowQuickOpen(true);
-    void fetchRecentDocs();
-  }, [fetchRecentDocs]);
+  }, []);
 
   const handleCloseQuickOpen = useCallback(() => {
     setShowQuickOpen(false);
