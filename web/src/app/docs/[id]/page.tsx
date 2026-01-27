@@ -255,21 +255,22 @@ export default function EditorPage() {
     const preview = previewRef.current;
     if (!view || !preview) return;
 
-    scrollingSource.current = "editor";
-    
     const scrollInfo = view.scrollDOM;
     const maxScroll = scrollInfo.scrollHeight - scrollInfo.clientHeight;
     if (maxScroll <= 0) return;
 
     const percentage = scrollInfo.scrollTop / maxScroll;
+    const targetTop = percentage * (preview.scrollHeight - preview.clientHeight);
     
-    if (preview.scrollHeight > preview.clientHeight) {
-        preview.scrollTop = percentage * (preview.scrollHeight - preview.clientHeight);
-    }
-
-    requestAnimationFrame(() => {
+    if (Math.abs(preview.scrollTop - targetTop) > 2) {
+      scrollingSource.current = "editor";
+      preview.scrollTop = targetTop;
+      
+      if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = window.setTimeout(() => {
         scrollingSource.current = null;
-    });
+      }, 50);
+    }
   }, []);
 
   const handlePreviewScroll = useCallback(() => {
@@ -278,27 +279,23 @@ export default function EditorPage() {
     const preview = previewRef.current;
     if (!view || !preview) return;
 
-    const editorFocused = view.dom && document.activeElement ? view.dom.contains(document.activeElement) : false;
-    if (editorFocused && !forcePreviewSyncRef.current) {
-      return;
-    }
-
-    scrollingSource.current = "preview";
-
     const maxScroll = preview.scrollHeight - preview.clientHeight;
     if (maxScroll <= 0) return;
 
     const percentage = preview.scrollTop / maxScroll;
-    
     const scrollInfo = view.scrollDOM;
-    if (scrollInfo.scrollHeight > scrollInfo.clientHeight) {
-         view.scrollDOM.scrollTop = percentage * (scrollInfo.scrollHeight - scrollInfo.clientHeight);
-    }
+    const targetTop = percentage * (scrollInfo.scrollHeight - scrollInfo.clientHeight);
 
-    requestAnimationFrame(() => {
-      scrollingSource.current = null;
-      forcePreviewSyncRef.current = false;
-    });
+    if (Math.abs(scrollInfo.scrollTop - targetTop) > 2) {
+      scrollingSource.current = "preview";
+      scrollInfo.scrollTop = targetTop;
+
+      if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = window.setTimeout(() => {
+        scrollingSource.current = null;
+        forcePreviewSyncRef.current = false;
+      }, 50);
+    }
   }, []);
 
   const fetchDoc = useCallback(async () => {
@@ -1057,7 +1054,6 @@ export default function EditorPage() {
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
         
         .cm-editor { font-family: 'JetBrains Mono', 'Fira Code', monospace !important; }
-        .cm-scroller { scroll-behavior: smooth; }
         
         .prose h1, .prose h2, .prose h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
         .prose p { margin-bottom: 1em; line-height: 1.7; }
