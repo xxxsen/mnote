@@ -46,6 +46,7 @@ import {
   Undo,
   Redo,
   X,
+  Menu,
   Command,
   AlertTriangle,
   Copy,
@@ -1651,49 +1652,49 @@ export default function EditorPage() {
       )}
 
       {showFloatingToc && !showDetails && tocContent && (
-        <div className="fixed top-24 right-8 z-50 hidden w-64 rounded-xl border border-border bg-card/95 shadow-xl backdrop-blur-sm lg:block animate-in fade-in slide-in-from-right-4 duration-300">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border/60">
-            <div className="text-xs font-mono text-muted-foreground">目录</div>
+        <div className="fixed top-24 right-8 z-30 hidden w-72 rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md xl:block animate-in fade-in slide-in-from-right-4 duration-500">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">On this page</div>
             <button
               onClick={() => setTocCollapsed(!tocCollapsed)}
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className="p-1 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all"
             >
-              {tocCollapsed ? "展开" : "收起"}
+              {tocCollapsed ? <Menu className="h-3 w-3" /> : <X className="h-3 w-3" />}
             </button>
           </div>
           {!tocCollapsed && (
-            <div className="toc-wrapper text-sm max-h-[60vh] overflow-y-auto p-3">
+            <div className="toc-wrapper text-sm max-h-[60vh] overflow-y-auto p-4 custom-scrollbar">
               <ReactMarkdown
-              components={{
-                a: (props) => {
-                  const href = props.href || "";
-                  
-                  return (
-                    <a
-                      {...props}
-                      onClick={(event) => {
-                        props.onClick?.(event);
-                        if (!href.startsWith("#")) return;
-                        event.preventDefault();
-                        const rawHash = decodeURIComponent(href.slice(1));
-                        const normalizedHash = rawHash.normalize("NFKC");
-                        const targetCandidates = [rawHash, normalizedHash, slugify(rawHash), slugify(normalizedHash)];
-                        for (const candidate of targetCandidates) {
-                          const el = getElementById(candidate);
-                          if (el) {
-                            scrollToElement(el);
-                            requestAnimationFrame(() => {
-                              forcePreviewSyncRef.current = true;
-                              handlePreviewScroll();
-                            });
-                            break;
+                components={{
+                  a: (props) => {
+                    const href = props.href || "";
+                    return (
+                      <a
+                        {...props}
+                        className="text-slate-500 hover:text-indigo-600 transition-colors py-1 block no-underline"
+                        onClick={(event) => {
+                          props.onClick?.(event);
+                          if (!href.startsWith("#")) return;
+                          event.preventDefault();
+                          const rawHash = decodeURIComponent(href.slice(1));
+                          const normalizedHash = rawHash.normalize("NFKC");
+                          const targetCandidates = [rawHash, normalizedHash, slugify(rawHash), slugify(normalizedHash)];
+                          for (const candidate of targetCandidates) {
+                            const el = getElementById(candidate);
+                            if (el) {
+                              scrollToElement(el);
+                              requestAnimationFrame(() => {
+                                forcePreviewSyncRef.current = true;
+                                handlePreviewScroll();
+                              });
+                              break;
+                            }
                           }
-                        }
-                      }}
-                    />
-                  );
-                },
-              }}
+                        }}
+                      />
+                    );
+                  },
+                }}
               >
                 {tocContent}
               </ReactMarkdown>
