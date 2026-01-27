@@ -88,7 +88,13 @@ const sortDocs = (docs: DocumentWithTags[]) => {
     if ((b.pinned || 0) !== (a.pinned || 0)) {
       return (b.pinned || 0) - (a.pinned || 0);
     }
-    return (b.ctime || 0) - (a.ctime || 0);
+    return (b.mtime || b.ctime || 0) - (a.mtime || a.ctime || 0);
+  });
+};
+
+const sortRecentDocs = (docs: DocumentWithTags[]) => {
+  return [...docs].sort((a, b) => {
+    return (b.mtime || b.ctime || 0) - (a.mtime || a.ctime || 0);
   });
 };
 
@@ -201,7 +207,7 @@ export default function DocsPage() {
   const fetchSummary = useCallback(async () => {
     try {
       const res = await apiFetch<{ recent: Document[]; tag_counts: Record<string, number>; total: number }>("/documents/summary?limit=5");
-      setRecentDocs(sortDocs((res?.recent || []) as DocumentWithTags[]));
+      setRecentDocs(sortRecentDocs((res?.recent || []) as DocumentWithTags[]));
       setTagCounts(res?.tag_counts || {});
       setTotalDocs(res?.total || 0);
     } catch (e) {
