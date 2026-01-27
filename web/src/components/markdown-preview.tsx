@@ -245,6 +245,30 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
 CodeBlock.displayName = "CodeBlock";
 
 const MermaidBlock = memo(({ chart }: { chart: string }) => {
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopyLocal = React.useCallback(() => {
+    const onSuccess = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(chart).then(onSuccess).catch(() => {
+        const textarea = document.createElement("textarea");
+        textarea.value = chart;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "absolute";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(textarea);
+        if (ok) onSuccess();
+      });
+    }
+  }, [chart]);
+
   const diagramType = useMemo(() => {
     const match = chart.trim().match(/^(\w+)/);
     if (!match) return "DIAGRAM";
@@ -291,6 +315,17 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
         <span className="text-[10px] font-bold text-muted-foreground/50 tracking-wide font-mono uppercase">
           {diagramType}
         </span>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            handleCopyLocal();
+          }}
+          className="text-[10px] px-2 h-5 flex items-center justify-center rounded border border-transparent hover:border-border bg-transparent hover:bg-background text-muted-foreground/40 hover:text-foreground transition-all min-w-[50px] font-bold tracking-tighter"
+        >
+          {copied ? "COPIED" : "COPY"}
+        </button>
       </div>
       <div className="p-4 flex justify-center">
         <Mermaid chart={chart} />
