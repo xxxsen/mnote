@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef, useTransition } from "react";
+import React, { useEffect, useState, useCallback, useRef, useTransition, memo } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
 import CodeMirror from "@uiw/react-codemirror";
@@ -101,6 +101,196 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { id: "quote", label: "Quote", icon: <Quote className="h-4 w-4" />, action: (s) => s.handleFormat("line", "> ") },
   { id: "divider", label: "Divider", icon: <div className="h-0.5 w-4 bg-muted-foreground opacity-50" />, action: (s) => s.insertTextAtCursor("\n---\n") },
 ];
+
+type HeaderProps = {
+  router: ReturnType<typeof useRouter>;
+  title: string;
+  handleSave: () => void;
+  saving: boolean;
+  hasUnsavedChanges: boolean;
+  lastSavedAt: number | null;
+  showDetails: boolean;
+  setShowDetails: (v: boolean) => void;
+  loadVersions: () => void;
+};
+
+const Header = memo(({ router, title, handleSave, saving, hasUnsavedChanges, lastSavedAt, showDetails, setShowDetails, loadVersions }: HeaderProps) => (
+  <header className={`h-14 border-b border-border flex items-center px-4 gap-4 justify-between bg-background/80 backdrop-blur-md z-40 sticky top-0 transition-all duration-300`}>
+    <div className="flex items-center gap-3 flex-1 min-w-0">
+      <Button variant="ghost" size="icon" onClick={() => router.push("/docs")} className="h-8 w-8">
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground overflow-hidden">
+        <div className="flex items-center gap-1 hover:text-foreground cursor-pointer transition-colors shrink-0" onClick={() => router.push("/docs")}>
+          <Home className="h-3 w-3" />
+          <span className="hidden sm:inline">My Notes</span>
+        </div>
+        <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
+        <div className="flex items-center gap-1 shrink-0">
+          <Folder className="h-3 w-3 opacity-70" />
+          <span className="hidden sm:inline">General</span>
+        </div>
+        <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
+        <div className="font-bold font-mono truncate text-foreground select-none max-w-[120px] sm:max-w-[200px] md:max-w-md">
+          {title || "Untitled"}
+        </div>
+      </div>
+    </div>
+
+    <div className="flex items-center gap-2">
+        {lastSavedAt && (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 text-[10px] text-muted-foreground font-mono hidden md:flex">
+            <div className={`w-1.5 h-1.5 rounded-full ${hasUnsavedChanges ? "bg-amber-400 animate-pulse" : "bg-green-500"}`} />
+            {hasUnsavedChanges ? "Unsaved Changes" : `Saved: ${formatDate(lastSavedAt)}`}
+          </div>
+        )}
+        <Button size="sm" onClick={handleSave} disabled={saving || !hasUnsavedChanges} className="rounded-xl h-8 text-xs font-bold px-3">
+          {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+          {saving ? "Saving..." : "Save"}
+        </Button>
+        <Button variant="ghost" size="icon" onClick={() => { setShowDetails(!showDetails); if (!showDetails) loadVersions(); }} className={`h-8 w-8 ${showDetails ? "bg-accent text-foreground" : "text-muted-foreground"}`}>
+          <Columns className="h-4 w-4 rotate-90" />
+        </Button>
+    </div>
+  </header>
+));
+
+Header.displayName = "Header";
+
+type FooterProps = {
+  cursorPos: { line: number; col: number };
+  wordCount: number;
+  charCount: number;
+  hasUnsavedChanges: boolean;
+};
+
+const Footer = memo(({ cursorPos, wordCount, charCount, hasUnsavedChanges }: FooterProps) => (
+  <footer className={`h-8 border-t border-border bg-background/80 backdrop-blur-sm flex items-center px-4 justify-between text-[10px] font-mono text-muted-foreground z-50 fixed bottom-0 left-0 right-0 transition-all duration-300`}>
+    <div className="flex items-center gap-4">
+      <div className="flex items-center gap-1.5">
+        <span className="opacity-50">LN</span> {cursorPos.line}
+        <span className="opacity-50">COL</span> {cursorPos.col}
+      </div>
+      <div className="w-px h-3 bg-border opacity-50" />
+      <div className="flex items-center gap-1.5">
+        <span>{wordCount} words</span>
+        <span>{charCount} chars</span>
+      </div>
+    </div>
+    
+    <div className="flex items-center gap-4">
+      <div className="flex items-center gap-1.5">
+         <div className={`w-1.5 h-1.5 rounded-full ${hasUnsavedChanges ? "bg-amber-400" : "bg-green-500"}`} />
+         <span>{hasUnsavedChanges ? "UNSAVED" : "SYNCED"}</span>
+      </div>
+      <div className="w-px h-3 bg-border opacity-50" />
+    </div>
+  </footer>
+));
+
+Footer.displayName = "Footer";
+
+type ToolbarProps = {
+  handleUndo: () => void;
+  handleRedo: () => void;
+  handleFormat: (type: "wrap" | "line", prefix: string, suffix?: string) => void;
+  handleInsertTable: () => void;
+  activePopover: "emoji" | "color" | "size" | null;
+  setActivePopover: (v: "emoji" | "color" | "size" | null) => void;
+  colorButtonRef: React.RefObject<HTMLButtonElement | null>;
+  sizeButtonRef: React.RefObject<HTMLButtonElement | null>;
+  emojiButtonRef: React.RefObject<HTMLButtonElement | null>;
+};
+
+const Toolbar = memo(({ 
+  handleUndo, 
+  handleRedo, 
+  handleFormat, 
+  handleInsertTable, 
+  activePopover, 
+  setActivePopover, 
+  colorButtonRef, 
+  sizeButtonRef, 
+  emojiButtonRef 
+}: ToolbarProps) => (
+  <div className="flex items-center gap-1 p-2 border-b border-border bg-background/50 backdrop-blur-sm sticky top-0 z-10 flex-none overflow-x-auto overflow-y-visible no-scrollbar">
+
+    <div className="flex items-center gap-0.5">
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleUndo} title="Undo"><Undo className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleRedo} title="Redo"><Redo className="h-4 w-4" /></Button>
+    </div>
+    <div className="w-px h-4 bg-border mx-1 shrink-0" />
+
+    <div className="flex items-center gap-0.5">
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "# ")} title="Heading 1"><Heading1 className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "## ")} title="Heading 2"><Heading2 className="h-4 w-4" /></Button>
+    </div>
+    <div className="w-px h-4 bg-border mx-1 shrink-0" />
+
+    <div className="flex items-center gap-0.5">
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "**", "**")} title="Bold"><Bold className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "*", "*")} title="Italic"><Italic className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "~~", "~~")} title="Strikethrough"><Strikethrough className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "<u>", "</u>")} title="Underline"><UnderlineIcon className="h-4 w-4" /></Button>
+       <div className="relative">
+          <Button 
+             variant="ghost" 
+             size="icon" 
+             className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "color" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
+             onClick={() => setActivePopover(activePopover === "color" ? null : "color")} 
+             title="Text Color"
+             data-popover-trigger
+             ref={colorButtonRef}
+          >
+             <Palette className="h-4 w-4" />
+          </Button>
+       </div>
+       <div className="relative">
+          <Button 
+             variant="ghost" 
+             size="icon" 
+             className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "size" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
+             onClick={() => setActivePopover(activePopover === "size" ? null : "size")} 
+             title="Font Size"
+             data-popover-trigger
+             ref={sizeButtonRef}
+          >
+             <Type className="h-4 w-4" />
+          </Button>
+       </div>
+    </div>
+    <div className="w-px h-4 bg-border mx-1 shrink-0" />
+
+    <div className="flex items-center gap-0.5">
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- ")} title="Bullet List"><List className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "1. ")} title="Ordered List"><ListOrdered className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- [ ] ")} title="Todo List"><ListTodo className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "> ")} title="Quote"><Quote className="h-4 w-4" /></Button>
+    </div>
+    <div className="w-px h-4 bg-border mx-1 shrink-0" />
+
+    <div className="flex items-center gap-0.5">
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "`", "`")} title="Inline Code"><Code className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "```\n", "\n```")} title="Code Block"><FileCode className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "[", "](url)")} title="Link"><LinkIcon className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleInsertTable} title="Table"><TableIcon className="h-4 w-4" /></Button>
+       <div className="relative">
+          <Button 
+             variant="ghost" 
+             size="icon" 
+             className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "emoji" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
+             onClick={() => setActivePopover(activePopover === "emoji" ? null : "emoji")} 
+             title="Emoji"
+             data-popover-trigger
+             ref={emojiButtonRef}
+          >
+             <Smile className="h-4 w-4" />
+          </Button>
+       </div>
+    </div>
+  </div>
+));
+Toolbar.displayName = "Toolbar";
 
 export default function EditorPage() {
   const params = useParams();
@@ -387,22 +577,20 @@ export default function EditorPage() {
     fetchTags();
   }, [fetchDoc, fetchTags]);
 
-  useEffect(() => {
-    const text = content || "";
-    setCharCount(text.length);
-    const words = text.trim().split(/\s+/).filter(w => w.length > 0);
-    setWordCount(words.length);
-  }, [content]);
-
   const updateCursorInfo = useCallback((view: EditorView) => {
     const state = view.state;
     const pos = state.selection.main.head;
     const line = state.doc.lineAt(pos);
-    setCursorPos({
-      line: line.number,
-      col: pos - line.from + 1
+    const lineNum = line.number;
+    const colNum = pos - line.from + 1;
+
+    startTransition(() => {
+      setCursorPos({
+        line: lineNum,
+        col: colNum
+      });
     });
-  }, []);
+  }, [startTransition]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -476,8 +664,17 @@ export default function EditorPage() {
       window.clearTimeout(previewTimerRef.current);
     }
     previewTimerRef.current = window.setTimeout(() => {
+      const text = contentRef.current || "";
+      const charCnt = text.length;
+      const words = text.trim().split(/\s+/).filter(w => w.length > 0);
+      const wordCnt = words.length;
+      const changed = contentRef.current !== lastSavedContentRef.current;
+
       startTransition(() => {
         setPreviewContent(contentRef.current);
+        setCharCount(charCnt);
+        setWordCount(wordCnt);
+        setHasUnsavedChanges(changed);
       });
     }, 300);
   }, [startTransition]);
@@ -1058,44 +1255,17 @@ export default function EditorPage() {
         .prose h1, .prose h2, .prose h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
         .prose p { margin-bottom: 1em; line-height: 1.7; }
       `}</style>
-      <header className={`h-14 border-b border-border flex items-center px-4 gap-4 justify-between bg-background/80 backdrop-blur-md z-40 sticky top-0 transition-all duration-300`}>
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/docs")} className="h-8 w-8">
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground overflow-hidden">
-            <div className="flex items-center gap-1 hover:text-foreground cursor-pointer transition-colors shrink-0" onClick={() => router.push("/docs")}>
-              <Home className="h-3 w-3" />
-              <span className="hidden sm:inline">My Notes</span>
-            </div>
-            <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
-            <div className="flex items-center gap-1 shrink-0">
-              <Folder className="h-3 w-3 opacity-70" />
-              <span className="hidden sm:inline">General</span>
-            </div>
-            <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
-            <div className="font-bold font-mono truncate text-foreground select-none max-w-[120px] sm:max-w-[200px] md:max-w-md">
-              {title || "Untitled"}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-            {lastSavedAt && (
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 text-[10px] text-muted-foreground font-mono hidden md:flex">
-                <div className={`w-1.5 h-1.5 rounded-full ${hasUnsavedChanges ? "bg-amber-400 animate-pulse" : "bg-green-500"}`} />
-                {hasUnsavedChanges ? "Unsaved Changes" : `Saved: ${formatDate(lastSavedAt)}`}
-              </div>
-            )}
-            <Button size="sm" onClick={handleSave} disabled={saving || !hasUnsavedChanges} className="rounded-xl h-8 text-xs font-bold px-3">
-              {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
-              {saving ? "Saving..." : "Save"}
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => { setShowDetails(!showDetails); if (!showDetails) loadVersions(); }} className={`h-8 w-8 ${showDetails ? "bg-accent text-foreground" : "text-muted-foreground"}`}>
-              <Columns className="h-4 w-4 rotate-90" />
-            </Button>
-        </div>
-      </header>
+      <Header 
+        router={router}
+        title={title}
+        handleSave={handleSave}
+        saving={saving}
+        hasUnsavedChanges={hasUnsavedChanges}
+        lastSavedAt={lastSavedAt}
+        showDetails={showDetails}
+        setShowDetails={setShowDetails}
+        loadVersions={loadVersions}
+      />
 
       <div className="flex-1 flex overflow-hidden min-w-0 relative pb-8">
         <div className={`flex-1 flex flex-col md:flex-row h-full transition-all duration-300 min-w-0 ${showDetails ? "mr-80" : ""}`}>
@@ -1133,82 +1303,18 @@ export default function EditorPage() {
                        <span className="text-[9px] font-bold">OPEN</span>
                     </button>
                  </div>
-                 <div className="flex items-center gap-1 p-2 border-b border-border bg-background/50 backdrop-blur-sm sticky top-0 z-10 flex-none overflow-x-auto overflow-y-visible no-scrollbar">
-
-                   <div className="flex items-center gap-0.5">
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleUndo} title="Undo"><Undo className="h-4 w-4" /></Button>
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleRedo} title="Redo"><Redo className="h-4 w-4" /></Button>
-                   </div>
-                   <div className="w-px h-4 bg-border mx-1 shrink-0" />
-
-                   <div className="flex items-center gap-0.5">
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "# ")} title="Heading 1"><Heading1 className="h-4 w-4" /></Button>
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "## ")} title="Heading 2"><Heading2 className="h-4 w-4" /></Button>
-                   </div>
-                   <div className="w-px h-4 bg-border mx-1 shrink-0" />
-
-                   <div className="flex items-center gap-0.5">
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "**", "**")} title="Bold"><Bold className="h-4 w-4" /></Button>
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "*", "*")} title="Italic"><Italic className="h-4 w-4" /></Button>
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "~~", "~~")} title="Strikethrough"><Strikethrough className="h-4 w-4" /></Button>
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "<u>", "</u>")} title="Underline"><UnderlineIcon className="h-4 w-4" /></Button>
-                      <div className="relative">
-                         <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "color" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
-                            onClick={() => setActivePopover(activePopover === "color" ? null : "color")} 
-                            title="Text Color"
-                            data-popover-trigger
-                            ref={colorButtonRef}
-                         >
-                            <Palette className="h-4 w-4" />
-                         </Button>
-                      </div>
-                      <div className="relative">
-                         <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "size" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
-                            onClick={() => setActivePopover(activePopover === "size" ? null : "size")} 
-                            title="Font Size"
-                            data-popover-trigger
-                            ref={sizeButtonRef}
-                         >
-                            <Type className="h-4 w-4" />
-                         </Button>
-                      </div>
-                   </div>
-                   <div className="w-px h-4 bg-border mx-1 shrink-0" />
-
-                   <div className="flex items-center gap-0.5">
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- ")} title="Bullet List"><List className="h-4 w-4" /></Button>
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "1. ")} title="Ordered List"><ListOrdered className="h-4 w-4" /></Button>
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- [ ] ")} title="Todo List"><ListTodo className="h-4 w-4" /></Button>
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "> ")} title="Quote"><Quote className="h-4 w-4" /></Button>
-                   </div>
-                   <div className="w-px h-4 bg-border mx-1 shrink-0" />
-
-                   <div className="flex items-center gap-0.5">
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "`", "`")} title="Inline Code"><Code className="h-4 w-4" /></Button>
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "```\n", "\n```")} title="Code Block"><FileCode className="h-4 w-4" /></Button>
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "[", "](url)")} title="Link"><LinkIcon className="h-4 w-4" /></Button>
-                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleInsertTable} title="Table"><TableIcon className="h-4 w-4" /></Button>
-                      <div className="relative">
-                         <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "emoji" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
-                            onClick={() => setActivePopover(activePopover === "emoji" ? null : "emoji")} 
-                            title="Emoji"
-                            data-popover-trigger
-                            ref={emojiButtonRef}
-                         >
-                            <Smile className="h-4 w-4" />
-                         </Button>
-                      </div>
-                   </div>
-                 </div>
+                 
+                 <Toolbar 
+                    handleUndo={handleUndo}
+                    handleRedo={handleRedo}
+                    handleFormat={handleFormat}
+                    handleInsertTable={handleInsertTable}
+                    activePopover={activePopover}
+                    setActivePopover={setActivePopover}
+                    colorButtonRef={colorButtonRef}
+                    sizeButtonRef={sizeButtonRef}
+                    emojiButtonRef={emojiButtonRef}
+                 />
 
                  <div className="flex-1 overflow-hidden min-h-0">
 
@@ -1253,22 +1359,26 @@ export default function EditorPage() {
                             const relativePos = pos - line.from;
                             
                             const lastSlashIndex = lineText.lastIndexOf("/", relativePos - 1);
-                            if (lastSlashIndex !== -1 && (lastSlashIndex === 0 || lineText[lastSlashIndex - 1] === " ")) {
-                               const filter = lineText.slice(lastSlashIndex + 1, relativePos);
-                               if (!filter.includes(" ")) {
-                                  const coords = update.view.coordsAtPos(pos);
-                                  if (coords) {
-                                     setSlashMenu({
-                                        open: true,
-                                        x: coords.left,
-                                        y: coords.bottom + 5,
-                                        filter: filter
-                                     });
-                                     return;
-                                  }
-                               }
-                            }
-                            setSlashMenu(prev => ({ ...prev, open: false }));
+                             if (lastSlashIndex !== -1 && (lastSlashIndex === 0 || lineText[lastSlashIndex - 1] === " ")) {
+                                const filter = lineText.slice(lastSlashIndex + 1, relativePos);
+                                if (!filter.includes(" ")) {
+                                   const coords = update.view.coordsAtPos(pos);
+                                   if (coords) {
+                                      startTransition(() => {
+                                        setSlashMenu({
+                                           open: true,
+                                           x: coords.left,
+                                           y: coords.bottom + 5,
+                                           filter: filter
+                                        });
+                                      });
+                                      return;
+                                   }
+                                }
+                             }
+                             startTransition(() => {
+                                setSlashMenu(prev => prev.open ? { ...prev, open: false } : prev);
+                             });
                          }
                        }
                      }),
@@ -1277,8 +1387,6 @@ export default function EditorPage() {
                     onChange={(val) => {
                       contentRef.current = val;
                       setContent(val);
-                      setPreviewContent(val);
-                      setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
                       schedulePreviewUpdate();
                     }}
                     className={`h-full w-full min-w-0 text-base`}
@@ -1521,27 +1629,12 @@ export default function EditorPage() {
         )}
       </div>
 
-      <footer className={`h-8 border-t border-border bg-background/80 backdrop-blur-sm flex items-center px-4 justify-between text-[10px] font-mono text-muted-foreground z-50 fixed bottom-0 left-0 right-0 transition-all duration-300`}>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            <span className="opacity-50">LN</span> {cursorPos.line}
-            <span className="opacity-50">COL</span> {cursorPos.col}
-          </div>
-          <div className="w-px h-3 bg-border opacity-50" />
-          <div className="flex items-center gap-1.5">
-            <span>{wordCount} words</span>
-            <span>{charCount} chars</span>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-             <div className={`w-1.5 h-1.5 rounded-full ${hasUnsavedChanges ? "bg-amber-400" : "bg-green-500"}`} />
-             <span>{hasUnsavedChanges ? "UNSAVED" : "SYNCED"}</span>
-          </div>
-          <div className="w-px h-3 bg-border opacity-50" />
-        </div>
-      </footer>
+      <Footer 
+        cursorPos={cursorPos}
+        wordCount={wordCount}
+        charCount={charCount}
+        hasUnsavedChanges={hasUnsavedChanges}
+      />
 
       {showDeleteConfirm && (
          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
