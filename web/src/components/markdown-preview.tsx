@@ -27,7 +27,7 @@ type Heading = {
 };
 
 const tocTokenRegex = /^\[(toc|TOC)]$/;
-const allowedHtmlTags = new Set(["span", "u", "br"]);
+const allowedHtmlTags = new Set(["span", "u", "br", "details", "summary"]);
 
 type ThemedSyntaxHighlighterProps = Omit<
   React.ComponentProps<typeof SyntaxHighlighter>,
