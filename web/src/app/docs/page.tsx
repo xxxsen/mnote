@@ -480,10 +480,15 @@ export default function DocsPage() {
                      setShowTagSelector(false);
                    }
                  }}
-                 onKeyDown={(e) => {
-                   if (e.key === "Escape") {
-                     setShowTagSelector(false);
-                   } else if (showTagSelector) {
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setShowTagSelector(false);
+                    } else if (e.key === "Backspace" || e.key === "Delete") {
+                      if (search === "" && selectedTag) {
+                        e.preventDefault();
+                        setSelectedTag("");
+                      }
+                    } else if (showTagSelector) {
                      if (e.key === "ArrowDown") {
                        e.preventDefault();
                        setActiveTagIndex(prev => (prev + 1) % (filteredTags.length || 1));
