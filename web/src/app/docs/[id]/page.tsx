@@ -118,7 +118,6 @@ export default function EditorPage() {
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [selectedTagIDs, setSelectedTagIDs] = useState<string[]>([]);
   const [newTag, setNewTag] = useState("");
-  const [typewriterMode, setTypewriterMode] = useState(false);
   const [slashMenu, setSlashMenu] = useState<{ open: boolean; x: number; y: number; filter: string }>({ open: false, x: 0, y: 0, filter: "" });
   const [hoverImage, setHoverImage] = useState<{ url: string; x: number; y: number } | null>(null);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
@@ -143,7 +142,6 @@ export default function EditorPage() {
   const previewRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const pasteHandlerRef = useRef<((event: ClipboardEvent) => void) | null>(null);
-  const typewriterRafRef = useRef<number | null>(null);
   const colorButtonRef = useRef<HTMLButtonElement | null>(null);
   const sizeButtonRef = useRef<HTMLButtonElement | null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -395,6 +393,7 @@ export default function EditorPage() {
     document.title = title ? `${title} - Micro Note` : "micro note";
   }, [title]);
 
+
   useEffect(() => {
     if (!activePopover) return;
     const updateAnchor = () => {
@@ -467,27 +466,6 @@ export default function EditorPage() {
     }, 300);
   }, [startTransition]);
 
-  const centerCursorInView = useCallback((view: EditorView) => {
-    if (!typewriterMode) return;
-    if (typewriterRafRef.current) {
-      window.cancelAnimationFrame(typewriterRafRef.current);
-    }
-    typewriterRafRef.current = window.requestAnimationFrame(() => {
-      const pos = view.state.selection.main.head;
-      const coords = view.coordsAtPos(pos);
-      const scrollDom = view.scrollDOM;
-      if (!coords) {
-        view.dispatch({
-          effects: EditorView.scrollIntoView(pos, { y: "center" }),
-        });
-        return;
-      }
-      const rect = scrollDom.getBoundingClientRect();
-      const offset = coords.top - rect.top;
-      const target = scrollDom.scrollTop + offset - scrollDom.clientHeight / 2;
-      scrollDom.scrollTop = Math.max(0, target);
-    });
-  }, [typewriterMode]);
 
   const insertTextAtCursor = useCallback(
     (text: string) => {
@@ -1006,9 +984,6 @@ export default function EditorPage() {
       if (previewTimerRef.current) {
         window.clearTimeout(previewTimerRef.current);
       }
-      if (typewriterRafRef.current) {
-        window.cancelAnimationFrame(typewriterRafRef.current);
-      }
       if (typeof window !== "undefined" && hasUnsavedChanges) {
         const payload = JSON.stringify({ content: contentRef.current, updatedAt: Date.now() });
         window.localStorage.setItem(`mnote:draft:${id}`, payload);
@@ -1025,7 +1000,7 @@ export default function EditorPage() {
   });
 
   return (
-    <div className={`flex flex-col h-screen bg-background relative ${typewriterMode ? "typewriter-mode" : ""}`}>
+    <div className="flex flex-col h-screen bg-background relative">
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -1037,7 +1012,6 @@ export default function EditorPage() {
         
         .cm-editor { font-family: 'JetBrains Mono', 'Fira Code', monospace !important; }
         .cm-scroller { scroll-behavior: smooth; }
-        .typewriter-mode .cm-scroller { scroll-behavior: auto; }
         
         .prose h1, .prose h2, .prose h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
         .prose p { margin-bottom: 1em; line-height: 1.7; }
@@ -1196,15 +1170,14 @@ export default function EditorPage() {
 
                  <div className="flex-1 overflow-hidden min-h-0">
 
-                   <CodeMirror
-                     key={`editor-${typewriterMode}`}
-                     value={content}
-                     height="100%"
+                    <CodeMirror
+                      value={content}
+                      height="100%"
                    extensions={[
                      markdown(), 
                      EditorView.lineWrapping, 
-                     EditorView.domEventHandlers({
-                       mousemove: (event, view) => {
+                      EditorView.domEventHandlers({
+                        mousemove: (event, view) => {
                          const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
                          if (pos === null) {
                            setHoverImage(null);
@@ -1224,19 +1197,11 @@ export default function EditorPage() {
                          }
                          setHoverImage(null);
                        },
-                       mouseleave: () => setHoverImage(null),
-                     }),
-                     EditorView.scrollMargins.of((view) => {
-                        if (!typewriterMode) return null;
-                        const height = view.scrollDOM.clientHeight;
-                        return { top: height / 2 - 10, bottom: height / 2 - 10 };
-                     }),
+                        mouseleave: () => setHoverImage(null),
+                      }),
                       EditorView.updateListener.of((update) => {
                         if (update.selectionSet || update.docChanged) {
                           updateCursorInfo(update.view);
-                          if (typewriterMode) {
-                            centerCursorInView(update.view);
-                          }
                           
                           if (update.docChanged) {
                             const state = update.view.state;
@@ -1270,6 +1235,7 @@ export default function EditorPage() {
                     onChange={(val) => {
                       contentRef.current = val;
                       setContent(val);
+                      setPreviewContent(val);
                       setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
                       schedulePreviewUpdate();
                     }}
@@ -1532,9 +1498,6 @@ export default function EditorPage() {
              <span>{hasUnsavedChanges ? "UNSAVED" : "SYNCED"}</span>
           </div>
           <div className="w-px h-3 bg-border opacity-50" />
-          <div className="flex items-center gap-1.5 hover:text-foreground cursor-pointer transition-colors" onClick={() => setTypewriterMode(!typewriterMode)}>
-            <span className={typewriterMode ? "text-primary" : "opacity-50"}>TYPEWRITER</span>
-          </div>
         </div>
       </footer>
 
