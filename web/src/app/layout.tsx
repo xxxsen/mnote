@@ -1,17 +1,15 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, Space_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const sans = IBM_Plex_Sans({
+const sans = Inter({
   variable: "--font-sans",
-  weight: ["400", "500", "600", "700"],
   subsets: ["latin"],
   display: "swap",
 });
 
-const mono = Space_Mono({
+const mono = JetBrains_Mono({
   variable: "--font-mono",
-  weight: ["400", "700"],
   subsets: ["latin"],
   display: "swap",
 });
