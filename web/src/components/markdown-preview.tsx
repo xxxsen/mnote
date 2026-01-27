@@ -55,13 +55,18 @@ const createSlugger = () => {
   };
 };
 
-const getText = (value: React.ReactNode): string => {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  if (Array.isArray(value)) return value.map(getText).join("");
-  if (React.isValidElement<{ children?: React.ReactNode }>(value)) {
-    return getText(value.props.children);
-  }
+type HastNode = {
+  type: string;
+  tagName?: string;
+  value?: string;
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  properties?: Record<string, any>;
+  children?: HastNode[];
+};
+
+const getHastText = (node: HastNode): string => {
+  if (node.type === "text") return node.value || "";
+  if (node.children) return node.children.map(getHastText).join("");
   return "";
 };
 
@@ -77,7 +82,7 @@ const extractHeadings = (content: string) => {
       continue;
     }
     if (inCodeBlock) continue;
-    const match = line.match(/^(#{1,6})\s+(.+)$/);
+    const match = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/);
     if (match) {
       headings.push({ level: match[1].length, text: match[2].trim() });
     }
@@ -144,7 +149,7 @@ const MarkdownPreview = memo(
     { content, className, showTocAside = false, tocClassName, onScroll, onTocLoaded },
     ref
   ) {
-  const { processedContent, headingIds, tocMarkdown } = useMemo(() => {
+  const { processedContent, tocMarkdown } = useMemo(() => {
     const headings = extractHeadings(content);
     const slugger = createSlugger();
     const headingsWithIds = headings.map((heading) => ({
@@ -154,14 +159,27 @@ const MarkdownPreview = memo(
     const toc = buildTocMarkdown(headingsWithIds);
     const updated = injectToc(content, toc);
     const safeContent = escapeUnsupportedHtml(updated);
-    return { processedContent: safeContent, headingIds: headingsWithIds.map((h) => h.id || ""), tocMarkdown: toc };
+    return { processedContent: safeContent, tocMarkdown: toc };
   }, [content]);
 
-  const headingIndexRef = React.useRef(0);
-
-  React.useEffect(() => {
-    headingIndexRef.current = 0;
-  }, [content]);
+  const rehypeSlugger = useMemo(() => {
+    return () => (tree: HastNode) => {
+      const slugger = createSlugger();
+      const walk = (node: HastNode) => {
+        if (node.type === "element" && node.tagName && /^h[1-6]$/.test(node.tagName)) {
+          const text = getHastText(node);
+          node.properties = node.properties || {};
+          if (!node.properties.id) {
+            node.properties.id = slugger(text);
+          }
+        }
+        if (node.children) {
+          node.children.forEach(walk);
+        }
+      };
+      walk(tree);
+    };
+  }, []);
 
   useEffect(() => {
     onTocLoaded?.(tocMarkdown);
@@ -222,7 +240,7 @@ const MarkdownPreview = memo(
       >
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeRaw]}
+          rehypePlugins={[rehypeRaw, rehypeSlugger]}
           components={{
           pre({ children, ...props }) {
             if (
@@ -326,34 +344,22 @@ const MarkdownPreview = memo(
               </code>
             );
           },
-          h1({ children }) {
-            const text = getText(children);
-            const id = headingIds[headingIndexRef.current++] || createSlugger()(text);
+          h1({ id, children }) {
             return <h1 id={id}>{children}</h1>;
           },
-          h2({ children }) {
-            const text = getText(children);
-            const id = headingIds[headingIndexRef.current++] || createSlugger()(text);
+          h2({ id, children }) {
             return <h2 id={id}>{children}</h2>;
           },
-          h3({ children }) {
-            const text = getText(children);
-            const id = headingIds[headingIndexRef.current++] || createSlugger()(text);
+          h3({ id, children }) {
             return <h3 id={id}>{children}</h3>;
           },
-          h4({ children }) {
-            const text = getText(children);
-            const id = headingIds[headingIndexRef.current++] || createSlugger()(text);
+          h4({ id, children }) {
             return <h4 id={id}>{children}</h4>;
           },
-          h5({ children }) {
-            const text = getText(children);
-            const id = headingIds[headingIndexRef.current++] || createSlugger()(text);
+          h5({ id, children }) {
             return <h5 id={id}>{children}</h5>;
           },
-          h6({ children }) {
-            const text = getText(children);
-            const id = headingIds[headingIndexRef.current++] || createSlugger()(text);
+          h6({ id, children }) {
             return <h6 id={id}>{children}</h6>;
           },
           img({ src, alt, title, ...props }) {
