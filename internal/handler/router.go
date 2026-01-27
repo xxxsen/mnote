@@ -26,6 +26,7 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.Use(middleware.JWTAuth(deps.JWTSecret))
 	authGroup.POST("/documents", deps.Documents.Create)
 	authGroup.GET("/documents", deps.Documents.List)
+	authGroup.GET("/documents/summary", deps.Documents.Summary)
 	authGroup.GET("/documents/:id", deps.Documents.Get)
 	authGroup.PUT("/documents/:id", deps.Documents.Update)
 	authGroup.PUT("/documents/:id/pin", deps.Documents.Pin)

@@ -123,14 +123,17 @@ func (r *DocumentRepo) GetByID(ctx context.Context, userID, docID string) (*mode
 	return &doc, nil
 }
 
-func (r *DocumentRepo) List(ctx context.Context, userID string, limit uint) ([]model.Document, error) {
+func (r *DocumentRepo) List(ctx context.Context, userID string, limit, offset uint, orderBy string) ([]model.Document, error) {
 	where := map[string]interface{}{
-		"user_id":  userID,
-		"state":    DocumentStateNormal,
-		"_orderby": "pinned desc, ctime desc",
+		"user_id": userID,
+		"state":   DocumentStateNormal,
 	}
+	if orderBy == "" {
+		orderBy = "pinned desc, ctime desc"
+	}
+	where["_orderby"] = orderBy
 	if limit > 0 {
-		where["_limit"] = []uint{0, limit}
+		where["_limit"] = []uint{offset, limit}
 	}
 	sqlStr, args, err := builder.BuildSelect("documents", where, []string{"id", "user_id", "title", "content", "state", "pinned", "ctime", "mtime"})
 	if err != nil {
@@ -186,13 +189,25 @@ func (r *DocumentRepo) ListByIDs(ctx context.Context, userID string, docIDs []st
 	return docs, rows.Err()
 }
 
-func (r *DocumentRepo) SearchLike(ctx context.Context, userID, query, tagID string, limit uint) ([]model.Document, error) {
+func (r *DocumentRepo) Count(ctx context.Context, userID string) (int, error) {
+	row := r.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM documents WHERE user_id = ? AND state = ?", userID, DocumentStateNormal)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (r *DocumentRepo) SearchLike(ctx context.Context, userID, query, tagID string, limit, offset uint, orderBy string) ([]model.Document, error) {
 	like := "%" + query + "%"
 	where := map[string]interface{}{
-		"user_id":  userID,
-		"state":    DocumentStateNormal,
-		"_orderby": "mtime desc",
+		"user_id": userID,
+		"state":   DocumentStateNormal,
 	}
+	if orderBy == "" {
+		orderBy = "mtime desc"
+	}
+	where["_orderby"] = orderBy
 	if query != "" {
 		where["_custom_search"] = builder.Custom("(title LIKE ? OR content LIKE ?)", like, like)
 	}
@@ -200,7 +215,7 @@ func (r *DocumentRepo) SearchLike(ctx context.Context, userID, query, tagID stri
 		where["_custom_tag"] = builder.Custom("id IN (SELECT document_id FROM document_tags WHERE tag_id = ? AND user_id = ?)", tagID, userID)
 	}
 	if limit > 0 {
-		where["_limit"] = []uint{0, limit}
+		where["_limit"] = []uint{offset, limit}
 	}
 	sqlStr, args, err := builder.BuildSelect("documents", where, []string{"id", "user_id", "title", "content", "state", "pinned", "ctime", "mtime"})
 	if err != nil {

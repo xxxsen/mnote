@@ -122,7 +122,10 @@ export default function EditorPage() {
   const [hoverImage, setHoverImage] = useState<{ url: string; x: number; y: number } | null>(null);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
   const [quickOpenQuery, setQuickOpenQuery] = useState("");
-  const [otherDocs, setOtherDocs] = useState<Document[]>([]);
+  const [quickOpenResults, setQuickOpenResults] = useState<Document[]>([]);
+  const [quickOpenRecent, setQuickOpenRecent] = useState<Document[]>([]);
+  const [quickOpenIndex, setQuickOpenIndex] = useState(0);
+  const [quickOpenLoading, setQuickOpenLoading] = useState(false);
   const [shareUrl, setShareUrl] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [activeShare, setActiveShare] = useState<Share | null>(null);
@@ -336,12 +339,28 @@ export default function EditorPage() {
     }
   }, [id, router, extractTitleFromContent]);
 
-  const fetchOtherDocs = useCallback(async () => {
+  const fetchRecentDocs = useCallback(async () => {
     try {
-      const docs = await apiFetch<Document[]>("/documents?limit=20");
-      setOtherDocs(docs || []);
+      const docs = await apiFetch<Document[]>("/documents?limit=5&order=mtime");
+      setQuickOpenRecent(docs || []);
     } catch (e) {
       console.error(e);
+    }
+  }, []);
+
+  const fetchQuickOpenSearch = useCallback(async (query: string) => {
+    setQuickOpenLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("q", query);
+      params.set("limit", "5");
+      const docs = await apiFetch<Document[]>(`/documents?${params.toString()}`);
+      setQuickOpenResults(docs || []);
+    } catch (e) {
+      console.error(e);
+      setQuickOpenResults([]);
+    } finally {
+      setQuickOpenLoading(false);
     }
   }, []);
 
@@ -368,8 +387,7 @@ export default function EditorPage() {
   useEffect(() => {
     fetchDoc();
     fetchTags();
-    fetchOtherDocs();
-  }, [fetchDoc, fetchTags, fetchOtherDocs]);
+  }, [fetchDoc, fetchTags]);
 
   useEffect(() => {
     const text = content || "";
@@ -925,13 +943,46 @@ export default function EditorPage() {
 
   const handleOpenQuickOpen = useCallback(() => {
     setQuickOpenQuery("");
+    setQuickOpenIndex(0);
     setShowQuickOpen(true);
-  }, []);
+    void fetchRecentDocs();
+  }, [fetchRecentDocs]);
 
   const handleCloseQuickOpen = useCallback(() => {
     setShowQuickOpen(false);
     setQuickOpenQuery("");
+    setQuickOpenIndex(0);
   }, []);
+
+  const showSearchResults = quickOpenQuery.trim().length > 0;
+  const quickOpenDocs = showSearchResults ? quickOpenResults : quickOpenRecent;
+
+  const handleQuickOpenSelect = useCallback((doc: Document) => {
+    router.push(`/docs/${doc.id}`);
+    handleCloseQuickOpen();
+  }, [handleCloseQuickOpen, router]);
+
+  useEffect(() => {
+    if (!showQuickOpen) return;
+    if (!quickOpenQuery.trim()) {
+      setQuickOpenResults([]);
+      setQuickOpenIndex(0);
+      void fetchRecentDocs();
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setQuickOpenIndex(0);
+      void fetchQuickOpenSearch(quickOpenQuery.trim());
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [fetchQuickOpenSearch, fetchRecentDocs, quickOpenQuery, showQuickOpen]);
+
+  useEffect(() => {
+    if (!showQuickOpen) return;
+    if (quickOpenIndex >= quickOpenDocs.length) {
+      setQuickOpenIndex(0);
+    }
+  }, [quickOpenDocs.length, quickOpenIndex, showQuickOpen]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -993,11 +1044,6 @@ export default function EditorPage() {
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
-  const filteredQuickOpenDocs = otherDocs.filter((doc) => {
-    if (!quickOpenQuery.trim()) return true;
-    const haystack = `${doc.title || ""}`.toLowerCase();
-    return haystack.includes(quickOpenQuery.trim().toLowerCase());
-  });
 
   return (
     <div className="flex flex-col h-screen bg-background relative">
@@ -1532,41 +1578,66 @@ export default function EditorPage() {
             <div className="relative w-full max-w-lg bg-popover border border-border rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                <div className="flex items-center px-4 py-3 border-b border-border gap-3">
                   <Search className="h-4 w-4 text-muted-foreground" />
-                  <input 
-                     autoFocus
-                     placeholder="Quick open note..."
-                     className="bg-transparent border-none focus:ring-0 text-sm flex-1 outline-none"
-                     value={quickOpenQuery}
-                     onChange={(e) => setQuickOpenQuery(e.target.value)}
-                     onKeyDown={(e) => e.key === "Escape" && handleCloseQuickOpen()}
-                  />
+                   <input 
+                      autoFocus
+                      placeholder="Quick open note..."
+                      className="bg-transparent border-none focus:ring-0 text-sm flex-1 outline-none"
+                      value={quickOpenQuery}
+                      onChange={(e) => setQuickOpenQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          handleCloseQuickOpen();
+                          return;
+                        }
+                        if (quickOpenDocs.length === 0) return;
+                        if (e.key === "ArrowDown") {
+                          e.preventDefault();
+                          setQuickOpenIndex((prev) => (prev + 1) % quickOpenDocs.length);
+                        } else if (e.key === "ArrowUp") {
+                          e.preventDefault();
+                          setQuickOpenIndex((prev) => (prev - 1 + quickOpenDocs.length) % quickOpenDocs.length);
+                        } else if (e.key === "Enter") {
+                          e.preventDefault();
+                          const doc = quickOpenDocs[quickOpenIndex];
+                          if (doc) handleQuickOpenSelect(doc);
+                        }
+                      }}
+                   />
                   <X className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground" onClick={handleCloseQuickOpen} />
                </div>
                       <div className="max-h-[50vh] overflow-y-auto p-2">
-                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 py-2">Switch to Note</div>
-                  {filteredQuickOpenDocs.length === 0 ? (
-                     <div className="px-2 py-4 text-sm text-muted-foreground italic">
-                       {quickOpenQuery ? "No matching notes found" : "No other notes found"}
-                     </div>
+                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 py-2">
+                    {showSearchResults ? "Search Results" : "Recent Updates"}
+                  </div>
+                  {quickOpenLoading && (
+                    <div className="px-2 py-2 text-xs text-muted-foreground">Searching...</div>
+                  )}
+                  {quickOpenDocs.length === 0 ? (
+                    <div className="px-2 py-4 text-sm text-muted-foreground italic">
+                      {showSearchResults ? "No matching notes found" : "No recent notes found"}
+                    </div>
                   ) : (
-                     <div className="space-y-0.5">
-                        {filteredQuickOpenDocs.map(doc => (
-                           <button
-                              key={doc.id}
-                              onClick={() => {
-                                 router.push(`/docs/${doc.id}`);
-                                 handleCloseQuickOpen();
-                              }}
-                              className="flex items-center w-full px-3 py-2 text-sm rounded-lg hover:bg-accent hover:text-accent-foreground text-left transition-colors group"
-                           >
-                              <div className="flex flex-col min-w-0">
-                                 <span className="font-medium truncate">{doc.title || "Untitled"}</span>
-                                 <span className="text-[10px] text-muted-foreground truncate">{formatDate(doc.mtime)}</span>
-                              </div>
-                              <ChevronRight className="h-3.5 w-3.5 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
-                           </button>
-                        ))}
-                     </div>
+                    <div className="space-y-0.5">
+                      {quickOpenDocs.map((doc, index) => {
+                        const isActive = index === quickOpenIndex;
+                        return (
+                          <button
+                            key={doc.id}
+                            onClick={() => handleQuickOpenSelect(doc)}
+                            onMouseEnter={() => setQuickOpenIndex(index)}
+                            className={`flex items-center w-full px-3 py-2 text-sm rounded-lg text-left transition-colors group ${isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"}`}
+                          >
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-medium truncate">{doc.title || "Untitled"}</span>
+                              <span className={`text-[10px] truncate ${isActive ? "text-accent-foreground/70" : "text-muted-foreground"}`}>
+                                {formatDate(doc.mtime)}
+                              </span>
+                            </div>
+                            <ChevronRight className={`h-3.5 w-3.5 ml-auto transition-opacity ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} />
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
                </div>
                <div className="p-3 bg-muted/30 border-t border-border flex justify-between items-center text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">

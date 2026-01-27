@@ -96,9 +96,14 @@ export default function DocsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [docs, setDocs] = useState<DocumentWithTags[]>([]);
-  const [allDocs, setAllDocs] = useState<DocumentWithTags[]>([]);
+  const [recentDocs, setRecentDocs] = useState<DocumentWithTags[]>([]);
+  const [tagCounts, setTagCounts] = useState<Record<string, number>>({});
+  const [totalDocs, setTotalDocs] = useState(0);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [nextOffset, setNextOffset] = useState(0);
   const [search, setSearch] = useState(searchParams.get("q") || "");
   const [selectedTag, setSelectedTag] = useState(searchParams.get("tag_id") || "");
   const [tagSearch, setTagSearch] = useState("");
@@ -108,6 +113,8 @@ export default function DocsPage() {
   const [showTagSelector, setShowTagSelector] = useState(false);
   const [activeTagIndex, setActiveTagIndex] = useState(0);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const fetchInFlightRef = useRef(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const tagSelectorRef = useRef<HTMLDivElement>(null);
 
@@ -148,13 +155,21 @@ export default function DocsPage() {
     };
   }, []);
 
-  const fetchDocs = useCallback(async () => {
-    setLoading(true);
+  const fetchDocs = useCallback(async (offset: number, append: boolean) => {
+    if (fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
     try {
       const query = new URLSearchParams();
       if (search) query.set("q", search);
       if (selectedTag) query.set("tag_id", selectedTag);
-      
+      query.set("limit", "20");
+      query.set("offset", String(offset));
+
       const res = await apiFetch<Document[]>(`/documents?${query.toString()}`);
       
       const enrichedDocs = await Promise.all((res || []).map(async (doc) => {
@@ -165,27 +180,29 @@ export default function DocsPage() {
           return { ...doc, tag_ids: [] };
         }
       }));
-
-      setDocs(sortDocs(enrichedDocs));
+      setDocs((prev) => {
+        if (append) {
+          return sortDocs([...prev, ...enrichedDocs]);
+        }
+        return sortDocs(enrichedDocs);
+      });
+      setHasMore((res || []).length === 20);
+      setNextOffset(offset + (res || []).length);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
+      fetchInFlightRef.current = false;
     }
   }, [search, selectedTag]);
 
-  const fetchAllDocs = useCallback(async () => {
+  const fetchSummary = useCallback(async () => {
     try {
-      const res = await apiFetch<Document[]>(`/documents`);
-      const enrichedDocs = await Promise.all((res || []).map(async (doc) => {
-        try {
-          const detail = await apiFetch<{ tag_ids: string[] }>(`/documents/${doc.id}`);
-          return { ...doc, tag_ids: detail.tag_ids };
-        } catch {
-          return { ...doc, tag_ids: [] };
-        }
-      }));
-      setAllDocs(sortDocs(enrichedDocs));
+      const res = await apiFetch<{ recent: Document[]; tag_counts: Record<string, number>; total: number }>("/documents/summary?limit=5");
+      setRecentDocs(sortDocs((res?.recent || []) as DocumentWithTags[]));
+      setTagCounts(res?.tag_counts || {});
+      setTotalDocs(res?.total || 0);
     } catch (e) {
       console.error(e);
     }
@@ -202,15 +219,35 @@ export default function DocsPage() {
 
   useEffect(() => {
     fetchTags();
-    fetchAllDocs();
-  }, [fetchTags, fetchAllDocs]);
+    fetchSummary();
+  }, [fetchTags, fetchSummary]);
 
   useEffect(() => {
+    setDocs([]);
+    setHasMore(true);
+    setNextOffset(0);
+    setLoading(true);
+    setLoadingMore(false);
     const timer = setTimeout(() => {
-      fetchDocs();
+      fetchDocs(0, false);
     }, 300);
     return () => clearTimeout(timer);
   }, [fetchDocs]);
+
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (!first?.isIntersecting) return;
+        if (loading || loadingMore || !hasMore) return;
+        fetchDocs(nextOffset, true);
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [fetchDocs, hasMore, loading, loadingMore, nextOffset]);
 
   const handlePinToggle = async (e: React.MouseEvent, doc: DocumentWithTags) => {
     e.stopPropagation();
@@ -222,7 +259,6 @@ export default function DocsPage() {
     };
 
     setDocs(prev => updateDocs(prev));
-    setAllDocs(prev => updateDocs(prev));
 
     try {
       await apiFetch(`/documents/${doc.id}/pin`, {
@@ -255,7 +291,6 @@ export default function DocsPage() {
        return prevDocs.map(d => d.id === doc.id ? { ...d, tag_ids: newTagIds } : d);
     };
     setDocs(prev => updateDocs(prev));
-    setAllDocs(prev => updateDocs(prev));
     setEditingDocId(null);
 
     try {
@@ -267,6 +302,7 @@ export default function DocsPage() {
           tag_ids: newTagIds,
         })
       });
+      void fetchSummary();
     } catch (err) {
       console.error("Failed to update tags", err);
     }
@@ -278,13 +314,6 @@ export default function DocsPage() {
     router.push("/login");
   };
 
-  const tagCounts = allDocs.reduce((acc, doc) => {
-    doc.tag_ids?.forEach((id) => {
-      acc[id] = (acc[id] || 0) + 1;
-    });
-    return acc;
-  }, {} as Record<string, number>);
-
   const formatRelativeTime = useCallback((timestamp?: number) => {
     if (!timestamp) return "";
     const now = Math.floor(Date.now() / 1000);
@@ -294,10 +323,6 @@ export default function DocsPage() {
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     return `${Math.floor(diff / 86400)}d ago`;
   }, []);
-
-  const recentDocs = [...allDocs]
-    .sort((a, b) => (b.mtime || 0) - (a.mtime || 0))
-    .slice(0, 5);
 
   return (
     <div className="flex h-screen flex-col md:flex-row bg-background text-foreground">
@@ -325,7 +350,7 @@ export default function DocsPage() {
                     ? "bg-background/20 text-accent-foreground"
                     : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
                 }`}>
-                  {allDocs.length}
+                  {totalDocs}
                 </span>
               </button>
             </div>
@@ -552,11 +577,12 @@ export default function DocsPage() {
              <div className="text-center py-20 text-muted-foreground">
                No micro notes found.
              </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {docs.map((doc, index) => {
-                const docTags = tags.filter((t) => doc.tag_ids?.includes(t.id));
-                const isEditing = editingDocId === doc.id;
+           ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {docs.map((doc, index) => {
+                  const docTags = tags.filter((t) => doc.tag_ids?.includes(t.id));
+                  const isEditing = editingDocId === doc.id;
                 
                 return (
                   <div
@@ -619,8 +645,13 @@ export default function DocsPage() {
                       </div>
                     </div>
                   </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+              {loadingMore && (
+                <div className="flex justify-center text-xs text-muted-foreground">Loading more...</div>
+              )}
+              {hasMore && <div ref={loadMoreRef} className="h-6" />}
             </div>
           )}
         </div>

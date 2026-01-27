@@ -55,12 +55,22 @@ func (h *DocumentHandler) List(c *gin.Context) {
 	query := c.Query("q")
 	tagID := c.Query("tag_id")
 	limit := uint(0)
+	offset := uint(0)
+	orderBy := ""
 	if value := c.Query("limit"); value != "" {
 		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
 			limit = uint(parsed)
 		}
 	}
-	docs, err := h.documents.Search(c.Request.Context(), userID, query, tagID, limit)
+	if value := c.Query("offset"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed >= 0 {
+			offset = uint(parsed)
+		}
+	}
+	if value := c.Query("order"); value == "mtime" {
+		orderBy = "mtime desc"
+	}
+	docs, err := h.documents.Search(c.Request.Context(), userID, query, tagID, limit, offset, orderBy)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -136,4 +146,23 @@ func (h *DocumentHandler) Delete(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"ok": true})
+}
+
+func (h *DocumentHandler) Summary(c *gin.Context) {
+	limit := uint(5)
+	if value := c.Query("limit"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+			limit = uint(parsed)
+		}
+	}
+	result, err := h.documents.Summary(c.Request.Context(), getUserID(c), limit)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"recent":     result.Recent,
+		"tag_counts": result.TagCounts,
+		"total":      result.Total,
+	})
 }

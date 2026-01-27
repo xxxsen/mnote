@@ -18,6 +18,12 @@ type DocumentService struct {
 	userRepo *repo.UserRepo
 }
 
+type DocumentSummary struct {
+	Recent    []model.Document
+	TagCounts map[string]int
+	Total     int
+}
+
 func NewDocumentService(docs *repo.DocumentRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo, tagRepo *repo.TagRepo, userRepo *repo.UserRepo) *DocumentService {
 	return &DocumentService{docs: docs, versions: versions, tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo}
 }
@@ -132,15 +138,35 @@ func (s *DocumentService) Get(ctx context.Context, userID, docID string) (*model
 	return s.docs.GetByID(ctx, userID, docID)
 }
 
-func (s *DocumentService) List(ctx context.Context, userID string, limit uint) ([]model.Document, error) {
-	return s.docs.List(ctx, userID, limit)
+func (s *DocumentService) List(ctx context.Context, userID string, limit, offset uint, orderBy string) ([]model.Document, error) {
+	return s.docs.List(ctx, userID, limit, offset, orderBy)
 }
 
-func (s *DocumentService) Search(ctx context.Context, userID, query, tagID string, limit uint) ([]model.Document, error) {
+func (s *DocumentService) Search(ctx context.Context, userID, query, tagID string, limit, offset uint, orderBy string) ([]model.Document, error) {
 	if query == "" && tagID == "" {
-		return s.docs.List(ctx, userID, limit)
+		return s.docs.List(ctx, userID, limit, offset, orderBy)
 	}
-	return s.docs.SearchLike(ctx, userID, query, tagID, limit)
+	return s.docs.SearchLike(ctx, userID, query, tagID, limit, offset, orderBy)
+}
+
+func (s *DocumentService) Summary(ctx context.Context, userID string, recentLimit uint) (*DocumentSummary, error) {
+	recent, err := s.docs.List(ctx, userID, recentLimit, 0, "mtime desc")
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.tags.ListByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int)
+	for _, item := range items {
+		counts[item.TagID]++
+	}
+	count, err := s.docs.Count(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return &DocumentSummary{Recent: recent, TagCounts: counts, Total: count}, nil
 }
 
 func (s *DocumentService) ListByTag(ctx context.Context, userID, tagID string) ([]model.Document, error) {
