@@ -491,15 +491,7 @@ export default function EditorPage() {
   const fetchDoc = useCallback(async () => {
     try {
       const detail = await apiFetch<{ document: Document; tag_ids: string[] }>(`/documents/${id}`);
-      contentRef.current = detail.document.content;
-      lastSavedContentRef.current = detail.document.content;
-      setContent(detail.document.content);
-      setPreviewContent(detail.document.content);
-      setHasUnsavedChanges(false);
-      const derivedTitle = extractTitleFromContent(detail.document.content);
-      setTitle(derivedTitle);
-      setSelectedTagIDs(detail.tag_ids || []);
-      setLastSavedAt(detail.document.mtime);
+      let initialContent = detail.document.content;
 
       if (typeof window !== "undefined") {
         const draft = window.localStorage.getItem(`mnote:draft:${id}`);
@@ -507,10 +499,7 @@ export default function EditorPage() {
           try {
             const parsed = JSON.parse(draft) as { content?: string };
             if (parsed.content && parsed.content !== detail.document.content) {
-              contentRef.current = parsed.content;
-              setContent(parsed.content);
-              setPreviewContent(parsed.content);
-              setTitle(extractTitleFromContent(parsed.content));
+              initialContent = parsed.content;
               setHasUnsavedChanges(true);
             }
           } catch {
@@ -518,6 +507,22 @@ export default function EditorPage() {
           }
         }
       }
+
+      contentRef.current = initialContent;
+      lastSavedContentRef.current = detail.document.content;
+      setContent(initialContent);
+      setPreviewContent(initialContent);
+      
+      const derivedTitle = extractTitleFromContent(initialContent);
+      setTitle(derivedTitle);
+      setSelectedTagIDs(detail.tag_ids || []);
+      setLastSavedAt(detail.document.mtime);
+
+      const text = initialContent || "";
+      setCharCount(text.length);
+      const words = text.trim().split(/\s+/).filter(w => w.length > 0);
+      setWordCount(words.length);
+      
     } catch (err) {
       console.error(err);
       alert("Document not found");
