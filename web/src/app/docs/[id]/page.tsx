@@ -213,78 +213,78 @@ const Toolbar = memo(({
   sizeButtonRef, 
   emojiButtonRef 
 }: ToolbarProps) => (
-  <div className="flex items-center gap-1 p-2 border-b border-border bg-background/50 backdrop-blur-sm sticky top-0 z-10 flex-none overflow-x-auto overflow-y-visible no-scrollbar">
+  <div className="flex items-center gap-1 px-2 py-1 border-b border-border bg-background/50 backdrop-blur-sm sticky top-0 z-10 flex-none overflow-x-auto overflow-y-visible no-scrollbar min-h-[36px]">
 
     <div className="flex items-center gap-0.5">
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleUndo} title="Undo"><Undo className="h-4 w-4" /></Button>
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleRedo} title="Redo"><Redo className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleUndo} title="Undo"><Undo className="h-3.5 w-3.5" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleRedo} title="Redo"><Redo className="h-3.5 w-3.5" /></Button>
     </div>
-    <div className="w-px h-4 bg-border mx-1 shrink-0" />
+    <div className="w-px h-3 bg-border mx-1 shrink-0" />
 
     <div className="flex items-center gap-0.5">
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "# ")} title="Heading 1"><Heading1 className="h-4 w-4" /></Button>
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "## ")} title="Heading 2"><Heading2 className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "# ")} title="Heading 1"><Heading1 className="h-3.5 w-3.5" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "## ")} title="Heading 2"><Heading2 className="h-3.5 w-3.5" /></Button>
     </div>
-    <div className="w-px h-4 bg-border mx-1 shrink-0" />
+    <div className="w-px h-3 bg-border mx-1 shrink-0" />
 
     <div className="flex items-center gap-0.5">
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "**", "**")} title="Bold"><Bold className="h-4 w-4" /></Button>
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "*", "*")} title="Italic"><Italic className="h-4 w-4" /></Button>
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "~~", "~~")} title="Strikethrough"><Strikethrough className="h-4 w-4" /></Button>
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "<u>", "</u>")} title="Underline"><UnderlineIcon className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "**", "**")} title="Bold"><Bold className="h-3.5 w-3.5" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "*", "*")} title="Italic"><Italic className="h-3.5 w-3.5" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "~~", "~~")} title="Strikethrough"><Strikethrough className="h-3.5 w-3.5" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "<u>", "</u>")} title="Underline"><UnderlineIcon className="h-3.5 w-3.5" /></Button>
        <div className="relative">
           <Button 
              variant="ghost" 
              size="icon" 
-             className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "color" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
+             className={`h-7 w-7 shrink-0 hover:text-foreground ${activePopover === "color" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
              onClick={() => setActivePopover(activePopover === "color" ? null : "color")} 
              title="Text Color"
              data-popover-trigger
              ref={colorButtonRef}
           >
-             <Palette className="h-4 w-4" />
+             <Palette className="h-3.5 w-3.5" />
           </Button>
        </div>
        <div className="relative">
           <Button 
              variant="ghost" 
              size="icon" 
-             className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "size" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
+             className={`h-7 w-7 shrink-0 hover:text-foreground ${activePopover === "size" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
              onClick={() => setActivePopover(activePopover === "size" ? null : "size")} 
              title="Font Size"
              data-popover-trigger
              ref={sizeButtonRef}
           >
-             <Type className="h-4 w-4" />
+             <Type className="h-3.5 w-3.5" />
           </Button>
        </div>
     </div>
-    <div className="w-px h-4 bg-border mx-1 shrink-0" />
+    <div className="w-px h-3 bg-border mx-1 shrink-0" />
 
     <div className="flex items-center gap-0.5">
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- ")} title="Bullet List"><List className="h-4 w-4" /></Button>
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "1. ")} title="Ordered List"><ListOrdered className="h-4 w-4" /></Button>
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- [ ] ")} title="Todo List"><ListTodo className="h-4 w-4" /></Button>
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "> ")} title="Quote"><Quote className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- ")} title="Bullet List"><List className="h-3.5 w-3.5" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "1. ")} title="Ordered List"><ListOrdered className="h-3.5 w-3.5" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- [ ] ")} title="Todo List"><ListTodo className="h-3.5 w-3.5" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "> ")} title="Quote"><Quote className="h-3.5 w-3.5" /></Button>
     </div>
-    <div className="w-px h-4 bg-border mx-1 shrink-0" />
+    <div className="w-px h-3 bg-border mx-1 shrink-0" />
 
     <div className="flex items-center gap-0.5">
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "`", "`")} title="Inline Code"><Code className="h-4 w-4" /></Button>
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "```\n", "\n```")} title="Code Block"><FileCode className="h-4 w-4" /></Button>
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "[", "](url)")} title="Link"><LinkIcon className="h-4 w-4" /></Button>
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleInsertTable} title="Table"><TableIcon className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "`", "`")} title="Inline Code"><Code className="h-3.5 w-3.5" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "```\n", "\n```")} title="Code Block"><FileCode className="h-3.5 w-3.5" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "[", "](url)")} title="Link"><LinkIcon className="h-3.5 w-3.5" /></Button>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleInsertTable} title="Table"><TableIcon className="h-3.5 w-3.5" /></Button>
        <div className="relative">
           <Button 
              variant="ghost" 
              size="icon" 
-             className={`h-8 w-8 shrink-0 hover:text-foreground ${activePopover === "emoji" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
+             className={`h-7 w-7 shrink-0 hover:text-foreground ${activePopover === "emoji" ? "text-primary bg-accent" : "text-muted-foreground"}`} 
              onClick={() => setActivePopover(activePopover === "emoji" ? null : "emoji")} 
              title="Emoji"
              data-popover-trigger
              ref={emojiButtonRef}
           >
-             <Smile className="h-4 w-4" />
+             <Smile className="h-3.5 w-3.5" />
           </Button>
        </div>
     </div>
@@ -1276,32 +1276,34 @@ export default function EditorPage() {
         <div className={`flex-1 flex flex-col md:flex-row h-full transition-all duration-300 min-w-0 ${showDetails ? "mr-80" : ""}`}>
           
                <div className="h-full border-r border-border overflow-hidden min-w-0 md:flex-[0_0_50%] w-full flex flex-col relative">
-                 <div className="flex items-center gap-1 px-1 pt-1 bg-muted/30 border-b border-border overflow-x-auto no-scrollbar shrink-0">
-                    {tabs.map(tab => (
-                       <div 
-                          key={tab.id}
-                          onClick={() => { if (tab.id !== id) router.push(`/docs/${tab.id}`); }}
-                          className={`group flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-t-lg border-x border-t transition-all cursor-pointer select-none ${tab.id === id ? "bg-background border-border text-foreground" : "bg-transparent border-transparent text-muted-foreground hover:bg-muted"}`}
-                       >
-                          <span className="truncate max-w-[100px]">{tab.title || "Untitled"}</span>
-                          {tabs.length > 1 && (
-                             <button 
-                                onClick={(e) => {
-                                   e.stopPropagation();
-                                   const nextTabs = tabs.filter(t => t.id !== tab.id);
-                                   setTabs(nextTabs);
-                                   if (tab.id === id && nextTabs.length > 0) router.push(`/docs/${nextTabs[0].id}`);
-                                }}
-                                className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
-                             >
-                                <X className="h-3 w-3" />
-                             </button>
-                          )}
-                       </div>
-                    ))}
+                 <div className="flex items-center bg-muted/30 border-b border-border shrink-0 px-1 pt-1 h-9">
+                    <div className="flex-1 flex items-end h-full gap-0.5 overflow-x-auto no-scrollbar">
+                       {tabs.map(tab => (
+                          <div 
+                             key={tab.id}
+                             onClick={() => { if (tab.id !== id) router.push(`/docs/${tab.id}`); }}
+                             className={`group flex items-center gap-2 px-3 h-full text-[10px] font-bold uppercase tracking-wider rounded-t-md border-x border-t transition-all cursor-pointer select-none shrink-0 ${tab.id === id ? "bg-background border-border text-foreground translate-y-[1px] z-10" : "bg-transparent border-transparent text-muted-foreground hover:bg-muted/50"}`}
+                          >
+                             <span className="truncate max-w-none">{tab.title || "Untitled"}</span>
+                             {tabs.length > 1 && (
+                                <button 
+                                   onClick={(e) => {
+                                      e.stopPropagation();
+                                      const nextTabs = tabs.filter(t => t.id !== tab.id);
+                                      setTabs(nextTabs);
+                                      if (tab.id === id && nextTabs.length > 0) router.push(`/docs/${nextTabs[0].id}`);
+                                   }}
+                                   className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity p-0.5"
+                                >
+                                   <X className="h-3 w-3" />
+                                </button>
+                             )}
+                          </div>
+                       ))}
+                    </div>
                     <button 
                        onClick={handleOpenQuickOpen}
-                       className="px-2 py-1.5 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                       className="px-2 h-7 mb-1 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 shrink-0 bg-background/50 rounded-md ml-1 border border-border shadow-sm"
                        title="Quick Open (Cmd+K)"
                     >
                        <Command className="h-3 w-3" />
