@@ -245,6 +245,35 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
 CodeBlock.displayName = "CodeBlock";
 
 const MermaidBlock = memo(({ chart }: { chart: string }) => {
+  const diagramType = useMemo(() => {
+    const match = chart.trim().match(/^(\w+)/);
+    if (!match) return "DIAGRAM";
+    const type = match[1];
+    
+    const knownTypes: Record<string, string> = {
+      graph: "FLOWCHART",
+      flowchart: "FLOWCHART",
+      sequenceDiagram: "SEQUENCE DIAGRAM",
+      classDiagram: "CLASS DIAGRAM",
+      stateDiagram: "STATE DIAGRAM",
+      erDiagram: "ER DIAGRAM",
+      gantt: "GANTT CHART",
+      pie: "PIE CHART",
+      gitGraph: "GIT GRAPH",
+      journey: "JOURNEY",
+      quadrantChart: "QUADRANT CHART",
+      xychart: "XY CHART",
+      mindmap: "MINDMAP",
+      timeline: "TIMELINE",
+      sankey: "SANKEY",
+      packet: "PACKET DIAGRAM",
+      kanban: "KANBAN",
+      architecture: "ARCHITECTURE"
+    };
+
+    return knownTypes[type] || type.replace(/([A-Z])/g, ' $1').trim().toUpperCase();
+  }, [chart]);
+
   return (
     <div
       style={{
@@ -260,7 +289,7 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
     >
       <div className="flex items-center justify-between px-3 h-8 bg-black/[0.02] border-b border-black/[0.03]">
         <span className="text-[10px] font-bold text-muted-foreground/50 tracking-wide font-mono uppercase">
-          Diagram
+          {diagramType}
         </span>
       </div>
       <div className="p-4 flex justify-center">
