@@ -115,6 +115,7 @@ export default function DocsPage() {
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const fetchInFlightRef = useRef(false);
+  const initialFetchRef = useRef(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const tagSelectorRef = useRef<HTMLDivElement>(null);
 
@@ -218,6 +219,8 @@ export default function DocsPage() {
   }, []);
 
   useEffect(() => {
+    if (initialFetchRef.current) return;
+    initialFetchRef.current = true;
     fetchTags();
     fetchSummary();
   }, [fetchTags, fetchSummary]);
