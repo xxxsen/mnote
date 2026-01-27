@@ -180,7 +180,7 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
     }
   }, [rawCode]);
 
-  const displayLanguage = language.toLowerCase();
+  const displayLanguage = language.toUpperCase();
   const displayTitle = fileName || displayLanguage;
 
   return (
@@ -198,7 +198,7 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
       }}
     >
       <div className="flex items-center justify-between px-3 h-8 bg-black/[0.02] border-b border-black/[0.03]">
-        <span className="text-[10px] font-bold text-muted-foreground/50 tracking-wide font-mono">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 font-mono">
           {displayTitle}
         </span>
         <button
@@ -208,9 +208,9 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
             event.stopPropagation();
             handleCopyLocal();
           }}
-          className="text-[10px] px-2 h-5 flex items-center justify-center rounded border border-transparent hover:border-border bg-transparent hover:bg-background text-muted-foreground/40 hover:text-foreground transition-all min-w-[50px] font-medium"
+          className="text-[10px] px-2 h-5 flex items-center justify-center rounded border border-transparent hover:border-border bg-transparent hover:bg-background text-muted-foreground/40 hover:text-foreground transition-all min-w-[50px] font-bold tracking-tighter"
         >
-          {copied ? "Copied" : "Copy"}
+          {copied ? "COPIED" : "COPY"}
         </button>
       </div>
       <div className="p-3 pt-2">
@@ -243,6 +243,34 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
 });
 
 CodeBlock.displayName = "CodeBlock";
+
+const MermaidBlock = memo(({ chart }: { chart: string }) => {
+  return (
+    <div
+      style={{
+        margin: 0,
+        marginBottom: "1.5em",
+        borderRadius: "var(--radius-md)",
+        backgroundColor: "#f8f9fa",
+        border: "1px solid rgba(0,0,0,0.06)",
+        boxShadow: "none",
+        position: "relative",
+        overflow: "hidden"
+      }}
+    >
+      <div className="flex items-center justify-between px-3 h-8 bg-black/[0.02] border-b border-black/[0.03]">
+        <span className="text-[10px] font-bold text-muted-foreground/50 tracking-wide font-mono uppercase">
+          Diagram
+        </span>
+      </div>
+      <div className="p-4 flex justify-center">
+        <Mermaid chart={chart} />
+      </div>
+    </div>
+  );
+});
+
+MermaidBlock.displayName = "MermaidBlock";
 
 const MarkdownPreview = memo(
   forwardRef<HTMLDivElement, MarkdownPreviewProps>(function MarkdownPreview(
@@ -307,7 +335,7 @@ const MarkdownPreview = memo(
               const className = children.props.className;
               const isToc = className.includes("language-toc");
               const isMermaid = className.includes("language-mermaid");
-              if (isToc || (className.includes("language-") && !isMermaid)) {
+              if (isToc || isMermaid || className.includes("language-")) {
                 return <>{children}</>;
               }
             }
@@ -329,7 +357,7 @@ const MarkdownPreview = memo(
             }
 
             if (isMermaid) {
-              return <Mermaid chart={String(children).replace(/\n$/, "")} />;
+              return <MermaidBlock chart={String(children).replace(/\n$/, "")} />;
             }
 
             if (match) {
