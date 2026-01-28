@@ -96,6 +96,40 @@ type HastNode = {
   };
 };
 
+type MdastNode = {
+  type: string;
+  value?: string;
+  children?: MdastNode[];
+};
+
+const remarkSoftBreaks = () => {
+  return (tree: MdastNode) => {
+    const walk = (node: MdastNode) => {
+      if (!node || !node.children) return;
+      const next: MdastNode[] = [];
+      for (const child of node.children) {
+        if (child.type === "code" || child.type === "inlineCode") {
+          next.push(child);
+          continue;
+        }
+        if (child.type === "text" && typeof child.value === "string" && child.value.includes("\n")) {
+          const parts = child.value.split("\n");
+          for (let i = 0; i < parts.length; i += 1) {
+            const value = parts[i];
+            if (value) next.push({ ...child, value });
+            if (i < parts.length - 1) next.push({ type: "break" });
+          }
+          continue;
+        }
+        walk(child);
+        next.push(child);
+      }
+      node.children = next;
+    };
+    walk(tree);
+  };
+};
+
 const getHastText = (node: HastNode): string => {
   if (node.type === "text") return node.value || "";
   if (node.children) return node.children.map(getHastText).join("");
@@ -519,7 +553,10 @@ const MarkdownPreview = memo(
   );
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const remarkPlugins = useMemo<any[]>(() => [remarkGfm, [remarkMath, { singleDollarTextMath: true }]], []);
+  const remarkPlugins = useMemo<any[]>(
+    () => [remarkGfm, [remarkMath, { singleDollarTextMath: true }], remarkSoftBreaks],
+    []
+  );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rehypePlugins = useMemo<any[]>(() => [rehypeRaw, [rehypeKatex, { strict: "warn" }], rehypeSlugger], [rehypeSlugger]);
 
