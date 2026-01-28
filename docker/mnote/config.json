@@ -12,5 +12,12 @@
         "data": {
             "dir": "/data/uploads"
         }
+    },
+    "ai": {
+        "provider": "gemini",
+        "api_key": "abc",
+        "model": "flash",
+        "timeout": 10,
+        "max_input_chars": 20000
     }
 }

@@ -15,11 +15,20 @@ type Config struct {
 	JWTTTLHours int              `json:"jwt_ttl_hours"`
 	LogConfig   logger.LogConfig `json:"log_config"`
 	FileStore   FileStoreConfig  `json:"file_store"`
+	AI          AIConfig         `json:"ai"`
 }
 
 type FileStoreConfig struct {
 	Type string      `json:"type"`
 	Data interface{} `json:"data"`
+}
+
+type AIConfig struct {
+	Provider      string `json:"provider"`
+	APIKey        string `json:"api_key"`
+	Model         string `json:"model"`
+	Timeout       int    `json:"timeout"`
+	MaxInputChars int    `json:"max_input_chars"`
 }
 
 func Load(path string) (*Config, error) {
@@ -50,6 +59,18 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.FileStore.Type == "" {
 		cfg.FileStore.Type = "local"
+	}
+	if cfg.AI.Provider == "" {
+		cfg.AI.Provider = "gemini"
+	}
+	if cfg.AI.Timeout == 0 {
+		cfg.AI.Timeout = 10
+	}
+	if cfg.AI.MaxInputChars == 0 {
+		cfg.AI.MaxInputChars = 20000
+	}
+	if cfg.AI.Model == "" {
+		cfg.AI.Model = "flash"
 	}
 	return &cfg, nil
 }

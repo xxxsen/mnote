@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef, useTransition, memo } from "react";
+import React, { useEffect, useState, useCallback, useRef, useTransition, useMemo, memo } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
 import CodeMirror from "@uiw/react-codemirror";
@@ -43,6 +43,9 @@ import {
   Palette,
   Type,
   Smile,
+  Sparkles,
+  Wand2,
+  Tags,
   Undo,
   Redo,
   X,
@@ -74,6 +77,60 @@ const SIZES = [
   { label: "Large", value: "20px" },
   { label: "Huge", value: "24px" },
 ];
+
+const MAX_TAGS = 7;
+
+type AIAction = "polish" | "generate" | "tags";
+
+type DiffLine = {
+  type: "equal" | "add" | "remove";
+  left?: string;
+  right?: string;
+};
+
+const buildLineDiff = (before: string, after: string): DiffLine[] => {
+  const leftLines = before.split("\n");
+  const rightLines = after.split("\n");
+  const m = leftLines.length;
+  const n = rightLines.length;
+  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+
+  for (let i = m - 1; i >= 0; i -= 1) {
+    for (let j = n - 1; j >= 0; j -= 1) {
+      if (leftLines[i] === rightLines[j]) {
+        dp[i][j] = dp[i + 1][j + 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+  }
+
+  const result: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < m && j < n) {
+    if (leftLines[i] === rightLines[j]) {
+      result.push({ type: "equal", left: leftLines[i], right: rightLines[j] });
+      i += 1;
+      j += 1;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      result.push({ type: "remove", left: leftLines[i] });
+      i += 1;
+    } else {
+      result.push({ type: "add", right: rightLines[j] });
+      j += 1;
+    }
+  }
+  while (i < m) {
+    result.push({ type: "remove", left: leftLines[i] });
+    i += 1;
+  }
+  while (j < n) {
+    result.push({ type: "add", right: rightLines[j] });
+    j += 1;
+  }
+  return result;
+};
 
 type SlashActionContext = {
   handleFormat: (type: "wrap" | "line", prefix: string, suffix?: string) => void;
@@ -195,6 +252,10 @@ type ToolbarProps = {
   handleRedo: () => void;
   handleFormat: (type: "wrap" | "line", prefix: string, suffix?: string) => void;
   handleInsertTable: () => void;
+  handleAiPolish: () => void;
+  handleAiGenerateOpen: () => void;
+  handleAiTags: () => void;
+  aiBusy: boolean;
   activePopover: "emoji" | "color" | "size" | null;
   setActivePopover: (v: "emoji" | "color" | "size" | null) => void;
   colorButtonRef: React.RefObject<HTMLButtonElement | null>;
@@ -207,6 +268,10 @@ const Toolbar = memo(({
   handleRedo, 
   handleFormat, 
   handleInsertTable, 
+  handleAiPolish,
+  handleAiGenerateOpen,
+  handleAiTags,
+  aiBusy,
   activePopover, 
   setActivePopover, 
   colorButtonRef, 
@@ -288,6 +353,40 @@ const Toolbar = memo(({
           </Button>
        </div>
     </div>
+    <div className="w-px h-3 bg-border mx-1 shrink-0" />
+
+    <div className="flex items-center gap-0.5">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+        onClick={handleAiPolish}
+        title="AI Polish"
+        disabled={aiBusy}
+      >
+        <Sparkles className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+        onClick={handleAiGenerateOpen}
+        title="AI Generate"
+        disabled={aiBusy}
+      >
+        <Wand2 className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+        onClick={handleAiTags}
+        title="AI Tags"
+        disabled={aiBusy}
+      >
+        <Tags className="h-3.5 w-3.5" />
+      </Button>
+    </div>
   </div>
 ));
 Toolbar.displayName = "Toolbar";
@@ -309,6 +408,15 @@ export default function EditorPage() {
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [selectedTagIDs, setSelectedTagIDs] = useState<string[]>([]);
   const [newTag, setNewTag] = useState("");
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiAction, setAiAction] = useState<AIAction | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiOriginalText, setAiOriginalText] = useState("");
+  const [aiResultText, setAiResultText] = useState("");
+  const [aiSuggestedTags, setAiSuggestedTags] = useState<string[]>([]);
+  const [aiSelectedTags, setAiSelectedTags] = useState<string[]>([]);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [slashMenu, setSlashMenu] = useState<{ open: boolean; x: number; y: number; filter: string }>({ open: false, x: 0, y: 0, filter: "" });
   const [hoverImage, setHoverImage] = useState<{ url: string; x: number; y: number } | null>(null);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
@@ -350,6 +458,20 @@ export default function EditorPage() {
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
+
+  const aiDiffLines = useMemo(
+    () => (aiOriginalText && aiResultText ? buildLineDiff(aiOriginalText, aiResultText) : []),
+    [aiOriginalText, aiResultText]
+  );
+
+  const selectedTagNames = useMemo(() => {
+    const names = new Set<string>();
+    selectedTagIDs.forEach((id) => {
+      const tag = allTags.find((item) => item.id === id);
+      if (tag?.name) names.add(tag.name);
+    });
+    return names;
+  }, [allTags, selectedTagIDs]);
   
   const handleTocLoaded = useCallback((toc: string) => {
     setTocContent(toc);
@@ -376,6 +498,14 @@ export default function EditorPage() {
       return getText(value.props.children);
     }
     return "";
+  }, []);
+
+  const normalizeTagName = useCallback((name: string) => name.trim(), []);
+
+  const isValidTagName = useCallback((name: string) => {
+    if (!name) return false;
+    if (Array.from(name).length > 16) return false;
+    return /^[\p{Script=Han}A-Za-z0-9]{1,16}$/u.test(name);
   }, []);
 
   const getElementById = useCallback((id: string) => {
@@ -704,6 +834,25 @@ export default function EditorPage() {
     [schedulePreviewUpdate]
   );
 
+  const applyContent = useCallback(
+    (nextContent: string) => {
+      const view = editorViewRef.current;
+      if (view) {
+        view.dispatch({
+          changes: { from: 0, to: view.state.doc.length, insert: nextContent },
+          selection: { anchor: nextContent.length },
+        });
+        view.focus();
+      }
+      contentRef.current = nextContent;
+      setContent(nextContent);
+      setPreviewContent(nextContent);
+      setHasUnsavedChanges(nextContent !== lastSavedContentRef.current);
+      schedulePreviewUpdate();
+    },
+    [schedulePreviewUpdate]
+  );
+
   const handleFormat = useCallback(
     (type: "wrap" | "line", prefix: string, suffix = "") => {
       const view = editorViewRef.current;
@@ -850,6 +999,182 @@ export default function EditorPage() {
 `;
     insertTextAtCursor(tableTemplate);
   }, [insertTextAtCursor]);
+
+  const resetAiState = useCallback(() => {
+    setAiError(null);
+    setAiResultText("");
+    setAiSuggestedTags([]);
+    setAiSelectedTags([]);
+  }, []);
+
+  const closeAiModal = useCallback(() => {
+    setAiModalOpen(false);
+    setAiAction(null);
+    setAiLoading(false);
+    setAiPrompt("");
+    setAiOriginalText("");
+    resetAiState();
+  }, [resetAiState]);
+
+  const handleAiPolish = useCallback(async () => {
+    const snapshot = contentRef.current;
+    if (!snapshot.trim()) {
+      alert("Please add some content before polishing.");
+      return;
+    }
+    setAiAction("polish");
+    setAiModalOpen(true);
+    setAiLoading(true);
+    setAiOriginalText(snapshot);
+    resetAiState();
+    try {
+      const res = await apiFetch<{ text: string }>("/ai/polish", {
+        method: "POST",
+        body: JSON.stringify({ text: snapshot }),
+      });
+      setAiResultText(res?.text || "");
+    } catch (err) {
+      console.error(err);
+      setAiError(err instanceof Error ? err.message : "AI request failed");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [resetAiState]);
+
+  const handleAiGenerateOpen = useCallback(() => {
+    setAiAction("generate");
+    setAiModalOpen(true);
+    setAiPrompt("");
+    setAiOriginalText("");
+    resetAiState();
+  }, [resetAiState]);
+
+  const handleAiGenerate = useCallback(async () => {
+    const prompt = aiPrompt.trim();
+    if (!prompt) {
+      setAiError("Please enter a brief description.");
+      return;
+    }
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const res = await apiFetch<{ text: string }>("/ai/generate", {
+        method: "POST",
+        body: JSON.stringify({ prompt }),
+      });
+      setAiResultText(res?.text || "");
+    } catch (err) {
+      console.error(err);
+      setAiError(err instanceof Error ? err.message : "AI request failed");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiPrompt]);
+
+  const handleAiTags = useCallback(async () => {
+    const snapshot = contentRef.current;
+    if (!snapshot.trim()) {
+      alert("Please add some content before extracting tags.");
+      return;
+    }
+    setAiAction("tags");
+    setAiModalOpen(true);
+    setAiLoading(true);
+    setAiOriginalText(snapshot);
+    resetAiState();
+    try {
+      const res = await apiFetch<{ tags: string[] }>("/ai/tags", {
+        method: "POST",
+        body: JSON.stringify({ text: snapshot, max_tags: MAX_TAGS }),
+      });
+      const selectedNames = new Set(
+        selectedTagIDs
+          .map((id) => allTags.find((tag) => tag.id === id)?.name)
+          .filter((name): name is string => Boolean(name))
+      );
+      const cleaned = (res?.tags || [])
+        .map((tag) => normalizeTagName(tag))
+        .filter((tag) => isValidTagName(tag))
+        .filter((tag, index, arr) => arr.indexOf(tag) === index)
+        .filter((tag) => !selectedNames.has(tag));
+
+      setAiSuggestedTags(cleaned);
+      const availableSlots = Math.max(0, MAX_TAGS - selectedTagIDs.length);
+      setAiSelectedTags(cleaned.slice(0, availableSlots));
+    } catch (err) {
+      console.error(err);
+      setAiError(err instanceof Error ? err.message : "AI request failed");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [allTags, isValidTagName, normalizeTagName, resetAiState, selectedTagIDs]);
+
+  const toggleAiTag = useCallback(
+    (name: string) => {
+      if (selectedTagNames.has(name)) return;
+      if (aiSelectedTags.includes(name)) {
+        setAiSelectedTags(aiSelectedTags.filter((tag) => tag !== name));
+        return;
+      }
+      if (selectedTagIDs.length + aiSelectedTags.length >= MAX_TAGS) {
+        alert(`You can only select up to ${MAX_TAGS} tags.`);
+        return;
+      }
+      setAiSelectedTags([...aiSelectedTags, name]);
+    },
+    [aiSelectedTags, selectedTagIDs, selectedTagNames]
+  );
+
+  const handleApplyAiText = useCallback(() => {
+    if (!aiResultText) {
+      closeAiModal();
+      return;
+    }
+    applyContent(aiResultText);
+    closeAiModal();
+  }, [aiResultText, applyContent, closeAiModal]);
+
+  const handleApplyAiTags = useCallback(async () => {
+    if (aiSelectedTags.length === 0) {
+      closeAiModal();
+      return;
+    }
+    if (selectedTagIDs.length + aiSelectedTags.length > MAX_TAGS) {
+      alert(`You can only select up to ${MAX_TAGS} tags.`);
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const newTagIDs: string[] = [];
+      const updatedTags = [...allTags];
+      for (const name of aiSelectedTags) {
+        const existing = updatedTags.find((tag) => tag.name === name);
+        if (existing) {
+          if (!selectedTagIDs.includes(existing.id)) {
+            newTagIDs.push(existing.id);
+          }
+          continue;
+        }
+        const created = await apiFetch<Tag>("/tags", {
+          method: "POST",
+          body: JSON.stringify({ name }),
+        });
+        updatedTags.push(created);
+        newTagIDs.push(created.id);
+      }
+      if (newTagIDs.length > 0) {
+        setAllTags(updatedTags);
+        setSelectedTagIDs([...selectedTagIDs, ...newTagIDs]);
+        setHasUnsavedChanges(true);
+      }
+      closeAiModal();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to apply tags");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiSelectedTags, allTags, closeAiModal, selectedTagIDs]);
 
   const handleSlashAction = useCallback((action: (ctx: SlashActionContext) => void) => {
     const view = editorViewRef.current;
@@ -1052,8 +1377,8 @@ export default function EditorPage() {
     const existing = allTags.find((tag) => tag.name === trimmed);
     const willSelect = !existing || !selectedTagIDs.includes(existing.id);
 
-    if (willSelect && selectedTagIDs.length >= 7) {
-      alert("You can only select up to 7 tags.");
+    if (willSelect && selectedTagIDs.length >= MAX_TAGS) {
+      alert(`You can only select up to ${MAX_TAGS} tags.`);
       return;
     }
 
@@ -1084,8 +1409,8 @@ export default function EditorPage() {
       setSelectedTagIDs(selectedTagIDs.filter((id) => id !== tagID));
       setHasUnsavedChanges(true);
     } else {
-      if (selectedTagIDs.length >= 7) {
-        alert("You can only select up to 7 tags.");
+      if (selectedTagIDs.length >= MAX_TAGS) {
+        alert(`You can only select up to ${MAX_TAGS} tags.`);
         return;
       }
       setSelectedTagIDs([...selectedTagIDs, tagID]);
@@ -1241,6 +1566,9 @@ export default function EditorPage() {
     };
   }, [hasUnsavedChanges, id]);
 
+  const aiTitle = aiAction === "polish" ? "AI Polish" : aiAction === "generate" ? "AI Generate" : "AI Tags";
+  const aiAvailableSlots = Math.max(0, MAX_TAGS - selectedTagIDs.length);
+
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
 
@@ -1311,17 +1639,21 @@ export default function EditorPage() {
                     </button>
                  </div>
                  
-                 <Toolbar 
-                    handleUndo={handleUndo}
-                    handleRedo={handleRedo}
-                    handleFormat={handleFormat}
-                    handleInsertTable={handleInsertTable}
-                    activePopover={activePopover}
-                    setActivePopover={setActivePopover}
-                    colorButtonRef={colorButtonRef}
-                    sizeButtonRef={sizeButtonRef}
-                    emojiButtonRef={emojiButtonRef}
-                 />
+                  <Toolbar 
+                     handleUndo={handleUndo}
+                     handleRedo={handleRedo}
+                     handleFormat={handleFormat}
+                     handleInsertTable={handleInsertTable}
+                     handleAiPolish={handleAiPolish}
+                     handleAiGenerateOpen={handleAiGenerateOpen}
+                     handleAiTags={handleAiTags}
+                     aiBusy={aiLoading}
+                     activePopover={activePopover}
+                     setActivePopover={setActivePopover}
+                     colorButtonRef={colorButtonRef}
+                     sizeButtonRef={sizeButtonRef}
+                     emojiButtonRef={emojiButtonRef}
+                  />
 
                  <div className="flex-1 overflow-hidden min-h-0">
 
@@ -1642,6 +1974,157 @@ export default function EditorPage() {
         charCount={charCount}
         hasUnsavedChanges={hasUnsavedChanges}
       />
+
+      {aiModalOpen && (
+        <div className="fixed inset-0 z-[170] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={aiLoading ? undefined : closeAiModal} />
+          <div className="relative w-full max-w-5xl bg-background border border-border rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-sm font-bold">{aiTitle}</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {aiLoading ? "Generating..." : "Review before applying"}
+                  </div>
+                </div>
+              </div>
+              <button
+                className="text-muted-foreground hover:text-foreground"
+                onClick={closeAiModal}
+                disabled={aiLoading}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-5 max-h-[65vh] overflow-y-auto">
+              {aiLoading && (
+                <div className="flex items-center justify-center gap-3 text-sm text-muted-foreground py-12">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Waiting for AI response...
+                </div>
+              )}
+
+              {!aiLoading && aiError && (
+                <div className="bg-destructive/10 text-destructive text-sm px-3 py-2 rounded-lg">
+                  {aiError}
+                </div>
+              )}
+
+              {!aiLoading && !aiError && aiAction === "generate" && !aiResultText && (
+                <div className="space-y-3">
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                    Brief description
+                  </label>
+                  <textarea
+                    className="w-full min-h-[140px] rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                    placeholder="Describe what you want to generate..."
+                    value={aiPrompt}
+                    onChange={(event) => setAiPrompt(event.target.value)}
+                  />
+                </div>
+              )}
+
+              {!aiLoading && !aiError && aiAction === "polish" && aiResultText && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4 text-xs font-mono">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Original</div>
+                      <div className="border border-border rounded-lg overflow-hidden">
+                        {aiDiffLines.map((line, index) => (
+                          <div
+                            key={`left-${index}`}
+                            className={`px-2 py-1 whitespace-pre-wrap ${
+                              line.type === "remove" ? "bg-rose-50 text-rose-700" : "bg-background"
+                            }`}
+                          >
+                            {line.left ?? " "}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Polished</div>
+                      <div className="border border-border rounded-lg overflow-hidden">
+                        {aiDiffLines.map((line, index) => (
+                          <div
+                            key={`right-${index}`}
+                            className={`px-2 py-1 whitespace-pre-wrap ${
+                              line.type === "add" ? "bg-emerald-50 text-emerald-700" : "bg-background"
+                            }`}
+                          >
+                            {line.right ?? " "}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!aiLoading && !aiError && aiAction === "generate" && aiResultText && (
+                <div className="border border-border rounded-xl p-4 bg-muted/20">
+                  <MarkdownPreview content={aiResultText} className="prose prose-slate max-w-none" />
+                </div>
+              )}
+
+              {!aiLoading && !aiError && aiAction === "tags" && (
+                <div className="space-y-4">
+                  <div className="text-xs text-muted-foreground">
+                    Available slots: {aiAvailableSlots}
+                  </div>
+                  {aiSuggestedTags.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No valid tags returned.</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {aiSuggestedTags.map((tag) => {
+                        const alreadySelected = selectedTagNames.has(tag);
+                        const checked = alreadySelected || aiSelectedTags.includes(tag);
+                        return (
+                          <button
+                            key={tag}
+                            className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                              checked ? "bg-primary/10 text-primary border-primary/30" : "bg-background border-border"
+                            } ${alreadySelected ? "opacity-60 cursor-not-allowed" : "hover:bg-accent"}`}
+                            onClick={() => toggleAiTag(tag)}
+                            disabled={alreadySelected}
+                          >
+                            #{tag}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border">
+              <Button variant="outline" onClick={closeAiModal} disabled={aiLoading}>
+                Cancel
+              </Button>
+              {aiAction === "generate" && !aiResultText && (
+                <Button onClick={handleAiGenerate} disabled={aiLoading}>
+                  Generate
+                </Button>
+              )}
+              {aiAction === "tags" && aiSuggestedTags.length > 0 && (
+                <Button onClick={handleApplyAiTags} disabled={aiLoading}>
+                  Apply Tags
+                </Button>
+              )}
+              {(aiAction === "polish" || aiAction === "generate") && aiResultText && (
+                <Button onClick={handleApplyAiText} disabled={aiLoading}>
+                  Use Result
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showDeleteConfirm && (
          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">

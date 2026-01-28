@@ -1,0 +1,165 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"google.golang.org/genai"
+
+	"github.com/xxxsen/mnote/internal/config"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
+)
+
+var ErrAIUnavailable = errors.New("ai unavailable")
+
+type AIService struct {
+	cfg config.AIConfig
+}
+
+func NewAIService(cfg config.AIConfig) *AIService {
+	return &AIService{cfg: cfg}
+}
+
+func (s *AIService) Polish(ctx context.Context, input string) (string, error) {
+	text, err := s.cleanInput(input)
+	if err != nil {
+		return "", err
+	}
+	prompt := fmt.Sprintf(`You are a professional editor.
+Polish the following markdown to be more professional and clear without changing the meaning.
+- Keep all markdown structure and formatting.
+- Do not add explanations.
+- Output ONLY the polished markdown.
+
+CONTENT:
+%s`, text)
+	return s.generateText(ctx, s.cfg.Model, prompt)
+}
+
+func (s *AIService) Generate(ctx context.Context, prompt string) (string, error) {
+	text, err := s.cleanInput(prompt)
+	if err != nil {
+		return "", err
+	}
+	fullPrompt := fmt.Sprintf(`You are a helpful writer.
+Generate a complete markdown article based on the description below.
+- Use clear sections and headings when appropriate.
+- Output ONLY the generated markdown.
+
+DESCRIPTION:
+%s`, text)
+	return s.generateText(ctx, s.cfg.Model, fullPrompt)
+}
+
+func (s *AIService) ExtractTags(ctx context.Context, input string, maxTags int) ([]string, error) {
+	text, err := s.cleanInput(input)
+	if err != nil {
+		return nil, err
+	}
+	if maxTags <= 0 {
+		maxTags = 7
+	}
+	if maxTags > 20 {
+		maxTags = 20
+	}
+	prompt := fmt.Sprintf(`You are a tag extraction assistant.
+From the markdown below, extract up to %d concise tags.
+- Tags should be short phrases (1-3 words).
+- Return a JSON array of strings only. No extra text.
+- Use the same language as the content.
+
+CONTENT:
+%s`, maxTags, text)
+	result, err := s.generateText(ctx, s.cfg.Model, prompt)
+	if err != nil {
+		return nil, err
+	}
+	return parseTags(result, maxTags)
+}
+
+func (s *AIService) cleanInput(input string) (string, error) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return "", appErr.ErrInvalid
+	}
+	if s.cfg.MaxInputChars > 0 && len(trimmed) > s.cfg.MaxInputChars {
+		return "", appErr.ErrInvalid
+	}
+	return trimmed, nil
+}
+
+func (s *AIService) generateText(ctx context.Context, model, prompt string) (string, error) {
+	if s.cfg.APIKey == "" {
+		return "", ErrAIUnavailable
+	}
+	if model == "" {
+		return "", appErr.ErrInvalid
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.cfg.Timeout)*time.Second)
+	defer cancel()
+
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  s.cfg.APIKey,
+		Backend: genai.BackendGeminiAPI,
+	})
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Models.GenerateContent(
+		ctx,
+		model,
+		[]*genai.Content{{Parts: []*genai.Part{{Text: prompt}}}},
+		nil,
+	)
+	if err != nil {
+		return "", err
+	}
+	text := strings.TrimSpace(resp.Text())
+	if text == "" {
+		return "", appErr.ErrInternal
+	}
+	return text, nil
+}
+
+func parseTags(output string, maxTags int) ([]string, error) {
+	clean := strings.TrimSpace(output)
+	clean = strings.TrimPrefix(clean, "```json")
+	clean = strings.TrimPrefix(clean, "```")
+	clean = strings.TrimSuffix(clean, "```")
+	clean = strings.TrimSpace(clean)
+	start := strings.Index(clean, "[")
+	end := strings.LastIndex(clean, "]")
+	if start >= 0 && end > start {
+		clean = clean[start : end+1]
+	}
+
+	var tags []string
+	if err := json.Unmarshal([]byte(clean), &tags); err != nil {
+		return nil, appErr.ErrInvalid
+	}
+	uniq := make([]string, 0, len(tags))
+	seen := make(map[string]bool)
+	for _, tag := range tags {
+		normalized := strings.TrimSpace(tag)
+		if normalized == "" {
+			continue
+		}
+		key := strings.ToLower(normalized)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		uniq = append(uniq, normalized)
+		if len(uniq) >= maxTags {
+			break
+		}
+	}
+	if len(uniq) == 0 {
+		return nil, appErr.ErrInvalid
+	}
+	return uniq, nil
+}

@@ -14,6 +14,7 @@ type RouterDeps struct {
 	Tags      *TagHandler
 	Export    *ExportHandler
 	Files     *FileHandler
+	AI        *AIHandler
 	JWTSecret []byte
 }
 
@@ -45,6 +46,9 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 
 	authGroup.GET("/export", deps.Export.Export)
 	authGroup.POST("/files/upload", deps.Files.Upload)
+	authGroup.POST("/ai/polish", deps.AI.Polish)
+	authGroup.POST("/ai/generate", deps.AI.Generate)
+	authGroup.POST("/ai/tags", deps.AI.Tags)
 
 	api.GET("/public/share/:token", deps.Shares.PublicGet)
 	api.GET("/files/:key", deps.Files.Get)
