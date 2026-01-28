@@ -41,6 +41,7 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.DELETE("/documents/:id/share", deps.Shares.Revoke)
 
 	authGroup.POST("/tags", deps.Tags.Create)
+	authGroup.POST("/tags/batch", deps.Tags.CreateBatch)
 	authGroup.GET("/tags", deps.Tags.List)
 	authGroup.DELETE("/tags/:id", deps.Tags.Delete)
 

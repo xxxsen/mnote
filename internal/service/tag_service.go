@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 
 	sqlite "modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
@@ -41,6 +42,50 @@ func (s *TagService) Create(ctx context.Context, userID, name string) (*model.Ta
 		return nil, err
 	}
 	return tag, nil
+}
+
+func (s *TagService) CreateBatch(ctx context.Context, userID string, names []string) ([]model.Tag, error) {
+	if len(names) == 0 {
+		return []model.Tag{}, nil
+	}
+	now := timeutil.NowUnix()
+	unique := make([]string, 0, len(names))
+	seen := make(map[string]bool)
+	for _, name := range names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		unique = append(unique, trimmed)
+	}
+	if len(unique) == 0 {
+		return []model.Tag{}, nil
+	}
+	newTags := make([]model.Tag, 0, len(unique))
+	for _, name := range unique {
+		newTags = append(newTags, model.Tag{
+			ID:     newID(),
+			UserID: userID,
+			Name:   name,
+			Ctime:  now,
+			Mtime:  now,
+		})
+	}
+	if err := s.tags.CreateBatch(ctx, newTags); err != nil {
+		var sqlErr *sqlite.Error
+		if errors.As(err, &sqlErr) {
+			if sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE || sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT {
+				return nil, appErr.ErrConflict
+			}
+		}
+		return nil, err
+	}
+	return newTags, nil
 }
 
 func (s *TagService) List(ctx context.Context, userID string) ([]model.Tag, error) {

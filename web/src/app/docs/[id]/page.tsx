@@ -1165,6 +1165,7 @@ export default function EditorPage() {
       const nextTagIDs = [...keptExisting];
       const newTagIDs: string[] = [];
       const updatedTags = [...allTags];
+      const toCreate: string[] = [];
       for (const name of aiSelectedTags) {
         const existing = updatedTags.find((tag) => tag.name === name);
         if (existing) {
@@ -1173,12 +1174,17 @@ export default function EditorPage() {
           }
           continue;
         }
-        const created = await apiFetch<Tag>("/tags", {
+        toCreate.push(name);
+      }
+      if (toCreate.length > 0) {
+        const created = await apiFetch<Tag[]>("/tags/batch", {
           method: "POST",
-          body: JSON.stringify({ name }),
+          body: JSON.stringify({ names: toCreate }),
         });
-        updatedTags.push(created);
-        newTagIDs.push(created.id);
+        created.forEach((tag) => {
+          updatedTags.push(tag);
+          newTagIDs.push(tag.id);
+        });
       }
       const finalTagIDs = [...nextTagIDs, ...newTagIDs];
       if (finalTagIDs.length > MAX_TAGS) {

@@ -34,6 +34,28 @@ func (r *TagRepo) Create(ctx context.Context, tag *model.Tag) error {
 	return err
 }
 
+func (r *TagRepo) CreateBatch(ctx context.Context, tags []model.Tag) error {
+	if len(tags) == 0 {
+		return nil
+	}
+	rows := make([]map[string]interface{}, 0, len(tags))
+	for _, tag := range tags {
+		rows = append(rows, map[string]interface{}{
+			"id":      tag.ID,
+			"user_id": tag.UserID,
+			"name":    tag.Name,
+			"ctime":   tag.Ctime,
+			"mtime":   tag.Mtime,
+		})
+	}
+	sqlStr, args, err := builder.BuildInsert("tags", rows)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, sqlStr, args...)
+	return err
+}
+
 func (r *TagRepo) List(ctx context.Context, userID string) ([]model.Tag, error) {
 	where := map[string]interface{}{"user_id": userID, "_orderby": "mtime desc"}
 	sqlStr, args, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "ctime", "mtime"})

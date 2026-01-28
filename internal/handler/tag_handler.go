@@ -21,6 +21,10 @@ type tagRequest struct {
 	Name string `json:"name"`
 }
 
+type tagBatchRequest struct {
+	Names []string `json:"names"`
+}
+
 func (h *TagHandler) Create(c *gin.Context) {
 	var req tagRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -37,6 +41,24 @@ func (h *TagHandler) Create(c *gin.Context) {
 		return
 	}
 	response.Success(c, tag)
+}
+
+func (h *TagHandler) CreateBatch(c *gin.Context) {
+	var req tagBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
+	if len(req.Names) == 0 {
+		response.Error(c, http.StatusBadRequest, "invalid", "names required")
+		return
+	}
+	tags, err := h.tags.CreateBatch(c.Request.Context(), getUserID(c), req.Names)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, tags)
 }
 
 func (h *TagHandler) List(c *gin.Context) {
