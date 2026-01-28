@@ -1153,6 +1153,10 @@ export default function EditorPage() {
   }, [aiResultText, applyContent, closeAiModal]);
 
   const handleApplyAiTags = useCallback(async () => {
+    if (aiSelectedTags.length === 0 && aiRemovedTagIDs.length === 0) {
+      closeAiModal();
+      return;
+    }
     const keptExisting = aiExistingTags
       .filter((tag) => !aiRemovedTagIDs.includes(tag.id))
       .map((tag) => tag.id);
@@ -1181,9 +1185,25 @@ export default function EditorPage() {
         alert(`You can only select up to ${MAX_TAGS} tags.`);
         return;
       }
+      const latestContent = contentRef.current;
+      const derivedTitle = extractTitleFromContent(latestContent);
+      if (!derivedTitle) {
+        alert("Title required before saving tags.");
+        return;
+      }
+      await apiFetch(`/documents/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ title: derivedTitle, content: latestContent, tag_ids: finalTagIDs }),
+      });
       setAllTags(updatedTags);
       setSelectedTagIDs(finalTagIDs);
-      setHasUnsavedChanges(true);
+      setTitle(derivedTitle);
+      setLastSavedAt(Math.floor(Date.now() / 1000));
+      setHasUnsavedChanges(false);
+      lastSavedContentRef.current = latestContent;
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(`mnote:draft:${id}`);
+      }
       closeAiModal();
     } catch (err) {
       console.error(err);
@@ -1191,7 +1211,7 @@ export default function EditorPage() {
     } finally {
       setAiLoading(false);
     }
-  }, [aiExistingTags, aiRemovedTagIDs, aiSelectedTags, allTags, closeAiModal]);
+  }, [aiExistingTags, aiRemovedTagIDs, aiSelectedTags, allTags, closeAiModal, extractTitleFromContent, id]);
 
   const handleSlashAction = useCallback((action: (ctx: SlashActionContext) => void) => {
     const view = editorViewRef.current;
@@ -2110,7 +2130,7 @@ export default function EditorPage() {
                               className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
                                 removed
                                   ? "bg-rose-50 text-rose-700 border-rose-200"
-                                  : "bg-background border-border hover:bg-accent"
+                                  : "bg-black text-white border-black"
                               }`}
                               onClick={() => toggleExistingTag(tag.id)}
                             >
@@ -2135,7 +2155,7 @@ export default function EditorPage() {
                             <button
                               key={tag}
                               className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
-                                checked ? "bg-primary/10 text-primary border-primary/30" : "bg-background border-border"
+                                checked ? "bg-black text-white border-black" : "bg-background border-border"
                               } hover:bg-accent`}
                               onClick={() => toggleAiTag(tag)}
                             >
