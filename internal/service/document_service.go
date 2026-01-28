@@ -38,12 +38,14 @@ type DocumentCreateInput struct {
 	Title   string
 	Content string
 	TagIDs  []string
+	Summary string
 }
 
 type DocumentUpdateInput struct {
 	Title   string
 	Content string
 	TagIDs  []string
+	Summary *string
 }
 
 func (s *DocumentService) Create(ctx context.Context, userID string, input DocumentCreateInput) (*model.Document, error) {
@@ -53,6 +55,7 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 		UserID:  userID,
 		Title:   input.Title,
 		Content: input.Content,
+		Summary: input.Summary,
 		State:   repo.DocumentStateNormal,
 		Pinned:  0,
 		Ctime:   now,
@@ -100,9 +103,14 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 		UserID:  userID,
 		Title:   input.Title,
 		Content: input.Content,
+		Summary: "",
 		Mtime:   now,
 	}
-	if err := s.docs.Update(ctx, doc); err != nil {
+	updateSummary := input.Summary != nil
+	if updateSummary {
+		doc.Summary = *input.Summary
+	}
+	if err := s.docs.Update(ctx, doc, updateSummary); err != nil {
 		return err
 	}
 	versionNumber := 1

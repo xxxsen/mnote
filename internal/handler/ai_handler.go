@@ -29,6 +29,10 @@ type aiGenerateRequest struct {
 	Prompt string `json:"prompt"`
 }
 
+type aiSummaryRequest struct {
+	Text string `json:"text"`
+}
+
 type aiTagsRequest struct {
 	DocumentID string `json:"document_id"`
 	Text       string `json:"text"`
@@ -69,6 +73,24 @@ func (h *AIHandler) Generate(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"text": result})
+}
+
+func (h *AIHandler) Summary(c *gin.Context) {
+	var req aiSummaryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
+	result, err := h.ai.Summarize(c.Request.Context(), req.Text)
+	if err != nil {
+		if errors.Is(err, service.ErrAIUnavailable) {
+			response.Error(c, http.StatusServiceUnavailable, "ai_unavailable", "ai not configured")
+			return
+		}
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"summary": result})
 }
 
 func (h *AIHandler) Tags(c *gin.Context) {

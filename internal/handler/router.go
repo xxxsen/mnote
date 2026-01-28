@@ -49,6 +49,7 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.POST("/files/upload", deps.Files.Upload)
 	authGroup.POST("/ai/polish", deps.AI.Polish)
 	authGroup.POST("/ai/generate", deps.AI.Generate)
+	authGroup.POST("/ai/summary", deps.AI.Summary)
 	authGroup.POST("/ai/tags", deps.AI.Tags)
 
 	api.GET("/public/share/:token", deps.Shares.PublicGet)

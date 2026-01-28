@@ -22,6 +22,7 @@ type documentRequest struct {
 	Title   string    `json:"title"`
 	Content string    `json:"content"`
 	TagIDs  *[]string `json:"tag_ids"`
+	Summary *string   `json:"summary"`
 }
 
 func (h *DocumentHandler) Create(c *gin.Context) {
@@ -35,13 +36,18 @@ func (h *DocumentHandler) Create(c *gin.Context) {
 		return
 	}
 	var tagIDs []string
+	summary := ""
 	if req.TagIDs != nil {
 		tagIDs = *req.TagIDs
+	}
+	if req.Summary != nil {
+		summary = *req.Summary
 	}
 	doc, err := h.documents.Create(c.Request.Context(), getUserID(c), service.DocumentCreateInput{
 		Title:   req.Title,
 		Content: req.Content,
 		TagIDs:  tagIDs,
+		Summary: summary,
 	})
 	if err != nil {
 		handleError(c, err)
@@ -111,6 +117,7 @@ func (h *DocumentHandler) Update(c *gin.Context) {
 		Title:   req.Title,
 		Content: req.Content,
 		TagIDs:  tagIDs,
+		Summary: req.Summary,
 	})
 	if err != nil {
 		handleError(c, err)

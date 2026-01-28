@@ -40,7 +40,7 @@ func TestDocumentRepoCRUDAndIsolation(t *testing.T) {
 	doc.Title = "updated"
 	doc.Content = "updated content"
 	doc.Mtime = timeutil.NowUnix()
-	require.NoError(t, docs.Update(context.Background(), doc))
+	require.NoError(t, docs.Update(context.Background(), doc, false))
 
 	err = docs.Delete(context.Background(), "user-1", "doc-1", timeutil.NowUnix())
 	require.NoError(t, err)

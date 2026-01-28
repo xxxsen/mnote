@@ -80,7 +80,7 @@ const SIZES = [
 
 const MAX_TAGS = 7;
 
-type AIAction = "polish" | "generate" | "tags";
+type AIAction = "polish" | "generate" | "tags" | "summary";
 
 type DiffLine = {
   type: "equal" | "add" | "remove";
@@ -399,10 +399,11 @@ export default function EditorPage() {
 
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
+  const [summary, setSummary] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [activeTab, setActiveTab] = useState<"tags" | "history" | "share">("tags");
+  const [activeTab, setActiveTab] = useState<"tags" | "summary" | "history" | "share">("tags");
   
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -646,6 +647,7 @@ export default function EditorPage() {
       
       const derivedTitle = extractTitleFromContent(initialContent);
       setTitle(derivedTitle);
+      setSummary(detail.document.summary || "");
       setSelectedTagIDs(detail.tag_ids || []);
       setLastSavedAt(detail.document.mtime);
 
@@ -1074,6 +1076,31 @@ export default function EditorPage() {
     }
   }, [aiPrompt]);
 
+  const handleAiSummary = useCallback(async () => {
+    const snapshot = contentRef.current;
+    if (!snapshot.trim()) {
+      alert("Please add some content before summarizing.");
+      return;
+    }
+    setAiAction("summary");
+    setAiModalOpen(true);
+    setAiLoading(true);
+    setAiOriginalText(snapshot);
+    resetAiState();
+    try {
+      const res = await apiFetch<{ summary: string }>("/ai/summary", {
+        method: "POST",
+        body: JSON.stringify({ text: snapshot }),
+      });
+      setAiResultText(res?.summary || "");
+    } catch (err) {
+      console.error(err);
+      setAiError(err instanceof Error ? err.message : "AI request failed");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [resetAiState]);
+
   const handleAiTags = useCallback(async () => {
     const snapshot = contentRef.current;
     if (!snapshot.trim()) {
@@ -1151,6 +1178,40 @@ export default function EditorPage() {
     applyContent(aiResultText);
     closeAiModal();
   }, [aiResultText, applyContent, closeAiModal]);
+
+  const handleApplyAiSummary = useCallback(async () => {
+    if (!aiResultText) {
+      closeAiModal();
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const latestContent = contentRef.current;
+      const derivedTitle = extractTitleFromContent(latestContent);
+      if (!derivedTitle) {
+        alert("Title required before saving summary.");
+        return;
+      }
+      await apiFetch(`/documents/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ title: derivedTitle, content: latestContent, summary: aiResultText, tag_ids: selectedTagIDs }),
+      });
+      setSummary(aiResultText);
+      setTitle(derivedTitle);
+      setLastSavedAt(Math.floor(Date.now() / 1000));
+      setHasUnsavedChanges(false);
+      lastSavedContentRef.current = latestContent;
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(`mnote:draft:${id}`);
+      }
+      closeAiModal();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to apply summary");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiResultText, closeAiModal, extractTitleFromContent, id, selectedTagIDs]);
 
   const handleApplyAiTags = useCallback(async () => {
     if (aiSelectedTags.length === 0 && aiRemovedTagIDs.length === 0) {
@@ -1609,7 +1670,14 @@ export default function EditorPage() {
     };
   }, [hasUnsavedChanges, id]);
 
-  const aiTitle = aiAction === "polish" ? "AI Polish" : aiAction === "generate" ? "AI Generate" : "AI Tags";
+  const aiTitle =
+    aiAction === "polish"
+      ? "AI Polish"
+      : aiAction === "generate"
+      ? "AI Generate"
+      : aiAction === "summary"
+      ? "AI Summary"
+      : "AI Tags";
   const aiExistingCount = Math.max(0, aiExistingTags.length - aiRemovedTagIDs.length);
   const aiAvailableSlots = Math.max(0, MAX_TAGS - aiExistingCount);
 
@@ -1854,18 +1922,24 @@ export default function EditorPage() {
               </div>
               <div className="flex items-center border-b border-border bg-muted/20">
 
-               <button 
-                 className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "tags" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
-                 onClick={() => setActiveTab("tags")}
-               >
-                 Tags
-               </button>
-               <button 
-                 className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "history" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
-                 onClick={() => { setActiveTab("history"); loadVersions(); }}
-               >
-                 History
-               </button>
+                <button 
+                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "tags" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
+                  onClick={() => setActiveTab("tags")}
+                >
+                  Tags
+                </button>
+                <button 
+                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "summary" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
+                  onClick={() => setActiveTab("summary")}
+                >
+                  Summary
+                </button>
+                <button 
+                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "history" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
+                  onClick={() => { setActiveTab("history"); loadVersions(); }}
+                >
+                  History
+                </button>
                 <button 
                   className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "share" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
                   onClick={() => { setActiveTab("share"); loadShare(); }}
@@ -1876,7 +1950,7 @@ export default function EditorPage() {
 
              <div className="flex-1 overflow-y-auto p-4">
                {activeTab === "tags" && (
-                 <div className="space-y-4">
+                  <div className="space-y-4">
                    <div className="flex gap-2">
                       <Input 
                          placeholder="New tag..." 
@@ -1940,11 +2014,33 @@ export default function EditorPage() {
                           Manage Tags
                         </Button>
                     </div>
-                 </div>
-               )}
+                  </div>
+                )}
 
-               {activeTab === "history" && (
-                 <div className="space-y-4">
+                {activeTab === "summary" && (
+                  <div className="space-y-4">
+                    <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">AI Summary</div>
+                    {summary ? (
+                      <div className="text-sm leading-relaxed whitespace-pre-wrap border border-border rounded-xl p-3 bg-muted/20">
+                        {summary}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">No summary yet</div>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs rounded-xl"
+                      onClick={handleAiSummary}
+                      disabled={aiLoading}
+                    >
+                      Generate Summary
+                    </Button>
+                  </div>
+                )}
+
+                {activeTab === "history" && (
+                  <div className="space-y-4">
                    {versions.length === 0 ? (
                      <div className="text-sm text-muted-foreground">No history available</div>
                    ) : (
@@ -2115,6 +2211,12 @@ export default function EditorPage() {
                 </div>
               )}
 
+              {!aiLoading && !aiError && aiAction === "summary" && aiResultText && (
+                <div className="border border-border rounded-xl p-4 bg-muted/20 text-sm leading-relaxed whitespace-pre-wrap">
+                  {aiResultText}
+                </div>
+              )}
+
               {!aiLoading && !aiError && aiAction === "tags" && (
                 <div className="space-y-4">
                   <div className="text-xs text-muted-foreground">
@@ -2188,6 +2290,11 @@ export default function EditorPage() {
               {aiAction === "tags" && aiSuggestedTags.length > 0 && (
                 <Button onClick={handleApplyAiTags} disabled={aiLoading}>
                   Apply Tags
+                </Button>
+              )}
+              {aiAction === "summary" && aiResultText && (
+                <Button onClick={handleApplyAiSummary} disabled={aiLoading}>
+                  Use Summary
                 </Button>
               )}
               {(aiAction === "polish" || aiAction === "generate") && aiResultText && (

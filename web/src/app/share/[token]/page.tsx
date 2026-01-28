@@ -409,6 +409,15 @@ export default function SharePage() {
           )}
         </header>
 
+        {doc.summary && (
+          <div className="w-full mb-8 rounded-2xl border border-slate-200/70 bg-white/70 p-6 shadow-[0_6px_20px_-12px_rgba(15,23,42,0.25)]">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">AI Summary</div>
+            <p className="mt-3 text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">
+              {doc.summary}
+            </p>
+          </div>
+        )}
+
         {/* Content Container */}
         <SharedContent 
           previewRef={previewRef}

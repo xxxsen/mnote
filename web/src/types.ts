@@ -3,6 +3,7 @@ export interface Document {
   user_id: string;
   title: string;
   content: string;
+  summary: string;
   state: number;
   pinned: number;
   ctime: number;

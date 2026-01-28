@@ -93,6 +93,22 @@ CONTENT:
 	return parseTags(result, maxTags)
 }
 
+func (s *AIService) Summarize(ctx context.Context, input string) (string, error) {
+	text, err := s.cleanInput(input)
+	if err != nil {
+		return "", err
+	}
+	prompt := fmt.Sprintf(`You are a helpful assistant.
+Summarize the following markdown into a concise paragraph (2-4 sentences).
+- Use the same language as the content.
+- Keep factual accuracy and key points.
+- Output ONLY the summary text.
+
+CONTENT:
+%s`, text)
+	return s.generateText(ctx, s.cfg.Model, prompt)
+}
+
 func (s *AIService) cleanInput(input string) (string, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {
