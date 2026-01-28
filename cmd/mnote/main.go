@@ -92,7 +92,13 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
-	aiService := service.NewAIService(cfg.AI)
+	aiService := service.NewAIService(service.AIConfig{
+		Provider:      cfg.AI.Provider,
+		APIKey:        cfg.AI.APIKey,
+		Model:         cfg.AI.Model,
+		Timeout:       cfg.AI.Timeout,
+		MaxInputChars: cfg.AI.MaxInputChars,
+	})
 
 	authHandler := handler.NewAuthHandler(authService)
 	documentHandler := handler.NewDocumentHandler(documentService)
@@ -100,7 +106,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	shareHandler := handler.NewShareHandler(documentService)
 	tagHandler := handler.NewTagHandler(tagService)
 	exportHandler := handler.NewExportHandler(exportService)
-	aiHandler := handler.NewAIHandler(aiService)
+	aiHandler := handler.NewAIHandler(aiService, documentService, tagService)
 	store, err := filestore.New(cfg.FileStore)
 	if err != nil {
 		return fmt.Errorf("init file store: %w", err)

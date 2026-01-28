@@ -414,8 +414,10 @@ export default function EditorPage() {
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiOriginalText, setAiOriginalText] = useState("");
   const [aiResultText, setAiResultText] = useState("");
+  const [aiExistingTags, setAiExistingTags] = useState<Tag[]>([]);
   const [aiSuggestedTags, setAiSuggestedTags] = useState<string[]>([]);
   const [aiSelectedTags, setAiSelectedTags] = useState<string[]>([]);
+  const [aiRemovedTagIDs, setAiRemovedTagIDs] = useState<string[]>([]);
   const [aiError, setAiError] = useState<string | null>(null);
   const [slashMenu, setSlashMenu] = useState<{ open: boolean; x: number; y: number; filter: string }>({ open: false, x: 0, y: 0, filter: "" });
   const [hoverImage, setHoverImage] = useState<{ url: string; x: number; y: number } | null>(null);
@@ -464,14 +466,13 @@ export default function EditorPage() {
     [aiOriginalText, aiResultText]
   );
 
-  const selectedTagNames = useMemo(() => {
+  const aiExistingTagNames = useMemo(() => {
     const names = new Set<string>();
-    selectedTagIDs.forEach((id) => {
-      const tag = allTags.find((item) => item.id === id);
+    aiExistingTags.forEach((tag) => {
       if (tag?.name) names.add(tag.name);
     });
     return names;
-  }, [allTags, selectedTagIDs]);
+  }, [aiExistingTags]);
   
   const handleTocLoaded = useCallback((toc: string) => {
     setTocContent(toc);
@@ -1003,8 +1004,10 @@ export default function EditorPage() {
   const resetAiState = useCallback(() => {
     setAiError(null);
     setAiResultText("");
+    setAiExistingTags([]);
     setAiSuggestedTags([]);
     setAiSelectedTags([]);
+    setAiRemovedTagIDs([]);
   }, []);
 
   const closeAiModal = useCallback(() => {
@@ -1083,13 +1086,16 @@ export default function EditorPage() {
     setAiOriginalText(snapshot);
     resetAiState();
     try {
-      const res = await apiFetch<{ tags: string[] }>("/ai/tags", {
+      const res = await apiFetch<{ tags: string[]; existing_tags: Tag[] }>("/ai/tags", {
         method: "POST",
-        body: JSON.stringify({ text: snapshot, max_tags: MAX_TAGS }),
+        body: JSON.stringify({ document_id: id, text: snapshot, max_tags: MAX_TAGS }),
       });
+      const existingTags = res?.existing_tags || [];
+      setAiExistingTags(existingTags);
+      setAiRemovedTagIDs([]);
       const selectedNames = new Set(
-        selectedTagIDs
-          .map((id) => allTags.find((tag) => tag.id === id)?.name)
+        existingTags
+          .map((tag) => tag.name)
           .filter((name): name is string => Boolean(name))
       );
       const cleaned = (res?.tags || [])
@@ -1099,7 +1105,7 @@ export default function EditorPage() {
         .filter((tag) => !selectedNames.has(tag));
 
       setAiSuggestedTags(cleaned);
-      const availableSlots = Math.max(0, MAX_TAGS - selectedTagIDs.length);
+      const availableSlots = Math.max(0, MAX_TAGS - existingTags.length);
       setAiSelectedTags(cleaned.slice(0, availableSlots));
     } catch (err) {
       console.error(err);
@@ -1107,22 +1113,34 @@ export default function EditorPage() {
     } finally {
       setAiLoading(false);
     }
-  }, [allTags, isValidTagName, normalizeTagName, resetAiState, selectedTagIDs]);
+  }, [id, isValidTagName, normalizeTagName, resetAiState]);
 
   const toggleAiTag = useCallback(
     (name: string) => {
-      if (selectedTagNames.has(name)) return;
+      if (aiExistingTagNames.has(name)) return;
       if (aiSelectedTags.includes(name)) {
         setAiSelectedTags(aiSelectedTags.filter((tag) => tag !== name));
         return;
       }
-      if (selectedTagIDs.length + aiSelectedTags.length >= MAX_TAGS) {
+      const existingCount = aiExistingTags.length - aiRemovedTagIDs.length;
+      if (existingCount + aiSelectedTags.length >= MAX_TAGS) {
         alert(`You can only select up to ${MAX_TAGS} tags.`);
         return;
       }
       setAiSelectedTags([...aiSelectedTags, name]);
     },
-    [aiSelectedTags, selectedTagIDs, selectedTagNames]
+    [aiExistingTagNames, aiExistingTags.length, aiRemovedTagIDs.length, aiSelectedTags]
+  );
+
+  const toggleExistingTag = useCallback(
+    (tagID: string) => {
+      if (aiRemovedTagIDs.includes(tagID)) {
+        setAiRemovedTagIDs(aiRemovedTagIDs.filter((id) => id !== tagID));
+        return;
+      }
+      setAiRemovedTagIDs([...aiRemovedTagIDs, tagID]);
+    },
+    [aiRemovedTagIDs]
   );
 
   const handleApplyAiText = useCallback(() => {
@@ -1135,22 +1153,18 @@ export default function EditorPage() {
   }, [aiResultText, applyContent, closeAiModal]);
 
   const handleApplyAiTags = useCallback(async () => {
-    if (aiSelectedTags.length === 0) {
-      closeAiModal();
-      return;
-    }
-    if (selectedTagIDs.length + aiSelectedTags.length > MAX_TAGS) {
-      alert(`You can only select up to ${MAX_TAGS} tags.`);
-      return;
-    }
+    const keptExisting = aiExistingTags
+      .filter((tag) => !aiRemovedTagIDs.includes(tag.id))
+      .map((tag) => tag.id);
     setAiLoading(true);
     try {
+      const nextTagIDs = [...keptExisting];
       const newTagIDs: string[] = [];
       const updatedTags = [...allTags];
       for (const name of aiSelectedTags) {
         const existing = updatedTags.find((tag) => tag.name === name);
         if (existing) {
-          if (!selectedTagIDs.includes(existing.id)) {
+          if (!nextTagIDs.includes(existing.id)) {
             newTagIDs.push(existing.id);
           }
           continue;
@@ -1162,11 +1176,14 @@ export default function EditorPage() {
         updatedTags.push(created);
         newTagIDs.push(created.id);
       }
-      if (newTagIDs.length > 0) {
-        setAllTags(updatedTags);
-        setSelectedTagIDs([...selectedTagIDs, ...newTagIDs]);
-        setHasUnsavedChanges(true);
+      const finalTagIDs = [...nextTagIDs, ...newTagIDs];
+      if (finalTagIDs.length > MAX_TAGS) {
+        alert(`You can only select up to ${MAX_TAGS} tags.`);
+        return;
       }
+      setAllTags(updatedTags);
+      setSelectedTagIDs(finalTagIDs);
+      setHasUnsavedChanges(true);
       closeAiModal();
     } catch (err) {
       console.error(err);
@@ -1174,7 +1191,7 @@ export default function EditorPage() {
     } finally {
       setAiLoading(false);
     }
-  }, [aiSelectedTags, allTags, closeAiModal, selectedTagIDs]);
+  }, [aiExistingTags, aiRemovedTagIDs, aiSelectedTags, allTags, closeAiModal]);
 
   const handleSlashAction = useCallback((action: (ctx: SlashActionContext) => void) => {
     const view = editorViewRef.current;
@@ -1567,7 +1584,8 @@ export default function EditorPage() {
   }, [hasUnsavedChanges, id]);
 
   const aiTitle = aiAction === "polish" ? "AI Polish" : aiAction === "generate" ? "AI Generate" : "AI Tags";
-  const aiAvailableSlots = Math.max(0, MAX_TAGS - selectedTagIDs.length);
+  const aiExistingCount = Math.max(0, aiExistingTags.length - aiRemovedTagIDs.length);
+  const aiAvailableSlots = Math.max(0, MAX_TAGS - aiExistingCount);
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
@@ -2076,28 +2094,58 @@ export default function EditorPage() {
                   <div className="text-xs text-muted-foreground">
                     Available slots: {aiAvailableSlots}
                   </div>
-                  {aiSuggestedTags.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No valid tags returned.</div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {aiSuggestedTags.map((tag) => {
-                        const alreadySelected = selectedTagNames.has(tag);
-                        const checked = alreadySelected || aiSelectedTags.includes(tag);
-                        return (
-                          <button
-                            key={tag}
-                            className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
-                              checked ? "bg-primary/10 text-primary border-primary/30" : "bg-background border-border"
-                            } ${alreadySelected ? "opacity-60 cursor-not-allowed" : "hover:bg-accent"}`}
-                            onClick={() => toggleAiTag(tag)}
-                            disabled={alreadySelected}
-                          >
-                            #{tag}
-                          </button>
-                        );
-                      })}
+                  <div className="space-y-2">
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                      Current tags
                     </div>
-                  )}
+                    {aiExistingTags.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">No tags on this note yet.</div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {aiExistingTags.map((tag) => {
+                          const removed = aiRemovedTagIDs.includes(tag.id);
+                          return (
+                            <button
+                              key={tag.id}
+                              className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                                removed
+                                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                                  : "bg-background border-border hover:bg-accent"
+                              }`}
+                              onClick={() => toggleExistingTag(tag.id)}
+                            >
+                              #{tag.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                      AI suggested tags
+                    </div>
+                    {aiSuggestedTags.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">No valid tags returned.</div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {aiSuggestedTags.map((tag) => {
+                          const checked = aiSelectedTags.includes(tag);
+                          return (
+                            <button
+                              key={tag}
+                              className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                                checked ? "bg-primary/10 text-primary border-primary/30" : "bg-background border-border"
+                              } hover:bg-accent`}
+                              onClick={() => toggleAiTag(tag)}
+                            >
+                              #{tag}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

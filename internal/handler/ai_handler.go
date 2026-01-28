@@ -6,16 +6,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 	"github.com/xxxsen/mnote/internal/service"
 )
 
 type AIHandler struct {
-	ai *service.AIService
+	ai        *service.AIService
+	documents *service.DocumentService
+	tags      *service.TagService
 }
 
-func NewAIHandler(ai *service.AIService) *AIHandler {
-	return &AIHandler{ai: ai}
+func NewAIHandler(ai *service.AIService, documents *service.DocumentService, tags *service.TagService) *AIHandler {
+	return &AIHandler{ai: ai, documents: documents, tags: tags}
 }
 
 type aiPolishRequest struct {
@@ -27,8 +30,9 @@ type aiGenerateRequest struct {
 }
 
 type aiTagsRequest struct {
-	Text    string `json:"text"`
-	MaxTags int    `json:"max_tags"`
+	DocumentID string `json:"document_id"`
+	Text       string `json:"text"`
+	MaxTags    int    `json:"max_tags"`
 }
 
 func (h *AIHandler) Polish(c *gin.Context) {
@@ -82,5 +86,21 @@ func (h *AIHandler) Tags(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, gin.H{"tags": tags})
+	var existingTags []model.Tag
+	if req.DocumentID != "" {
+		userID := getUserID(c)
+		tagIDs, err := h.documents.ListTagIDs(c.Request.Context(), userID, req.DocumentID)
+		if err != nil {
+			handleError(c, err)
+			return
+		}
+		if len(tagIDs) > 0 {
+			existingTags, err = h.tags.ListByIDs(c.Request.Context(), userID, tagIDs)
+			if err != nil {
+				handleError(c, err)
+				return
+			}
+		}
+	}
+	response.Success(c, gin.H{"tags": tags, "existing_tags": existingTags})
 }

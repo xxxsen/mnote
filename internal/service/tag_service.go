@@ -47,6 +47,10 @@ func (s *TagService) List(ctx context.Context, userID string) ([]model.Tag, erro
 	return s.tags.List(ctx, userID)
 }
 
+func (s *TagService) ListByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error) {
+	return s.tags.ListByIDs(ctx, userID, ids)
+}
+
 func (s *TagService) Delete(ctx context.Context, userID, tagID string) error {
 	ids, err := s.docTags.ListDocIDsByTag(ctx, userID, tagID)
 	if err != nil {

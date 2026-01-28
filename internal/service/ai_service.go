@@ -10,17 +10,24 @@ import (
 
 	"google.golang.org/genai"
 
-	"github.com/xxxsen/mnote/internal/config"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 )
 
 var ErrAIUnavailable = errors.New("ai unavailable")
 
 type AIService struct {
-	cfg config.AIConfig
+	cfg AIConfig
 }
 
-func NewAIService(cfg config.AIConfig) *AIService {
+type AIConfig struct {
+	Provider      string
+	APIKey        string
+	Model         string
+	Timeout       int
+	MaxInputChars int
+}
+
+func NewAIService(cfg AIConfig) *AIService {
 	return &AIService{cfg: cfg}
 }
 

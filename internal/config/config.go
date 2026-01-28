@@ -64,13 +64,13 @@ func Load(path string) (*Config, error) {
 		cfg.AI.Provider = "gemini"
 	}
 	if cfg.AI.Timeout == 0 {
-		cfg.AI.Timeout = 10
+		cfg.AI.Timeout = 30
 	}
 	if cfg.AI.MaxInputChars == 0 {
-		cfg.AI.MaxInputChars = 20000
+		cfg.AI.MaxInputChars = 32000
 	}
 	if cfg.AI.Model == "" {
-		cfg.AI.Model = "flash"
+		cfg.AI.Model = "gemini-3-flash-preview"
 	}
 	return &cfg, nil
 }
