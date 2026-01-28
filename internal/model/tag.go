@@ -7,3 +7,9 @@ type Tag struct {
 	Ctime  int64  `json:"ctime"`
 	Mtime  int64  `json:"mtime"`
 }
+
+type TagSummary struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}

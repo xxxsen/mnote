@@ -96,6 +96,10 @@ func (s *TagService) ListPage(ctx context.Context, userID, query string, limit, 
 	return s.tags.ListPage(ctx, userID, query, limit, offset)
 }
 
+func (s *TagService) ListSummary(ctx context.Context, userID, query string, limit, offset int) ([]model.TagSummary, error) {
+	return s.tags.ListSummary(ctx, userID, query, limit, offset)
+}
+
 func (s *TagService) ListByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error) {
 	return s.tags.ListByIDs(ctx, userID, ids)
 }

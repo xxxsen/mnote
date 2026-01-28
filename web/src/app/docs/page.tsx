@@ -112,6 +112,12 @@ interface DocumentWithTags extends Document {
   tag_ids?: string[];
 }
 
+interface TagSummary {
+  id: string;
+  name: string;
+  count: number;
+}
+
 
 const sortDocs = (docs: DocumentWithTags[]) => {
   return [...docs].sort((a, b) => {
@@ -133,9 +139,13 @@ export default function DocsPage() {
   const searchParams = useSearchParams();
   const [docs, setDocs] = useState<DocumentWithTags[]>([]);
   const [recentDocs, setRecentDocs] = useState<DocumentWithTags[]>([]);
-  const [tagCounts, setTagCounts] = useState<Record<string, number>>({});
   const [totalDocs, setTotalDocs] = useState(0);
   const [tags, setTags] = useState<Tag[]>([]);
+  const [sidebarTags, setSidebarTags] = useState<TagSummary[]>([]);
+  const [sidebarLoading, setSidebarLoading] = useState(false);
+  const [sidebarHasMore, setSidebarHasMore] = useState(true);
+  const [sidebarOffset, setSidebarOffset] = useState(0);
+  const sidebarFetchInFlightRef = useRef(false);
   const [tagSuggestions, setTagSuggestions] = useState<Tag[]>([]);
   const [tagIndex, setTagIndex] = useState<Record<string, Tag>>({});
   const [tagsLoading, setTagsLoading] = useState(false);
@@ -288,10 +298,33 @@ export default function DocsPage() {
     try {
       const res = await apiFetch<{ recent: Document[]; tag_counts: Record<string, number>; total: number }>("/documents/summary?limit=5");
       setRecentDocs(sortRecentDocs((res?.recent || []) as DocumentWithTags[]));
-      setTagCounts(res?.tag_counts || {});
       setTotalDocs(res?.total || 0);
     } catch (e) {
       console.error(e);
+    }
+  }, []);
+
+  const fetchSidebarTags = useCallback(async (offset: number, append: boolean, query: string) => {
+    if (sidebarFetchInFlightRef.current) return;
+    sidebarFetchInFlightRef.current = true;
+    setSidebarLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("limit", "20");
+      params.set("offset", String(offset));
+      if (query) {
+        params.set("q", query);
+      }
+      const res = await apiFetch<TagSummary[]>(`/tags/summary?${params.toString()}`);
+      const next = res || [];
+      setSidebarTags((prev) => (append ? [...prev, ...next] : next));
+      setSidebarHasMore(next.length === 20);
+      setSidebarOffset(offset + next.length);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      sidebarFetchInFlightRef.current = false;
+      setSidebarLoading(false);
     }
   }, []);
 
@@ -343,8 +376,9 @@ export default function DocsPage() {
     if (initialFetchRef.current) return;
     initialFetchRef.current = true;
     fetchTags(0, false, "");
+    fetchSidebarTags(0, false, "");
     fetchSummary();
-  }, [fetchTags, fetchSummary]);
+  }, [fetchSidebarTags, fetchSummary, fetchTags]);
 
   useEffect(() => {
     setDocs([]);
@@ -360,12 +394,12 @@ export default function DocsPage() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setTagsOffset(0);
-      setTagsHasMore(true);
-      fetchTags(0, false, tagSearch.trim());
+      setSidebarOffset(0);
+      setSidebarHasMore(true);
+      fetchSidebarTags(0, false, tagSearch.trim());
     }, 200);
     return () => clearTimeout(timer);
-  }, [fetchTags, tagSearch]);
+  }, [fetchSidebarTags, tagSearch]);
 
 
   useEffect(() => {
@@ -464,11 +498,16 @@ export default function DocsPage() {
 
   const loadMoreTags = useCallback(() => {
     if (tagsLoading || !tagsHasMore) return;
-    fetchTags(tagsOffset, true, tagSearch.trim());
-  }, [fetchTags, tagSearch, tagsHasMore, tagsLoading, tagsOffset]);
+    fetchTags(tagsOffset, true, "");
+  }, [fetchTags, tagsHasMore, tagsLoading, tagsOffset]);
+
+  const loadMoreSidebarTags = useCallback(() => {
+    if (sidebarLoading || !sidebarHasMore) return;
+    fetchSidebarTags(sidebarOffset, true, tagSearch.trim());
+  }, [fetchSidebarTags, sidebarHasMore, sidebarLoading, sidebarOffset, tagSearch]);
 
   const maybeAutoLoadTags = useCallback(() => {
-    if (tagsLoading || !tagsHasMore) return;
+    if (sidebarLoading || !sidebarHasMore) return;
     const now = Date.now();
     if (now - tagAutoLoadAtRef.current < 400) return;
     const container = sidebarScrollRef.current;
@@ -480,9 +519,9 @@ export default function DocsPage() {
     const notScrollable = container.scrollHeight <= container.clientHeight + 1;
     if (listBottomVisible || notScrollable) {
       tagAutoLoadAtRef.current = now;
-      loadMoreTags();
+      loadMoreSidebarTags();
     }
-  }, [loadMoreTags, tagsHasMore, tagsLoading]);
+  }, [loadMoreSidebarTags, sidebarHasMore, sidebarLoading]);
 
 
   const handleLogout = () => {
@@ -601,7 +640,7 @@ export default function DocsPage() {
              </div>
           </div>
           <div ref={tagListRef} className="flex flex-col gap-1 pr-1">
-            {tags.map((tag) => (
+            {sidebarTags.map((tag) => (
               <button
                 key={tag.id}
                 onClick={() => setSelectedTag(tag.id)}
@@ -617,20 +656,20 @@ export default function DocsPage() {
                     ? "bg-background/20 text-accent-foreground"
                     : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
                 }`}>
-                  {tagCounts[tag.id] || 0}
+                  {tag.count}
                 </span>
               </button>
             ))}
-            {tagsLoading && (
+            {sidebarLoading && (
               <div className="px-2 py-2 text-xs text-muted-foreground">Loading tags...</div>
             )}
-            {!tagsLoading && tagsHasMore && (
+            {!sidebarLoading && sidebarHasMore && (
               <div className="flex items-center gap-1 px-2 py-2 text-[10px] uppercase tracking-widest text-muted-foreground">
                 <ChevronDown className="h-3 w-3 animate-bounce" />
                 Scroll to load more
               </div>
             )}
-            {!tagsLoading && !tagsHasMore && tags.length === 0 && (
+            {!sidebarLoading && !sidebarHasMore && sidebarTags.length === 0 && (
               <div className="px-2 py-2 text-xs text-muted-foreground italic">No tags found</div>
             )}
           </div>

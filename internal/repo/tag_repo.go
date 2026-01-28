@@ -109,6 +109,40 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 	return tags, rows.Err()
 }
 
+func (r *TagRepo) ListSummary(ctx context.Context, userID string, query string, limit, offset int) ([]model.TagSummary, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	sqlStr := "SELECT t.id, t.name, COUNT(dt.tag_id) AS cnt, MAX(t.mtime) as mtime FROM tags t " +
+		"JOIN document_tags dt ON dt.tag_id = t.id AND dt.user_id = t.user_id " +
+		"WHERE t.user_id = ?"
+	args := []interface{}{userID}
+	if query != "" {
+		sqlStr += " AND t.name LIKE ?"
+		args = append(args, "%"+query+"%")
+	}
+	sqlStr += " GROUP BY t.id, t.name HAVING cnt > 0 ORDER BY cnt DESC, mtime DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
+	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.TagSummary, 0)
+	for rows.Next() {
+		var item model.TagSummary
+		var mtime int64
+		if err := rows.Scan(&item.ID, &item.Name, &item.Count, &mtime); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (r *TagRepo) ListByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error) {
 	if len(ids) == 0 {
 		return []model.Tag{}, nil

@@ -44,6 +44,7 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.POST("/tags/batch", deps.Tags.CreateBatch)
 	authGroup.POST("/tags/ids", deps.Tags.ListByIDs)
 	authGroup.GET("/tags", deps.Tags.List)
+	authGroup.GET("/tags/summary", deps.Tags.Summary)
 	authGroup.DELETE("/tags/:id", deps.Tags.Delete)
 
 	authGroup.GET("/export", deps.Export.Export)

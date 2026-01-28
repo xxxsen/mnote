@@ -118,6 +118,31 @@ func (h *TagHandler) ListByIDs(c *gin.Context) {
 	response.Success(c, tags)
 }
 
+func (h *TagHandler) Summary(c *gin.Context) {
+	query := c.Query("q")
+	limit := 20
+	offset := 0
+	if value := c.Query("limit"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			limit = parsed
+		}
+	}
+	if limit > 20 {
+		limit = 20
+	}
+	if value := c.Query("offset"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			offset = parsed
+		}
+	}
+	items, err := h.tags.ListSummary(c.Request.Context(), getUserID(c), query, limit, offset)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
 func (h *TagHandler) Delete(c *gin.Context) {
 	if err := h.tags.Delete(c.Request.Context(), getUserID(c), c.Param("id")); err != nil {
 		handleError(c, err)
