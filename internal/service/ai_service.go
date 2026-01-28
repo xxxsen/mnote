@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/hashicorp/golang-lru/v2/expirable"
 	"google.golang.org/genai"
 
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
@@ -16,7 +19,8 @@ import (
 var ErrAIUnavailable = errors.New("ai unavailable")
 
 type AIService struct {
-	cfg AIConfig
+	cfg   AIConfig
+	cache *expirable.LRU[string, string]
 }
 
 type AIConfig struct {
@@ -28,7 +32,8 @@ type AIConfig struct {
 }
 
 func NewAIService(cfg AIConfig) *AIService {
-	return &AIService{cfg: cfg}
+	cache := expirable.NewLRU[string, string](10000, nil, 2*time.Hour)
+	return &AIService{cfg: cfg, cache: cache}
 }
 
 func (s *AIService) Polish(ctx context.Context, input string) (string, error) {
@@ -106,6 +111,10 @@ func (s *AIService) generateText(ctx context.Context, model, prompt string) (str
 	if model == "" {
 		return "", appErr.ErrInvalid
 	}
+	cacheKey := s.cacheKey(model, prompt)
+	if cached, ok := s.cache.Get(cacheKey); ok {
+		return cached, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.cfg.Timeout)*time.Second)
 	defer cancel()
 
@@ -129,7 +138,13 @@ func (s *AIService) generateText(ctx context.Context, model, prompt string) (str
 	if text == "" {
 		return "", appErr.ErrInternal
 	}
+	s.cache.Add(cacheKey, text)
 	return text, nil
+}
+
+func (s *AIService) cacheKey(model, prompt string) string {
+	hash := sha256.Sum256([]byte(prompt))
+	return model + ":" + hex.EncodeToString(hash[:])
 }
 
 func parseTags(output string, maxTags int) ([]string, error) {
