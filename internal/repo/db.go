@@ -18,6 +18,8 @@ func Open(dbPath string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	if err := db.Ping(); err != nil {
 		return nil, err
 	}
