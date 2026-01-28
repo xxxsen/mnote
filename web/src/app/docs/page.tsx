@@ -6,9 +6,25 @@ import { apiFetch, removeAuthToken, getAuthToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Document, Tag } from "@/types";
-import { Search, LogOut, X, Settings, Pin, Pencil } from "lucide-react";
+import { ChevronDown, LogOut, Pencil, Pin, Search, Settings, X } from "lucide-react";
 
-function TagEditor({ doc, allTags, onSave, onClose }: { doc: DocumentWithTags, allTags: Tag[], onSave: (doc: DocumentWithTags, ids: string[]) => void, onClose: () => void }) {
+function TagEditor({
+  doc,
+  allTags,
+  onSave,
+  onClose,
+  onLoadMore,
+  hasMore,
+  loading,
+}: {
+  doc: DocumentWithTags;
+  allTags: Tag[];
+  onSave: (doc: DocumentWithTags, ids: string[]) => void;
+  onClose: () => void;
+  onLoadMore: () => void;
+  hasMore: boolean;
+  loading: boolean;
+}) {
   const [selected, setSelected] = useState<string[]>(doc.tag_ids || []);
   const toggle = (id: string) => {
     if (selected.includes(id)) {
@@ -53,6 +69,20 @@ function TagEditor({ doc, allTags, onSave, onClose }: { doc: DocumentWithTags, a
           Save Changes
         </Button>
       </div>
+      {hasMore && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={(e) => {
+            e.stopPropagation();
+            onLoadMore();
+          }}
+          disabled={loading}
+        >
+          {loading ? "Loading..." : "Load more tags"}
+        </Button>
+      )}
     </div>
   );
 }
@@ -106,6 +136,16 @@ export default function DocsPage() {
   const [tagCounts, setTagCounts] = useState<Record<string, number>>({});
   const [totalDocs, setTotalDocs] = useState(0);
   const [tags, setTags] = useState<Tag[]>([]);
+  const [tagSuggestions, setTagSuggestions] = useState<Tag[]>([]);
+  const [tagIndex, setTagIndex] = useState<Record<string, Tag>>({});
+  const [tagsLoading, setTagsLoading] = useState(false);
+  const [tagsHasMore, setTagsHasMore] = useState(true);
+  const [tagsOffset, setTagsOffset] = useState(0);
+  const tagFetchInFlightRef = useRef(false);
+  const tagListRef = useRef<HTMLDivElement>(null);
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
+  const tagAutoLoadAtRef = useRef(0);
+  const tagIndexRef = useRef<Record<string, Tag>>({});
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -125,11 +165,15 @@ export default function DocsPage() {
   const menuRef = useRef<HTMLDivElement>(null);
   const tagSelectorRef = useRef<HTMLDivElement>(null);
 
-  const filteredTags = tags.filter(t => t.name.toLowerCase().includes(search.slice(1).toLowerCase()));
+  const filteredTags = tagSuggestions.filter(t => t.name.toLowerCase().includes(search.slice(1).toLowerCase()));
 
   useEffect(() => {
     setActiveTagIndex(0);
   }, [search, showTagSelector]);
+
+  useEffect(() => {
+    tagIndexRef.current = tagIndex;
+  }, [tagIndex]);
 
   useEffect(() => {
     const token = getAuthToken();
@@ -162,6 +206,33 @@ export default function DocsPage() {
     };
   }, []);
 
+  const mergeTags = useCallback((items: Tag[]) => {
+    if (!items.length) return;
+    setTagIndex((prev) => {
+      const next = { ...prev };
+      items.forEach((tag) => {
+        next[tag.id] = tag;
+      });
+      return next;
+    });
+  }, []);
+
+  const fetchTagsByIDs = useCallback(
+    async (ids: string[]) => {
+      if (ids.length === 0) return;
+      try {
+        const res = await apiFetch<Tag[]>("/tags/ids", {
+          method: "POST",
+          body: JSON.stringify({ ids }),
+        });
+        mergeTags(res || []);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [mergeTags]
+  );
+
   const fetchDocs = useCallback(async (offset: number, append: boolean) => {
     if (fetchInFlightRef.current) return;
     fetchInFlightRef.current = true;
@@ -187,6 +258,15 @@ export default function DocsPage() {
           return { ...doc, tag_ids: [] };
         }
       }));
+      const missingTagIDs = new Set<string>();
+      enrichedDocs.forEach((doc) => {
+        (doc.tag_ids || []).forEach((id) => {
+          if (!tagIndexRef.current[id]) {
+            missingTagIDs.add(id);
+          }
+        });
+      });
+      await fetchTagsByIDs(Array.from(missingTagIDs));
       setDocs((prev) => {
         if (append) {
           return sortDocs([...prev, ...enrichedDocs]);
@@ -202,7 +282,7 @@ export default function DocsPage() {
       setLoadingMore(false);
       fetchInFlightRef.current = false;
     }
-  }, [search, selectedTag]);
+  }, [fetchTagsByIDs, search, selectedTag]);
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -215,19 +295,54 @@ export default function DocsPage() {
     }
   }, []);
 
-  const fetchTags = useCallback(async () => {
+  const fetchTags = useCallback(async (offset: number, append: boolean, query: string) => {
+    if (tagFetchInFlightRef.current) return;
+    tagFetchInFlightRef.current = true;
+    setTagsLoading(true);
     try {
-      const res = await apiFetch<Tag[]>("/tags");
-      setTags(res || []);
+      const params = new URLSearchParams();
+      params.set("limit", "20");
+      params.set("offset", String(offset));
+      if (query) {
+        params.set("q", query);
+      }
+      const res = await apiFetch<Tag[]>(`/tags?${params.toString()}`);
+      const next = res || [];
+      setTags((prev) => (append ? [...prev, ...next] : next));
+      mergeTags(next);
+      setTagsHasMore(next.length === 20);
+      setTagsOffset(offset + next.length);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      tagFetchInFlightRef.current = false;
+      setTagsLoading(false);
+    }
+  }, [mergeTags]);
+
+  const fetchTagSuggestions = useCallback(async (query: string) => {
+    if (!query) {
+      setTagSuggestions([]);
+      return;
+    }
+    try {
+      const params = new URLSearchParams();
+      params.set("limit", "20");
+      params.set("offset", "0");
+      params.set("q", query);
+      const res = await apiFetch<Tag[]>(`/tags?${params.toString()}`);
+      const next = res || [];
+      setTagSuggestions(next);
+      mergeTags(next);
     } catch (e) {
       console.error(e);
     }
-  }, []);
+  }, [mergeTags]);
 
   useEffect(() => {
     if (initialFetchRef.current) return;
     initialFetchRef.current = true;
-    fetchTags();
+    fetchTags(0, false, "");
     fetchSummary();
   }, [fetchTags, fetchSummary]);
 
@@ -242,6 +357,36 @@ export default function DocsPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [fetchDocs]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setTagsOffset(0);
+      setTagsHasMore(true);
+      fetchTags(0, false, tagSearch.trim());
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [fetchTags, tagSearch]);
+
+
+  useEffect(() => {
+    if (!showTagSelector) return;
+    const query = search.startsWith("/") ? search.slice(1).trim() : "";
+    const timer = setTimeout(() => {
+      void fetchTagSuggestions(query);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [fetchTagSuggestions, search, showTagSelector]);
+
+  useEffect(() => {
+    if (showTagSelector) return;
+    setTagSuggestions([]);
+  }, [showTagSelector]);
+
+  useEffect(() => {
+    if (!selectedTag) return;
+    if (tagIndex[selectedTag]) return;
+    void fetchTagsByIDs([selectedTag]);
+  }, [fetchTagsByIDs, selectedTag, tagIndex]);
 
   useEffect(() => {
     if (!loadMoreRef.current) return;
@@ -317,6 +462,28 @@ export default function DocsPage() {
     }
   };
 
+  const loadMoreTags = useCallback(() => {
+    if (tagsLoading || !tagsHasMore) return;
+    fetchTags(tagsOffset, true, tagSearch.trim());
+  }, [fetchTags, tagSearch, tagsHasMore, tagsLoading, tagsOffset]);
+
+  const maybeAutoLoadTags = useCallback(() => {
+    if (tagsLoading || !tagsHasMore) return;
+    const now = Date.now();
+    if (now - tagAutoLoadAtRef.current < 400) return;
+    const container = sidebarScrollRef.current;
+    const list = tagListRef.current;
+    if (!container || !list) return;
+    const containerRect = container.getBoundingClientRect();
+    const listRect = list.getBoundingClientRect();
+    const listBottomVisible = listRect.bottom <= containerRect.bottom + 40;
+    const notScrollable = container.scrollHeight <= container.clientHeight + 1;
+    if (listBottomVisible || notScrollable) {
+      tagAutoLoadAtRef.current = now;
+      loadMoreTags();
+    }
+  }, [loadMoreTags, tagsHasMore, tagsLoading]);
+
 
   const handleLogout = () => {
     removeAuthToken();
@@ -339,7 +506,12 @@ export default function DocsPage() {
         <div className="font-mono font-bold text-xl tracking-tighter mb-4">
           Micro Note
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div
+          ref={sidebarScrollRef}
+          onScroll={maybeAutoLoadTags}
+          onWheel={maybeAutoLoadTags}
+          className="flex-1 overflow-y-auto"
+        >
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2 pr-2">
               <div className="text-xs font-bold uppercase text-muted-foreground">General</div>
@@ -428,10 +600,8 @@ export default function DocsPage() {
                 />
              </div>
           </div>
-          <div className="flex flex-col gap-1">
-            {tags
-              .filter(tag => !tagSearch || tag.name.toLowerCase().includes(tagSearch.toLowerCase()))
-              .map((tag) => (
+          <div ref={tagListRef} className="flex flex-col gap-1 pr-1">
+            {tags.map((tag) => (
               <button
                 key={tag.id}
                 onClick={() => setSelectedTag(tag.id)}
@@ -451,6 +621,18 @@ export default function DocsPage() {
                 </span>
               </button>
             ))}
+            {tagsLoading && (
+              <div className="px-2 py-2 text-xs text-muted-foreground">Loading tags...</div>
+            )}
+            {!tagsLoading && tagsHasMore && (
+              <div className="flex items-center gap-1 px-2 py-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+                <ChevronDown className="h-3 w-3 animate-bounce" />
+                Scroll to load more
+              </div>
+            )}
+            {!tagsLoading && !tagsHasMore && tags.length === 0 && (
+              <div className="px-2 py-2 text-xs text-muted-foreground italic">No tags found</div>
+            )}
           </div>
         </div>
       </aside>
@@ -460,14 +642,14 @@ export default function DocsPage() {
            <div className="flex items-center gap-2 flex-1 max-w-md relative">
              <Search className="h-4 w-4 text-muted-foreground shrink-0" />
              <div className="flex items-center gap-1.5 flex-1 min-w-0">
-               {selectedTag && (
-                 <div className="flex items-center gap-1 bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap">
-                   #{tags.find(t => t.id === selectedTag)?.name || "tag"}
-                   <button onClick={() => setSelectedTag("")} className="hover:text-primary/70">
-                     <X className="h-2.5 w-2.5" />
-                   </button>
-                 </div>
-               )}
+                {selectedTag && (
+                  <div className="flex items-center gap-1 bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap">
+                    #{tagIndex[selectedTag]?.name || "tag"}
+                    <button onClick={() => setSelectedTag("")} className="hover:text-primary/70">
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </div>
+                )}
                <Input 
                  placeholder={selectedTag ? "Search in tag..." : "Search... (type / for tags)"} 
                  className="border-none shadow-none focus-visible:ring-0 px-0 h-9 flex-1 min-w-[50px]"
@@ -540,12 +722,12 @@ export default function DocsPage() {
                          {tag.name}
                        </button>
                      ))}
-                   {filteredTags.length === 0 && (
-                     <div className="px-3 py-2 text-sm text-muted-foreground italic">No tags found</div>
-                   )}
-                 </div>
-               </div>
-             )}
+                    {search.slice(1).trim() !== "" && filteredTags.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-muted-foreground italic">No tags found</div>
+                    )}
+                  </div>
+                </div>
+              )}
            </div>
             <div className="flex items-center gap-3 relative" ref={menuRef}>
               <Button onClick={handleCreate} size="sm" className="rounded-xl bg-[#6366f1] hover:bg-[#4f46e5] text-white border-none font-bold tracking-wide">
@@ -589,7 +771,7 @@ export default function DocsPage() {
             <div className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {docs.map((doc, index) => {
-                  const docTags = tags.filter((t) => doc.tag_ids?.includes(t.id));
+                  const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter(Boolean) as Tag[];
                   const isEditing = editingDocId === doc.id;
                 
                 return (
@@ -599,7 +781,15 @@ export default function DocsPage() {
                     className="group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer overflow-hidden rounded-[8px]"
                   >
                     {isEditing && (
-                      <TagEditor doc={doc} allTags={tags} onSave={handleUpdateTags} onClose={() => setEditingDocId(null)} />
+                      <TagEditor
+                        doc={doc}
+                        allTags={tags}
+                        onSave={handleUpdateTags}
+                        onClose={() => setEditingDocId(null)}
+                        onLoadMore={loadMoreTags}
+                        hasMore={tagsHasMore}
+                        loading={tagsLoading}
+                      />
                     )}
 
                     {!isEditing && (
