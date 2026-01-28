@@ -1,22 +1,97 @@
 # mnote
 
-**重要说明：本项目完全由 AI 生成（包括前后端代码、数据库设计及所有配置文件）。**
+一个简单的 Markdown 笔记工具。后端是 Go，前端是 Next.js，手机和电脑都能用。
 
-一个简单的 Markdown 笔记工具。后端用 Go 写的，前端用 Next.js，支持自适应，手机电脑都能用。
+## 组成
 
-## 主要功能
+- mnote-backend：Go API 服务，SQLite 存储
+- mnote-web：Next.js 前端
+- mnote-gateway：Nginx 反向代理，统一入口
 
-*   **Markdown 编辑**: 支持常见的 Markdown 语法，还有 Mermaid 图表和公式。
-*   **全文搜索**: 搜索笔记内容很快，因为用了 SQLite 的 FTS5 搜索。
-*   **版本记录**: 每次保存都会存一个版本，写错了能找回之前的。
-*   **标签管理**: 可以给笔记打标签，方便分类找东西。
-*   **简单分享**: 能生成个链接分享给别人看。
-*   **数据导出**: 支持把所有笔记导出来。
+## 部署（Docker）
 
-## 用到的技术
+以下是参考 `docker/` 目录的配置，手动运行三个镜像：nginx、mnote、mnote-web。
 
-*   **后端**: Go (Gin 框架), SQLite 数据库。
-*   **前端**: Next.js, Tailwind CSS (样式), CodeMirror (编辑器)。
+### 1) 准备配置与目录
+
+请选择自己机器上的目录保存配置与数据，`docker/` 仅提供示例文件：
+
+- 参考 `docker/mnote/config.json`，复制到自己的配置目录并修改（至少修改 `jwt_secret`）
+- 数据目录用于保存数据库和上传文件
+
+### 2) 配置 nginx
+
+使用 `docker/nginx/nginx.conf`，核心规则如下：
+
+- `/api/v1/` 代理到 `mnote-backend:8080`
+- `/` 代理到 `mnote-web:3000`
+
+### 3) 使用 docker-compose 启动
+
+复制以下内容保存为 `docker-compose.yml`，确保容器在同一网络内，并且只对外暴露 nginx 端口：
+
+```yaml
+services:
+  mnote-backend:
+    image: xxxsen/mnote:latest
+    container_name: mnote-backend
+    volumes:
+      - /path/to/your/config:/config
+      - /path/to/your/data:/data
+    expose:
+      - "8080"
+    command: run --config=/config/config.json
+    networks:
+      - mnote
+    restart: always
+
+  mnote-web:
+    image: xxxsen/mnote-web:latest
+    container_name: mnote-web
+    expose:
+      - "3000"
+    depends_on:
+      - mnote-backend
+    networks:
+      - mnote
+    restart: always
+
+  mnote-gateway:
+    image: nginx:alpine
+    container_name: mnote-gateway
+    ports:
+      - "80:80"
+    volumes:
+      - /path/to/your/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - mnote-web
+      - mnote-backend
+    networks:
+      - mnote
+    restart: always
+
+networks:
+  mnote:
+    name: mnote_network
+```
+
+启动：
+
+```bash
+docker compose up -d
+```
+
+访问：`http://localhost`。
+
+## 路由与端口
+
+- `http://localhost` 是统一入口
+- `/api/v1/*` 由 mnote-backend 处理
+- 其他路径由 mnote-web 处理
+
+## 数据持久化
+
+把你选择的数据目录挂载到后端容器的 `/data`，用于保存数据库和上传文件。
 
 ## 目录结构
 
@@ -27,36 +102,6 @@
 ├── docker/             # Docker 部署配置文件
 └── Makefile            # 常用命令
 ```
-
-## 怎么跑起来 (Docker)
-
-最简单的办法是用 Docker 一键启动：
-
-1.  把代码拉下来进入目录。
-2.  运行命令：
-    ```bash
-    make run-dev-docker
-    ```
-3.  打开浏览器访问：`http://localhost:8000`。
-
-## 本地开发
-
-### 后端
-1.  安装 Go 1.25 以上版本。
-2.  复制一份配置：`cp config.example.json config.json`。
-3.  运行：`go run ./cmd/mnote/main.go --config=config.json`。
-
-### 前端
-1.  进入 `web` 目录。
-2.  安装依赖：`npm install`。
-3.  运行：`npm run dev`。
-
-## 部署建议
-
-建议用 Nginx 把前后端包在一起：
-- `/api/v1/*` 转发给后端服务。
-- 其余路径转发给前端服务。
-- 记得把 `./data` 目录持久化，不然数据库和图片重启就没了。
 
 ## 协议
 
