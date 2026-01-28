@@ -127,6 +127,33 @@ func (r *DocumentRepo) GetByID(ctx context.Context, userID, docID string) (*mode
 	return &doc, nil
 }
 
+func (r *DocumentRepo) GetByTitle(ctx context.Context, userID, title string) (*model.Document, error) {
+	where := map[string]interface{}{
+		"user_id":  userID,
+		"title":    title,
+		"state":    DocumentStateNormal,
+		"_orderby": "mtime desc",
+		"_limit":   []uint{0, 1},
+	}
+	sqlStr, args, err := builder.BuildSelect("documents", where, []string{"id", "user_id", "title", "content", "summary", "state", "pinned", "ctime", "mtime"})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, appErr.ErrNotFound
+	}
+	var doc model.Document
+	if err := rows.Scan(&doc.ID, &doc.UserID, &doc.Title, &doc.Content, &doc.Summary, &doc.State, &doc.Pinned, &doc.Ctime, &doc.Mtime); err != nil {
+		return nil, err
+	}
+	return &doc, nil
+}
+
 func (r *DocumentRepo) List(ctx context.Context, userID string, limit, offset uint, orderBy string) ([]model.Document, error) {
 	where := map[string]interface{}{
 		"user_id": userID,

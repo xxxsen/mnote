@@ -99,6 +99,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		Timeout:       cfg.AI.Timeout,
 		MaxInputChars: cfg.AI.MaxInputChars,
 	})
+	importService := service.NewImportService(documentService, tagService)
 
 	authHandler := handler.NewAuthHandler(authService)
 	documentHandler := handler.NewDocumentHandler(documentService)
@@ -107,6 +108,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	tagHandler := handler.NewTagHandler(tagService)
 	exportHandler := handler.NewExportHandler(exportService)
 	aiHandler := handler.NewAIHandler(aiService, documentService, tagService)
+	importHandler := handler.NewImportHandler(importService)
 	store, err := filestore.New(cfg.FileStore)
 	if err != nil {
 		return fmt.Errorf("init file store: %w", err)
@@ -122,6 +124,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		Export:    exportHandler,
 		Files:     fileHandler,
 		AI:        aiHandler,
+		Import:    importHandler,
 		JWTSecret: []byte(cfg.JWTSecret),
 	}
 

@@ -1,0 +1,126 @@
+package handler
+
+import (
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/xxxsen/mnote/internal/pkg/response"
+	"github.com/xxxsen/mnote/internal/service"
+)
+
+type ImportHandler struct {
+	imports *service.ImportService
+}
+
+func NewImportHandler(imports *service.ImportService) *ImportHandler {
+	return &ImportHandler{imports: imports}
+}
+
+type importConfirmRequest struct {
+	Mode string `json:"mode"`
+}
+
+func (h *ImportHandler) HedgeDocUpload(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid_file", "file is required")
+		return
+	}
+	if strings.ToLower(filepath.Ext(file.Filename)) != ".zip" {
+		response.Error(c, http.StatusBadRequest, "invalid_file", "zip file required")
+		return
+	}
+	opened, err := file.Open()
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid_file", "failed to open file")
+		return
+	}
+	defer opened.Close()
+
+	tmpPath, err := service.SaveTempFile(file.Filename, opened)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "import_failed", "failed to read file")
+		return
+	}
+	defer func() {
+		_ = removeFile(tmpPath)
+	}()
+
+	job, err := h.imports.CreateHedgeDocJob(c.Request.Context(), getUserID(c), tmpPath)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"job_id": job.ID})
+}
+
+func (h *ImportHandler) HedgeDocPreview(c *gin.Context) {
+	jobID := c.Param("job_id")
+	if jobID == "" {
+		response.Error(c, http.StatusBadRequest, "invalid", "job_id required")
+		return
+	}
+	preview, err := h.imports.Preview(getUserID(c), jobID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, preview)
+}
+
+func (h *ImportHandler) HedgeDocConfirm(c *gin.Context) {
+	jobID := c.Param("job_id")
+	if jobID == "" {
+		response.Error(c, http.StatusBadRequest, "invalid", "job_id required")
+		return
+	}
+	var req importConfirmRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
+	if err := h.imports.Confirm(c.Request.Context(), getUserID(c), jobID, req.Mode); err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
+}
+
+func (h *ImportHandler) HedgeDocStatus(c *gin.Context) {
+	jobID := c.Param("job_id")
+	if jobID == "" {
+		response.Error(c, http.StatusBadRequest, "invalid", "job_id required")
+		return
+	}
+	job, err := h.imports.Status(getUserID(c), jobID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	progress := 0
+	if job.Total > 0 {
+		progress = int(float64(job.Processed) / float64(job.Total) * 100)
+	}
+	response.Success(c, gin.H{
+		"status":    job.Status,
+		"progress":  progress,
+		"processed": job.Processed,
+		"total":     job.Total,
+		"report":    job.Report,
+	})
+}
+
+func removeFile(path string) error {
+	if path == "" {
+		return nil
+	}
+	return osRemove(path)
+}
+
+var osRemove = func(path string) error {
+	return os.Remove(path)
+}

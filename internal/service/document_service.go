@@ -146,6 +146,10 @@ func (s *DocumentService) Get(ctx context.Context, userID, docID string) (*model
 	return s.docs.GetByID(ctx, userID, docID)
 }
 
+func (s *DocumentService) GetByTitle(ctx context.Context, userID, title string) (*model.Document, error) {
+	return s.docs.GetByTitle(ctx, userID, title)
+}
+
 func (s *DocumentService) List(ctx context.Context, userID string, limit, offset uint, orderBy string) ([]model.Document, error) {
 	return s.docs.List(ctx, userID, limit, offset, orderBy)
 }

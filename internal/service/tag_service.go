@@ -100,6 +100,10 @@ func (s *TagService) ListSummary(ctx context.Context, userID, query string, limi
 	return s.tags.ListSummary(ctx, userID, query, limit, offset)
 }
 
+func (s *TagService) ListByNames(ctx context.Context, userID string, names []string) ([]model.Tag, error) {
+	return s.tags.ListByNames(ctx, userID, names)
+}
+
 func (s *TagService) ListByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error) {
 	return s.tags.ListByIDs(ctx, userID, ids)
 }

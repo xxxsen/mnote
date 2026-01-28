@@ -15,6 +15,7 @@ type RouterDeps struct {
 	Export    *ExportHandler
 	Files     *FileHandler
 	AI        *AIHandler
+	Import    *ImportHandler
 	JWTSecret []byte
 }
 
@@ -53,6 +54,10 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.POST("/ai/generate", deps.AI.Generate)
 	authGroup.POST("/ai/summary", deps.AI.Summary)
 	authGroup.POST("/ai/tags", deps.AI.Tags)
+	authGroup.POST("/import/hedgedoc/upload", deps.Import.HedgeDocUpload)
+	authGroup.GET("/import/hedgedoc/:job_id/preview", deps.Import.HedgeDocPreview)
+	authGroup.POST("/import/hedgedoc/:job_id/confirm", deps.Import.HedgeDocConfirm)
+	authGroup.GET("/import/hedgedoc/:job_id/status", deps.Import.HedgeDocStatus)
 
 	api.GET("/public/share/:token", deps.Shares.PublicGet)
 	api.GET("/files/:key", deps.Files.Get)

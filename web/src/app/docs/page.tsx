@@ -6,7 +6,7 @@ import { apiFetch, removeAuthToken, getAuthToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Document, Tag } from "@/types";
-import { ChevronDown, LogOut, Pencil, Pin, Search, Settings, X } from "lucide-react";
+import { ChevronDown, ChevronRight, FileArchive, LogOut, Pencil, Pin, Search, Settings, Upload, X } from "lucide-react";
 
 function TagEditor({
   doc,
@@ -118,6 +118,24 @@ interface TagSummary {
   count: number;
 }
 
+type ImportStep = "upload" | "parsing" | "preview" | "importing" | "done";
+type ImportMode = "skip" | "overwrite" | "append";
+
+type ImportPreview = {
+  notes_count: number;
+  tags_count: number;
+  conflicts: number;
+  samples: { title: string; tags: string[] }[];
+};
+
+type ImportReport = {
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  failed_titles: string[];
+};
+
 
 const sortDocs = (docs: DocumentWithTags[]) => {
   return [...docs].sort((a, b) => {
@@ -166,9 +184,19 @@ export default function DocsPage() {
   const [avatarUrl, setAvatarUrl] = useState<string>("");
   const [userEmail, setUserEmail] = useState<string>("");
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showImportMenu, setShowImportMenu] = useState(false);
   const [showTagSelector, setShowTagSelector] = useState(false);
   const [activeTagIndex, setActiveTagIndex] = useState(0);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importStep, setImportStep] = useState<ImportStep>("upload");
+  const [importMode, setImportMode] = useState<ImportMode>("append");
+  const [importJobId, setImportJobId] = useState<string | null>(null);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [importReport, setImportReport] = useState<ImportReport | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importFileName, setImportFileName] = useState<string | null>(null);
+  const [importProgress, setImportProgress] = useState(0);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const fetchInFlightRef = useRef(false);
   const initialFetchRef = useRef(false);
@@ -215,6 +243,12 @@ export default function DocsPage() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
+
+  useEffect(() => {
+    if (!showUserMenu) {
+      setShowImportMenu(false);
+    }
+  }, [showUserMenu]);
 
   const mergeTags = useCallback((items: Tag[]) => {
     if (!items.length) return;
@@ -539,6 +573,102 @@ export default function DocsPage() {
     return `${Math.floor(diff / 86400)}d ago`;
   }, []);
 
+  const resetImportState = useCallback(() => {
+    setImportStep("upload");
+    setImportMode("append");
+    setImportJobId(null);
+    setImportPreview(null);
+    setImportReport(null);
+    setImportError(null);
+    setImportFileName(null);
+    setImportProgress(0);
+  }, []);
+
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE || "/api/v1";
+
+  const openImportModal = useCallback(() => {
+    resetImportState();
+    setImportOpen(true);
+  }, [resetImportState]);
+
+  const closeImportModal = useCallback(() => {
+    setImportOpen(false);
+    resetImportState();
+  }, [resetImportState]);
+
+  const handleImportFile = useCallback(async (file: File) => {
+    setImportError(null);
+    setImportFileName(file.name);
+    setImportStep("parsing");
+    try {
+      const token = getAuthToken();
+      const form = new FormData();
+      form.append("file", file, file.name);
+      const uploadRes = await fetch(`${apiBase}/import/hedgedoc/upload`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      if (uploadRes.status === 401) {
+        removeAuthToken();
+        window.location.href = "/login";
+        return;
+      }
+      if (!uploadRes.ok) {
+        const errorData = await uploadRes.json().catch(() => ({}));
+        const message = errorData?.error?.message || errorData?.message || "Upload failed";
+        throw new Error(message);
+      }
+      const payload = await uploadRes.json();
+      const jobId = payload?.data?.job_id || payload?.job_id;
+      if (!jobId) {
+        throw new Error("Invalid upload response");
+      }
+      setImportJobId(jobId);
+      const preview = await apiFetch<ImportPreview>(`/import/hedgedoc/${jobId}/preview`);
+      setImportPreview(preview);
+      setImportStep("preview");
+    } catch (err) {
+      console.error(err);
+      setImportError(err instanceof Error ? err.message : "Import failed");
+      setImportStep("upload");
+    }
+  }, [apiBase]);
+
+  const handleImportConfirm = useCallback(async () => {
+    if (!importJobId) return;
+    setImportError(null);
+    setImportStep("importing");
+    try {
+      await apiFetch<{ ok: boolean }>(`/import/hedgedoc/${importJobId}/confirm`, {
+        method: "POST",
+        body: JSON.stringify({ mode: importMode }),
+      });
+      let finished = false;
+      while (!finished) {
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        const status = await apiFetch<{
+          status: string;
+          progress: number;
+          report: ImportReport | null;
+        }>(`/import/hedgedoc/${importJobId}/status`);
+        setImportProgress(status.progress);
+        if (status.status === "done") {
+          setImportReport(status.report || null);
+          setImportStep("done");
+          finished = true;
+          void fetchSummary();
+          fetchTags(0, false, "");
+          fetchSidebarTags(0, false, tagSearch.trim());
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      setImportError(err instanceof Error ? err.message : "Import failed");
+      setImportStep("preview");
+    }
+  }, [fetchSidebarTags, fetchSummary, fetchTags, importJobId, importMode, tagSearch]);
+
   return (
     <div className="flex h-screen flex-col md:flex-row bg-background text-foreground">
       <aside className="w-full md:w-64 border-r border-border p-4 flex-col gap-4 hidden md:flex">
@@ -787,6 +917,37 @@ export default function DocsPage() {
                   <div className="px-2 py-1.5 text-xs text-muted-foreground truncate border-b border-border/50 mb-1">
                     {userEmail || "Signed in"}
                   </div>
+                  <div
+                    className="relative"
+                    onMouseEnter={() => setShowImportMenu(true)}
+                    onMouseLeave={() => setShowImportMenu(false)}
+                  >
+                    <button
+                      onClick={() => setShowImportMenu((prev) => !prev)}
+                      className="relative flex w-full cursor-default select-none items-center justify-between rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <span className="flex items-center">
+                        <Upload className="mr-2 h-4 w-4" />
+                        Import
+                      </span>
+                      <ChevronRight className="h-3.5 w-3.5 opacity-70" />
+                    </button>
+                    {showImportMenu && (
+                      <div className="absolute right-full top-0 mr-1 w-44 rounded-md border border-border bg-popover p-1 shadow-md">
+                        <button
+                          onClick={() => {
+                            setShowUserMenu(false);
+                            setShowImportMenu(false);
+                            openImportModal();
+                          }}
+                          className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                        >
+                          <FileArchive className="mr-2 h-4 w-4" />
+                          HedgeDoc
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={handleLogout}
                     className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
@@ -893,6 +1054,190 @@ export default function DocsPage() {
           )}
         </div>
       </main>
+
+      {importOpen && (
+        <div className="fixed inset-0 z-[180] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+            onClick={importStep === "importing" ? undefined : closeImportModal}
+          />
+          <div className="relative w-full max-w-2xl rounded-2xl border border-border bg-background shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <div>
+                <div className="text-sm font-bold">Import from HedgeDoc</div>
+                <div className="text-[11px] text-muted-foreground">
+                  Upload a HedgeDoc export ZIP to import notes
+                </div>
+              </div>
+              <button
+                className="text-muted-foreground hover:text-foreground"
+                onClick={closeImportModal}
+                disabled={importStep === "importing"}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {importError && (
+                <div className="bg-destructive/10 text-destructive text-sm px-3 py-2 rounded-lg">
+                  {importError}
+                </div>
+              )}
+
+              {importStep === "upload" && (
+                <div className="space-y-4">
+                  <div className="border border-dashed border-border rounded-2xl p-6 text-center bg-muted/20">
+                    <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 text-primary mx-auto mb-3">
+                      <FileArchive className="h-5 w-5" />
+                    </div>
+                    <div className="text-sm font-medium">Upload HedgeDoc ZIP</div>
+                    <div className="text-xs text-muted-foreground mt-1">Only .zip files are supported</div>
+                    <label className="inline-flex items-center gap-2 mt-4 cursor-pointer rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold hover:bg-accent">
+                      <Upload className="h-4 w-4" />
+                      Choose file
+                      <input
+                        type="file"
+                        accept=".zip"
+                        className="hidden"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) handleImportFile(file);
+                        }}
+                      />
+                    </label>
+                    {importFileName && (
+                      <div className="text-xs text-muted-foreground mt-2">{importFileName}</div>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    We will extract tags from lines starting with <code className="font-mono">###### tags:</code> and remove them from the content.
+                  </div>
+                </div>
+              )}
+
+              {importStep === "parsing" && (
+                <div className="flex flex-col items-center justify-center py-12 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-full border border-border bg-background flex items-center justify-center">
+                      <ChevronDown className="h-4 w-4 animate-bounce" />
+                    </div>
+                    <span>Parsing archive and extracting notes...</span>
+                  </div>
+                </div>
+              )}
+
+              {importStep === "preview" && importPreview && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-xl border border-border bg-muted/20 p-3">
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Notes</div>
+                      <div className="text-lg font-bold mt-1">{importPreview.notes_count}</div>
+                    </div>
+                    <div className="rounded-xl border border-border bg-muted/20 p-3">
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Tags</div>
+                      <div className="text-lg font-bold mt-1">{importPreview.tags_count}</div>
+                    </div>
+                    <div className="rounded-xl border border-border bg-muted/20 p-3">
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Conflicts</div>
+                      <div className="text-lg font-bold mt-1">{importPreview.conflicts}</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Conflict handling</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(
+                        [
+                          { label: "Ignore", value: "skip", hint: "Skip existing titles" },
+                          { label: "Overwrite", value: "overwrite", hint: "Replace existing notes" },
+                          { label: "Add Suffix", value: "append", hint: "Create with suffix" },
+                        ] as { label: string; value: ImportMode; hint: string }[]
+                      ).map((item) => (
+                        <button
+                          key={item.value}
+                          onClick={() => setImportMode(item.value)}
+                          className={`rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
+                            importMode === item.value
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border hover:bg-accent"
+                          }`}
+                        >
+                          <div>{item.label}</div>
+                          <div className="text-[10px] text-muted-foreground mt-1">{item.hint}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {importPreview.samples.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Sample notes</div>
+                      <div className="space-y-2">
+                        {importPreview.samples.map((item) => (
+                          <div key={item.title} className="border border-border rounded-xl p-3 bg-background">
+                            <div className="text-sm font-semibold truncate">{item.title}</div>
+                            {item.tags.length > 0 && (
+                              <div className="text-[11px] text-muted-foreground mt-1">#{item.tags.join(" #")}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {importStep === "importing" && (
+                <div className="space-y-4">
+                  <div className="text-sm text-muted-foreground">Importing notes, please wait...</div>
+                  <div className="h-2 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all duration-500"
+                      style={{ width: `${importProgress}%` }}
+                    />
+                  </div>
+                  <div className="text-xs text-muted-foreground">{Math.round(importProgress)}%</div>
+                </div>
+              )}
+
+              {importStep === "done" && importReport && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-border bg-muted/20 p-3">
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Success</div>
+                      <div className="text-lg font-bold mt-1">{importReport.created + importReport.updated + importReport.skipped}</div>
+                    </div>
+                    <div className="rounded-xl border border-border bg-muted/20 p-3">
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Failed</div>
+                      <div className="text-lg font-bold mt-1">{importReport.failed}</div>
+                    </div>
+                  </div>
+                  {(importReport.failed_titles || []).length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Failed notes</div>
+                      <div className="max-h-40 overflow-y-auto border border-border rounded-xl p-3 text-xs text-muted-foreground">
+                        {(importReport.failed_titles || []).map((title) => (
+                          <div key={title} className="truncate">{title}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border">
+              <Button variant="outline" onClick={closeImportModal} disabled={importStep === "importing"}>
+                {importStep === "done" ? "Close" : "Cancel"}
+              </Button>
+              {importStep === "preview" && (
+                <Button onClick={handleImportConfirm}>Continue</Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -9,3 +9,4 @@ web/.turbo/
 .vscode/
 __debug_bin*
 /bin
+/sample
