@@ -545,13 +545,10 @@ export default function DocsPage() {
     const now = Date.now();
     if (now - tagAutoLoadAtRef.current < 400) return;
     const container = sidebarScrollRef.current;
-    const list = tagListRef.current;
-    if (!container || !list) return;
-    const containerRect = container.getBoundingClientRect();
-    const listRect = list.getBoundingClientRect();
-    const listBottomVisible = listRect.bottom <= containerRect.bottom + 40;
+    if (!container) return;
+    const nearBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 40;
     const notScrollable = container.scrollHeight <= container.clientHeight + 1;
-    if (listBottomVisible || notScrollable) {
+    if (nearBottom || notScrollable) {
       tagAutoLoadAtRef.current = now;
       loadMoreSidebarTags();
     }
@@ -675,12 +672,7 @@ export default function DocsPage() {
         <div className="font-mono font-bold text-xl tracking-tighter mb-4">
           Micro Note
         </div>
-        <div
-          ref={sidebarScrollRef}
-          onScroll={maybeAutoLoadTags}
-          onWheel={maybeAutoLoadTags}
-          className="flex-1 overflow-y-auto"
-        >
+        <div className="flex-1 flex flex-col overflow-hidden">
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2 pr-2">
               <div className="text-xs font-bold uppercase text-muted-foreground">General</div>
@@ -759,17 +751,23 @@ export default function DocsPage() {
             </button>
           </div>
           <div className="mb-2 pr-2">
-             <div className="relative">
-               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                <Input 
-                  placeholder="Filter tags..." 
-                  value={tagSearch}
-                  onChange={(e) => setTagSearch(e.target.value)}
-                  className="h-7 text-xs pl-7 bg-background/50 border-border focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0"
-                />
-             </div>
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+              <Input 
+                placeholder="Filter tags..." 
+                value={tagSearch}
+                onChange={(e) => setTagSearch(e.target.value)}
+                className="h-7 text-xs pl-7 bg-background/50 border-border focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0"
+              />
+            </div>
           </div>
-          <div ref={tagListRef} className="flex flex-col gap-1 pr-1">
+          <div
+            ref={sidebarScrollRef}
+            onScroll={maybeAutoLoadTags}
+            onWheel={maybeAutoLoadTags}
+            className="flex-1 overflow-y-auto"
+          >
+            <div ref={tagListRef} className="flex flex-col gap-1 pr-1">
             {sidebarTags.map((tag) => (
               <button
                 key={tag.id}
@@ -793,15 +791,16 @@ export default function DocsPage() {
             {sidebarLoading && (
               <div className="px-2 py-2 text-xs text-muted-foreground">Loading tags...</div>
             )}
-            {!sidebarLoading && sidebarHasMore && (
-              <div className="flex items-center gap-1 px-2 py-2 text-[10px] uppercase tracking-widest text-muted-foreground">
-                <ChevronDown className="h-3 w-3 animate-bounce" />
-                Scroll to load more
-              </div>
-            )}
-            {!sidebarLoading && !sidebarHasMore && sidebarTags.length === 0 && (
-              <div className="px-2 py-2 text-xs text-muted-foreground italic">No tags found</div>
-            )}
+              {!sidebarLoading && sidebarHasMore && (
+                <div className="flex items-center gap-1 px-2 py-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+                  <ChevronDown className="h-3 w-3 animate-bounce" />
+                  Scroll to load more
+                </div>
+              )}
+              {!sidebarLoading && !sidebarHasMore && sidebarTags.length === 0 && (
+                <div className="px-2 py-2 text-xs text-muted-foreground italic">No tags found</div>
+              )}
+            </div>
           </div>
         </div>
       </aside>
