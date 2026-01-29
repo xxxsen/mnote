@@ -79,14 +79,80 @@ func (r *TagRepo) List(ctx context.Context, userID string) ([]model.Tag, error) 
 }
 
 func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, limit, offset int) ([]model.Tag, error) {
-	where := map[string]interface{}{"user_id": userID, "_orderby": "mtime desc"}
-	if query != "" {
-		where["_custom_search"] = builder.Custom("name LIKE ?", "%"+query+"%")
-	}
-	if limit > 0 {
-		if offset < 0 {
-			offset = 0
+	if query == "" {
+		where := map[string]interface{}{"user_id": userID, "_orderby": "mtime desc"}
+		if limit > 0 {
+			if offset < 0 {
+				offset = 0
+			}
+			where["_limit"] = []uint{uint(offset), uint(limit)}
 		}
+		sqlStr, args, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "ctime", "mtime"})
+		if err != nil {
+			return nil, err
+		}
+		rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		tags := make([]model.Tag, 0)
+		for rows.Next() {
+			var tag model.Tag
+			if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Ctime, &tag.Mtime); err != nil {
+				return nil, err
+			}
+			tags = append(tags, tag)
+		}
+		return tags, rows.Err()
+	}
+
+	if offset < 0 {
+		offset = 0
+	}
+
+	result := make([]model.Tag, 0)
+	if offset == 0 {
+		exactWhere := map[string]interface{}{"user_id": userID, "name": query}
+		exactSQL, exactArgs, err := builder.BuildSelect("tags", exactWhere, []string{"id", "user_id", "name", "ctime", "mtime"})
+		if err != nil {
+			return nil, err
+		}
+		rows, err := r.db.QueryContext(ctx, exactSQL, exactArgs...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var tag model.Tag
+			if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Ctime, &tag.Mtime); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			result = append(result, tag)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	remaining := limit
+	if remaining > 0 {
+		remaining -= len(result)
+		if remaining <= 0 {
+			return result, nil
+		}
+	}
+
+	where := map[string]interface{}{"user_id": userID, "_orderby": "mtime desc"}
+	where["_custom_search"] = builder.Custom("name LIKE ?", "%"+query+"%")
+	if len(result) > 0 {
+		where["_custom_exclude"] = builder.Custom("name != ?", query)
+	}
+	if remaining > 0 {
+		where["_limit"] = []uint{uint(offset), uint(remaining)}
+	} else if limit > 0 {
 		where["_limit"] = []uint{uint(offset), uint(limit)}
 	}
 	sqlStr, args, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "ctime", "mtime"})
@@ -98,15 +164,17 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 		return nil, err
 	}
 	defer rows.Close()
-	tags := make([]model.Tag, 0)
 	for rows.Next() {
 		var tag model.Tag
 		if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Ctime, &tag.Mtime); err != nil {
 			return nil, err
 		}
-		tags = append(tags, tag)
+		result = append(result, tag)
 	}
-	return tags, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (r *TagRepo) ListSummary(ctx context.Context, userID string, query string, limit, offset int) ([]model.TagSummary, error) {
