@@ -674,10 +674,10 @@ export default function DocsPage() {
         </div>
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-2 pr-2">
+            <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-bold uppercase text-muted-foreground">General</div>
             </div>
-            <div className="flex flex-col gap-1 pr-2">
+            <div className="flex flex-col gap-1">
               <button
                 onClick={() => setSelectedTag("")}
                 className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
@@ -699,7 +699,7 @@ export default function DocsPage() {
           </div>
 
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-2 pr-2">
+            <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-bold uppercase text-muted-foreground">RECENT UPDATES</div>
             </div>
             <style dangerouslySetInnerHTML={{__html: `
@@ -711,7 +711,7 @@ export default function DocsPage() {
                 animation: marquee 5s linear infinite;
               }
             `}} />
-            <div className="flex flex-col gap-1 pr-2">
+            <div className="flex flex-col gap-1">
               {recentDocs.length === 0 ? (
                 <div className="px-2 py-1.5 text-sm text-muted-foreground italic opacity-50">
                   No recent notes
@@ -740,7 +740,7 @@ export default function DocsPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between mb-2 pr-2">
+          <div className="flex items-center justify-between mb-2">
             <div className="text-xs font-bold uppercase text-muted-foreground">Tags</div>
             <button 
               onClick={() => router.push(`/tags?return=${encodeURIComponent("/docs")}`)}
@@ -750,7 +750,7 @@ export default function DocsPage() {
               <Settings className="h-3 w-3" />
             </button>
           </div>
-          <div className="mb-2 pr-2">
+          <div className="mb-2">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
               <Input 
@@ -767,7 +767,7 @@ export default function DocsPage() {
             onWheel={maybeAutoLoadTags}
             className="flex-1 overflow-y-auto no-scrollbar"
           >
-            <div ref={tagListRef} className="flex flex-col gap-1 pr-2">
+            <div ref={tagListRef} className="flex flex-col gap-1">
             {sidebarTags.map((tag) => (
               <button
                 key={tag.id}
