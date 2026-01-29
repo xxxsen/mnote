@@ -289,6 +289,7 @@ CodeBlock.displayName = "CodeBlock";
 
 const MermaidBlock = memo(({ chart }: { chart: string }) => {
   const [copied, setCopied] = React.useState(false);
+  const normalized = chart.trim();
 
   const handleCopyLocal = React.useCallback(() => {
     const onSuccess = () => {
@@ -313,7 +314,7 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
   }, [chart]);
 
   const diagramType = useMemo(() => {
-    const match = chart.trim().match(/^(\w+)/);
+    const match = normalized.match(/^(\w+)/);
     if (!match) return "DIAGRAM";
     const type = match[1];
     
@@ -339,7 +340,7 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
     };
 
     return knownTypes[type] || type.replace(/([A-Z])/g, ' $1').trim().toUpperCase();
-  }, [chart]);
+  }, [normalized]);
 
   return (
     <div
@@ -371,7 +372,11 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
         </button>
       </div>
       <div className="p-4 flex justify-center">
-        <Mermaid chart={chart} />
+        {normalized && normalized !== "undefined" ? (
+          <Mermaid key={normalized} chart={chart} />
+        ) : (
+          <div className="text-xs text-muted-foreground">Waiting for mermaid content...</div>
+        )}
       </div>
     </div>
   );
@@ -458,7 +463,8 @@ const MarkdownPreview = memo(
         }
 
         if (isMermaid) {
-          return <MermaidBlock chart={String(children).replace(/\n$/, "")} />;
+          const raw = typeof children === "string" ? children : String(children ?? "");
+          return <MermaidBlock chart={raw.replace(/\n$/, "")} />;
         }
 
         if (match) {

@@ -47,15 +47,14 @@ const Mermaid = memo(({ chart }: MermaidProps) => {
   }, []);
 
   useEffect(() => {
-    if (!chart || !ref.current) return;
+    const normalized = chart.trim();
+    if (!normalized || normalized === "undefined" || !ref.current) return;
     
     if (svgCache.has(chart) && svg === svgCache.get(chart)) {
       return;
     }
 
     const id = `mermaid-${Math.random().toString(36).slice(2, 11)}`;
-    const normalized = chart.trim();
-
     let isMounted = true;
 
     mermaid
