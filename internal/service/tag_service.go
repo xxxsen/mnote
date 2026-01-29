@@ -113,12 +113,8 @@ func (s *TagService) ListByIDs(ctx context.Context, userID string, ids []string)
 }
 
 func (s *TagService) Delete(ctx context.Context, userID, tagID string) error {
-	ids, err := s.docTags.ListDocIDsByTag(ctx, userID, tagID)
-	if err != nil {
+	if err := s.docTags.DeleteByTag(ctx, userID, tagID); err != nil {
 		return err
-	}
-	if len(ids) > 0 {
-		return appErr.ErrConflict
 	}
 	return s.tags.Delete(ctx, userID, tagID)
 }

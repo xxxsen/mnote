@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import { Tag, Document } from "@/types";
 import { ChevronLeft, Trash2, Search, Tag as TagIcon } from "lucide-react";
 
-interface TagWithUsage extends Tag {
+interface TagWithUsage {
+  id: string;
+  name: string;
   usageCount: number;
 }
 
@@ -19,48 +20,53 @@ export default function TagsPage() {
   const { toast } = useToast();
   const [tags, setTags] = useState<TagWithUsage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
+  const fetchingRef = useRef(false);
   const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TagWithUsage | null>(null);
   const returnTo = searchParams.get("return");
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (nextOffset: number, append: boolean) => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
     try {
-      // 1. Fetch all tags
-      const tagsData = await apiFetch<Tag[]>("/tags") || [];
-      
-      // 2. Fetch all documents to calculate usage
-      const docsData = await apiFetch<(Document & { tag_ids?: string[] })[]>("/documents") || [];
-      const docsWithTags = docsData.map((doc) => ({
-        ...doc,
-        tag_ids: doc.tag_ids || [],
+      const params = new URLSearchParams();
+      params.set("limit", "10");
+      params.set("offset", String(nextOffset));
+      if (search.trim()) {
+        params.set("q", search.trim());
+      }
+      const items = await apiFetch<{ id: string; name: string; count: number }[]>(`/tags/summary?${params.toString()}`) || [];
+      const next: TagWithUsage[] = items.map((tag) => ({
+        id: tag.id,
+        name: tag.name,
+        usageCount: tag.count,
       }));
-
-      // 3. Calculate usage counts
-      const counts: Record<string, number> = {};
-      docsWithTags.forEach(doc => {
-        doc.tag_ids?.forEach((id: string) => {
-          counts[id] = (counts[id] || 0) + 1;
-        });
-      });
-
-      // 5. Merge usage into tags
-      const tagsWithUsage = tagsData.map(tag => ({
-        ...tag,
-        usageCount: counts[tag.id] || 0
-      })).sort((a, b) => b.usageCount - a.usageCount || a.name.localeCompare(b.name));
-
-      setTags(tagsWithUsage);
+      setTags((prev) => (append ? [...prev, ...next] : next));
+      setHasMore(items.length === 10);
+      setOffset(nextOffset + items.length);
     } catch (e) {
       console.error(e);
       toast({ description: "Failed to load tags data", variant: "error" });
     } finally {
+      fetchingRef.current = false;
       setLoading(false);
+      setLoadingMore(false);
     }
-  }, [toast]);
+  }, [search, toast]);
 
   useEffect(() => {
-    fetchData();
+    setOffset(0);
+    setHasMore(true);
+    fetchData(0, false);
   }, [fetchData]);
 
   const handleBack = useCallback(() => {
@@ -75,11 +81,7 @@ export default function TagsPage() {
     router.push("/docs");
   }, [returnTo, router]);
 
-  const handleDelete = async (tag: TagWithUsage) => {
-    if (tag.usageCount > 0) return;
-    
-    if (!confirm(`Are you sure you want to delete tag #${tag.name}?`)) return;
-
+  const confirmDelete = async (tag: TagWithUsage) => {
     setDeletingId(tag.id);
     try {
       await apiFetch(`/tags/${tag.id}`, { method: "DELETE" });
@@ -92,9 +94,7 @@ export default function TagsPage() {
     }
   };
 
-  const filteredTags = tags.filter(tag => 
-    tag.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredTags = tags;
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">
@@ -102,10 +102,19 @@ export default function TagsPage() {
         <Button variant="ghost" size="icon" onClick={handleBack}>
           <ChevronLeft className="h-5 w-5" />
         </Button>
-        <div className="font-bold font-mono text-lg">micro note tags</div>
+        <div className="font-bold font-mono text-lg">Tag Management</div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-4xl mx-auto w-full">
+      <div
+        className="flex-1 overflow-y-auto p-4 md:p-8 max-w-4xl mx-auto w-full"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          if (loading || loadingMore || !hasMore) return;
+          if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
+            fetchData(offset, true);
+          }
+        }}
+      >
         <div className="mb-6 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input 
@@ -146,12 +155,12 @@ export default function TagsPage() {
                 </div>
 
                 <Button 
-                  variant={tag.usageCount > 0 ? "ghost" : "destructive"} 
+                  variant="destructive" 
                   size="sm" 
-                  disabled={tag.usageCount > 0 || deletingId === tag.id}
-                  onClick={() => handleDelete(tag)}
-                  className={tag.usageCount > 0 ? "text-muted-foreground opacity-50 cursor-not-allowed hover:bg-transparent hover:text-muted-foreground rounded-xl" : "rounded-xl"}
-                  title={tag.usageCount > 0 ? "Cannot delete tag in use" : "Delete tag"}
+                  disabled={deletingId === tag.id}
+                  onClick={() => setDeleteTarget(tag)}
+                  className="rounded-xl"
+                  title="Delete tag"
                 >
                   {deletingId === tag.id ? (
                     <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
@@ -159,14 +168,42 @@ export default function TagsPage() {
                     <Trash2 className="h-4 w-4" />
                   )}
                   <span className="ml-2 hidden sm:inline">
-                    {tag.usageCount > 0 ? "In Use" : "Delete"}
+                    Delete
                   </span>
                 </Button>
               </div>
             ))}
           </div>
         )}
+        {loadingMore && (
+          <div className="mt-4 text-center text-xs text-muted-foreground">Loading more...</div>
+        )}
       </div>
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-background p-5 shadow-xl">
+            <div className="text-sm font-semibold">Delete tag</div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              Delete <span className="font-mono font-semibold text-foreground">#{deleteTarget.name}</span>? It will be removed from {deleteTarget.usageCount} note{deleteTarget.usageCount === 1 ? "" : "s"}.
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  const tag = deleteTarget;
+                  setDeleteTarget(null);
+                  void confirmDelete(tag);
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
