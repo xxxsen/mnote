@@ -110,6 +110,7 @@ function generatePixelAvatar(seed: string) {
 
 interface DocumentWithTags extends Document {
   tag_ids?: string[];
+  tags?: Tag[];
 }
 
 interface TagSummary {
@@ -292,6 +293,7 @@ export default function DocsPage() {
       if (search) query.set("q", search);
       if (selectedTag) query.set("tag_id", selectedTag);
       if (showStarred) query.set("starred", "1");
+      query.set("include", "tags");
       query.set("limit", "20");
       query.set("offset", String(offset));
 
@@ -299,15 +301,23 @@ export default function DocsPage() {
       const enrichedDocs = (res || []).map((doc) => ({
         ...doc,
         tag_ids: doc.tag_ids || [],
+        tags: doc.tags || [],
       }));
       const missingTagIDs = new Set<string>();
+      const providedTagIDs = new Set<string>();
+      const tagsFromDocs: Tag[] = [];
       enrichedDocs.forEach((doc) => {
+        (doc.tags || []).forEach((tag) => {
+          providedTagIDs.add(tag.id);
+          tagsFromDocs.push(tag);
+        });
         (doc.tag_ids || []).forEach((id) => {
-          if (!tagIndexRef.current[id]) {
+          if (!providedTagIDs.has(id) && !tagIndexRef.current[id]) {
             missingTagIDs.add(id);
           }
         });
       });
+      mergeTags(tagsFromDocs);
       await fetchTagsByIDs(Array.from(missingTagIDs));
       setDocs((prev) => {
         if (append) {
@@ -324,7 +334,7 @@ export default function DocsPage() {
       setLoadingMore(false);
       fetchInFlightRef.current = false;
     }
-  }, [fetchTagsByIDs, search, selectedTag, showStarred]);
+  }, [fetchTagsByIDs, mergeTags, search, selectedTag, showStarred]);
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -531,11 +541,9 @@ export default function DocsPage() {
     setEditingDocId(null);
 
     try {
-      await apiFetch(`/documents/${doc.id}`, {
+      await apiFetch(`/documents/${doc.id}/tags`, {
         method: "PUT",
         body: JSON.stringify({
-          title: doc.title,
-          content: doc.content,
           tag_ids: newTagIds,
         })
       });

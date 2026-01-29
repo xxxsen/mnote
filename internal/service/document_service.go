@@ -150,6 +150,21 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 	return nil
 }
 
+func (s *DocumentService) UpdateTags(ctx context.Context, userID, docID string, tagIDs []string) error {
+	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
+		return err
+	}
+	if err := s.tags.DeleteByDoc(ctx, userID, docID); err != nil {
+		return err
+	}
+	for _, tagID := range tagIDs {
+		if err := s.tags.Add(ctx, &model.DocumentTag{UserID: userID, DocumentID: docID, TagID: tagID}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *DocumentService) Get(ctx context.Context, userID, docID string) (*model.Document, error) {
 	return s.docs.GetByID(ctx, userID, docID)
 }
@@ -211,6 +226,10 @@ func (s *DocumentService) ListTagIDs(ctx context.Context, userID, docID string) 
 
 func (s *DocumentService) ListTagIDsByDocIDs(ctx context.Context, userID string, docIDs []string) (map[string][]string, error) {
 	return s.tags.ListTagIDsByDocIDs(ctx, userID, docIDs)
+}
+
+func (s *DocumentService) ListTagsByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error) {
+	return s.tagRepo.ListByIDs(ctx, userID, ids)
 }
 
 func (s *DocumentService) Delete(ctx context.Context, userID, docID string) error {

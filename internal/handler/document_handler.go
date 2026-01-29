@@ -3,9 +3,11 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 	"github.com/xxxsen/mnote/internal/service"
 )
@@ -24,18 +26,23 @@ type documentRequest struct {
 	TagIDs  *[]string `json:"tag_ids"`
 	Summary *string   `json:"summary"`
 }
+
+type tagUpdateRequest struct {
+	TagIDs *[]string `json:"tag_ids"`
+}
 type documentListItem struct {
-	ID      string   `json:"id"`
-	UserID  string   `json:"user_id"`
-	Title   string   `json:"title"`
-	Content string   `json:"content"`
-	Summary string   `json:"summary"`
-	State   int      `json:"state"`
-	Pinned  int      `json:"pinned"`
-	Starred int      `json:"starred"`
-	Ctime   int64    `json:"ctime"`
-	Mtime   int64    `json:"mtime"`
-	TagIDs  []string `json:"tag_ids"`
+	ID      string      `json:"id"`
+	UserID  string      `json:"user_id"`
+	Title   string      `json:"title"`
+	Content string      `json:"content"`
+	Summary string      `json:"summary"`
+	State   int         `json:"state"`
+	Pinned  int         `json:"pinned"`
+	Starred int         `json:"starred"`
+	Ctime   int64       `json:"ctime"`
+	Mtime   int64       `json:"mtime"`
+	TagIDs  []string    `json:"tag_ids"`
+	Tags    []model.Tag `json:"tags,omitempty"`
 }
 
 func (h *DocumentHandler) Create(c *gin.Context) {
@@ -96,6 +103,15 @@ func (h *DocumentHandler) List(c *gin.Context) {
 	if value := c.Query("order"); value == "mtime" {
 		orderBy = "mtime desc"
 	}
+	includeTags := false
+	if value := c.Query("include"); value != "" {
+		for _, part := range strings.Split(value, ",") {
+			if strings.TrimSpace(part) == "tags" {
+				includeTags = true
+				break
+			}
+		}
+	}
 	docs, err := h.documents.Search(c.Request.Context(), userID, query, tagID, starred, limit, offset, orderBy)
 	if err != nil {
 		handleError(c, err)
@@ -110,13 +126,40 @@ func (h *DocumentHandler) List(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
+	var tagIndex map[string]model.Tag
+	if includeTags {
+		uniqueIDs := make([]string, 0)
+		seen := make(map[string]struct{})
+		for _, ids := range tagMap {
+			for _, id := range ids {
+				if _, ok := seen[id]; ok {
+					continue
+				}
+				seen[id] = struct{}{}
+				uniqueIDs = append(uniqueIDs, id)
+			}
+		}
+		if len(uniqueIDs) > 0 {
+			tags, err := h.documents.ListTagsByIDs(c.Request.Context(), userID, uniqueIDs)
+			if err != nil {
+				handleError(c, err)
+				return
+			}
+			tagIndex = make(map[string]model.Tag, len(tags))
+			for _, tag := range tags {
+				tagIndex[tag.ID] = tag
+			}
+		} else {
+			tagIndex = map[string]model.Tag{}
+		}
+	}
 	items := make([]documentListItem, 0, len(docs))
 	for _, doc := range docs {
-		tags := tagMap[doc.ID]
-		if tags == nil {
-			tags = []string{}
+		tagIDs := tagMap[doc.ID]
+		if tagIDs == nil {
+			tagIDs = []string{}
 		}
-		items = append(items, documentListItem{
+		item := documentListItem{
 			ID:      doc.ID,
 			UserID:  doc.UserID,
 			Title:   doc.Title,
@@ -127,8 +170,18 @@ func (h *DocumentHandler) List(c *gin.Context) {
 			Starred: doc.Starred,
 			Ctime:   doc.Ctime,
 			Mtime:   doc.Mtime,
-			TagIDs:  tags,
-		})
+			TagIDs:  tagIDs,
+		}
+		if includeTags {
+			tags := make([]model.Tag, 0, len(tagIDs))
+			for _, id := range tagIDs {
+				if tag, ok := tagIndex[id]; ok {
+					tags = append(tags, tag)
+				}
+			}
+			item.Tags = tags
+		}
+		items = append(items, item)
 	}
 	response.Success(c, items)
 }
@@ -169,6 +222,23 @@ func (h *DocumentHandler) Update(c *gin.Context) {
 		Summary: req.Summary,
 	})
 	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
+}
+
+func (h *DocumentHandler) UpdateTags(c *gin.Context) {
+	var req tagUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
+	if req.TagIDs == nil {
+		response.Error(c, http.StatusBadRequest, "invalid", "tag_ids required")
+		return
+	}
+	if err := h.documents.UpdateTags(c.Request.Context(), getUserID(c), c.Param("id"), *req.TagIDs); err != nil {
 		handleError(c, err)
 		return
 	}
