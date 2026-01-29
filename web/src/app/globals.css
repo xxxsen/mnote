@@ -303,14 +303,28 @@ body {
 }
 
 .mermaid {
-  background: var(--card);
+  background: #fff7ed;
   display: flex;
   justify-content: center;
   padding: 1.5rem;
-  border: 1px dashed var(--border);
+  border: 1px dashed #fb923c;
   margin-bottom: 0.8em;
   border-radius: var(--radius-md);
   overflow-x: auto;
+}
+
+.mermaid svg .node rect {
+  fill: #e9d5ff;
+  stroke: #c084fc;
+  rx: 8px;
+  ry: 8px;
+}
+
+.mermaid svg .cluster rect {
+  fill: #fef3c7;
+  stroke: #f59e0b;
+  rx: 10px;
+  ry: 10px;
 }
 
 .toc-wrapper {

@@ -20,9 +20,27 @@ const Mermaid = memo(({ chart }: MermaidProps) => {
     if (!initialized.current) {
       mermaid.initialize({
         startOnLoad: false,
-        theme: "neutral",
+        theme: "base",
         securityLevel: "loose",
         fontFamily: "var(--font-mono)",
+        themeVariables: {
+          primaryColor: "#E9D5FF",
+          primaryTextColor: "#1F2937",
+          primaryBorderColor: "#C084FC",
+          secondaryColor: "#E9D5FF",
+          secondaryTextColor: "#1F2937",
+          secondaryBorderColor: "#C084FC",
+          tertiaryColor: "#E9D5FF",
+          tertiaryTextColor: "#1F2937",
+          tertiaryBorderColor: "#C084FC",
+          lineColor: "#7C3AED",
+          textColor: "#1F2937",
+          mainBkg: "#F5F3FF",
+          nodeBorder: "#C084FC",
+          clusterBkg: "#FEF3C7",
+          clusterBorder: "#F59E0B",
+          titleColor: "#0F172A",
+        },
       });
       initialized.current = true;
     }
