@@ -6,7 +6,7 @@ import { apiFetch, removeAuthToken, getAuthToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Document, Tag } from "@/types";
-import { ChevronDown, ChevronRight, FileArchive, LogOut, Pencil, Pin, Search, Settings, Upload, X } from "lucide-react";
+import { ChevronDown, ChevronRight, FileArchive, LogOut, Pencil, Pin, Search, Settings, Star, Upload, X } from "lucide-react";
 
 function TagEditor({
   doc,
@@ -158,6 +158,7 @@ export default function DocsPage() {
   const [docs, setDocs] = useState<DocumentWithTags[]>([]);
   const [recentDocs, setRecentDocs] = useState<DocumentWithTags[]>([]);
   const [totalDocs, setTotalDocs] = useState(0);
+  const [starredTotal, setStarredTotal] = useState(0);
   const [tags, setTags] = useState<Tag[]>([]);
   const [sidebarTags, setSidebarTags] = useState<TagSummary[]>([]);
   const [sidebarLoading, setSidebarLoading] = useState(false);
@@ -180,6 +181,7 @@ export default function DocsPage() {
   const [nextOffset, setNextOffset] = useState(0);
   const [search, setSearch] = useState(searchParams.get("q") || "");
   const [selectedTag, setSelectedTag] = useState(searchParams.get("tag_id") || "");
+  const [showStarred, setShowStarred] = useState(false);
   const [tagSearch, setTagSearch] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string>("");
   const [userEmail, setUserEmail] = useState<string>("");
@@ -289,6 +291,7 @@ export default function DocsPage() {
       const query = new URLSearchParams();
       if (search) query.set("q", search);
       if (selectedTag) query.set("tag_id", selectedTag);
+      if (showStarred) query.set("starred", "1");
       query.set("limit", "20");
       query.set("offset", String(offset));
 
@@ -326,13 +329,14 @@ export default function DocsPage() {
       setLoadingMore(false);
       fetchInFlightRef.current = false;
     }
-  }, [fetchTagsByIDs, search, selectedTag]);
+  }, [fetchTagsByIDs, search, selectedTag, showStarred]);
 
   const fetchSummary = useCallback(async () => {
     try {
-      const res = await apiFetch<{ recent: Document[]; tag_counts: Record<string, number>; total: number }>("/documents/summary?limit=5");
+      const res = await apiFetch<{ recent: Document[]; tag_counts: Record<string, number>; total: number; starred_total: number }>("/documents/summary?limit=5");
       setRecentDocs(sortRecentDocs((res?.recent || []) as DocumentWithTags[]));
       setTotalDocs(res?.total || 0);
+      setStarredTotal(res?.starred_total || 0);
     } catch (e) {
       console.error(e);
     }
@@ -424,7 +428,7 @@ export default function DocsPage() {
       fetchDocs(0, false);
     }, 300);
     return () => clearTimeout(timer);
-  }, [fetchDocs]);
+  }, [fetchDocs, showStarred]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -489,6 +493,23 @@ export default function DocsPage() {
       });
     } catch (err) {
       console.error("Failed to pin document", err);
+    }
+  };
+
+  const handleStarToggle = async (e: React.MouseEvent, doc: DocumentWithTags) => {
+    e.stopPropagation();
+    const newStarred = doc.starred ? 0 : 1;
+    
+    setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, starred: newStarred } : d));
+
+    try {
+      await apiFetch(`/documents/${doc.id}/star`, {
+        method: "PUT",
+        body: JSON.stringify({ starred: newStarred === 1 })
+      });
+      void fetchSummary();
+    } catch (err) {
+      console.error("Failed to star document", err);
     }
   };
 
@@ -679,20 +700,40 @@ export default function DocsPage() {
             </div>
             <div className="flex flex-col gap-1">
               <button
-                onClick={() => setSelectedTag("")}
+                onClick={() => { setSelectedTag(""); setShowStarred(false); }}
                 className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
-                  selectedTag === "" 
+                  selectedTag === "" && !showStarred
                     ? "bg-accent text-accent-foreground" 
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}
               >
                 <span>All Notes</span>
                 <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
-                  selectedTag === ""
+                  selectedTag === "" && !showStarred
                     ? "bg-background/20 text-accent-foreground"
                     : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
                 }`}>
                   {totalDocs}
+                </span>
+              </button>
+              <button
+                onClick={() => { setSelectedTag(""); setShowStarred(true); }}
+                className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
+                  showStarred
+                    ? "bg-accent text-accent-foreground" 
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                <div className="flex items-center">
+                  <Star className={`mr-2 h-4 w-4 ${showStarred ? "fill-current" : ""}`} />
+                  <span>Starred</span>
+                </div>
+                <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
+                  showStarred
+                    ? "bg-background/20 text-accent-foreground"
+                    : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
+                }`}>
+                  {starredTotal}
                 </span>
               </button>
             </div>
@@ -771,7 +812,7 @@ export default function DocsPage() {
             {sidebarTags.map((tag) => (
               <button
                 key={tag.id}
-                onClick={() => setSelectedTag(tag.id)}
+                onClick={() => { setSelectedTag(tag.id); setShowStarred(false); }}
                 className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
                   selectedTag === tag.id
                     ? "bg-accent text-accent-foreground" 
@@ -991,18 +1032,31 @@ export default function DocsPage() {
                       />
                     )}
 
-                    {!isEditing && (
-                      <button
-                        onClick={(e) => handlePinToggle(e, doc)}
-                        className={`absolute top-2 right-2 p-1.5 rounded-full transition-all z-20 ${
-                          doc.pinned 
-                            ? "text-foreground opacity-100 bg-background/80 shadow-sm" 
-                            : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
-                        }`}
-                      >
-                        <Pin className={`h-3.5 w-3.5 ${doc.pinned ? "fill-current" : ""}`} />
-                      </button>
-                    )}
+                      {!isEditing && (
+                        <div className="absolute top-2 right-2 flex gap-1 z-20">
+                          <button
+                            onClick={(e) => handleStarToggle(e, doc)}
+                            className={`p-1.5 rounded-full transition-all ${
+                              doc.starred 
+                                ? "text-yellow-500 opacity-100 bg-background/80 shadow-sm" 
+                                : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
+                            }`}
+                          >
+                            <Star className={`h-3.5 w-3.5 ${doc.starred ? "fill-current" : ""}`} />
+                          </button>
+                          <button
+                            onClick={(e) => handlePinToggle(e, doc)}
+                            className={`p-1.5 rounded-full transition-all ${
+                              doc.pinned 
+                                ? "text-foreground opacity-100 bg-background/80 shadow-sm" 
+                                : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
+                            }`}
+                          >
+                            <Pin className={`h-3.5 w-3.5 ${doc.pinned ? "fill-current" : ""}`} />
+                          </button>
+                        </div>
+                      )}
+
                     <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
                     
                     <div className="relative flex-1 min-h-0 mb-2 overflow-hidden">

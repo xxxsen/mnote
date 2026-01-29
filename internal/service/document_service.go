@@ -19,9 +19,10 @@ type DocumentService struct {
 }
 
 type DocumentSummary struct {
-	Recent    []model.Document
-	TagCounts map[string]int
-	Total     int
+	Recent       []model.Document
+	TagCounts    map[string]int
+	Total        int
+	StarredTotal int
 }
 
 func NewDocumentService(docs *repo.DocumentRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo, tagRepo *repo.TagRepo, userRepo *repo.UserRepo) *DocumentService {
@@ -96,6 +97,13 @@ func (s *DocumentService) UpdatePinned(ctx context.Context, userID, docID string
 	return s.docs.UpdatePinned(ctx, userID, docID, pinned)
 }
 
+func (s *DocumentService) UpdateStarred(ctx context.Context, userID, docID string, starred int) error {
+	if starred != 0 && starred != 1 {
+		return appErr.ErrInvalid
+	}
+	return s.docs.UpdateStarred(ctx, userID, docID, starred)
+}
+
 func (s *DocumentService) Update(ctx context.Context, userID, docID string, input DocumentUpdateInput) error {
 	now := timeutil.NowUnix()
 	doc := &model.Document{
@@ -150,19 +158,19 @@ func (s *DocumentService) GetByTitle(ctx context.Context, userID, title string) 
 	return s.docs.GetByTitle(ctx, userID, title)
 }
 
-func (s *DocumentService) List(ctx context.Context, userID string, limit, offset uint, orderBy string) ([]model.Document, error) {
-	return s.docs.List(ctx, userID, limit, offset, orderBy)
+func (s *DocumentService) List(ctx context.Context, userID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error) {
+	return s.docs.List(ctx, userID, starred, limit, offset, orderBy)
 }
 
-func (s *DocumentService) Search(ctx context.Context, userID, query, tagID string, limit, offset uint, orderBy string) ([]model.Document, error) {
+func (s *DocumentService) Search(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error) {
 	if query == "" && tagID == "" {
-		return s.docs.List(ctx, userID, limit, offset, orderBy)
+		return s.docs.List(ctx, userID, starred, limit, offset, orderBy)
 	}
-	return s.docs.SearchLike(ctx, userID, query, tagID, limit, offset, orderBy)
+	return s.docs.SearchLike(ctx, userID, query, tagID, starred, limit, offset, orderBy)
 }
 
 func (s *DocumentService) Summary(ctx context.Context, userID string, recentLimit uint) (*DocumentSummary, error) {
-	recent, err := s.docs.List(ctx, userID, recentLimit, 0, "mtime desc")
+	recent, err := s.docs.List(ctx, userID, nil, recentLimit, 0, "mtime desc")
 	if err != nil {
 		return nil, err
 	}
@@ -174,11 +182,16 @@ func (s *DocumentService) Summary(ctx context.Context, userID string, recentLimi
 	for _, item := range items {
 		counts[item.TagID]++
 	}
-	count, err := s.docs.Count(ctx, userID)
+	count, err := s.docs.Count(ctx, userID, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &DocumentSummary{Recent: recent, TagCounts: counts, Total: count}, nil
+	starredVal := 1
+	starredCount, err := s.docs.Count(ctx, userID, &starredVal)
+	if err != nil {
+		return nil, err
+	}
+	return &DocumentSummary{Recent: recent, TagCounts: counts, Total: count, StarredTotal: starredCount}, nil
 }
 
 func (s *DocumentService) ListByTag(ctx context.Context, userID, tagID string) ([]model.Document, error) {

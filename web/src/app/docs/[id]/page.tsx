@@ -44,6 +44,7 @@ import {
   Type,
   Smile,
   Sparkles,
+  Star,
   Wand2,
   Tags,
   Undo,
@@ -169,9 +170,11 @@ type HeaderProps = {
   showDetails: boolean;
   setShowDetails: (v: boolean) => void;
   loadVersions: () => void;
+  starred: number;
+  handleStarToggle: () => void;
 };
 
-const Header = memo(({ router, title, handleSave, saving, hasUnsavedChanges, lastSavedAt, showDetails, setShowDetails, loadVersions }: HeaderProps) => (
+const Header = memo(({ router, title, handleSave, saving, hasUnsavedChanges, lastSavedAt, showDetails, setShowDetails, loadVersions, starred, handleStarToggle }: HeaderProps) => (
   <header className={`h-14 border-b border-border flex items-center px-4 gap-4 justify-between bg-background/80 backdrop-blur-md z-40 sticky top-0 transition-all duration-300`}>
     <div className="flex items-center gap-3 flex-1 min-w-0">
       <Button variant="ghost" size="icon" onClick={() => router.push("/docs")} className="h-8 w-8">
@@ -201,6 +204,15 @@ const Header = memo(({ router, title, handleSave, saving, hasUnsavedChanges, las
             {hasUnsavedChanges ? "Unsaved Changes" : `Saved: ${formatDate(lastSavedAt)}`}
           </div>
         )}
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={handleStarToggle} 
+          className={`h-8 w-8 transition-colors ${starred ? "text-yellow-500" : "text-muted-foreground"}`}
+          title={starred ? "Unstar" : "Star"}
+        >
+          <Star className={`h-4 w-4 ${starred ? "fill-current" : ""}`} />
+        </Button>
         <Button size="sm" onClick={handleSave} disabled={saving || !hasUnsavedChanges} className="rounded-xl h-8 text-xs font-bold px-3">
           {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
           {saving ? "Saving..." : "Save"}
@@ -400,6 +412,7 @@ export default function EditorPage() {
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
+  const [starred, setStarred] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -648,6 +661,7 @@ export default function EditorPage() {
       const derivedTitle = extractTitleFromContent(initialContent);
       setTitle(derivedTitle);
       setSummary(detail.document.summary || "");
+      setStarred(detail.document.starred || 0);
       setSelectedTagIDs(detail.tag_ids || []);
       setLastSavedAt(detail.document.mtime);
 
@@ -1314,6 +1328,20 @@ export default function EditorPage() {
 
   // preview scroll handled via MarkdownPreview onScroll
 
+  const handleStarToggle = useCallback(async () => {
+    const next = starred ? 0 : 1;
+    setStarred(next);
+    try {
+      await apiFetch(`/documents/${id}/star`, {
+        method: "PUT",
+        body: JSON.stringify({ starred: next === 1 }),
+      });
+    } catch (e) {
+      console.error(e);
+      setStarred(starred);
+    }
+  }, [id, starred]);
+
   // TOC Visibility Effect
   useEffect(() => {
     const hasToken = /\[(toc|TOC)]/.test(previewContent);
@@ -1710,6 +1738,8 @@ export default function EditorPage() {
         showDetails={showDetails}
         setShowDetails={setShowDetails}
         loadVersions={loadVersions}
+        starred={starred}
+        handleStarToggle={handleStarToggle}
       />
 
       <div className="flex-1 flex overflow-hidden min-w-0 relative pb-8">

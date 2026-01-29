@@ -8,6 +8,7 @@ type Document struct {
 	Summary string `json:"summary"`
 	State   int    `json:"state"`
 	Pinned  int    `json:"pinned"`
+	Starred int    `json:"starred"`
 	Ctime   int64  `json:"ctime"`
 	Mtime   int64  `json:"mtime"`
 }

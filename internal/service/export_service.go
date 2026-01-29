@@ -26,7 +26,7 @@ func NewExportService(docs *repo.DocumentRepo, versions *repo.VersionRepo, tags 
 }
 
 func (s *ExportService) Export(ctx context.Context, userID string) (*ExportPayload, error) {
-	docs, err := s.docs.List(ctx, userID, 0, 0, "")
+	docs, err := s.docs.List(ctx, userID, nil, 0, 0, "")
 	if err != nil {
 		return nil, err
 	}

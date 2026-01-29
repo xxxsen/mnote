@@ -6,6 +6,7 @@ export interface Document {
   summary: string;
   state: number;
   pinned: number;
+  starred: number;
   ctime: number;
   mtime: number;
 }

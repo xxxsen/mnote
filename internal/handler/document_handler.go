@@ -60,6 +60,13 @@ func (h *DocumentHandler) List(c *gin.Context) {
 	userID := getUserID(c)
 	query := c.Query("q")
 	tagID := c.Query("tag_id")
+	var starred *int
+	if value := c.Query("starred"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			val := parsed
+			starred = &val
+		}
+	}
 	limit := uint(0)
 	offset := uint(0)
 	orderBy := ""
@@ -76,7 +83,7 @@ func (h *DocumentHandler) List(c *gin.Context) {
 	if value := c.Query("order"); value == "mtime" {
 		orderBy = "mtime desc"
 	}
-	docs, err := h.documents.Search(c.Request.Context(), userID, query, tagID, limit, offset, orderBy)
+	docs, err := h.documents.Search(c.Request.Context(), userID, query, tagID, starred, limit, offset, orderBy)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -147,6 +154,27 @@ func (h *DocumentHandler) Pin(c *gin.Context) {
 	response.Success(c, gin.H{"ok": true})
 }
 
+type starRequest struct {
+	Starred bool `json:"starred"`
+}
+
+func (h *DocumentHandler) Star(c *gin.Context) {
+	var req starRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
+	starredValue := 0
+	if req.Starred {
+		starredValue = 1
+	}
+	if err := h.documents.UpdateStarred(c.Request.Context(), getUserID(c), c.Param("id"), starredValue); err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
+}
+
 func (h *DocumentHandler) Delete(c *gin.Context) {
 	if err := h.documents.Delete(c.Request.Context(), getUserID(c), c.Param("id")); err != nil {
 		handleError(c, err)
@@ -168,8 +196,9 @@ func (h *DocumentHandler) Summary(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{
-		"recent":     result.Recent,
-		"tag_counts": result.TagCounts,
-		"total":      result.Total,
+		"recent":        result.Recent,
+		"tag_counts":    result.TagCounts,
+		"total":         result.Total,
+		"starred_total": result.StarredTotal,
 	})
 }
