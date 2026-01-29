@@ -141,7 +141,7 @@ function TagEditor({
   }, [normalizedQuery]);
 
   return (
-    <div className="absolute inset-0 bg-card z-20 flex flex-col p-3 gap-2 animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+    <div className="absolute inset-0 bg-card z-20 flex flex-col p-3 gap-2 animate-in fade-in zoom-in-95 duration-200 overflow-visible" onClick={(e) => e.stopPropagation()}>
       <div className="flex items-center justify-between">
         <span className="text-xs font-bold text-muted-foreground">Edit Tags</span>
         <button 
@@ -1179,7 +1179,7 @@ export default function DocsPage() {
                   <div
                     key={doc.id || `${doc.title}-${doc.mtime}-${index}`}
                     onClick={() => router.push(`/docs/${doc.id}`)}
-                    className="group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer overflow-hidden rounded-[8px]"
+                    className={`group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer rounded-[8px] ${isEditing ? "overflow-visible" : "overflow-hidden"}`}
                   >
                     {isEditing && (
         <TagEditor
