@@ -23,7 +23,6 @@ import {
   Home,
   Folder,
   Columns,
-  Plus,
   Search,
   RefreshCw,
   Bold,
@@ -421,7 +420,10 @@ export default function EditorPage() {
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [selectedTagIDs, setSelectedTagIDs] = useState<string[]>([]);
-  const [newTag, setNewTag] = useState("");
+  const [tagQuery, setTagQuery] = useState("");
+  const [tagResults, setTagResults] = useState<Tag[]>([]);
+  const [tagSearchLoading, setTagSearchLoading] = useState(false);
+  const [tagDropdownIndex, setTagDropdownIndex] = useState(0);
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiAction, setAiAction] = useState<AIAction | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -449,6 +451,8 @@ export default function EditorPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [popoverAnchor, setPopoverAnchor] = useState<{ top: number; left: number } | null>(null);
   const isComposingRef = useRef(false);
+  const tagSearchTimerRef = useRef<number | null>(null);
+  const lastTagQueryRef = useRef("");
 
   const [previewContent, setPreviewContent] = useState(content);
   const previewTimerRef = useRef<number | null>(null);
@@ -522,6 +526,59 @@ export default function EditorPage() {
     if (Array.from(name).length > 16) return false;
     return /^[\p{Script=Han}A-Za-z0-9]{1,16}$/u.test(name);
   }, []);
+
+  const mergeTags = useCallback((items: Tag[]) => {
+    if (!items.length) return;
+    setAllTags((prev) => {
+      const seen = new Set(prev.map((tag) => tag.id));
+      const next = [...prev];
+      items.forEach((tag) => {
+        if (!seen.has(tag.id)) {
+          seen.add(tag.id);
+          next.push(tag);
+        }
+      });
+      return next;
+    });
+  }, []);
+
+  const tagIndex = useMemo(() => {
+    const map: Record<string, Tag> = {};
+    allTags.forEach((tag) => {
+      map[tag.id] = tag;
+    });
+    return map;
+  }, [allTags]);
+
+  const selectedTags = useMemo(
+    () => selectedTagIDs.map((id) => tagIndex[id]).filter(Boolean) as Tag[],
+    [selectedTagIDs, tagIndex]
+  );
+
+  const tagSuggestions = useMemo(
+    () => tagResults.filter((tag) => !selectedTagIDs.includes(tag.id)),
+    [tagResults, selectedTagIDs]
+  );
+
+  const trimmedTagQuery = useMemo(() => normalizeTagName(tagQuery), [normalizeTagName, tagQuery]);
+  const exactTagMatch = useMemo(
+    () => tagSuggestions.find((tag) => tag.name === trimmedTagQuery) || allTags.find((tag) => tag.name === trimmedTagQuery) || null,
+    [allTags, tagSuggestions, trimmedTagQuery]
+  );
+  const tagDropdownItems = useMemo(() => {
+    if (!trimmedTagQuery || tagSearchLoading) return [] as Array<{ key: string; type: "use" | "create" | "suggestion"; tag?: Tag }>;
+    const items: Array<{ key: string; type: "use" | "create" | "suggestion"; tag?: Tag }> = [];
+    if (exactTagMatch) {
+      items.push({ key: `use-${exactTagMatch.id}`, type: "use", tag: exactTagMatch });
+    } else if (isValidTagName(trimmedTagQuery)) {
+      items.push({ key: `create-${trimmedTagQuery}`, type: "create" });
+    }
+    tagSuggestions.forEach((tag) => {
+      if (exactTagMatch && tag.id === exactTagMatch.id) return;
+      items.push({ key: `tag-${tag.id}`, type: "suggestion", tag });
+    });
+    return items;
+  }, [exactTagMatch, isValidTagName, tagSearchLoading, tagSuggestions, trimmedTagQuery]);
 
   const getElementById = useCallback((id: string) => {
     const container = previewRef.current;
@@ -662,7 +719,21 @@ export default function EditorPage() {
       setTitle(derivedTitle);
       setSummary(detail.document.summary || "");
       setStarred(detail.document.starred || 0);
-      setSelectedTagIDs(detail.tag_ids || []);
+      const initialTagIDs = detail.tag_ids || [];
+      setSelectedTagIDs(initialTagIDs);
+      if (initialTagIDs.length > 0) {
+        try {
+          const tags = await apiFetch<Tag[]>("/tags/ids", {
+            method: "POST",
+            body: JSON.stringify({ ids: initialTagIDs }),
+          });
+          setAllTags(tags || []);
+        } catch {
+          setAllTags([]);
+        }
+      } else {
+        setAllTags([]);
+      }
       setLastSavedAt(detail.document.mtime);
 
       const text = initialContent || "";
@@ -715,19 +786,62 @@ export default function EditorPage() {
     });
   }, [id, title]);
 
-  const fetchTags = useCallback(async () => {
-    try {
-      const t = await apiFetch<Tag[]>("/tags");
-      setAllTags(t || []);
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
-
   useEffect(() => {
     fetchDoc();
-    fetchTags();
-  }, [fetchDoc, fetchTags]);
+  }, [fetchDoc]);
+
+  const searchTags = useCallback(
+    async (query: string) => {
+      const trimmed = normalizeTagName(query);
+      if (!trimmed) {
+        setTagResults([]);
+        setTagSearchLoading(false);
+        return;
+      }
+      setTagSearchLoading(true);
+      lastTagQueryRef.current = trimmed;
+      try {
+        const params = new URLSearchParams();
+        params.set("q", trimmed);
+        params.set("limit", "5");
+        params.set("offset", "0");
+        const res = await apiFetch<Tag[]>(`/tags?${params.toString()}`);
+        if (lastTagQueryRef.current !== trimmed) return;
+        const next = res || [];
+        setTagResults(next);
+        mergeTags(next);
+      } catch (e) {
+        console.error(e);
+        if (lastTagQueryRef.current === trimmed) {
+          setTagResults([]);
+        }
+      } finally {
+        if (lastTagQueryRef.current === trimmed) {
+          setTagSearchLoading(false);
+        }
+      }
+    },
+    [mergeTags, normalizeTagName]
+  );
+
+  useEffect(() => {
+    if (tagSearchTimerRef.current) {
+      window.clearTimeout(tagSearchTimerRef.current);
+    }
+    if (!tagQuery) {
+      setTagResults([]);
+      setTagSearchLoading(false);
+      return;
+    }
+    tagSearchTimerRef.current = window.setTimeout(() => {
+      void searchTags(tagQuery);
+    }, 200);
+    return () => {
+      if (tagSearchTimerRef.current) {
+        window.clearTimeout(tagSearchTimerRef.current);
+      }
+    };
+  }, [searchTags, tagQuery]);
 
   const updateCursorInfo = useCallback((view: EditorView) => {
     const state = view.state;
@@ -1156,6 +1270,157 @@ export default function EditorPage() {
     }
   }, [id, isValidTagName, normalizeTagName, resetAiState]);
 
+  const findExistingTagByName = useCallback(
+    async (name: string) => {
+      const trimmed = normalizeTagName(name);
+      if (!trimmed) return null;
+      const cached = allTags.find((tag) => tag.name === trimmed);
+      if (cached) return cached;
+      try {
+        const params = new URLSearchParams();
+        params.set("q", trimmed);
+        params.set("limit", "5");
+        params.set("offset", "0");
+        const res = await apiFetch<Tag[]>(`/tags?${params.toString()}`);
+        const exact = (res || []).find((tag) => tag.name === trimmed) || null;
+        if (exact) {
+          mergeTags([exact]);
+        }
+        return exact;
+      } catch (e) {
+        console.error(e);
+        return null;
+      }
+    },
+    [allTags, mergeTags, normalizeTagName]
+  );
+
+  useEffect(() => {
+    if (trimmedTagQuery) {
+      setTagDropdownIndex(0);
+    }
+  }, [trimmedTagQuery, tagResults]);
+
+  const clearTagQuery = useCallback(() => {
+    setTagQuery("");
+    setTagResults([]);
+    setTagDropdownIndex(0);
+  }, []);
+
+  const selectTagById = useCallback(
+    (tagId: string) => {
+      if (selectedTagIDs.includes(tagId)) {
+        clearTagQuery();
+        return;
+      }
+      if (selectedTagIDs.length >= MAX_TAGS) {
+        alert(`You can only select up to ${MAX_TAGS} tags.`);
+        return;
+      }
+      setSelectedTagIDs([...selectedTagIDs, tagId]);
+      setHasUnsavedChanges(true);
+      clearTagQuery();
+    },
+    [clearTagQuery, selectedTagIDs]
+  );
+
+  const handleAddTag = useCallback(async () => {
+    const trimmed = normalizeTagName(tagQuery);
+    if (!trimmed) return;
+
+    if (!isValidTagName(trimmed)) {
+      alert("Tags must be letters, numbers, or Chinese characters, and at most 16 characters.");
+      return;
+    }
+
+    try {
+      let existing = tagSuggestions.find((tag) => tag.name === trimmed) || allTags.find((tag) => tag.name === trimmed) || null;
+      if (!existing) {
+        existing = await findExistingTagByName(trimmed);
+      }
+
+      if (existing) {
+        if (!selectedTagIDs.includes(existing.id)) {
+          if (selectedTagIDs.length >= MAX_TAGS) {
+            alert(`You can only select up to ${MAX_TAGS} tags.`);
+            return;
+          }
+          setSelectedTagIDs([...selectedTagIDs, existing.id]);
+          setHasUnsavedChanges(true);
+        }
+        clearTagQuery();
+        return;
+      }
+
+      if (selectedTagIDs.length >= MAX_TAGS) {
+        alert(`You can only select up to ${MAX_TAGS} tags.`);
+        return;
+      }
+
+      const created = await apiFetch<Tag>("/tags", {
+        method: "POST",
+        body: JSON.stringify({ name: trimmed }),
+      });
+      mergeTags([created]);
+      setSelectedTagIDs([...selectedTagIDs, created.id]);
+      setHasUnsavedChanges(true);
+      clearTagQuery();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to add tag");
+    }
+  }, [allTags, clearTagQuery, findExistingTagByName, isValidTagName, mergeTags, normalizeTagName, selectedTagIDs, tagQuery, tagSuggestions]);
+
+  const handleTagDropdownSelect = useCallback(
+    (item: { type: "use" | "create" | "suggestion"; tag?: Tag }) => {
+      if (item.type === "create") {
+        void handleAddTag();
+        return;
+      }
+      if (item.tag) {
+        selectTagById(item.tag.id);
+      }
+    },
+    [handleAddTag, selectTagById]
+  );
+
+  const handleTagInputKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!trimmedTagQuery || tagSearchLoading) {
+        if (e.key === "Enter") {
+          handleAddTag();
+        }
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (tagDropdownItems.length === 0) return;
+        setTagDropdownIndex((prev) => (prev + 1) % tagDropdownItems.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (tagDropdownItems.length === 0) return;
+        setTagDropdownIndex((prev) => (prev - 1 + tagDropdownItems.length) % tagDropdownItems.length);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        clearTagQuery();
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (tagDropdownItems.length > 0) {
+          handleTagDropdownSelect(tagDropdownItems[tagDropdownIndex]);
+          return;
+        }
+        handleAddTag();
+      }
+    },
+    [clearTagQuery, handleAddTag, handleTagDropdownSelect, tagDropdownIndex, tagDropdownItems, tagSearchLoading, trimmedTagQuery]
+  );
+
   const toggleAiTag = useCallback(
     (name: string) => {
       if (aiExistingTagNames.has(name)) return;
@@ -1238,50 +1503,42 @@ export default function EditorPage() {
     setAiLoading(true);
     try {
       const nextTagIDs = [...keptExisting];
-      const newTagIDs: string[] = [];
-      const updatedTags = [...allTags];
+      const matches = await Promise.all(aiSelectedTags.map((name) => findExistingTagByName(name)));
       const toCreate: string[] = [];
-      for (const name of aiSelectedTags) {
-        const existing = updatedTags.find((tag) => tag.name === name);
-        if (existing) {
-          if (!nextTagIDs.includes(existing.id)) {
-            newTagIDs.push(existing.id);
+      matches.forEach((tag, index) => {
+        if (tag) {
+          if (!nextTagIDs.includes(tag.id)) {
+            nextTagIDs.push(tag.id);
           }
-          continue;
+          return;
         }
-        toCreate.push(name);
-      }
+        toCreate.push(aiSelectedTags[index]);
+      });
+      let created: Tag[] = [];
       if (toCreate.length > 0) {
-        const created = await apiFetch<Tag[]>("/tags/batch", {
+        created = await apiFetch<Tag[]>("/tags/batch", {
           method: "POST",
           body: JSON.stringify({ names: toCreate }),
         });
         created.forEach((tag) => {
-          updatedTags.push(tag);
-          newTagIDs.push(tag.id);
+          if (!nextTagIDs.includes(tag.id)) {
+            nextTagIDs.push(tag.id);
+          }
         });
       }
-      const finalTagIDs = [...nextTagIDs, ...newTagIDs];
+      mergeTags([...(matches.filter(Boolean) as Tag[]), ...created]);
+      const finalTagIDs = [...nextTagIDs];
       if (finalTagIDs.length > MAX_TAGS) {
         alert(`You can only select up to ${MAX_TAGS} tags.`);
         return;
       }
-      const latestContent = contentRef.current;
-      const derivedTitle = extractTitleFromContent(latestContent);
-      if (!derivedTitle) {
-        alert("Title required before saving tags.");
-        return;
-      }
-      await apiFetch(`/documents/${id}`, {
+      await apiFetch(`/documents/${id}/tags`, {
         method: "PUT",
-        body: JSON.stringify({ title: derivedTitle, content: latestContent, tag_ids: finalTagIDs }),
+        body: JSON.stringify({ tag_ids: finalTagIDs }),
       });
-      setAllTags(updatedTags);
       setSelectedTagIDs(finalTagIDs);
-      setTitle(derivedTitle);
       setLastSavedAt(Math.floor(Date.now() / 1000));
       setHasUnsavedChanges(false);
-      lastSavedContentRef.current = latestContent;
       if (typeof window !== "undefined") {
         window.localStorage.removeItem(`mnote:draft:${id}`);
       }
@@ -1292,7 +1549,7 @@ export default function EditorPage() {
     } finally {
       setAiLoading(false);
     }
-  }, [aiExistingTags, aiRemovedTagIDs, aiSelectedTags, allTags, closeAiModal, extractTitleFromContent, id]);
+  }, [aiExistingTags, aiRemovedTagIDs, aiSelectedTags, closeAiModal, findExistingTagByName, id, mergeTags]);
 
   const handleSlashAction = useCallback((action: (ctx: SlashActionContext) => void) => {
     const view = editorViewRef.current;
@@ -1489,51 +1746,6 @@ export default function EditorPage() {
 
   const handleRevert = (v: DocumentVersion) => {
     router.push(`/docs/${id}/revert?versionId=${v.id}`);
-  };
-
-  const handleAddTag = async () => {
-    const trimmed = newTag.trim();
-    if (!trimmed) return;
-    
-    // Validate length properly before attempting to create
-    if (Array.from(trimmed).length > 16) {
-       alert("Tag is too long (max 16 characters)");
-       return;
-    }
-
-    if (!/^[\p{Script=Han}A-Za-z0-9]{1,16}$/u.test(trimmed)) {
-      alert("Tags must be letters, numbers, or Chinese characters, and at most 16 characters.");
-      return;
-    }
-    
-    const existing = allTags.find((tag) => tag.name === trimmed);
-    const willSelect = !existing || !selectedTagIDs.includes(existing.id);
-
-    if (willSelect && selectedTagIDs.length >= MAX_TAGS) {
-      alert(`You can only select up to ${MAX_TAGS} tags.`);
-      return;
-    }
-
-    try {
-      if (existing) {
-        if (!selectedTagIDs.includes(existing.id)) {
-          setSelectedTagIDs([...selectedTagIDs, existing.id]);
-          setHasUnsavedChanges(true);
-        }
-      } else {
-        const created = await apiFetch<Tag>("/tags", {
-          method: "POST",
-          body: JSON.stringify({ name: trimmed }),
-        });
-        setAllTags([...allTags, created]);
-        setSelectedTagIDs([...selectedTagIDs, created.id]);
-        setHasUnsavedChanges(true);
-      }
-      setNewTag("");
-    } catch (err) {
-      console.error(err);
-      alert("Failed to add tag");
-    }
   };
 
   const toggleTag = (tagID: string) => {
@@ -1981,58 +2193,79 @@ export default function EditorPage() {
              <div className="flex-1 overflow-y-auto p-4">
                {activeTab === "tags" && (
                   <div className="space-y-4">
-                   <div className="flex gap-2">
-                      <Input 
-                         placeholder="New tag..." 
-                         value={newTag} 
+                    <div className="flex gap-2">
+                       <Input 
+                         placeholder="Search tag..." 
+                         value={tagQuery} 
                          maxLength={16}
                          onChange={(e) => {
                            const raw = e.target.value;
                            if (isComposingRef.current) {
-                             setNewTag(raw);
+                             setTagQuery(raw);
                              return;
                            }
                            const filtered = raw.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "");
-                           setNewTag(filtered);
+                           setTagQuery(filtered);
+                          }}
+                          onCompositionStart={() => {
+ 
+                           isComposingRef.current = true;
                          }}
-                         onCompositionStart={() => {
-
-                          isComposingRef.current = true;
-                        }}
-                         onCompositionEnd={(e) => {
-                           isComposingRef.current = false;
-                           const raw = e.currentTarget.value;
-                           const filtered = raw.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "");
-                           setNewTag(filtered.slice(0, 16));
-                         }}
-                         onKeyDown={(e) => e.key === "Enter" && handleAddTag()}
-                       />
-
-                     <Button size="icon" variant="secondary" onClick={handleAddTag}>
-                       <Plus className="h-4 w-4" />
-                     </Button>
-                   </div>
-                    <div className="flex flex-wrap gap-2">
-                      {allTags.length === 0 ? (
-                        <div className="text-sm text-muted-foreground">No tags yet</div>
-                      ) : (
-                        allTags.map((tag) => (
-                          <div
-                            key={tag.id}
-                            className={`inline-flex items-center gap-1 px-2 py-1 text-sm border rounded-full transition-colors cursor-pointer select-none ${
-                              selectedTagIDs.includes(tag.id)
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-secondary text-secondary-foreground border-input hover:bg-muted"
-                            }`}
-                            onClick={() => toggleTag(tag.id)}
-                          >
-                            <span>
-                              #{tag.name}
-                            </span>
-                          </div>
-                        ))
-                      )}
+                          onCompositionEnd={(e) => {
+                            isComposingRef.current = false;
+                            const raw = e.currentTarget.value;
+                            const filtered = raw.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "");
+                            setTagQuery(filtered.slice(0, 16));
+                          }}
+                          onKeyDown={handleTagInputKeyDown}
+                        />
                     </div>
+                    {trimmedTagQuery && (
+                      <div className="border border-border rounded-xl overflow-hidden bg-background">
+                        {tagSearchLoading ? (
+                          <div className="px-3 py-2 text-xs text-muted-foreground">Searching...</div>
+                        ) : tagDropdownItems.length > 0 ? (
+                          <>
+                            {tagDropdownItems.map((item, index) => (
+                              <button
+                                key={item.key}
+                                className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 ${index === tagDropdownIndex ? "bg-muted/40" : ""}`}
+                                onClick={() => handleTagDropdownSelect(item)}
+                              >
+                                {item.type === "create"
+                                  ? `Create #${trimmedTagQuery}`
+                                  : item.type === "use"
+                                  ? `Use existing #${trimmedTagQuery}`
+                                  : `#${item.tag?.name || ""}`}
+                              </button>
+                            ))}
+                          </>
+                        ) : (
+                          <div className="px-3 py-2 text-xs text-muted-foreground">No matching tags</div>
+                        )}
+                      </div>
+                    )}
+                     <div className="flex flex-wrap gap-2">
+                      {selectedTags.length === 0 ? (
+                         <div className="text-sm text-muted-foreground">No tags yet</div>
+                       ) : (
+                         selectedTags.map((tag) => (
+                           <div
+                             key={tag.id}
+                             className={`inline-flex items-center gap-1 px-2 py-1 text-sm border rounded-full transition-colors cursor-pointer select-none ${
+                               selectedTagIDs.includes(tag.id)
+                                 ? "bg-primary text-primary-foreground border-primary"
+                                 : "bg-secondary text-secondary-foreground border-input hover:bg-muted"
+                             }`}
+                             onClick={() => toggleTag(tag.id)}
+                           >
+                             <span>
+                               #{tag.name}
+                             </span>
+                           </div>
+                         ))
+                       )}
+                     </div>
                     
                     <div className="pt-4 mt-4 border-t border-border">
                         <Button 
