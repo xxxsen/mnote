@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, removeAuthToken, getAuthToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
 import { Document, Tag } from "@/types";
 import { ChevronDown, ChevronRight, FileArchive, LogOut, Pencil, Pin, Search, Settings, Star, Upload, X } from "lucide-react";
 
@@ -26,13 +27,14 @@ function TagEditor({
   loading: boolean;
 }) {
   const [selected, setSelected] = useState<string[]>(doc.tag_ids || []);
+  const { toast } = useToast();
   const toggle = (id: string) => {
     if (selected.includes(id)) {
       setSelected(selected.filter((tagId) => tagId !== id));
       return;
     }
     if (selected.length >= 7) {
-      alert("You can only select up to 7 tags.");
+        toast({ description: "You can only select up to 7 tags." });
       return;
     }
     setSelected([...selected, id]);
@@ -156,6 +158,7 @@ const sortRecentDocs = (docs: DocumentWithTags[]) => {
 export default function DocsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { toast } = useToast();
   const [docs, setDocs] = useState<DocumentWithTags[]>([]);
   const [recentDocs, setRecentDocs] = useState<DocumentWithTags[]>([]);
   const [totalDocs, setTotalDocs] = useState(0);
@@ -529,7 +532,7 @@ export default function DocsPage() {
       router.push(`/docs/${doc.id}`);
     } catch (err) {
       console.error(err);
-      alert("Failed to create document");
+      toast({ description: "Failed to create document", variant: "error" });
     }
   };
 

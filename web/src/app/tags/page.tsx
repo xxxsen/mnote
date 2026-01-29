@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
 import { Tag, Document } from "@/types";
 import { ChevronLeft, Trash2, Search, Tag as TagIcon } from "lucide-react";
 
@@ -15,6 +16,7 @@ interface TagWithUsage extends Tag {
 export default function TagsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { toast } = useToast();
   const [tags, setTags] = useState<TagWithUsage[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -51,11 +53,11 @@ export default function TagsPage() {
       setTags(tagsWithUsage);
     } catch (e) {
       console.error(e);
-      alert("Failed to load tags data");
+      toast({ description: "Failed to load tags data", variant: "error" });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     fetchData();
@@ -84,7 +86,7 @@ export default function TagsPage() {
       setTags(prev => prev.filter(t => t.id !== tag.id));
     } catch (e) {
       console.error(e);
-      alert("Failed to delete tag");
+      toast({ description: "Failed to delete tag", variant: "error" });
     } finally {
       setDeletingId(null);
     }

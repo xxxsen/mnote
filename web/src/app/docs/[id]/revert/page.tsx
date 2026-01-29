@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api";
 import { Document, DocumentVersion } from "@/types";
 import { computeDiff, DiffRow } from "@/lib/diff";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import { ChevronLeft, Check, AlertTriangle, ChevronUp, ChevronDown } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
@@ -13,6 +14,7 @@ export default function RevertPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { toast } = useToast();
   const id = params.id as string;
   const versionId = searchParams.get("versionId");
 
@@ -117,7 +119,7 @@ export default function RevertPage() {
       router.push(`/docs/${id}`);
     } catch (err) {
       console.error(err);
-      alert("Failed to revert document");
+      toast({ description: "Failed to revert document", variant: "error" });
       setSaving(false);
     }
   };

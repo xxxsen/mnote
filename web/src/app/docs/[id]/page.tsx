@@ -11,6 +11,7 @@ import ReactMarkdown from "react-markdown";
 import { apiFetch, uploadFile } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
 import MarkdownPreview from "@/components/markdown-preview";
 import { Document, Tag, DocumentVersion, Share } from "@/types";
 import {
@@ -406,6 +407,7 @@ export default function EditorPage() {
   const params = useParams();
   const router = useRouter();
   const [id] = useState(params.id as string);
+  const { toast } = useToast();
   const [tabs, setTabs] = useState<{ id: string; title: string }[]>([]);
 
   const [content, setContent] = useState("");
@@ -731,12 +733,12 @@ export default function EditorPage() {
       
     } catch (err) {
       console.error(err);
-      alert("Document not found");
+      toast({ description: "Document not found", variant: "error" });
       router.push("/docs");
     } finally {
       setLoading(false);
     }
-  }, [id, router, extractTitleFromContent]);
+  }, [id, router, extractTitleFromContent, toast]);
 
   const fetchRecentDocs = useCallback(async () => {
     try {
@@ -1085,10 +1087,10 @@ export default function EditorPage() {
       } catch (err) {
         console.error(err);
         replacePlaceholder(placeholder, "");
-        alert("Upload failed");
+        toast({ description: "Upload failed", variant: "error" });
       }
     },
-    [insertTextAtCursor, randomString, replacePlaceholder]
+    [insertTextAtCursor, randomString, replacePlaceholder, toast]
   );
 
   const handleUndo = useCallback(() => {
@@ -1140,7 +1142,7 @@ export default function EditorPage() {
   const handleAiPolish = useCallback(async () => {
     const snapshot = contentRef.current;
     if (!snapshot.trim()) {
-      alert("Please add some content before polishing.");
+      toast({ description: "Please add some content before polishing." });
       return;
     }
     setAiAction("polish");
@@ -1160,7 +1162,7 @@ export default function EditorPage() {
     } finally {
       setAiLoading(false);
     }
-  }, [resetAiState]);
+  }, [resetAiState, toast]);
 
   const handleAiGenerateOpen = useCallback(() => {
     setAiAction("generate");
@@ -1195,7 +1197,7 @@ export default function EditorPage() {
   const handleAiSummary = useCallback(async () => {
     const snapshot = contentRef.current;
     if (!snapshot.trim()) {
-      alert("Please add some content before summarizing.");
+      toast({ description: "Please add some content before summarizing." });
       return;
     }
     setAiAction("summary");
@@ -1215,12 +1217,12 @@ export default function EditorPage() {
     } finally {
       setAiLoading(false);
     }
-  }, [resetAiState]);
+  }, [resetAiState, toast]);
 
   const handleAiTags = useCallback(async () => {
     const snapshot = contentRef.current;
     if (!snapshot.trim()) {
-      alert("Please add some content before extracting tags.");
+      toast({ description: "Please add some content before extracting tags." });
       return;
     }
     setAiAction("tags");
@@ -1256,7 +1258,7 @@ export default function EditorPage() {
     } finally {
       setAiLoading(false);
     }
-  }, [id, isValidTagName, normalizeTagName, resetAiState]);
+  }, [id, isValidTagName, normalizeTagName, resetAiState, toast]);
 
   const findExistingTagByName = useCallback(
     async (name: string) => {
@@ -1307,11 +1309,11 @@ export default function EditorPage() {
         setLastSavedAt(Math.floor(Date.now() / 1000));
       } catch (err) {
         console.error(err);
-        alert("Failed to save tags");
+        toast({ description: "Failed to save tags", variant: "error" });
         setSelectedTagIDs(previous);
       }
-    },
-    [id, selectedTagIDs]
+  },
+    [id, selectedTagIDs, toast]
   );
 
   const selectTagById = useCallback(
@@ -1321,13 +1323,13 @@ export default function EditorPage() {
         return;
       }
       if (selectedTagIDs.length >= MAX_TAGS) {
-        alert(`You can only select up to ${MAX_TAGS} tags.`);
+        toast({ description: `You can only select up to ${MAX_TAGS} tags.` });
         return;
       }
       void saveTagIDs([...selectedTagIDs, tagId]);
       clearTagQuery();
-    },
-    [clearTagQuery, saveTagIDs, selectedTagIDs]
+  },
+    [clearTagQuery, saveTagIDs, selectedTagIDs, toast]
   );
 
   const handleAddTag = useCallback(async () => {
@@ -1335,7 +1337,7 @@ export default function EditorPage() {
     if (!trimmed) return;
 
     if (!isValidTagName(trimmed)) {
-      alert("Tags must be letters, numbers, or Chinese characters, and at most 16 characters.");
+      toast({ description: "Tags must be letters, numbers, or Chinese characters, and at most 16 characters." });
       return;
     }
 
@@ -1348,7 +1350,7 @@ export default function EditorPage() {
       if (existing) {
           if (!selectedTagIDs.includes(existing.id)) {
             if (selectedTagIDs.length >= MAX_TAGS) {
-              alert(`You can only select up to ${MAX_TAGS} tags.`);
+            toast({ description: `You can only select up to ${MAX_TAGS} tags.` });
               return;
             }
             await saveTagIDs([...selectedTagIDs, existing.id]);
@@ -1358,7 +1360,7 @@ export default function EditorPage() {
         }
 
       if (selectedTagIDs.length >= MAX_TAGS) {
-        alert(`You can only select up to ${MAX_TAGS} tags.`);
+        toast({ description: `You can only select up to ${MAX_TAGS} tags.` });
         return;
       }
 
@@ -1371,9 +1373,9 @@ export default function EditorPage() {
       clearTagQuery();
     } catch (err) {
       console.error(err);
-      alert("Failed to add tag");
+        toast({ description: "Failed to add tag", variant: "error" });
     }
-  }, [allTags, clearTagQuery, findExistingTagByName, isValidTagName, mergeTags, normalizeTagName, saveTagIDs, selectedTagIDs, tagQuery, tagSuggestions]);
+  }, [allTags, clearTagQuery, findExistingTagByName, isValidTagName, mergeTags, normalizeTagName, saveTagIDs, selectedTagIDs, tagQuery, tagSuggestions, toast]);
 
   const handleTagDropdownSelect = useCallback(
     (item: { type: "use" | "create" | "suggestion"; tag?: Tag }) => {
@@ -1434,12 +1436,12 @@ export default function EditorPage() {
       }
       const existingCount = aiExistingTags.length - aiRemovedTagIDs.length;
       if (existingCount + aiSelectedTags.length >= MAX_TAGS) {
-        alert(`You can only select up to ${MAX_TAGS} tags.`);
+        toast({ description: `You can only select up to ${MAX_TAGS} tags.` });
         return;
       }
       setAiSelectedTags([...aiSelectedTags, name]);
-    },
-    [aiExistingTagNames, aiExistingTags.length, aiRemovedTagIDs.length, aiSelectedTags]
+  },
+    [aiExistingTagNames, aiExistingTags.length, aiRemovedTagIDs.length, aiSelectedTags, toast]
   );
 
   const toggleExistingTag = useCallback(
@@ -1478,11 +1480,11 @@ export default function EditorPage() {
       closeAiModal();
     } catch (err) {
       console.error(err);
-      alert("Failed to apply summary");
+      toast({ description: "Failed to apply summary", variant: "error" });
     } finally {
       setAiLoading(false);
     }
-  }, [aiResultText, closeAiModal, id]);
+  }, [aiResultText, closeAiModal, id, toast]);
 
   const handleApplyAiTags = useCallback(async () => {
     if (aiSelectedTags.length === 0 && aiRemovedTagIDs.length === 0) {
@@ -1521,18 +1523,18 @@ export default function EditorPage() {
       mergeTags([...(matches.filter(Boolean) as Tag[]), ...created]);
       const finalTagIDs = [...nextTagIDs];
       if (finalTagIDs.length > MAX_TAGS) {
-        alert(`You can only select up to ${MAX_TAGS} tags.`);
+        toast({ description: `You can only select up to ${MAX_TAGS} tags.` });
         return;
       }
       await saveTagIDs(finalTagIDs);
       closeAiModal();
     } catch (err) {
       console.error(err);
-      alert("Failed to apply tags");
+      toast({ description: "Failed to apply tags", variant: "error" });
     } finally {
       setAiLoading(false);
     }
-  }, [aiExistingTags, aiRemovedTagIDs, aiSelectedTags, closeAiModal, findExistingTagByName, mergeTags, saveTagIDs]);
+  }, [aiExistingTags, aiRemovedTagIDs, aiSelectedTags, closeAiModal, findExistingTagByName, mergeTags, saveTagIDs, toast]);
 
   const handleSlashAction = useCallback((action: (ctx: SlashActionContext) => void) => {
     const view = editorViewRef.current;
@@ -1671,8 +1673,7 @@ export default function EditorPage() {
     const latestContent = contentRef.current;
     const derivedTitle = extractTitleFromContent(latestContent);
     if (!derivedTitle) {
-      alert("Please add a title using markdown heading (Title + ===)."
-      );
+      toast({ description: "Please add a title using markdown heading (Title + ===)." });
       return;
     }
     setSaving(true);
@@ -1690,11 +1691,11 @@ export default function EditorPage() {
       }
     } catch (err) {
       console.error(err);
-      alert("Failed to save");
+      toast({ description: "Failed to save", variant: "error" });
     } finally {
       setSaving(false);
     }
-  }, [extractTitleFromContent, id]);
+  }, [extractTitleFromContent, id, toast]);
 
   const handleDelete = async () => {
     try {
@@ -1702,7 +1703,7 @@ export default function EditorPage() {
       router.push("/docs");
     } catch (err) {
       console.error(err);
-      alert("Failed to delete");
+      toast({ description: "Failed to delete", variant: "error" });
     }
   };
 
@@ -1737,7 +1738,7 @@ export default function EditorPage() {
       return;
     }
     if (selectedTagIDs.length >= MAX_TAGS) {
-      alert(`You can only select up to ${MAX_TAGS} tags.`);
+      toast({ description: `You can only select up to ${MAX_TAGS} tags.` });
       return;
     }
     void saveTagIDs([...selectedTagIDs, tagID]);
@@ -1752,7 +1753,7 @@ export default function EditorPage() {
       setShareUrl(url);
     } catch (err) {
       console.error(err);
-      alert("Failed to create share link");
+      toast({ description: "Failed to create share link", variant: "error" });
     }
   };
 
@@ -1780,7 +1781,7 @@ export default function EditorPage() {
       setShareUrl("");
     } catch (err) {
       console.error(err);
-      alert("Failed to revoke share link");
+      toast({ description: "Failed to revoke share link", variant: "error" });
     }
   };
 
