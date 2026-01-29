@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
 	"github.com/xxxsen/common/logger"
@@ -139,6 +140,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		}),
 		webapi.WithExtraMiddlewares(
 			middleware.CORS(),
+			gzip.Gzip(gzip.DefaultCompression),
 		),
 	)
 	if err != nil {
