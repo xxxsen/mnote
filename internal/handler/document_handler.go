@@ -192,6 +192,15 @@ func (h *DocumentHandler) List(c *gin.Context) {
 
 func (h *DocumentHandler) Get(c *gin.Context) {
 	userID := getUserID(c)
+	includeTags := false
+	if value := c.Query("include"); value != "" {
+		for _, part := range strings.Split(value, ",") {
+			if strings.TrimSpace(part) == "tags" {
+				includeTags = true
+				break
+			}
+		}
+	}
 	doc, err := h.documents.Get(c.Request.Context(), userID, c.Param("id"))
 	if err != nil {
 		handleError(c, err)
@@ -200,6 +209,15 @@ func (h *DocumentHandler) Get(c *gin.Context) {
 	tagIDs, err := h.documents.ListTagIDs(c.Request.Context(), userID, c.Param("id"))
 	if err != nil {
 		handleError(c, err)
+		return
+	}
+	if includeTags && len(tagIDs) > 0 {
+		tags, err := h.documents.ListTagsByIDs(c.Request.Context(), userID, tagIDs)
+		if err != nil {
+			handleError(c, err)
+			return
+		}
+		response.Success(c, gin.H{"document": doc, "tag_ids": tagIDs, "tags": tags})
 		return
 	}
 	response.Success(c, gin.H{"document": doc, "tag_ids": tagIDs})

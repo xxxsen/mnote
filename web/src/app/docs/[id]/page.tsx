@@ -692,7 +692,7 @@ export default function EditorPage() {
 
   const fetchDoc = useCallback(async () => {
     try {
-      const detail = await apiFetch<{ document: Document; tag_ids: string[] }>(`/documents/${id}`);
+      const detail = await apiFetch<{ document: Document; tag_ids: string[]; tags?: Tag[] }>(`/documents/${id}?include=tags`);
       let initialContent = detail.document.content;
 
       if (typeof window !== "undefined") {
@@ -721,19 +721,7 @@ export default function EditorPage() {
       setStarred(detail.document.starred || 0);
       const initialTagIDs = detail.tag_ids || [];
       setSelectedTagIDs(initialTagIDs);
-      if (initialTagIDs.length > 0) {
-        try {
-          const tags = await apiFetch<Tag[]>("/tags/ids", {
-            method: "POST",
-            body: JSON.stringify({ ids: initialTagIDs }),
-          });
-          setAllTags(tags || []);
-        } catch {
-          setAllTags([]);
-        }
-      } else {
-        setAllTags([]);
-      }
+      setAllTags(detail.tags || []);
       setLastSavedAt(detail.document.mtime);
 
       const text = initialContent || "";
