@@ -677,7 +677,7 @@ export default function DocsPage() {
             <div className="flex items-center justify-between mb-2 pr-2">
               <div className="text-xs font-bold uppercase text-muted-foreground">General</div>
             </div>
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1 pr-2">
               <button
                 onClick={() => setSelectedTag("")}
                 className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
@@ -711,7 +711,7 @@ export default function DocsPage() {
                 animation: marquee 5s linear infinite;
               }
             `}} />
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1 pr-2">
               {recentDocs.length === 0 ? (
                 <div className="px-2 py-1.5 text-sm text-muted-foreground italic opacity-50">
                   No recent notes
@@ -767,7 +767,7 @@ export default function DocsPage() {
             onWheel={maybeAutoLoadTags}
             className="flex-1 overflow-y-auto no-scrollbar"
           >
-            <div ref={tagListRef} className="flex flex-col gap-1 pr-1">
+            <div ref={tagListRef} className="flex flex-col gap-1 pr-2">
             {sidebarTags.map((tag) => (
               <button
                 key={tag.id}
