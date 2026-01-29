@@ -158,9 +158,11 @@ const extractHeadings = (content: string) => {
 
 const buildTocMarkdown = (headings: Heading[]) => {
   if (headings.length === 0) return "";
+  const minLevel = headings.reduce((min, heading) => Math.min(min, heading.level), headings[0].level);
   return headings
     .map((heading) => {
-      const indent = "  ".repeat(Math.max(0, heading.level - 1));
+      const normalizedLevel = heading.level - minLevel + 1;
+      const indent = "  ".repeat(Math.max(0, normalizedLevel - 1));
       const slug = heading.id || createSlugger()(heading.text);
       return `${indent}- [${heading.text}](#${slug})`;
     })
