@@ -14,20 +14,49 @@ function TagEditor({
   allTags,
   onSave,
   onClose,
-  onLoadMore,
-  hasMore,
-  loading,
 }: {
   doc: DocumentWithTags;
   allTags: Tag[];
   onSave: (doc: DocumentWithTags, ids: string[]) => void;
   onClose: () => void;
-  onLoadMore: () => void;
-  hasMore: boolean;
-  loading: boolean;
 }) {
   const [selected, setSelected] = useState<string[]>(doc.tag_ids || []);
   const { toast } = useToast();
+  const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<Tag[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const timerRef = useRef<number | null>(null);
+  const lastQueryRef = useRef("");
+  const tagLookup = useRef<Record<string, Tag>>({});
+
+  const normalizedQuery = query.trim();
+  const suggestionList = suggestions.filter((tag) => !selected.includes(tag.id));
+  const exactMatch = suggestionList.find((tag) => tag.name === normalizedQuery) || allTags.find((tag) => tag.name === normalizedQuery) || null;
+  useEffect(() => {
+    const next: Record<string, Tag> = {};
+    allTags.forEach((tag) => {
+      next[tag.id] = tag;
+    });
+    (doc.tags || []).forEach((tag) => {
+      next[tag.id] = tag;
+    });
+    tagLookup.current = next;
+  }, [allTags, doc.tags]);
+  const dropdownItems = (() => {
+    if (!normalizedQuery || searching) return [] as Array<{ type: "use" | "create" | "suggestion"; tag?: Tag; key: string }>;
+    const items: Array<{ type: "use" | "create" | "suggestion"; tag?: Tag; key: string }> = [];
+    if (exactMatch) {
+      items.push({ type: "use", tag: exactMatch, key: `use-${exactMatch.id}` });
+    } else {
+      items.push({ type: "create", key: `create-${normalizedQuery}` });
+    }
+    suggestionList.forEach((tag) => {
+      if (exactMatch && tag.id === exactMatch.id) return;
+      items.push({ type: "suggestion", tag, key: `tag-${tag.id}` });
+    });
+    return items;
+  })();
   const toggle = (id: string) => {
     if (selected.includes(id)) {
       setSelected(selected.filter((tagId) => tagId !== id));
@@ -40,6 +69,77 @@ function TagEditor({
     setSelected([...selected, id]);
   };
 
+  const resetSearch = () => {
+    setQuery("");
+    setSuggestions([]);
+    setActiveIndex(0);
+  };
+
+  const addTagByName = async (name: string) => {
+    if (!name) return;
+    const existing = suggestionList.find((tag) => tag.name === name) || allTags.find((tag) => tag.name === name) || null;
+    if (existing) {
+      tagLookup.current[existing.id] = existing;
+      toggle(existing.id);
+      resetSearch();
+      return;
+    }
+    if (!/^[\p{Script=Han}A-Za-z0-9]{1,16}$/u.test(name)) {
+      toast({ description: "Tags must be letters, numbers, or Chinese characters, and at most 16 characters." });
+      return;
+    }
+    if (selected.length >= 7) {
+      toast({ description: "You can only select up to 7 tags." });
+      return;
+    }
+    try {
+      const created = await apiFetch<Tag>("/tags", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      });
+      tagLookup.current[created.id] = created;
+      setSelected((prev) => [...prev, created.id]);
+      resetSearch();
+    } catch (err) {
+      console.error(err);
+      toast({ description: "Failed to add tag", variant: "error" });
+    }
+  };
+
+  useEffect(() => {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+    }
+    if (!normalizedQuery) {
+      setSuggestions([]);
+      setSearching(false);
+      setActiveIndex(0);
+      return;
+    }
+    setSearching(true);
+    lastQueryRef.current = normalizedQuery;
+    timerRef.current = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set("q", normalizedQuery);
+        params.set("limit", "5");
+        const res = await apiFetch<Tag[]>(`/tags?${params.toString()}`);
+        if (lastQueryRef.current !== normalizedQuery) return;
+        setSuggestions(res || []);
+      } catch (err) {
+        console.error(err);
+        if (lastQueryRef.current === normalizedQuery) {
+          setSuggestions([]);
+        }
+      } finally {
+        if (lastQueryRef.current === normalizedQuery) {
+          setSearching(false);
+          setActiveIndex(0);
+        }
+      }
+    }, 200);
+  }, [normalizedQuery]);
+
   return (
     <div className="absolute inset-0 bg-card z-20 flex flex-col p-3 gap-2 animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
       <div className="flex items-center justify-between">
@@ -51,19 +151,102 @@ function TagEditor({
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto content-start flex flex-wrap gap-1.5 p-1">
-        {allTags.map(tag => {
-           const active = selected.includes(tag.id);
-           return (
-             <button
-               key={tag.id}
-                onClick={(e) => { e.stopPropagation(); toggle(tag.id); }}
-                className={`px-2 py-0.5 rounded-xl text-[10px] border transition-colors ${active ? "bg-primary text-primary-foreground border-primary" : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"}`}
-              >
-                {tag.name}
-              </button>
-            );
-        })}
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-1.5">
+          {selected.length === 0 ? (
+            <div className="text-xs text-muted-foreground">No tags yet</div>
+          ) : (
+            selected.map((id) => {
+              const tag = tagLookup.current[id];
+              return (
+                <button
+                  key={id}
+                  onClick={(e) => { e.stopPropagation(); toggle(id); }}
+                  className="px-2 py-0.5 rounded-xl text-[10px] border border-transparent bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  #{tag?.name || id}
+                </button>
+              );
+            })
+          )}
+        </div>
+        <Input
+          placeholder="Search tag..."
+          value={query}
+          maxLength={16}
+          onChange={(e) => {
+            const filtered = e.target.value.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "");
+            setQuery(filtered);
+          }}
+          onKeyDown={(e) => {
+            if (!dropdownItems.length) {
+              if (e.key === "Enter") {
+                addTagByName(normalizedQuery);
+              }
+              return;
+            }
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setActiveIndex((prev) => (prev + 1) % dropdownItems.length);
+              return;
+            }
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActiveIndex((prev) => (prev - 1 + dropdownItems.length) % dropdownItems.length);
+              return;
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              resetSearch();
+              return;
+            }
+            if (e.key === "Enter") {
+              e.preventDefault();
+              const item = dropdownItems[activeIndex];
+              if (!item) return;
+              if (item.type === "create") {
+                addTagByName(normalizedQuery);
+              } else if (item.tag) {
+                tagLookup.current[item.tag.id] = item.tag;
+                toggle(item.tag.id);
+                resetSearch();
+              }
+            }
+          }}
+        />
+        {normalizedQuery && (
+          <div className="border border-border rounded-xl overflow-hidden bg-background">
+            {searching ? (
+              <div className="px-3 py-2 text-xs text-muted-foreground">Searching...</div>
+            ) : dropdownItems.length > 0 ? (
+              dropdownItems.map((item, index) => (
+                <button
+                  key={item.key}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 ${index === activeIndex ? "bg-muted/40" : ""}`}
+                  onClick={() => {
+                    if (item.type === "create") {
+                      addTagByName(normalizedQuery);
+                      return;
+                    }
+                    if (item.tag) {
+                      tagLookup.current[item.tag.id] = item.tag;
+                      toggle(item.tag.id);
+                      resetSearch();
+                    }
+                  }}
+                >
+                  {item.type === "create"
+                    ? `Create #${normalizedQuery}`
+                    : item.type === "use"
+                    ? `Use existing #${normalizedQuery}`
+                    : `#${item.tag?.name || ""}`}
+                </button>
+              ))
+            ) : (
+              <div className="px-3 py-2 text-xs text-muted-foreground">No matching tags</div>
+            )}
+          </div>
+        )}
       </div>
       <div className="flex items-center justify-between text-[10px] text-muted-foreground">
         <span>{selected.length}/7 selected</span>
@@ -71,20 +254,6 @@ function TagEditor({
           Save Changes
         </Button>
       </div>
-      {hasMore && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs"
-          onClick={(e) => {
-            e.stopPropagation();
-            onLoadMore();
-          }}
-          disabled={loading}
-        >
-          {loading ? "Loading..." : "Load more tags"}
-        </Button>
-      )}
     </div>
   );
 }
@@ -171,9 +340,6 @@ export default function DocsPage() {
   const sidebarFetchInFlightRef = useRef(false);
   const [tagSuggestions, setTagSuggestions] = useState<Tag[]>([]);
   const [tagIndex, setTagIndex] = useState<Record<string, Tag>>({});
-  const [tagsLoading, setTagsLoading] = useState(false);
-  const [tagsHasMore, setTagsHasMore] = useState(true);
-  const [tagsOffset, setTagsOffset] = useState(0);
   const tagFetchInFlightRef = useRef(false);
   const tagListRef = useRef<HTMLDivElement>(null);
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
@@ -374,28 +540,23 @@ export default function DocsPage() {
     }
   }, []);
 
-  const fetchTags = useCallback(async (offset: number, append: boolean, query: string) => {
+  const fetchTags = useCallback(async (query: string) => {
     if (tagFetchInFlightRef.current) return;
     tagFetchInFlightRef.current = true;
-    setTagsLoading(true);
     try {
       const params = new URLSearchParams();
       params.set("limit", "20");
-      params.set("offset", String(offset));
       if (query) {
         params.set("q", query);
       }
       const res = await apiFetch<Tag[]>(`/tags?${params.toString()}`);
       const next = res || [];
-      setTags((prev) => (append ? [...prev, ...next] : next));
+      setTags(next);
       mergeTags(next);
-      setTagsHasMore(next.length === 20);
-      setTagsOffset(offset + next.length);
     } catch (e) {
       console.error(e);
     } finally {
       tagFetchInFlightRef.current = false;
-      setTagsLoading(false);
     }
   }, [mergeTags]);
 
@@ -421,7 +582,7 @@ export default function DocsPage() {
   useEffect(() => {
     if (initialFetchRef.current) return;
     initialFetchRef.current = true;
-    fetchTags(0, false, "");
+    fetchTags("");
   }, [fetchTags]);
 
   useEffect(() => {
@@ -556,11 +717,6 @@ export default function DocsPage() {
     }
   };
 
-  const loadMoreTags = useCallback(() => {
-    if (tagsLoading || !tagsHasMore) return;
-    fetchTags(tagsOffset, true, "");
-  }, [fetchTags, tagsHasMore, tagsLoading, tagsOffset]);
-
   const loadMoreSidebarTags = useCallback(() => {
     if (sidebarLoading || !sidebarHasMore) return;
     fetchSidebarTags(sidebarOffset, true, tagSearch.trim());
@@ -681,7 +837,7 @@ export default function DocsPage() {
           setImportStep("done");
           finished = true;
           void fetchSummary();
-          fetchTags(0, false, "");
+          fetchTags("");
           fetchSidebarTags(0, false, tagSearch.trim());
         }
       }
@@ -1026,15 +1182,12 @@ export default function DocsPage() {
                     className="group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer overflow-hidden rounded-[8px]"
                   >
                     {isEditing && (
-                      <TagEditor
-                        doc={doc}
-                        allTags={tags}
-                        onSave={handleUpdateTags}
-                        onClose={() => setEditingDocId(null)}
-                        onLoadMore={loadMoreTags}
-                        hasMore={tagsHasMore}
-                        loading={tagsLoading}
-                      />
+        <TagEditor
+          doc={doc}
+          allTags={tags}
+          onSave={handleUpdateTags}
+          onClose={() => setEditingDocId(null)}
+        />
                     )}
 
                       {!isEditing && (
