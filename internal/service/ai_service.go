@@ -43,6 +43,7 @@ func (s *AIService) Polish(ctx context.Context, input string) (string, error) {
 	}
 	prompt := fmt.Sprintf(`You are a professional editor.
 Polish the following markdown to be more professional and clear without changing the meaning.
+- Use the same language as the content.
 - Keep all markdown structure and formatting.
 - Do not add explanations.
 - Output ONLY the polished markdown.
