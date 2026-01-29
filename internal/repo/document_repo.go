@@ -76,6 +76,34 @@ func (r *DocumentRepo) Update(ctx context.Context, doc *model.Document, updateSu
 	return nil
 }
 
+func (r *DocumentRepo) UpdateSummary(ctx context.Context, userID, docID, summary string, mtime int64) error {
+	where := map[string]interface{}{
+		"id":      docID,
+		"user_id": userID,
+		"state":   DocumentStateNormal,
+	}
+	update := map[string]interface{}{
+		"summary": summary,
+		"mtime":   mtime,
+	}
+	sqlStr, args, err := builder.BuildUpdate("documents", where, update)
+	if err != nil {
+		return err
+	}
+	result, err := r.db.ExecContext(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return appErr.ErrNotFound
+	}
+	return nil
+}
+
 func (r *DocumentRepo) UpdatePinned(ctx context.Context, userID, docID string, pinned int) error {
 	where := map[string]interface{}{
 		"id":      docID,

@@ -1307,6 +1307,25 @@ export default function EditorPage() {
     setTagDropdownIndex(0);
   }, []);
 
+  const saveTagIDs = useCallback(
+    async (nextTagIDs: string[]) => {
+      const previous = selectedTagIDs;
+      setSelectedTagIDs(nextTagIDs);
+      try {
+        await apiFetch(`/documents/${id}/tags`, {
+          method: "PUT",
+          body: JSON.stringify({ tag_ids: nextTagIDs }),
+        });
+        setLastSavedAt(Math.floor(Date.now() / 1000));
+      } catch (err) {
+        console.error(err);
+        alert("Failed to save tags");
+        setSelectedTagIDs(previous);
+      }
+    },
+    [id, selectedTagIDs]
+  );
+
   const selectTagById = useCallback(
     (tagId: string) => {
       if (selectedTagIDs.includes(tagId)) {
@@ -1317,11 +1336,10 @@ export default function EditorPage() {
         alert(`You can only select up to ${MAX_TAGS} tags.`);
         return;
       }
-      setSelectedTagIDs([...selectedTagIDs, tagId]);
-      setHasUnsavedChanges(true);
+      void saveTagIDs([...selectedTagIDs, tagId]);
       clearTagQuery();
     },
-    [clearTagQuery, selectedTagIDs]
+    [clearTagQuery, saveTagIDs, selectedTagIDs]
   );
 
   const handleAddTag = useCallback(async () => {
@@ -1340,17 +1358,16 @@ export default function EditorPage() {
       }
 
       if (existing) {
-        if (!selectedTagIDs.includes(existing.id)) {
-          if (selectedTagIDs.length >= MAX_TAGS) {
-            alert(`You can only select up to ${MAX_TAGS} tags.`);
-            return;
+          if (!selectedTagIDs.includes(existing.id)) {
+            if (selectedTagIDs.length >= MAX_TAGS) {
+              alert(`You can only select up to ${MAX_TAGS} tags.`);
+              return;
+            }
+            await saveTagIDs([...selectedTagIDs, existing.id]);
           }
-          setSelectedTagIDs([...selectedTagIDs, existing.id]);
-          setHasUnsavedChanges(true);
+          clearTagQuery();
+          return;
         }
-        clearTagQuery();
-        return;
-      }
 
       if (selectedTagIDs.length >= MAX_TAGS) {
         alert(`You can only select up to ${MAX_TAGS} tags.`);
@@ -1362,14 +1379,13 @@ export default function EditorPage() {
         body: JSON.stringify({ name: trimmed }),
       });
       mergeTags([created]);
-      setSelectedTagIDs([...selectedTagIDs, created.id]);
-      setHasUnsavedChanges(true);
+      await saveTagIDs([...selectedTagIDs, created.id]);
       clearTagQuery();
     } catch (err) {
       console.error(err);
       alert("Failed to add tag");
     }
-  }, [allTags, clearTagQuery, findExistingTagByName, isValidTagName, mergeTags, normalizeTagName, selectedTagIDs, tagQuery, tagSuggestions]);
+  }, [allTags, clearTagQuery, findExistingTagByName, isValidTagName, mergeTags, normalizeTagName, saveTagIDs, selectedTagIDs, tagQuery, tagSuggestions]);
 
   const handleTagDropdownSelect = useCallback(
     (item: { type: "use" | "create" | "suggestion"; tag?: Tag }) => {
@@ -1465,24 +1481,12 @@ export default function EditorPage() {
     }
     setAiLoading(true);
     try {
-      const latestContent = contentRef.current;
-      const derivedTitle = extractTitleFromContent(latestContent);
-      if (!derivedTitle) {
-        alert("Title required before saving summary.");
-        return;
-      }
-      await apiFetch(`/documents/${id}`, {
+      await apiFetch(`/documents/${id}/summary`, {
         method: "PUT",
-        body: JSON.stringify({ title: derivedTitle, content: latestContent, summary: aiResultText, tag_ids: selectedTagIDs }),
+        body: JSON.stringify({ summary: aiResultText }),
       });
       setSummary(aiResultText);
-      setTitle(derivedTitle);
       setLastSavedAt(Math.floor(Date.now() / 1000));
-      setHasUnsavedChanges(false);
-      lastSavedContentRef.current = latestContent;
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem(`mnote:draft:${id}`);
-      }
       closeAiModal();
     } catch (err) {
       console.error(err);
@@ -1490,7 +1494,7 @@ export default function EditorPage() {
     } finally {
       setAiLoading(false);
     }
-  }, [aiResultText, closeAiModal, extractTitleFromContent, id, selectedTagIDs]);
+  }, [aiResultText, closeAiModal, id]);
 
   const handleApplyAiTags = useCallback(async () => {
     if (aiSelectedTags.length === 0 && aiRemovedTagIDs.length === 0) {
@@ -1532,16 +1536,7 @@ export default function EditorPage() {
         alert(`You can only select up to ${MAX_TAGS} tags.`);
         return;
       }
-      await apiFetch(`/documents/${id}/tags`, {
-        method: "PUT",
-        body: JSON.stringify({ tag_ids: finalTagIDs }),
-      });
-      setSelectedTagIDs(finalTagIDs);
-      setLastSavedAt(Math.floor(Date.now() / 1000));
-      setHasUnsavedChanges(false);
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem(`mnote:draft:${id}`);
-      }
+      await saveTagIDs(finalTagIDs);
       closeAiModal();
     } catch (err) {
       console.error(err);
@@ -1549,7 +1544,7 @@ export default function EditorPage() {
     } finally {
       setAiLoading(false);
     }
-  }, [aiExistingTags, aiRemovedTagIDs, aiSelectedTags, closeAiModal, findExistingTagByName, id, mergeTags]);
+  }, [aiExistingTags, aiRemovedTagIDs, aiSelectedTags, closeAiModal, findExistingTagByName, mergeTags, saveTagIDs]);
 
   const handleSlashAction = useCallback((action: (ctx: SlashActionContext) => void) => {
     const view = editorViewRef.current;
@@ -1663,7 +1658,7 @@ export default function EditorPage() {
     try {
       await apiFetch(`/documents/${id}`, {
         method: "PUT",
-        body: JSON.stringify({ title: derivedTitle, content: latestContent, tag_ids: selectedTagIDs }),
+        body: JSON.stringify({ title: derivedTitle, content: latestContent }),
       });
       lastSavedContentRef.current = latestContent;
       setTitle(derivedTitle);
@@ -1675,7 +1670,7 @@ export default function EditorPage() {
     } catch (err) {
       console.error("Autosave error", err);
     }
-  }, [extractTitleFromContent, id, saving, selectedTagIDs]);
+  }, [extractTitleFromContent, id, saving]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1696,7 +1691,7 @@ export default function EditorPage() {
     try {
       await apiFetch(`/documents/${id}`, {
         method: "PUT",
-        body: JSON.stringify({ title: derivedTitle, content: latestContent, tag_ids: selectedTagIDs }),
+        body: JSON.stringify({ title: derivedTitle, content: latestContent }),
       });
       lastSavedContentRef.current = latestContent;
       setTitle(derivedTitle);
@@ -1711,7 +1706,7 @@ export default function EditorPage() {
     } finally {
       setSaving(false);
     }
-  }, [extractTitleFromContent, id, selectedTagIDs]);
+  }, [extractTitleFromContent, id]);
 
   const handleDelete = async () => {
     try {
@@ -1750,16 +1745,14 @@ export default function EditorPage() {
 
   const toggleTag = (tagID: string) => {
     if (selectedTagIDs.includes(tagID)) {
-      setSelectedTagIDs(selectedTagIDs.filter((id) => id !== tagID));
-      setHasUnsavedChanges(true);
-    } else {
-      if (selectedTagIDs.length >= MAX_TAGS) {
-        alert(`You can only select up to ${MAX_TAGS} tags.`);
-        return;
-      }
-      setSelectedTagIDs([...selectedTagIDs, tagID]);
-      setHasUnsavedChanges(true);
+      void saveTagIDs(selectedTagIDs.filter((id) => id !== tagID));
+      return;
     }
+    if (selectedTagIDs.length >= MAX_TAGS) {
+      alert(`You can only select up to ${MAX_TAGS} tags.`);
+      return;
+    }
+    void saveTagIDs([...selectedTagIDs, tagID]);
   };
 
 

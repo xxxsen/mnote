@@ -30,6 +30,10 @@ type documentRequest struct {
 type tagUpdateRequest struct {
 	TagIDs *[]string `json:"tag_ids"`
 }
+
+type summaryUpdateRequest struct {
+	Summary *string `json:"summary"`
+}
 type documentListItem struct {
 	ID      string      `json:"id"`
 	UserID  string      `json:"user_id"`
@@ -239,6 +243,23 @@ func (h *DocumentHandler) UpdateTags(c *gin.Context) {
 		return
 	}
 	if err := h.documents.UpdateTags(c.Request.Context(), getUserID(c), c.Param("id"), *req.TagIDs); err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
+}
+
+func (h *DocumentHandler) UpdateSummary(c *gin.Context) {
+	var req summaryUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
+	if req.Summary == nil {
+		response.Error(c, http.StatusBadRequest, "invalid", "summary required")
+		return
+	}
+	if err := h.documents.UpdateSummary(c.Request.Context(), getUserID(c), c.Param("id"), *req.Summary); err != nil {
 		handleError(c, err)
 		return
 	}

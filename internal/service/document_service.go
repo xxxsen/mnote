@@ -150,6 +150,14 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 	return nil
 }
 
+func (s *DocumentService) UpdateSummary(ctx context.Context, userID, docID, summary string) error {
+	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
+		return err
+	}
+	now := timeutil.NowUnix()
+	return s.docs.UpdateSummary(ctx, userID, docID, summary, now)
+}
+
 func (s *DocumentService) UpdateTags(ctx context.Context, userID, docID string, tagIDs []string) error {
 	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
 		return err
