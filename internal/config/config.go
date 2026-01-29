@@ -24,11 +24,11 @@ type FileStoreConfig struct {
 }
 
 type AIConfig struct {
-	Provider      string `json:"provider"`
-	APIKey        string `json:"api_key"`
-	Model         string `json:"model"`
-	Timeout       int    `json:"timeout"`
-	MaxInputChars int    `json:"max_input_chars"`
+	Provider      string      `json:"provider"`
+	Model         string      `json:"model"`
+	Timeout       int         `json:"timeout"`
+	MaxInputChars int         `json:"max_input_chars"`
+	Data          interface{} `json:"data"`
 }
 
 func Load(path string) (*Config, error) {

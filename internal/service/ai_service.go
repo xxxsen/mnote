@@ -5,35 +5,35 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
-	"google.golang.org/genai"
 
+	"github.com/xxxsen/mnote/internal/ai"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 )
 
-var ErrAIUnavailable = errors.New("ai unavailable")
+var ErrAIUnavailable = ai.ErrUnavailable
 
 type AIService struct {
-	cfg   AIConfig
-	cache *expirable.LRU[string, string]
+	provider      ai.IAIProvider
+	model         string
+	maxInputChars int
+	timeout       time.Duration
+	cache         *expirable.LRU[string, string]
 }
 
-type AIConfig struct {
-	Provider      string
-	APIKey        string
-	Model         string
-	Timeout       int
-	MaxInputChars int
-}
-
-func NewAIService(cfg AIConfig) *AIService {
+func NewAIService(provider ai.IAIProvider, model string, maxInputChars int, timeoutSeconds int) *AIService {
 	cache := expirable.NewLRU[string, string](10000, nil, 2*time.Hour)
-	return &AIService{cfg: cfg, cache: cache}
+	return &AIService{
+		provider:      provider,
+		model:         model,
+		maxInputChars: maxInputChars,
+		timeout:       time.Duration(timeoutSeconds) * time.Second,
+		cache:         cache,
+	}
 }
 
 func (s *AIService) Polish(ctx context.Context, input string) (string, error) {
@@ -50,7 +50,7 @@ Polish the following markdown to be more professional and clear without changing
 
 CONTENT:
 %s`, text)
-	return s.generateText(ctx, s.cfg.Model, prompt)
+	return s.generateText(ctx, s.model, prompt)
 }
 
 func (s *AIService) Generate(ctx context.Context, prompt string) (string, error) {
@@ -65,7 +65,7 @@ Generate a complete markdown article based on the description below.
 
 DESCRIPTION:
 %s`, text)
-	return s.generateText(ctx, s.cfg.Model, fullPrompt)
+	return s.generateText(ctx, s.model, fullPrompt)
 }
 
 func (s *AIService) ExtractTags(ctx context.Context, input string, maxTags int) ([]string, error) {
@@ -87,7 +87,7 @@ From the markdown below, extract up to %d concise tags.
 
 CONTENT:
 %s`, maxTags, text)
-	result, err := s.generateText(ctx, s.cfg.Model, prompt)
+	result, err := s.generateText(ctx, s.model, prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ Summarize the following markdown into a concise paragraph (2-4 sentences).
 
 CONTENT:
 %s`, text)
-	return s.generateText(ctx, s.cfg.Model, prompt)
+	return s.generateText(ctx, s.model, prompt)
 }
 
 func (s *AIService) cleanInput(input string) (string, error) {
@@ -115,14 +115,14 @@ func (s *AIService) cleanInput(input string) (string, error) {
 	if trimmed == "" {
 		return "", appErr.ErrInvalid
 	}
-	if s.cfg.MaxInputChars > 0 && len(trimmed) > s.cfg.MaxInputChars {
+	if s.maxInputChars > 0 && len(trimmed) > s.maxInputChars {
 		return "", appErr.ErrInvalid
 	}
 	return trimmed, nil
 }
 
 func (s *AIService) generateText(ctx context.Context, model, prompt string) (string, error) {
-	if s.cfg.APIKey == "" {
+	if s.provider == nil {
 		return "", ErrAIUnavailable
 	}
 	if model == "" {
@@ -132,26 +132,16 @@ func (s *AIService) generateText(ctx context.Context, model, prompt string) (str
 	if cached, ok := s.cache.Get(cacheKey); ok {
 		return cached, nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.cfg.Timeout)*time.Second)
-	defer cancel()
-
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:  s.cfg.APIKey,
-		Backend: genai.BackendGeminiAPI,
-	})
+	if s.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, s.timeout)
+		defer cancel()
+	}
+	resp, err := s.provider.Generate(ctx, model, prompt)
 	if err != nil {
 		return "", err
 	}
-	resp, err := client.Models.GenerateContent(
-		ctx,
-		model,
-		[]*genai.Content{{Parts: []*genai.Part{{Text: prompt}}}},
-		nil,
-	)
-	if err != nil {
-		return "", err
-	}
-	text := strings.TrimSpace(resp.Text())
+	text := strings.TrimSpace(resp)
 	if text == "" {
 		return "", appErr.ErrInternal
 	}

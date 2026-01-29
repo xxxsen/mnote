@@ -17,6 +17,7 @@ import (
 	"github.com/xxxsen/common/webapi"
 	"go.uber.org/zap"
 
+	"github.com/xxxsen/mnote/internal/ai"
 	"github.com/xxxsen/mnote/internal/config"
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/handler"
@@ -92,13 +93,15 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
-	aiService := service.NewAIService(service.AIConfig{
-		Provider:      cfg.AI.Provider,
-		APIKey:        cfg.AI.APIKey,
-		Model:         cfg.AI.Model,
-		Timeout:       cfg.AI.Timeout,
-		MaxInputChars: cfg.AI.MaxInputChars,
-	})
+	providerArgs := cfg.AI.Data
+	if providerArgs == nil {
+		providerArgs = cfg.AI
+	}
+	aiProvider, err := ai.NewProvider(cfg.AI.Provider, providerArgs)
+	if err != nil {
+		return fmt.Errorf("init ai provider: %w", err)
+	}
+	aiService := service.NewAIService(aiProvider, cfg.AI.Model, cfg.AI.MaxInputChars, cfg.AI.Timeout)
 	importService := service.NewImportService(documentService, tagService)
 
 	authHandler := handler.NewAuthHandler(authService)
