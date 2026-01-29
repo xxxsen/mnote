@@ -116,3 +116,39 @@ func (r *DocumentTagRepo) ListByUser(ctx context.Context, userID string) ([]mode
 	}
 	return items, rows.Err()
 }
+
+func (r *DocumentTagRepo) ListTagIDsByDocIDs(ctx context.Context, userID string, docIDs []string) (map[string][]string, error) {
+	if len(docIDs) == 0 {
+		return map[string][]string{}, nil
+	}
+	ids := make([]interface{}, 0, len(docIDs))
+	for _, id := range docIDs {
+		ids = append(ids, id)
+	}
+	where := map[string]interface{}{
+		"user_id":      userID,
+		"_custom_docs": builder.In{"document_id": ids},
+	}
+	sqlStr, args, err := builder.BuildSelect("document_tags", where, []string{"document_id", "tag_id"})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string][]string)
+	for rows.Next() {
+		var docID string
+		var tagID string
+		if err := rows.Scan(&docID, &tagID); err != nil {
+			return nil, err
+		}
+		result[docID] = append(result[docID], tagID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}

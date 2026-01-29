@@ -209,6 +209,10 @@ func (s *DocumentService) ListTagIDs(ctx context.Context, userID, docID string) 
 	return s.tags.ListTagIDs(ctx, userID, docID)
 }
 
+func (s *DocumentService) ListTagIDsByDocIDs(ctx context.Context, userID string, docIDs []string) (map[string][]string, error) {
+	return s.tags.ListTagIDsByDocIDs(ctx, userID, docIDs)
+}
+
 func (s *DocumentService) Delete(ctx context.Context, userID, docID string) error {
 	now := timeutil.NowUnix()
 	if err := s.docs.Delete(ctx, userID, docID, now); err != nil {

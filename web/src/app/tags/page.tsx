@@ -28,19 +28,13 @@ export default function TagsPage() {
       const tagsData = await apiFetch<Tag[]>("/tags") || [];
       
       // 2. Fetch all documents to calculate usage
-      const docsData = await apiFetch<Document[]>("/documents") || [];
-      
-      // 3. Fetch details for all documents to get tag_ids (N+1 but required)
-      const docsWithTags = await Promise.all(docsData.map(async (doc) => {
-        try {
-          const detail = await apiFetch<{ tag_ids: string[] }>(`/documents/${doc.id}`);
-          return { ...doc, tag_ids: detail.tag_ids || [] };
-        } catch {
-          return { ...doc, tag_ids: [] };
-        }
+      const docsData = await apiFetch<(Document & { tag_ids?: string[] })[]>("/documents") || [];
+      const docsWithTags = docsData.map((doc) => ({
+        ...doc,
+        tag_ids: doc.tag_ids || [],
       }));
 
-      // 4. Calculate usage counts
+      // 3. Calculate usage counts
       const counts: Record<string, number> = {};
       docsWithTags.forEach(doc => {
         doc.tag_ids?.forEach((id: string) => {

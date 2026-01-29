@@ -295,15 +295,10 @@ export default function DocsPage() {
       query.set("limit", "20");
       query.set("offset", String(offset));
 
-      const res = await apiFetch<Document[]>(`/documents?${query.toString()}`);
-      
-      const enrichedDocs = await Promise.all((res || []).map(async (doc) => {
-        try {
-          const detail = await apiFetch<{ tag_ids: string[] }>(`/documents/${doc.id}`);
-          return { ...doc, tag_ids: detail.tag_ids };
-        } catch {
-          return { ...doc, tag_ids: [] };
-        }
+      const res = await apiFetch<DocumentWithTags[]>(`/documents?${query.toString()}`);
+      const enrichedDocs = (res || []).map((doc) => ({
+        ...doc,
+        tag_ids: doc.tag_ids || [],
       }));
       const missingTagIDs = new Set<string>();
       enrichedDocs.forEach((doc) => {

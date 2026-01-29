@@ -24,6 +24,19 @@ type documentRequest struct {
 	TagIDs  *[]string `json:"tag_ids"`
 	Summary *string   `json:"summary"`
 }
+type documentListItem struct {
+	ID      string   `json:"id"`
+	UserID  string   `json:"user_id"`
+	Title   string   `json:"title"`
+	Content string   `json:"content"`
+	Summary string   `json:"summary"`
+	State   int      `json:"state"`
+	Pinned  int      `json:"pinned"`
+	Starred int      `json:"starred"`
+	Ctime   int64    `json:"ctime"`
+	Mtime   int64    `json:"mtime"`
+	TagIDs  []string `json:"tag_ids"`
+}
 
 func (h *DocumentHandler) Create(c *gin.Context) {
 	var req documentRequest
@@ -88,7 +101,36 @@ func (h *DocumentHandler) List(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, docs)
+	ids := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		ids = append(ids, doc.ID)
+	}
+	tagMap, err := h.documents.ListTagIDsByDocIDs(c.Request.Context(), userID, ids)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	items := make([]documentListItem, 0, len(docs))
+	for _, doc := range docs {
+		tags := tagMap[doc.ID]
+		if tags == nil {
+			tags = []string{}
+		}
+		items = append(items, documentListItem{
+			ID:      doc.ID,
+			UserID:  doc.UserID,
+			Title:   doc.Title,
+			Content: doc.Content,
+			Summary: doc.Summary,
+			State:   doc.State,
+			Pinned:  doc.Pinned,
+			Starred: doc.Starred,
+			Ctime:   doc.Ctime,
+			Mtime:   doc.Mtime,
+			TagIDs:  tags,
+		})
+	}
+	response.Success(c, items)
 }
 
 func (h *DocumentHandler) Get(c *gin.Context) {
