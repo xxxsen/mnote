@@ -414,9 +414,7 @@ export default function DocsPage() {
     if (initialFetchRef.current) return;
     initialFetchRef.current = true;
     fetchTags(0, false, "");
-    fetchSidebarTags(0, false, "");
-    fetchSummary();
-  }, [fetchSidebarTags, fetchSummary, fetchTags]);
+  }, [fetchTags]);
 
   useEffect(() => {
     setDocs([]);
@@ -426,9 +424,10 @@ export default function DocsPage() {
     setLoadingMore(false);
     const timer = setTimeout(() => {
       fetchDocs(0, false);
+      fetchSummary();
     }, 300);
     return () => clearTimeout(timer);
-  }, [fetchDocs, showStarred]);
+  }, [fetchDocs, fetchSummary, showStarred]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
