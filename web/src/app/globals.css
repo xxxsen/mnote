@@ -74,6 +74,15 @@ body {
   background: var(--muted-foreground);
 }
 
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 .cm-editor {
   height: 100%;
   width: 100%;

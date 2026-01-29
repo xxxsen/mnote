@@ -765,7 +765,7 @@ export default function DocsPage() {
             ref={sidebarScrollRef}
             onScroll={maybeAutoLoadTags}
             onWheel={maybeAutoLoadTags}
-            className="flex-1 overflow-y-auto"
+            className="flex-1 overflow-y-auto no-scrollbar"
           >
             <div ref={tagListRef} className="flex flex-col gap-1 pr-1">
             {sidebarTags.map((tag) => (
