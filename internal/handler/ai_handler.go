@@ -2,11 +2,11 @@ package handler
 
 import (
 	"errors"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 	"github.com/xxxsen/mnote/internal/service"
 )
@@ -42,13 +42,13 @@ type aiTagsRequest struct {
 func (h *AIHandler) Polish(c *gin.Context) {
 	var req aiPolishRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	result, err := h.ai.Polish(c.Request.Context(), req.Text)
 	if err != nil {
 		if errors.Is(err, service.ErrAIUnavailable) {
-			response.Error(c, http.StatusServiceUnavailable, "ai_unavailable", "ai not configured")
+			response.Error(c, errcode.ErrAIUnavailable, "ai not configured")
 			return
 		}
 		handleError(c, err)
@@ -60,13 +60,13 @@ func (h *AIHandler) Polish(c *gin.Context) {
 func (h *AIHandler) Generate(c *gin.Context) {
 	var req aiGenerateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	result, err := h.ai.Generate(c.Request.Context(), req.Prompt)
 	if err != nil {
 		if errors.Is(err, service.ErrAIUnavailable) {
-			response.Error(c, http.StatusServiceUnavailable, "ai_unavailable", "ai not configured")
+			response.Error(c, errcode.ErrAIUnavailable, "ai not configured")
 			return
 		}
 		handleError(c, err)
@@ -78,13 +78,13 @@ func (h *AIHandler) Generate(c *gin.Context) {
 func (h *AIHandler) Summary(c *gin.Context) {
 	var req aiSummaryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	result, err := h.ai.Summarize(c.Request.Context(), req.Text)
 	if err != nil {
 		if errors.Is(err, service.ErrAIUnavailable) {
-			response.Error(c, http.StatusServiceUnavailable, "ai_unavailable", "ai not configured")
+			response.Error(c, errcode.ErrAIUnavailable, "ai not configured")
 			return
 		}
 		handleError(c, err)
@@ -96,13 +96,13 @@ func (h *AIHandler) Summary(c *gin.Context) {
 func (h *AIHandler) Tags(c *gin.Context) {
 	var req aiTagsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	tags, err := h.ai.ExtractTags(c.Request.Context(), req.Text, req.MaxTags)
 	if err != nil {
 		if errors.Is(err, service.ErrAIUnavailable) {
-			response.Error(c, http.StatusServiceUnavailable, "ai_unavailable", "ai not configured")
+			response.Error(c, errcode.ErrAIUnavailable, "ai not configured")
 			return
 		}
 		handleError(c, err)

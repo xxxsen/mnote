@@ -823,12 +823,12 @@ export default function DocsPage() {
         window.location.href = "/login";
         return;
       }
-      if (!uploadRes.ok) {
-        const errorData = await uploadRes.json().catch(() => ({}));
-        const message = errorData?.error?.message || errorData?.message || "Upload failed";
+      const payload = await uploadRes.json().catch(() => ({}));
+      const code = payload?.code;
+      if (typeof code === "number" && code !== 0) {
+        const message = payload?.msg || "Upload failed";
         throw new Error(message);
       }
-      const payload = await uploadRes.json();
       const jobId = payload?.data?.job_id || payload?.job_id;
       if (!jobId) {
         throw new Error("Invalid upload response");

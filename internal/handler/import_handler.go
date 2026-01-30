@@ -1,13 +1,13 @@
 package handler
 
 import (
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 	"github.com/xxxsen/mnote/internal/service"
 )
@@ -27,23 +27,23 @@ type importConfirmRequest struct {
 func (h *ImportHandler) HedgeDocUpload(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_file", "file is required")
+		response.Error(c, errcode.ErrInvalidFile, "file is required")
 		return
 	}
 	if strings.ToLower(filepath.Ext(file.Filename)) != ".zip" {
-		response.Error(c, http.StatusBadRequest, "invalid_file", "zip file required")
+		response.Error(c, errcode.ErrInvalidFile, "zip file required")
 		return
 	}
 	opened, err := file.Open()
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_file", "failed to open file")
+		response.Error(c, errcode.ErrInvalidFile, "failed to open file")
 		return
 	}
 	defer opened.Close()
 
 	tmpPath, err := service.SaveTempFile(file.Filename, opened)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "import_failed", "failed to read file")
+		response.Error(c, errcode.ErrImportFailed, "failed to read file")
 		return
 	}
 	defer func() {
@@ -61,7 +61,7 @@ func (h *ImportHandler) HedgeDocUpload(c *gin.Context) {
 func (h *ImportHandler) HedgeDocPreview(c *gin.Context) {
 	jobID := c.Param("job_id")
 	if jobID == "" {
-		response.Error(c, http.StatusBadRequest, "invalid", "job_id required")
+		response.Error(c, errcode.ErrInvalid, "job_id required")
 		return
 	}
 	preview, err := h.imports.Preview(getUserID(c), jobID)
@@ -75,12 +75,12 @@ func (h *ImportHandler) HedgeDocPreview(c *gin.Context) {
 func (h *ImportHandler) HedgeDocConfirm(c *gin.Context) {
 	jobID := c.Param("job_id")
 	if jobID == "" {
-		response.Error(c, http.StatusBadRequest, "invalid", "job_id required")
+		response.Error(c, errcode.ErrInvalid, "job_id required")
 		return
 	}
 	var req importConfirmRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if err := h.imports.Confirm(c.Request.Context(), getUserID(c), jobID, req.Mode); err != nil {
@@ -93,7 +93,7 @@ func (h *ImportHandler) HedgeDocConfirm(c *gin.Context) {
 func (h *ImportHandler) HedgeDocStatus(c *gin.Context) {
 	jobID := c.Param("job_id")
 	if jobID == "" {
-		response.Error(c, http.StatusBadRequest, "invalid", "job_id required")
+		response.Error(c, errcode.ErrInvalid, "job_id required")
 		return
 	}
 	job, err := h.imports.Status(getUserID(c), jobID)

@@ -1,11 +1,11 @@
 package handler
 
 import (
-	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 	"github.com/xxxsen/mnote/internal/service"
 )
@@ -30,7 +30,7 @@ func (h *VersionHandler) List(c *gin.Context) {
 func (h *VersionHandler) Get(c *gin.Context) {
 	versionNumber, err := strconv.Atoi(c.Param("version"))
 	if err != nil || versionNumber <= 0 {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid version")
+		response.Error(c, errcode.ErrInvalid, "invalid version")
 		return
 	}
 	version, err := h.documents.GetVersion(c.Request.Context(), getUserID(c), c.Param("id"), versionNumber)

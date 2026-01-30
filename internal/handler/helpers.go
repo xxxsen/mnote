@@ -1,12 +1,11 @@
 package handler
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/xxxsen/common/logutil"
 	"go.uber.org/zap"
 
+	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 )
@@ -34,18 +33,18 @@ func handleError(c *gin.Context, err error) {
 	case err == nil:
 		return
 	case err == appErr.ErrUnauthorized:
-		response.Error(c, http.StatusUnauthorized, "unauthorized", "unauthorized")
+		response.Error(c, errcode.ErrUnauthorized, "unauthorized")
 	case err == appErr.ErrForbidden:
-		response.Error(c, http.StatusForbidden, "forbidden", "forbidden")
+		response.Error(c, errcode.ErrForbidden, "forbidden")
 	case err == appErr.ErrNotFound:
-		response.Error(c, http.StatusNotFound, "not_found", "not found")
+		response.Error(c, errcode.ErrNotFound, "not found")
 	case err == appErr.ErrInvalid:
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 	case err == appErr.ErrConflict:
-		response.Error(c, http.StatusConflict, "conflict", "conflict")
+		response.Error(c, errcode.ErrConflict, "conflict")
 	case err == appErr.ErrTooMany:
-		response.Error(c, http.StatusTooManyRequests, "too_many", "too many requests")
+		response.Error(c, errcode.ErrTooMany, "too many requests")
 	default:
-		response.Error(c, http.StatusInternalServerError, "internal", "internal error")
+		response.Error(c, errcode.ErrInternal, "internal error")
 	}
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/middleware"
+	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 )
 
@@ -34,18 +35,18 @@ func NewFileHandler(store filestore.Store) *FileHandler {
 func (h *FileHandler) Upload(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_file", "file is required")
+		response.Error(c, errcode.ErrInvalidFile, "file is required")
 		return
 	}
 	opened, err := file.Open()
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_file", "failed to open file")
+		response.Error(c, errcode.ErrInvalidFile, "failed to open file")
 		return
 	}
 
 	reader, contentType, err := ensureReadSeekCloser(opened)
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid_file", "failed to read file")
+		response.Error(c, errcode.ErrInvalidFile, "failed to read file")
 		return
 	}
 	defer reader.Close()
@@ -59,7 +60,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 
 	key := buildFileKey(userID, file.Filename)
 	if err := h.store.Save(c.Request.Context(), key, reader, file.Size); err != nil {
-		response.Error(c, http.StatusInternalServerError, "upload_failed", "failed to upload file")
+		response.Error(c, errcode.ErrUploadFailed, "failed to upload file")
 		return
 	}
 	fileURL := "/api/v1/files/" + key

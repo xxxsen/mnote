@@ -1,11 +1,11 @@
 package handler
 
 import (
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 	"github.com/xxxsen/mnote/internal/service"
 )
@@ -36,20 +36,20 @@ type passwordUpdateRequest struct {
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req authRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	req.Email = strings.TrimSpace(req.Email)
 	if req.Email == "" || req.Password == "" {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if !isEmailValid(req.Email) {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if req.Code == "" {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	user, token, err := h.auth.Register(c.Request.Context(), req.Email, req.Password, req.Code)
@@ -63,16 +63,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req authRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	req.Email = strings.TrimSpace(req.Email)
 	if req.Email == "" || req.Password == "" {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if !isEmailValid(req.Email) {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	user, token, err := h.auth.Login(c.Request.Context(), req.Email, req.Password)
@@ -86,16 +86,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 func (h *AuthHandler) SendRegisterCode(c *gin.Context) {
 	var req sendCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	req.Email = strings.TrimSpace(req.Email)
 	if req.Email == "" {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if !isEmailValid(req.Email) {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if err := h.auth.SendRegisterCode(c.Request.Context(), req.Email); err != nil {
@@ -112,7 +112,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 func (h *AuthHandler) UpdatePassword(c *gin.Context) {
 	var req passwordUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if err := h.auth.UpdatePassword(c.Request.Context(), getUserID(c), req.CurrentPassword, req.Password); err != nil {

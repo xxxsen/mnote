@@ -1,12 +1,12 @@
 package handler
 
 import (
-	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 	"github.com/xxxsen/mnote/internal/service"
 )
@@ -38,11 +38,11 @@ type tagPinRequest struct {
 func (h *TagHandler) Create(c *gin.Context) {
 	var req tagRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if req.Name == "" {
-		response.Error(c, http.StatusBadRequest, "invalid", "name required")
+		response.Error(c, errcode.ErrInvalid, "name required")
 		return
 	}
 	tag, err := h.tags.Create(c.Request.Context(), getUserID(c), req.Name)
@@ -56,11 +56,11 @@ func (h *TagHandler) Create(c *gin.Context) {
 func (h *TagHandler) CreateBatch(c *gin.Context) {
 	var req tagBatchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if len(req.Names) == 0 {
-		response.Error(c, http.StatusBadRequest, "invalid", "names required")
+		response.Error(c, errcode.ErrInvalid, "names required")
 		return
 	}
 	tags, err := h.tags.CreateBatch(c.Request.Context(), getUserID(c), req.Names)
@@ -107,11 +107,11 @@ func (h *TagHandler) List(c *gin.Context) {
 func (h *TagHandler) ListByIDs(c *gin.Context) {
 	var req tagIDsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if len(req.IDs) == 0 {
-		response.Error(c, http.StatusBadRequest, "invalid", "ids required")
+		response.Error(c, errcode.ErrInvalid, "ids required")
 		return
 	}
 	tags, err := h.tags.ListByIDs(c.Request.Context(), getUserID(c), req.IDs)
@@ -158,7 +158,7 @@ func (h *TagHandler) Delete(c *gin.Context) {
 func (h *TagHandler) Pin(c *gin.Context) {
 	var req tagPinRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	pinnedValue := 0

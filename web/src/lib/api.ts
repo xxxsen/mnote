@@ -42,6 +42,8 @@ interface FetchOptions extends RequestInit {
   requireAuth?: boolean;
 }
 
+const ERR_UNAUTHORIZED = 10000001;
+
 export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
   const { requireAuth = true, headers = {}, ...rest } = options;
   
@@ -69,19 +71,30 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
     throw new Error("Unauthorized");
   }
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    const message = errorData?.error?.message || errorData?.message || `API Error: ${res.status}`;
-    throw new Error(message);
-  }
-
   if (res.status === 204) return {} as T;
 
-  const data = await res.json();
-  if (data && typeof data === "object" && "data" in data) {
-    return data.data as T;
+  const payload = await res.json().catch(() => ({}));
+  if (!payload || typeof payload !== "object") {
+    throw new Error(`API Error: ${res.status}`);
   }
-  return data as T;
+  const code = (payload as { code?: number }).code;
+  if (typeof code !== "number") {
+    if (!res.ok) {
+      throw new Error(`API Error: ${res.status}`);
+    }
+    return payload as T;
+  }
+  if (code !== 0) {
+    if (code === ERR_UNAUTHORIZED && requireAuth) {
+      removeAuthToken();
+      removeAuthEmail();
+      window.location.href = "/login";
+      throw new Error("Unauthorized");
+    }
+    const msg = (payload as { msg?: string }).msg || "API Error";
+    throw new Error(msg);
+  }
+  return (payload as { data?: T }).data as T;
 }
 
 export interface UploadResult {
@@ -108,15 +121,23 @@ export async function uploadFile(file: File): Promise<UploadResult> {
     throw new Error("Unauthorized");
   }
 
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    const message = errorData?.error?.message || errorData?.message || `API Error: ${res.status}`;
-    throw new Error(message);
-  }
-
   const data = await res.json();
+  if (!data || typeof data !== "object") {
+    throw new Error(`API Error: ${res.status}`);
+  }
+  const code = (data as { code?: number }).code;
+  if (typeof code === "number" && code !== 0) {
+    if (code === ERR_UNAUTHORIZED) {
+      removeAuthToken();
+      removeAuthEmail();
+      window.location.href = "/login";
+      throw new Error("Unauthorized");
+    }
+    const msg = (data as { msg?: string }).msg || "API Error";
+    throw new Error(msg);
+  }
   if (data && typeof data === "object" && "data" in data) {
-    return data.data as UploadResult;
+    return (data as { data?: UploadResult }).data as UploadResult;
   }
   return data as UploadResult;
 }

@@ -1,13 +1,13 @@
 package handler
 
 import (
-	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 	"github.com/xxxsen/mnote/internal/service"
 )
@@ -52,11 +52,11 @@ type documentListItem struct {
 func (h *DocumentHandler) Create(c *gin.Context) {
 	var req documentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if req.Title == "" {
-		response.Error(c, http.StatusBadRequest, "invalid", "title required")
+		response.Error(c, errcode.ErrInvalid, "title required")
 		return
 	}
 	var tagIDs []string
@@ -226,11 +226,11 @@ func (h *DocumentHandler) Get(c *gin.Context) {
 func (h *DocumentHandler) Update(c *gin.Context) {
 	var req documentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if req.Title == "" {
-		response.Error(c, http.StatusBadRequest, "invalid", "title required")
+		response.Error(c, errcode.ErrInvalid, "title required")
 		return
 	}
 	var tagIDs []string
@@ -253,11 +253,11 @@ func (h *DocumentHandler) Update(c *gin.Context) {
 func (h *DocumentHandler) UpdateTags(c *gin.Context) {
 	var req tagUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if req.TagIDs == nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "tag_ids required")
+		response.Error(c, errcode.ErrInvalid, "tag_ids required")
 		return
 	}
 	if err := h.documents.UpdateTags(c.Request.Context(), getUserID(c), c.Param("id"), *req.TagIDs); err != nil {
@@ -270,11 +270,11 @@ func (h *DocumentHandler) UpdateTags(c *gin.Context) {
 func (h *DocumentHandler) UpdateSummary(c *gin.Context) {
 	var req summaryUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	if req.Summary == nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "summary required")
+		response.Error(c, errcode.ErrInvalid, "summary required")
 		return
 	}
 	if err := h.documents.UpdateSummary(c.Request.Context(), getUserID(c), c.Param("id"), *req.Summary); err != nil {
@@ -291,7 +291,7 @@ type pinRequest struct {
 func (h *DocumentHandler) Pin(c *gin.Context) {
 	var req pinRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	pinnedValue := 0
@@ -312,7 +312,7 @@ type starRequest struct {
 func (h *DocumentHandler) Star(c *gin.Context) {
 	var req starRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
 	starredValue := 0

@@ -2,15 +2,16 @@ package response
 
 import "github.com/gin-gonic/gin"
 
-type APIError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+type APIResponse struct {
+	Code int         `json:"code"`
+	Msg  string      `json:"msg"`
+	Data interface{} `json:"data,omitempty"`
 }
 
 func Success(c *gin.Context, data interface{}) {
-	c.JSON(200, gin.H{"data": data})
+	c.JSON(200, APIResponse{Code: 0, Msg: "ok", Data: data})
 }
 
-func Error(c *gin.Context, status int, code, message string) {
-	c.JSON(status, gin.H{"error": APIError{Code: code, Message: message}})
+func Error(c *gin.Context, code int, message string) {
+	c.JSON(200, APIResponse{Code: code, Msg: message})
 }
