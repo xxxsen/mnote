@@ -1078,11 +1078,27 @@ export default function EditorPage() {
       insertTextAtCursor(placeholder);
       try {
         const result = await uploadFile(file);
-        const contentType = result.content_type || file.type || "";
+        let contentType = result.content_type || file.type || "";
         const name = result.name || file.name || "file";
-        const markdown = contentType.startsWith("image/")
-          ? `![PIC:${name}](${result.url})`
-          : `[FILE:${name}](${result.url})`;
+        const ext = name.split(".").pop()?.toLowerCase();
+
+        if (contentType === "application/octet-stream" || !contentType) {
+          const audioExts = ["aac", "mp3", "wav", "ogg", "flac", "m4a", "opus"];
+          const videoExts = ["mp4", "webm", "ogv", "mov", "mkv"];
+          if (ext && audioExts.includes(ext)) contentType = "audio/" + ext;
+          if (ext && videoExts.includes(ext)) contentType = "video/" + ext;
+        }
+
+        let markdown = `[FILE:${name}](${result.url})`;
+        
+        if (contentType.startsWith("image/")) {
+          markdown = `![PIC:${name}](${result.url})`;
+        } else if (contentType.startsWith("video/")) {
+          markdown = `![VIDEO:${name}](${result.url})`;
+        } else if (contentType.startsWith("audio/")) {
+          markdown = `![AUDIO:${name}](${result.url})`;
+        }
+        
         replacePlaceholder(placeholder, markdown);
       } catch (err) {
         console.error(err);

@@ -527,8 +527,12 @@ const MarkdownPreview = memo(
       },
       img({ src, alt, title, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) {
         let filename = "";
-        if (alt && alt.startsWith("PIC:")) {
-          filename = alt.replace("PIC:", "");
+        const isVideo = alt?.startsWith("VIDEO:");
+        const isAudio = alt?.startsWith("AUDIO:");
+        const isPic = alt?.startsWith("PIC:");
+
+        if (isVideo || isAudio || isPic) {
+          filename = alt!.replace(/^(VIDEO|AUDIO|PIC):/, "");
         } else if (src) {
           try {
             const url = new URL(src as string, "http://dummy.com");
@@ -536,6 +540,42 @@ const MarkdownPreview = memo(
             const last = parts[parts.length - 1];
             if (last) filename = decodeURIComponent(last);
           } catch {}
+        }
+
+        if (isVideo) {
+          return (
+            <span className="inline-flex flex-col items-center w-full my-4">
+              <video 
+                src={src} 
+                controls 
+                className="max-w-full rounded-lg shadow-md bg-black" 
+                preload="metadata"
+              />
+              {filename && (
+                <span className="text-xs text-muted-foreground font-mono opacity-80 break-all px-2 mt-2">
+                  [VIDEO: {filename}]
+                </span>
+              )}
+            </span>
+          );
+        }
+
+        if (isAudio) {
+          return (
+            <span className="inline-flex flex-col items-center w-full my-4">
+              <audio 
+                src={src} 
+                controls 
+                className="w-full max-w-md" 
+                preload="metadata"
+              />
+              {filename && (
+                <span className="text-xs text-muted-foreground font-mono opacity-80 break-all px-2 mt-2">
+                  [AUDIO: {filename}]
+                </span>
+              )}
+            </span>
+          );
         }
 
         return (
