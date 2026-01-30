@@ -18,18 +18,22 @@ import (
 )
 
 type AuthService struct {
-	users     *repo.UserRepo
-	jwtSecret []byte
-	jwtTTL    time.Duration
-	verify    *EmailVerificationService
+	users         *repo.UserRepo
+	jwtSecret     []byte
+	jwtTTL        time.Duration
+	verify        *EmailVerificationService
+	allowRegister bool
 }
 
-func NewAuthService(users *repo.UserRepo, verify *EmailVerificationService, secret []byte, ttl time.Duration) *AuthService {
-	return &AuthService{users: users, verify: verify, jwtSecret: secret, jwtTTL: ttl}
+func NewAuthService(users *repo.UserRepo, verify *EmailVerificationService, secret []byte, ttl time.Duration, allowRegister bool) *AuthService {
+	return &AuthService{users: users, verify: verify, jwtSecret: secret, jwtTTL: ttl, allowRegister: allowRegister}
 }
 
 func (s *AuthService) Register(ctx context.Context, email, plainPassword, code string) (*model.User, string, error) {
 	now := timeutil.NowUnix()
+	if !s.allowRegister {
+		return nil, "", appErr.ErrForbidden
+	}
 	if s.verify == nil {
 		return nil, "", appErr.ErrInvalid
 	}
@@ -64,6 +68,9 @@ func (s *AuthService) Register(ctx context.Context, email, plainPassword, code s
 }
 
 func (s *AuthService) SendRegisterCode(ctx context.Context, email string) error {
+	if !s.allowRegister {
+		return appErr.ErrForbidden
+	}
 	if s.verify == nil {
 		return appErr.ErrInvalid
 	}

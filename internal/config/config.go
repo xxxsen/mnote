@@ -19,6 +19,7 @@ type Config struct {
 	AI             AIConfig         `json:"ai"`
 	OAuth          OAuthConfig      `json:"oauth"`
 	Mail           MailConfig       `json:"mail"`
+	Auth           AuthConfig       `json:"auth"`
 }
 
 type FileStoreConfig struct {
@@ -53,6 +54,10 @@ type MailConfig struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	From     string `json:"from"`
+}
+
+type AuthConfig struct {
+	AllowRegister *bool `json:"allow_register"`
 }
 
 func Load(path string) (*Config, error) {
@@ -98,6 +103,10 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.AI.Model == "" {
 		cfg.AI.Model = "gemini-3-flash-preview"
+	}
+	if cfg.Auth.AllowRegister == nil {
+		value := true
+		cfg.Auth.AllowRegister = &value
 	}
 	if cfg.OAuth.Github.Enabled && len(cfg.OAuth.Github.Scopes) == 0 {
 		cfg.OAuth.Github.Scopes = []string{"user:email"}

@@ -43,5 +43,8 @@
         "username": "",
         "password": "",
         "from": "no-reply@example.com"
+    },
+    "auth": {
+        "allow_register": true
     }
 }

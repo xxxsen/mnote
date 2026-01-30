@@ -53,7 +53,7 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 
 	jwtSecret := []byte("test-secret")
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, noopSender{})
-	authService := service.NewAuthService(userRepo, verifyService, jwtSecret, time.Hour)
+	authService := service.NewAuthService(userRepo, verifyService, jwtSecret, time.Hour, true)
 	oauthService := service.NewOAuthService(userRepo, oauthRepo, jwtSecret, time.Hour, config.OAuthConfig{})
 	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, 10)
 	tagService := service.NewTagService(tagRepo, docTagRepo)

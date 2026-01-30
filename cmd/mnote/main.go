@@ -94,7 +94,11 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 
 	mailSender := service.NewEmailSender(cfg.Mail)
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, mailSender)
-	authService := service.NewAuthService(userRepo, verifyService, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours))
+	allowRegister := true
+	if cfg.Auth.AllowRegister != nil {
+		allowRegister = *cfg.Auth.AllowRegister
+	}
+	authService := service.NewAuthService(userRepo, verifyService, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), allowRegister)
 	oauthService := service.NewOAuthService(userRepo, oauthRepo, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), cfg.OAuth)
 	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, cfg.VersionMaxKeep)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
