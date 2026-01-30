@@ -640,6 +640,24 @@ export default function DocsPage() {
   }, [fetchTagsByIDs, selectedTag, tagIndex]);
 
   useEffect(() => {
+    const oauthStatus = searchParams.get("oauth");
+    if (!oauthStatus) return;
+    const provider = searchParams.get("provider") || "Provider";
+    if (oauthStatus === "bound") {
+      toast({ description: `${provider} bound successfully.` });
+    } else if (oauthStatus === "conflict") {
+      toast({ description: "This provider is already linked to another account.", variant: "error" });
+    } else {
+      toast({ description: "Failed to bind provider.", variant: "error" });
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("oauth");
+    params.delete("provider");
+    const next = params.toString();
+    router.replace(next ? `/docs?${next}` : "/docs");
+  }, [router, searchParams, toast]);
+
+  useEffect(() => {
     if (!loadMoreRef.current) return;
     const observer = new IntersectionObserver(
       (entries) => {
@@ -1156,6 +1174,16 @@ export default function DocsPage() {
                   <div className="px-2 py-1.5 text-xs text-muted-foreground truncate border-b border-border/50 mb-1">
                     {userEmail || "Signed in"}
                   </div>
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      router.push("/settings?return=/docs");
+                    }}
+                    className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                  >
+                    <Settings className="mr-2 h-4 w-4" />
+                    <span>Account Settings</span>
+                  </button>
                   <div
                     className="relative"
                     onMouseEnter={() => setShowImportMenu(true)}

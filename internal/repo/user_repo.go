@@ -75,3 +75,27 @@ func (r *UserRepo) GetByID(ctx context.Context, userID string) (*model.User, err
 	}
 	return &user, nil
 }
+
+func (r *UserRepo) UpdatePassword(ctx context.Context, userID, passwordHash string, mtime int64) error {
+	where := map[string]interface{}{"id": userID}
+	update := map[string]interface{}{
+		"password_hash": passwordHash,
+		"mtime":         mtime,
+	}
+	sqlStr, args, err := builder.BuildUpdate("users", where, update)
+	if err != nil {
+		return err
+	}
+	result, err := r.db.ExecContext(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return appErr.ErrNotFound
+	}
+	return nil
+}

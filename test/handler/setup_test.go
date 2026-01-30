@@ -27,12 +27,14 @@ func setupRouter(t *testing.T) (http.Handler, func()) {
 	userRepo := repo.NewUserRepo(db)
 	docRepo := repo.NewDocumentRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
+	oauthRepo := repo.NewOAuthRepo(db)
 	tagRepo := repo.NewTagRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
 
 	jwtSecret := []byte("test-secret")
 	authService := service.NewAuthService(userRepo, jwtSecret, time.Hour)
+	oauthService := service.NewOAuthService(userRepo, oauthRepo, jwtSecret, time.Hour, config.OAuthConfig{})
 	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, 10)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
@@ -50,6 +52,7 @@ func setupRouter(t *testing.T) (http.Handler, func()) {
 
 	deps := handler.RouterDeps{
 		Auth:      handler.NewAuthHandler(authService),
+		OAuth:     handler.NewOAuthHandler(oauthService),
 		Documents: handler.NewDocumentHandler(documentService),
 		Versions:  handler.NewVersionHandler(documentService),
 		Shares:    handler.NewShareHandler(documentService),

@@ -83,6 +83,41 @@ docker compose up -d
 
 访问：`http://localhost`。
 
+## OAuth 回调地址
+
+如需启用 GitHub / Google OAuth，请在 `config.json` 中配置 `oauth` 段，并将以下回调地址加入 OAuth 应用的回调白名单：
+
+- GitHub: `https://<你的域名>/api/v1/auth/oauth/github/callback`
+- Google: `https://<你的域名>/api/v1/auth/oauth/google/callback`
+
+本地开发示例（走同域代理）：
+
+- `http://localhost/api/v1/auth/oauth/github/callback`
+- `http://localhost/api/v1/auth/oauth/google/callback`
+
+示例配置：
+
+```json
+{
+  "oauth": {
+    "github": {
+      "enabled": true,
+      "client_id": "<github_client_id>",
+      "client_secret": "<github_client_secret>",
+      "redirect_url": "https://<你的域名>/api/v1/auth/oauth/github/callback",
+      "scopes": ["user:email"]
+    },
+    "google": {
+      "enabled": true,
+      "client_id": "<google_client_id>",
+      "client_secret": "<google_client_secret>",
+      "redirect_url": "https://<你的域名>/api/v1/auth/oauth/google/callback",
+      "scopes": ["openid", "email", "profile"]
+    }
+  }
+}
+```
+
 ## 路由与端口
 
 - `http://localhost` 是统一入口

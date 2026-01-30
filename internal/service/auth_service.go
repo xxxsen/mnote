@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	sqlite "modernc.org/sqlite"
@@ -68,4 +69,28 @@ func (s *AuthService) Login(ctx context.Context, email, plainPassword string) (*
 		return nil, "", err
 	}
 	return user, token, nil
+}
+
+func (s *AuthService) UpdatePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
+	newPassword = strings.TrimSpace(newPassword)
+	if newPassword == "" {
+		return appErr.ErrInvalid
+	}
+	user, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user.PasswordHash != "" {
+		if strings.TrimSpace(currentPassword) == "" {
+			return appErr.ErrInvalid
+		}
+		if err := password.Compare(user.PasswordHash, currentPassword); err != nil {
+			return appErr.ErrInvalid
+		}
+	}
+	passwordHash, err := password.Hash(newPassword)
+	if err != nil {
+		return err
+	}
+	return s.users.UpdatePassword(ctx, userID, passwordHash, timeutil.NowUnix())
 }

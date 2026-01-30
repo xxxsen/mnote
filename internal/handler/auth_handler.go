@@ -23,6 +23,11 @@ type authRequest struct {
 	Password string `json:"password"`
 }
 
+type passwordUpdateRequest struct {
+	CurrentPassword string `json:"current_password"`
+	Password        string `json:"password"`
+}
+
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req authRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -62,5 +67,18 @@ func (h *AuthHandler) Login(c *gin.Context) {
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
+	response.Success(c, gin.H{"ok": true})
+}
+
+func (h *AuthHandler) UpdatePassword(c *gin.Context) {
+	var req passwordUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
+	if err := h.auth.UpdatePassword(c.Request.Context(), getUserID(c), req.CurrentPassword, req.Password); err != nil {
+		handleError(c, err)
+		return
+	}
 	response.Success(c, gin.H{"ok": true})
 }

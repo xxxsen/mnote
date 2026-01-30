@@ -86,11 +86,13 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	userRepo := repo.NewUserRepo(db)
 	docRepo := repo.NewDocumentRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
+	oauthRepo := repo.NewOAuthRepo(db)
 	tagRepo := repo.NewTagRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
 
 	authService := service.NewAuthService(userRepo, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours))
+	oauthService := service.NewOAuthService(userRepo, oauthRepo, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), cfg.OAuth)
 	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, cfg.VersionMaxKeep)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
@@ -106,6 +108,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	importService := service.NewImportService(documentService, tagService)
 
 	authHandler := handler.NewAuthHandler(authService)
+	oauthHandler := handler.NewOAuthHandler(oauthService)
 	documentHandler := handler.NewDocumentHandler(documentService)
 	versionHandler := handler.NewVersionHandler(documentService)
 	shareHandler := handler.NewShareHandler(documentService)
@@ -121,6 +124,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 
 	deps := handler.RouterDeps{
 		Auth:      authHandler,
+		OAuth:     oauthHandler,
 		Documents: documentHandler,
 		Versions:  versionHandler,
 		Shares:    shareHandler,

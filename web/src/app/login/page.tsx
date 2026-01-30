@@ -6,6 +6,7 @@ import Link from "next/link";
 import { apiFetch, setAuthEmail, setAuthToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Chrome, Github } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,6 +14,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [oauthLoading, setOauthLoading] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +36,21 @@ export default function LoginPage() {
       setError(message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleOAuth = async (provider: "github" | "google") => {
+    setOauthLoading(provider);
+    setError("");
+    try {
+      const res = await apiFetch<{ url: string }>(`/auth/oauth/${provider}/url`, {
+        requireAuth: false,
+      });
+      window.location.href = res.url;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "OAuth login failed";
+      setError(message);
+      setOauthLoading(null);
     }
   };
 
@@ -84,6 +101,29 @@ export default function LoginPage() {
             Login
           </Button>
         </form>
+
+        <div className="mt-6 space-y-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => handleOAuth("github")}
+            disabled={oauthLoading !== null}
+          >
+            <Github className="mr-2 h-4 w-4" />
+            {oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => handleOAuth("google")}
+            disabled={oauthLoading !== null}
+          >
+            <Chrome className="mr-2 h-4 w-4" />
+            {oauthLoading === "google" ? "Connecting..." : "Continue with Google"}
+          </Button>
+        </div>
 
         <div className="mt-6 text-center text-sm text-muted-foreground">
           Don&apos;t have an account?{" "}

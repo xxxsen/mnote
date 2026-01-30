@@ -8,6 +8,7 @@ import (
 
 type RouterDeps struct {
 	Auth      *AuthHandler
+	OAuth     *OAuthHandler
 	Documents *DocumentHandler
 	Versions  *VersionHandler
 	Shares    *ShareHandler
@@ -23,9 +24,15 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	api.POST("/auth/register", deps.Auth.Register)
 	api.POST("/auth/login", deps.Auth.Login)
 	api.POST("/auth/logout", deps.Auth.Logout)
+	api.GET("/auth/oauth/:provider/url", deps.OAuth.AuthURL)
+	api.GET("/auth/oauth/:provider/callback", deps.OAuth.Callback)
 
 	authGroup := api.Group("")
 	authGroup.Use(middleware.JWTAuth(deps.JWTSecret))
+	authGroup.PUT("/auth/password", deps.Auth.UpdatePassword)
+	authGroup.GET("/auth/oauth/bindings", deps.OAuth.ListBindings)
+	authGroup.GET("/auth/oauth/:provider/bind/url", deps.OAuth.BindURL)
+	authGroup.DELETE("/auth/oauth/:provider/bind", deps.OAuth.Unbind)
 	authGroup.POST("/documents", deps.Documents.Create)
 	authGroup.GET("/documents", deps.Documents.List)
 	authGroup.GET("/documents/summary", deps.Documents.Summary)

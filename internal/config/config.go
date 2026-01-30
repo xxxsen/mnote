@@ -17,6 +17,7 @@ type Config struct {
 	LogConfig      logger.LogConfig `json:"log_config"`
 	FileStore      FileStoreConfig  `json:"file_store"`
 	AI             AIConfig         `json:"ai"`
+	OAuth          OAuthConfig      `json:"oauth"`
 }
 
 type FileStoreConfig struct {
@@ -30,6 +31,19 @@ type AIConfig struct {
 	Timeout       int         `json:"timeout"`
 	MaxInputChars int         `json:"max_input_chars"`
 	Data          interface{} `json:"data"`
+}
+
+type OAuthConfig struct {
+	Github OAuthProviderConfig `json:"github"`
+	Google OAuthProviderConfig `json:"google"`
+}
+
+type OAuthProviderConfig struct {
+	ClientID     string   `json:"client_id"`
+	ClientSecret string   `json:"client_secret"`
+	RedirectURL  string   `json:"redirect_url"`
+	Scopes       []string `json:"scopes"`
+	Enabled      bool     `json:"enabled"`
 }
 
 func Load(path string) (*Config, error) {
@@ -75,6 +89,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.AI.Model == "" {
 		cfg.AI.Model = "gemini-3-flash-preview"
+	}
+	if cfg.OAuth.Github.Enabled && len(cfg.OAuth.Github.Scopes) == 0 {
+		cfg.OAuth.Github.Scopes = []string{"user:email"}
+	}
+	if cfg.OAuth.Google.Enabled && len(cfg.OAuth.Google.Scopes) == 0 {
+		cfg.OAuth.Google.Scopes = []string{"openid", "email", "profile"}
 	}
 	return &cfg, nil
 }
