@@ -31,6 +31,10 @@ type tagIDsRequest struct {
 	IDs []string `json:"ids"`
 }
 
+type tagPinRequest struct {
+	Pinned bool `json:"pinned"`
+}
+
 func (h *TagHandler) Create(c *gin.Context) {
 	var req tagRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -145,6 +149,23 @@ func (h *TagHandler) Summary(c *gin.Context) {
 
 func (h *TagHandler) Delete(c *gin.Context) {
 	if err := h.tags.Delete(c.Request.Context(), getUserID(c), c.Param("id")); err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
+}
+
+func (h *TagHandler) Pin(c *gin.Context) {
+	var req tagPinRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
+	pinnedValue := 0
+	if req.Pinned {
+		pinnedValue = 1
+	}
+	if err := h.tags.UpdatePinned(c.Request.Context(), getUserID(c), c.Param("id"), pinnedValue); err != nil {
 		handleError(c, err)
 		return
 	}

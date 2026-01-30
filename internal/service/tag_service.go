@@ -118,3 +118,10 @@ func (s *TagService) Delete(ctx context.Context, userID, tagID string) error {
 	}
 	return s.tags.Delete(ctx, userID, tagID)
 }
+
+func (s *TagService) UpdatePinned(ctx context.Context, userID, tagID string, pinned int) error {
+	if pinned != 0 && pinned != 1 {
+		return appErr.ErrInvalid
+	}
+	return s.tags.UpdatePinned(ctx, userID, tagID, pinned, timeutil.NowUnix())
+}

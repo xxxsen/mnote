@@ -287,6 +287,7 @@ interface DocumentWithTags extends Document {
 interface TagSummary {
   id: string;
   name: string;
+  pinned: number;
   count: number;
 }
 
@@ -533,6 +534,22 @@ export default function DocsPage() {
       setSidebarLoading(false);
     }
   }, []);
+
+  const handleToggleTagPin = useCallback(async (tag: TagSummary) => {
+    const nextPinned = tag.pinned ? 0 : 1;
+    try {
+      await apiFetch(`/tags/${tag.id}/pin`, {
+        method: "PUT",
+        body: JSON.stringify({ pinned: nextPinned === 1 }),
+      });
+      setSidebarOffset(0);
+      setSidebarHasMore(true);
+      fetchSidebarTags(0, false, tagSearch.trim());
+    } catch (e) {
+      console.error(e);
+      toast({ description: "Failed to update tag pin", variant: "error" });
+    }
+  }, [fetchSidebarTags, tagSearch, toast]);
 
   const fetchTags = useCallback(async (query: string) => {
     if (tagFetchInFlightRef.current) return;
@@ -976,13 +993,39 @@ export default function DocsPage() {
                 }`}
               >
                 <span className="truncate">#{tag.name}</span>
-                <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
-                  selectedTag === tag.id
-                    ? "bg-background/20 text-accent-foreground"
-                    : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
-                }`}>
-                  {tag.count}
-                </span>
+                <div className="ml-2 flex items-center gap-1">
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleTagPin(tag);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleToggleTagPin(tag);
+                      }
+                    }}
+                    title={tag.pinned ? "Unpin tag" : "Pin tag"}
+                    aria-label={tag.pinned ? "Unpin tag" : "Pin tag"}
+                    className={`rounded p-1 transition-colors ${
+                      tag.pinned
+                        ? "text-primary opacity-100"
+                        : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+                    }`}
+                  >
+                    <Pin className={`h-3 w-3 ${tag.pinned ? "fill-current" : ""}`} />
+                  </span>
+                  <span className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
+                    selectedTag === tag.id
+                      ? "bg-background/20 text-accent-foreground"
+                      : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
+                  }`}>
+                    {tag.count}
+                  </span>
+                </div>
               </button>
             ))}
             {sidebarLoading && (

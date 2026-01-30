@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS tags (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   name TEXT NOT NULL,
+  pinned INTEGER NOT NULL DEFAULT 0,
   ctime INTEGER NOT NULL,
   mtime INTEGER NOT NULL,
   UNIQUE(user_id, name)

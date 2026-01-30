@@ -23,6 +23,7 @@ func (r *TagRepo) Create(ctx context.Context, tag *model.Tag) error {
 		"id":      tag.ID,
 		"user_id": tag.UserID,
 		"name":    tag.Name,
+		"pinned":  tag.Pinned,
 		"ctime":   tag.Ctime,
 		"mtime":   tag.Mtime,
 	}
@@ -44,6 +45,7 @@ func (r *TagRepo) CreateBatch(ctx context.Context, tags []model.Tag) error {
 			"id":      tag.ID,
 			"user_id": tag.UserID,
 			"name":    tag.Name,
+			"pinned":  tag.Pinned,
 			"ctime":   tag.Ctime,
 			"mtime":   tag.Mtime,
 		})
@@ -57,8 +59,8 @@ func (r *TagRepo) CreateBatch(ctx context.Context, tags []model.Tag) error {
 }
 
 func (r *TagRepo) List(ctx context.Context, userID string) ([]model.Tag, error) {
-	where := map[string]interface{}{"user_id": userID, "_orderby": "mtime desc"}
-	sqlStr, args, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "ctime", "mtime"})
+	where := map[string]interface{}{"user_id": userID, "_orderby": "pinned desc, mtime desc"}
+	sqlStr, args, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "pinned", "ctime", "mtime"})
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +72,7 @@ func (r *TagRepo) List(ctx context.Context, userID string) ([]model.Tag, error) 
 	tags := make([]model.Tag, 0)
 	for rows.Next() {
 		var tag model.Tag
-		if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Ctime, &tag.Mtime); err != nil {
+		if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Pinned, &tag.Ctime, &tag.Mtime); err != nil {
 			return nil, err
 		}
 		tags = append(tags, tag)
@@ -80,14 +82,14 @@ func (r *TagRepo) List(ctx context.Context, userID string) ([]model.Tag, error) 
 
 func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, limit, offset int) ([]model.Tag, error) {
 	if query == "" {
-		where := map[string]interface{}{"user_id": userID, "_orderby": "mtime desc"}
+		where := map[string]interface{}{"user_id": userID, "_orderby": "pinned desc, mtime desc"}
 		if limit > 0 {
 			if offset < 0 {
 				offset = 0
 			}
 			where["_limit"] = []uint{uint(offset), uint(limit)}
 		}
-		sqlStr, args, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "ctime", "mtime"})
+		sqlStr, args, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "pinned", "ctime", "mtime"})
 		if err != nil {
 			return nil, err
 		}
@@ -99,7 +101,7 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 		tags := make([]model.Tag, 0)
 		for rows.Next() {
 			var tag model.Tag
-			if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Ctime, &tag.Mtime); err != nil {
+			if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Pinned, &tag.Ctime, &tag.Mtime); err != nil {
 				return nil, err
 			}
 			tags = append(tags, tag)
@@ -114,7 +116,7 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 	result := make([]model.Tag, 0)
 	if offset == 0 {
 		exactWhere := map[string]interface{}{"user_id": userID, "name": query}
-		exactSQL, exactArgs, err := builder.BuildSelect("tags", exactWhere, []string{"id", "user_id", "name", "ctime", "mtime"})
+		exactSQL, exactArgs, err := builder.BuildSelect("tags", exactWhere, []string{"id", "user_id", "name", "pinned", "ctime", "mtime"})
 		if err != nil {
 			return nil, err
 		}
@@ -124,7 +126,7 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 		}
 		for rows.Next() {
 			var tag model.Tag
-			if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Ctime, &tag.Mtime); err != nil {
+			if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Pinned, &tag.Ctime, &tag.Mtime); err != nil {
 				rows.Close()
 				return nil, err
 			}
@@ -145,7 +147,7 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 		}
 	}
 
-	where := map[string]interface{}{"user_id": userID, "_orderby": "mtime desc"}
+	where := map[string]interface{}{"user_id": userID, "_orderby": "pinned desc, mtime desc"}
 	where["_custom_search"] = builder.Custom("name LIKE ?", "%"+query+"%")
 	if len(result) > 0 {
 		where["_custom_exclude"] = builder.Custom("name != ?", query)
@@ -155,7 +157,7 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 	} else if limit > 0 {
 		where["_limit"] = []uint{uint(offset), uint(limit)}
 	}
-	sqlStr, args, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "ctime", "mtime"})
+	sqlStr, args, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "pinned", "ctime", "mtime"})
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +168,7 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 	defer rows.Close()
 	for rows.Next() {
 		var tag model.Tag
-		if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Ctime, &tag.Mtime); err != nil {
+		if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Pinned, &tag.Ctime, &tag.Mtime); err != nil {
 			return nil, err
 		}
 		result = append(result, tag)
@@ -184,7 +186,7 @@ func (r *TagRepo) ListSummary(ctx context.Context, userID string, query string, 
 	if offset < 0 {
 		offset = 0
 	}
-	sqlStr := "SELECT t.id, t.name, COUNT(dt.tag_id) AS cnt, MAX(t.mtime) as mtime FROM tags t " +
+	sqlStr := "SELECT t.id, t.name, t.pinned, COUNT(dt.tag_id) AS cnt, MAX(t.mtime) as mtime FROM tags t " +
 		"JOIN document_tags dt ON dt.tag_id = t.id AND dt.user_id = t.user_id " +
 		"WHERE t.user_id = ?"
 	args := []interface{}{userID}
@@ -192,7 +194,7 @@ func (r *TagRepo) ListSummary(ctx context.Context, userID string, query string, 
 		sqlStr += " AND t.name LIKE ?"
 		args = append(args, "%"+query+"%")
 	}
-	sqlStr += " GROUP BY t.id, t.name HAVING cnt > 0 ORDER BY cnt DESC, mtime DESC LIMIT ? OFFSET ?"
+	sqlStr += " GROUP BY t.id, t.name, t.pinned HAVING cnt > 0 ORDER BY t.pinned DESC, cnt DESC, mtime DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, offset)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
@@ -203,7 +205,7 @@ func (r *TagRepo) ListSummary(ctx context.Context, userID string, query string, 
 	for rows.Next() {
 		var item model.TagSummary
 		var mtime int64
-		if err := rows.Scan(&item.ID, &item.Name, &item.Count, &mtime); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Pinned, &item.Count, &mtime); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -215,8 +217,8 @@ func (r *TagRepo) ListByIDs(ctx context.Context, userID string, ids []string) ([
 	if len(ids) == 0 {
 		return []model.Tag{}, nil
 	}
-	where := map[string]interface{}{"user_id": userID, "id": ids, "_orderby": "mtime desc"}
-	sqlStr, args, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "ctime", "mtime"})
+	where := map[string]interface{}{"user_id": userID, "id": ids, "_orderby": "pinned desc, mtime desc"}
+	sqlStr, args, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "pinned", "ctime", "mtime"})
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +230,7 @@ func (r *TagRepo) ListByIDs(ctx context.Context, userID string, ids []string) ([
 	tags := make([]model.Tag, 0)
 	for rows.Next() {
 		var tag model.Tag
-		if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Ctime, &tag.Mtime); err != nil {
+		if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Pinned, &tag.Ctime, &tag.Mtime); err != nil {
 			return nil, err
 		}
 		tags = append(tags, tag)
@@ -248,7 +250,7 @@ func (r *TagRepo) ListByNames(ctx context.Context, userID string, names []string
 		"user_id":     userID,
 		"_custom_ids": builder.In{"name": args},
 	}
-	sqlStr, argsList, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "ctime", "mtime"})
+	sqlStr, argsList, err := builder.BuildSelect("tags", where, []string{"id", "user_id", "name", "pinned", "ctime", "mtime"})
 	if err != nil {
 		return nil, err
 	}
@@ -260,12 +262,39 @@ func (r *TagRepo) ListByNames(ctx context.Context, userID string, names []string
 	tags := make([]model.Tag, 0)
 	for rows.Next() {
 		var tag model.Tag
-		if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Ctime, &tag.Mtime); err != nil {
+		if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Pinned, &tag.Ctime, &tag.Mtime); err != nil {
 			return nil, err
 		}
 		tags = append(tags, tag)
 	}
 	return tags, rows.Err()
+}
+
+func (r *TagRepo) UpdatePinned(ctx context.Context, userID, tagID string, pinned int, mtime int64) error {
+	where := map[string]interface{}{
+		"id":      tagID,
+		"user_id": userID,
+	}
+	update := map[string]interface{}{
+		"pinned": pinned,
+		"mtime":  mtime,
+	}
+	sqlStr, args, err := builder.BuildUpdate("tags", where, update)
+	if err != nil {
+		return err
+	}
+	result, err := r.db.ExecContext(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return appErr.ErrNotFound
+	}
+	return nil
 }
 
 func (r *TagRepo) Delete(ctx context.Context, userID, tagID string) error {
