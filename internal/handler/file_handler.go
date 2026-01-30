@@ -17,7 +17,8 @@ import (
 )
 
 type FileHandler struct {
-	store filestore.Store
+	store         filestore.Store
+	maxUploadSize int64
 }
 
 type UploadResponse struct {
@@ -26,14 +27,18 @@ type UploadResponse struct {
 	ContentType string `json:"content_type"`
 }
 
-func NewFileHandler(store filestore.Store) *FileHandler {
-	return &FileHandler{store: store}
+func NewFileHandler(store filestore.Store, maxUploadSize int64) *FileHandler {
+	return &FileHandler{store: store, maxUploadSize: maxUploadSize}
 }
 
 func (h *FileHandler) Upload(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
 		response.Error(c, errcode.ErrInvalidFile, "file is required")
+		return
+	}
+	if h.maxUploadSize > 0 && file.Size > h.maxUploadSize {
+		response.Error(c, errcode.ErrInvalidFile, "file too large (max "+formatUploadLimit(h.maxUploadSize)+")")
 		return
 	}
 	opened, err := file.Open()

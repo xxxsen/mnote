@@ -14,6 +14,7 @@ type Config struct {
 	Port           int              `json:"port"`
 	JWTTTLHours    int              `json:"jwt_ttl_hours"`
 	VersionMaxKeep int              `json:"version_max_keep"`
+	MaxUploadSize  int64            `json:"max_upload_size"`
 	LogConfig      logger.LogConfig `json:"log_config"`
 	FileStore      FileStoreConfig  `json:"file_store"`
 	AI             AIConfig         `json:"ai"`
@@ -86,6 +87,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.VersionMaxKeep == 0 {
 		cfg.VersionMaxKeep = 10
+	}
+	if cfg.MaxUploadSize <= 0 {
+		cfg.MaxUploadSize = 20 * 1024 * 1024
 	}
 	if cfg.LogConfig.Level == "" {
 		cfg.LogConfig.Level = "info"

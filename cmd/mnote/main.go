@@ -152,7 +152,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("init file store: %w", err)
 	}
-	fileHandler := handler.NewFileHandler(store)
+	fileHandler := handler.NewFileHandler(store, cfg.MaxUploadSize)
 
 	deps := handler.RouterDeps{
 		Auth:       authHandler,

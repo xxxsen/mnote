@@ -80,7 +80,7 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 		Shares:     handler.NewShareHandler(documentService),
 		Tags:       handler.NewTagHandler(tagService),
 		Export:     handler.NewExportHandler(exportService),
-		Files:      handler.NewFileHandler(store),
+		Files:      handler.NewFileHandler(store, 20*1024*1024),
 		JWTSecret:  jwtSecret,
 	}
 
