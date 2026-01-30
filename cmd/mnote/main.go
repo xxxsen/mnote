@@ -106,9 +106,10 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 			RedirectURL:  cfg.OAuth.Github.RedirectURL,
 			Scopes:       cfg.OAuth.Github.Scopes,
 		}, Client: client})
-		if err == nil {
-			oauthProviders["github"] = provider
+		if err != nil {
+			return fmt.Errorf("init github oauth provider: %w", err)
 		}
+		oauthProviders["github"] = provider
 	}
 	if cfg.Properties.EnableGoogleOauth {
 		provider, err := oauth.NewProvider("google", oauth.ProviderArgs{Config: oauth.ProviderConfig{
@@ -117,9 +118,10 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 			RedirectURL:  cfg.OAuth.Google.RedirectURL,
 			Scopes:       cfg.OAuth.Google.Scopes,
 		}, Client: client})
-		if err == nil {
-			oauthProviders["google"] = provider
+		if err != nil {
+			return fmt.Errorf("init google oauth provider: %w", err)
 		}
+		oauthProviders["google"] = provider
 	}
 	oauthService := service.NewOAuthService(userRepo, oauthRepo, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), oauthProviders)
 	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, cfg.VersionMaxKeep)
