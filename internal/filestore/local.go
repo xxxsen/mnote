@@ -62,6 +62,10 @@ func (s *localStore) Open(ctx context.Context, key string) (io.ReadCloser, error
 	return os.Open(path)
 }
 
+func (s *localStore) GenerateFileRef(userID, filename string) string {
+	return buildFileKey(userID, filename)
+}
+
 func (s *localStore) ensureDir() error {
 	return os.MkdirAll(s.dir, 0o755)
 }

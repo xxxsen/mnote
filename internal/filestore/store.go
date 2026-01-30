@@ -2,9 +2,12 @@ package filestore
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -14,6 +17,7 @@ import (
 type Store interface {
 	Save(ctx context.Context, key string, r ReadSeekCloser, size int64) error
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
+	GenerateFileRef(userID, filename string) string
 }
 
 type ReadSeekCloser interface {
@@ -65,4 +69,28 @@ func decodeConfig(args interface{}, dst interface{}) error {
 		return fmt.Errorf("decode store config: %w", err)
 	}
 	return nil
+}
+
+func buildFileKey(userID, filename string) string {
+	ext := strings.ToLower(filepath.Ext(filename))
+	base := randomHex(8)
+	if userID != "" {
+		base = userID + "_" + base
+	}
+	if ext == "" {
+		return base
+	}
+	return base + ext
+}
+
+func randomHex(size int) string {
+	if size <= 0 {
+		return ""
+	}
+	buf := make([]byte, size)
+	_, err := rand.Read(buf)
+	if err != nil {
+		return ""
+	}
+	return hex.EncodeToString(buf)
 }

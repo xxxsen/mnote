@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"io"
 	"mime"
@@ -58,12 +56,15 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		}
 	}
 
-	key := buildFileKey(userID, file.Filename)
+	key := h.store.GenerateFileRef(userID, file.Filename)
 	if err := h.store.Save(c.Request.Context(), key, reader, file.Size); err != nil {
 		response.Error(c, errcode.ErrUploadFailed, "failed to upload file")
 		return
 	}
-	fileURL := "/api/v1/files/" + key
+	fileURL := key
+	if !strings.HasPrefix(fileURL, "http://") && !strings.HasPrefix(fileURL, "https://") {
+		fileURL = "/api/v1/files/" + key
+	}
 	response.Success(c, UploadResponse{
 		URL:         fileURL,
 		Name:        file.Filename,
@@ -102,28 +103,4 @@ func ensureReadSeekCloser(file filestore.ReadSeekCloser) (filestore.ReadSeekClos
 		return nil, "", err
 	}
 	return file, contentType, nil
-}
-
-func buildFileKey(userID, filename string) string {
-	ext := strings.ToLower(filepath.Ext(filename))
-	base := randomHex(8)
-	if userID != "" {
-		base = userID + "_" + base
-	}
-	if ext == "" {
-		return base
-	}
-	return base + ext
-}
-
-func randomHex(size int) string {
-	if size <= 0 {
-		return ""
-	}
-	buf := make([]byte, size)
-	_, err := rand.Read(buf)
-	if err != nil {
-		return ""
-	}
-	return hex.EncodeToString(buf)
 }
