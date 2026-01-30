@@ -10,7 +10,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
 import { Copy, Check } from "lucide-react";
 import Mermaid from "@/components/mermaid";
-import { GoSandbox } from "@/components/go-sandbox";
+import { CodeSandbox } from "@/components/code-sandbox";
 import { cn } from "@/lib/utils";
 
 interface MarkdownPreviewProps {
@@ -470,11 +470,13 @@ const MarkdownPreview = memo(
           const metastring = (childProps.metastring as string) || "";
           const isToc = className.includes("language-toc");
           const isMermaid = className.includes("language-mermaid");
-          const isGo = className.includes("language-go") || className.includes("language-golang");
+          
+          const runnableLangs = ["go", "golang", "js", "javascript", "py", "python"];
+          const isRunnableLang = runnableLangs.some(lang => className.includes(`language-${lang}`));
           const isRunnable = (metastring && metastring.includes("[runnable]")) || className.includes("[runnable]");
           const isFenced = className.startsWith("language-");
 
-          if (isToc || isMermaid || (isGo && isRunnable) || isFenced) {
+          if (isToc || isMermaid || (isRunnableLang && isRunnable) || isFenced) {
             return <>{children}</>;
           }
         }
@@ -531,8 +533,9 @@ const MarkdownPreview = memo(
             fileName = meta;
           }
 
-          if (isRunnable && (language === "go" || language === "golang")) {
-            return <GoSandbox code={rawCode} />;
+          const runnableLangs = ["go", "golang", "js", "javascript", "py", "python"];
+          if (isRunnable && runnableLangs.includes(language)) {
+            return <CodeSandbox code={rawCode} language={language} />;
           }
 
           return (

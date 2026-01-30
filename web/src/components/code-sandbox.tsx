@@ -14,23 +14,27 @@ type ThemedSyntaxHighlighterProps = Omit<SyntaxHighlighterProps, "style"> & {
 const ThemedSyntaxHighlighter =
   SyntaxHighlighter as unknown as React.ComponentType<ThemedSyntaxHighlighterProps>;
 
-interface GoSandboxProps {
+interface CodeSandboxProps {
   code: string;
+  language: string;
 }
 
-export const GoSandbox = ({ code }: GoSandboxProps) => {
+export const CodeSandbox = ({ code, language }: CodeSandboxProps) => {
   const [output, setOutput] = useState<{ type: "stdout" | "stderr" | "system"; content: string }[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [envReady, setEnvReady] = useState<boolean | 'checking'>('checking');
+  const isGoLang = language === 'go' || language === 'golang';
+  const [goEnvReady, setGoEnvReady] = useState<boolean | 'checking'>(isGoLang ? 'checking' : true);
   const workerRef = useRef<Worker | null>(null);
 
   useEffect(() => {
-    fetch('/yaegi.wasm', { method: 'HEAD' })
-      .then(res => setEnvReady(res.ok))
-      .catch(() => setEnvReady(false));
-  }, []);
+    if (isGoLang) {
+      fetch('/yaegi.wasm', { method: 'HEAD' })
+        .then(res => setGoEnvReady(res.ok))
+        .catch(() => setGoEnvReady(false));
+    }
+  }, [isGoLang]);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -44,62 +48,120 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
 
   const runCode = useCallback(() => {
     if (isRunning) return;
-    if (envReady !== true) {
-      setError("Wasm environment not initialized. Please ensure 'yaegi.wasm' exists in your /public directory.");
-      return;
-    }
     
     setIsRunning(true);
     setError(null);
-    setOutput([{ type: "system", content: "Initializing WebAssembly runtime..." }]);
+    setOutput([{ type: "system", content: `Initializing ${language} runtime...` }]);
 
     if (workerRef.current) {
       workerRef.current.terminate();
     }
 
-    const workerCode = `
-      self.importScripts('https://cdn.jsdelivr.net/gh/golang/go@master/lib/wasm/wasm_exec.js');
+    let workerCode = "";
 
-      self.onmessage = async (e) => {
-        if (e.data.type === 'run') {
-          const go = new self.Go();
-          const decoder = new TextDecoder();
-          
-          // Redirect Stdout
-          const originalWriteSync = self.fs.writeSync;
-          self.fs.writeSync = (fd, buf) => {
-            const content = decoder.decode(buf);
-            if (fd === 1 || fd === 2) {
-              self.postMessage({ 
-                type: fd === 1 ? 'stdout' : 'stderr', 
-                content: content.replace(/\\n$/, '') 
-              });
+    if (language === "javascript" || language === "js") {
+      workerCode = `
+        self.onmessage = async (e) => {
+          if (e.data.type === 'run') {
+            const originalLog = console.log;
+            const originalError = console.error;
+            const originalWarn = console.warn;
+
+            console.log = (...args) => self.postMessage({ type: 'stdout', content: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') });
+            console.error = (...args) => self.postMessage({ type: 'stderr', content: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') });
+            console.warn = (...args) => self.postMessage({ type: 'stderr', content: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') });
+
+            try {
+              self.postMessage({ type: 'system', content: 'Executing JavaScript...' });
+              const result = await eval(\`(async () => { \${e.data.code} })()\`);
+              if (result !== undefined) {
+                self.postMessage({ type: 'stdout', content: 'Return: ' + JSON.stringify(result) });
+              }
+              self.postMessage({ type: 'system', content: 'Process finished.' });
+              self.postMessage({ type: 'done' });
+            } catch (err) {
+              self.postMessage({ type: 'error', content: err.stack || err.message });
+            } finally {
+              console.log = originalLog;
+              console.error = originalError;
+              console.warn = originalWarn;
             }
-            return buf.length;
-          };
-
-          try {
-            self.postMessage({ type: 'system', content: 'Loading and instantiating yaegi.wasm...' });
-            const response = await fetch(e.data.wasmUrl);
-            const buffer = await response.arrayBuffer();
-            const { instance } = await WebAssembly.instantiate(buffer, go.importObject);
-            
-            self.postMessage({ type: 'system', content: 'Executing Go code...' });
-            
-            // Set the code to a global variable that Yaegi Wasm expects
-            // Note: This matches the entry point of a standard Yaegi Wasm build
-            self.GOSOURCE = e.data.code;
-            
-            await go.run(instance);
-            
-            self.postMessage({ type: 'system', content: 'Process finished.' });
-            self.postMessage({ type: 'done' });
-          } catch (err) {
-            self.postMessage({ type: 'error', content: err.message });
           }
-        }
-      };
-    `;
+        };
+      `;
+    } else if (language === "python" || language === "py") {
+      workerCode = `
+        self.importScripts('https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js');
+
+        let pyodide;
+
+        self.onmessage = async (e) => {
+          if (e.data.type === 'run') {
+            try {
+              if (!pyodide) {
+                self.postMessage({ type: 'system', content: 'Loading Pyodide (Wasm)...' });
+                pyodide = await self.loadPyodide();
+              }
+              
+              self.postMessage({ type: 'system', content: 'Executing Python...' });
+              
+              pyodide.setStdout({
+                batched: (str) => self.postMessage({ type: 'stdout', content: str })
+              });
+              pyodide.setStderr({
+                batched: (str) => self.postMessage({ type: 'stderr', content: str })
+              });
+
+              await pyodide.runPythonAsync(e.data.code);
+              
+              self.postMessage({ type: 'system', content: 'Process finished.' });
+              self.postMessage({ type: 'done' });
+            } catch (err) {
+              self.postMessage({ type: 'error', content: err.message });
+            }
+          }
+        };
+      `;
+    } else if (language === "go" || language === "golang") {
+      workerCode = `
+        self.importScripts('https://cdn.jsdelivr.net/gh/golang/go@master/lib/wasm/wasm_exec.js');
+
+        self.onmessage = async (e) => {
+          if (e.data.type === 'run') {
+            const go = new self.Go();
+            const decoder = new TextDecoder();
+            
+            const originalWriteSync = self.fs.writeSync;
+            self.fs.writeSync = (fd, buf) => {
+              const content = decoder.decode(buf);
+              if (fd === 1 || fd === 2) {
+                self.postMessage({ 
+                  type: fd === 1 ? 'stdout' : 'stderr', 
+                  content: content.replace(/\\n$/, '') 
+                });
+              }
+              return buf.length;
+            };
+
+            try {
+              self.postMessage({ type: 'system', content: 'Loading yaegi.wasm...' });
+              const response = await fetch(e.data.wasmUrl);
+              const buffer = await response.arrayBuffer();
+              const { instance } = await WebAssembly.instantiate(buffer, go.importObject);
+              
+              self.postMessage({ type: 'system', content: 'Executing Go...' });
+              self.GOSOURCE = e.data.code;
+              await go.run(instance);
+              
+              self.postMessage({ type: 'system', content: 'Process finished.' });
+              self.postMessage({ type: 'done' });
+            } catch (err) {
+              self.postMessage({ type: 'error', content: err.message });
+            }
+          }
+        };
+      `;
+    }
 
     const blob = new Blob([workerCode], { type: "application/javascript" });
     const worker = new Worker(URL.createObjectURL(blob));
@@ -118,7 +180,7 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
     };
 
     let finalCode = code.trim();
-    if (!finalCode.includes("package ")) {
+    if ((language === 'go' || language === 'golang') && !finalCode.includes("package ")) {
       finalCode = "package main\n" + finalCode;
     }
 
@@ -127,7 +189,11 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
       code: finalCode, 
       wasmUrl: window.location.origin + "/yaegi.wasm" 
     });
-  }, [code, isRunning, envReady]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, isRunning, language, goEnvReady]);
+
+  const displayLanguage = language === 'py' ? 'python' : language === 'js' ? 'javascript' : language;
+  const isGo = language === 'go' || language === 'golang';
 
   return (
     <div className="my-6 border border-border/60 rounded-xl overflow-hidden bg-card/50 backdrop-blur-sm shadow-lg group text-left">
@@ -137,7 +203,7 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
             <Hash className="h-3 w-3 text-blue-500" />
           </div>
           <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-mono text-left">
-            Go Secure Sandbox (Wasm)
+            {displayLanguage} Sandbox
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -158,7 +224,7 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
             size="sm"
             className="h-7 px-3 text-[10px] font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-all shadow-sm"
             onClick={runCode}
-            disabled={isRunning || envReady === 'checking'}
+            disabled={isRunning || (isGo && goEnvReady === 'checking')}
           >
             {isRunning ? (
               <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
@@ -172,7 +238,7 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
       
       <div className="p-5 font-mono text-[13px] overflow-x-auto bg-background/30 text-left">
         <ThemedSyntaxHighlighter
-          language="go"
+          language={language}
           style={oneLight}
           PreTag="div"
           customStyle={{
@@ -197,10 +263,10 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
         </ThemedSyntaxHighlighter>
       </div>
 
-      {envReady === false && (
+      {isGo && goEnvReady === false && (
         <div className="px-4 py-3 bg-amber-500/5 border-t border-amber-500/20 text-[11px] text-amber-600/80 flex items-center gap-2">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          <span>Missing <b>yaegi.wasm</b> in <code>web/public/</code>. Please download it to enable execution.</span>
+          <span>Missing <b>yaegi.wasm</b> in <code>web/public/</code>. Please ensure Docker build or local file exists.</span>
         </div>
       )}
 
