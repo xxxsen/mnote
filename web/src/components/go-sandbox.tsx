@@ -1,8 +1,18 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Play, Terminal, Loader2, AlertCircle, ChevronRight, Hash } from "lucide-react";
+import { Play, Terminal, Loader2, AlertCircle, ChevronRight, Hash, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
+
+type SyntaxHighlighterProps = React.ComponentProps<typeof SyntaxHighlighter>;
+type ThemedSyntaxHighlighterProps = Omit<SyntaxHighlighterProps, "style"> & {
+  style?: React.CSSProperties | Record<string, React.CSSProperties>;
+};
+
+const ThemedSyntaxHighlighter =
+  SyntaxHighlighter as unknown as React.ComponentType<ThemedSyntaxHighlighterProps>;
 
 interface GoSandboxProps {
   code: string;
@@ -12,7 +22,18 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
   const [output, setOutput] = useState<{ type: "stdout" | "stderr" | "system"; content: string }[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const workerRef = useRef<Worker | null>(null);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy code:", err);
+    }
+  }, [code]);
 
   useEffect(() => {
     return () => {
@@ -97,23 +118,59 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
             Go Playground
           </span>
         </div>
-        <Button
-          size="sm"
-          className="h-7 px-3 text-[10px] font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-all shadow-sm"
-          onClick={runCode}
-          disabled={isRunning}
-        >
-          {isRunning ? (
-            <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
-          ) : (
-            <Play className="h-3 w-3 mr-1.5 fill-current" />
-          )}
-          {isRunning ? "EXECUTING..." : "RUN CODE"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2.5 text-[10px] font-bold rounded-lg hover:bg-muted transition-all"
+            onClick={handleCopy}
+          >
+            {copied ? (
+              <Check className="h-3 w-3 mr-1.5 text-green-500" />
+            ) : (
+              <Copy className="h-3 w-3 mr-1.5" />
+            )}
+            {copied ? "COPIED" : "COPY"}
+          </Button>
+          <Button
+            size="sm"
+            className="h-7 px-3 text-[10px] font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-all shadow-sm"
+            onClick={runCode}
+            disabled={isRunning}
+          >
+            {isRunning ? (
+              <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
+            ) : (
+              <Play className="h-3 w-3 mr-1.5 fill-current" />
+            )}
+            {isRunning ? "EXECUTING..." : "RUN CODE"}
+          </Button>
+        </div>
       </div>
       
       <div className="p-5 font-mono text-[13px] overflow-x-auto bg-background/30">
-        <pre className="text-foreground/90 leading-relaxed whitespace-pre-wrap">{code}</pre>
+        <ThemedSyntaxHighlighter
+          language="go"
+          style={oneLight}
+          PreTag="div"
+          customStyle={{
+            margin: 0,
+            padding: 0,
+            background: "transparent",
+            border: "none",
+            boxShadow: "none",
+          }}
+          codeTagProps={{
+            style: {
+              border: "none",
+              boxShadow: "none",
+              background: "transparent",
+              padding: 0,
+            },
+          }}
+        >
+          {code}
+        </ThemedSyntaxHighlighter>
       </div>
 
       {(output.length > 0 || error) && (
