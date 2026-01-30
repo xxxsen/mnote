@@ -1330,7 +1330,7 @@ export default function DocsPage() {
                       className="relative flex w-full cursor-default select-none items-center justify-between rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
                     >
                       <span className="flex items-center">
-                        <Upload className="mr-2 h-4 w-4" />
+                        <Download className="mr-2 h-4 w-4" />
                         Import
                       </span>
                       <ChevronRight className="h-3.5 w-3.5 opacity-70" />
@@ -1366,7 +1366,7 @@ export default function DocsPage() {
                       onClick={openExportModal}
                       className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
                     >
-                      <Download className="mr-2 h-4 w-4" />
+                      <Upload className="mr-2 h-4 w-4" />
                       <span>Export</span>
                     </button>
                     <button
