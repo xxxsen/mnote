@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Play, Terminal, Loader2, AlertCircle, ChevronRight, Hash, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
+import { sandboxRegistry } from "@/lib/sandbox-registry";
 
 type SyntaxHighlighterProps = React.ComponentProps<typeof SyntaxHighlighter>;
 type ThemedSyntaxHighlighterProps = Omit<SyntaxHighlighterProps, "style"> & {
@@ -27,7 +28,6 @@ export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
   const [copied, setCopied] = useState(false);
   const isGoLang = language === 'go' || language === 'golang';
   const [goEnvReady, setGoEnvReady] = useState<boolean | 'checking'>(isGoLang ? 'checking' : true);
-  const workerRef = useRef<Worker | null>(null);
 
   useEffect(() => {
     if (isGoLang) {
@@ -54,141 +54,26 @@ export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
     setError(null);
     setOutput([{ type: "system", content: `Initializing ${language} runtime...` }]);
 
-    if (workerRef.current) {
-      workerRef.current.terminate();
-    }
-
-    let workerCode = "";
-
-    if (language === "javascript" || language === "js") {
-      workerCode = `
-        self.onmessage = async (e) => {
-          if (e.data.type === 'run') {
-            const originalLog = console.log;
-            const originalError = console.error;
-            const originalWarn = console.warn;
-
-            console.log = (...args) => self.postMessage({ type: 'stdout', content: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') });
-            console.error = (...args) => self.postMessage({ type: 'stderr', content: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') });
-            console.warn = (...args) => self.postMessage({ type: 'stderr', content: args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') });
-
-            try {
-              self.postMessage({ type: 'system', content: 'Executing JavaScript...' });
-              const result = await eval(\`(async () => { \${e.data.code} })()\`);
-              if (result !== undefined) {
-                self.postMessage({ type: 'stdout', content: 'Return: ' + JSON.stringify(result) });
-              }
-              self.postMessage({ type: 'system', content: 'Process finished.' });
-              self.postMessage({ type: 'done' });
-            } catch (err) {
-              self.postMessage({ type: 'error', content: err.stack || err.message });
-            } finally {
-              console.log = originalLog;
-              console.error = originalError;
-              console.warn = originalWarn;
-            }
-          }
-        };
-      `;
-    } else if (language === "python" || language === "py") {
-      workerCode = `
-        self.importScripts('https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js');
-
-        let pyodide;
-
-        self.onmessage = async (e) => {
-          if (e.data.type === 'run') {
-            try {
-              if (!pyodide) {
-                self.postMessage({ type: 'system', content: 'Loading Pyodide (Wasm)...' });
-                pyodide = await self.loadPyodide();
-              }
-              
-              self.postMessage({ type: 'system', content: 'Executing Python...' });
-              
-              pyodide.setStdout({
-                batched: (str) => self.postMessage({ type: 'stdout', content: str })
-              });
-              pyodide.setStderr({
-                batched: (str) => self.postMessage({ type: 'stderr', content: str })
-              });
-
-              await pyodide.runPythonAsync(e.data.code);
-              
-              self.postMessage({ type: 'system', content: 'Process finished.' });
-              self.postMessage({ type: 'done' });
-            } catch (err) {
-              self.postMessage({ type: 'error', content: err.message });
-            }
-          }
-        };
-      `;
-    } else if (language === "go" || language === "golang") {
-      workerCode = `
-        self.importScripts('https://cdn.jsdelivr.net/gh/golang/go@master/lib/wasm/wasm_exec.js');
-
-        self.onmessage = async (e) => {
-          if (e.data.type === 'run') {
-            const go = new self.Go();
-            const decoder = new TextDecoder();
-            
-            const originalWriteSync = self.fs.writeSync;
-            self.fs.writeSync = (fd, buf) => {
-              const content = decoder.decode(buf);
-              if (fd === 1 || fd === 2) {
-                self.postMessage({ 
-                  type: fd === 1 ? 'stdout' : 'stderr', 
-                  content: content.replace(/\\n$/, '') 
-                });
-              }
-              return buf.length;
-            };
-
-            try {
-              self.postMessage({ type: 'system', content: 'Loading yaegi.wasm...' });
-              const response = await fetch(e.data.wasmUrl);
-              const buffer = await response.arrayBuffer();
-              const { instance } = await WebAssembly.instantiate(buffer, go.importObject);
-              
-              self.postMessage({ type: 'system', content: 'Executing Go...' });
-              self.GOSOURCE = e.data.code;
-              await go.run(instance);
-              
-              self.postMessage({ type: 'system', content: 'Process finished.' });
-              self.postMessage({ type: 'done' });
-            } catch (err) {
-              self.postMessage({ type: 'error', content: err.message });
-            }
-          }
-        };
-      `;
-    }
-
-    const blob = new Blob([workerCode], { type: "application/javascript" });
-    const worker = new Worker(URL.createObjectURL(blob));
-    workerRef.current = worker;
-
-    worker.onmessage = (e) => {
-      const { type, content } = e.data;
-      if (type === "done") {
-        setIsRunning(false);
-      } else if (type === "error") {
-        setError(content);
-        setIsRunning(false);
-      } else {
-        setOutput((prev) => [...prev, { type, content }]);
-      }
-    };
-
     let finalCode = code.trim();
     if ((language === 'go' || language === 'golang') && !finalCode.includes("package ")) {
       finalCode = "package main\n" + finalCode;
     }
 
-    worker.postMessage({ 
-      type: "run", 
-      code: finalCode, 
-      wasmUrl: window.location.origin + "/yaegi.wasm" 
+    sandboxRegistry.run({
+      code: finalCode,
+      language,
+      wasmUrl: window.location.origin + "/yaegi.wasm",
+      onMessage: (msg) => {
+        if (msg.type === "done") {
+          setIsRunning(false);
+        } else if (msg.type === "error") {
+          setError(msg.content || "Unknown error");
+          setIsRunning(false);
+        } else {
+          const type = msg.type as "stdout" | "stderr" | "system";
+          setOutput((prev) => [...prev, { type, content: msg.content || "" }]);
+        }
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, isRunning, language, goEnvReady]);
@@ -196,6 +81,7 @@ export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
   const displayLanguage = language === 'py' ? 'python' : language === 'js' ? 'javascript' : language;
   const isGo = language === 'go' || language === 'golang';
   const displayTitle = fileName || `${displayLanguage} Sandbox`;
+
 
   return (
     <div className="my-6 border border-border/60 rounded-xl overflow-hidden bg-card/50 backdrop-blur-sm shadow-lg group text-left">
