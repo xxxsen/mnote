@@ -11,10 +11,12 @@ import (
 )
 
 func TestDocumentHandlersAuth(t *testing.T) {
-	router, cleanup := setupRouter(t)
+	router, cleanup, seed := setupRouter(t)
 	defer cleanup()
 
-	registerBody := map[string]string{"email": "doc@example.com", "password": "secret"}
+	code := "123456"
+	require.NoError(t, seed("doc@example.com", code))
+	registerBody := map[string]string{"email": "doc@example.com", "password": "secret", "code": code}
 	payload, _ := json.Marshal(registerBody)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")

@@ -43,6 +43,8 @@ func handleError(c *gin.Context, err error) {
 		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
 	case err == appErr.ErrConflict:
 		response.Error(c, http.StatusConflict, "conflict", "conflict")
+	case err == appErr.ErrTooMany:
+		response.Error(c, http.StatusTooManyRequests, "too_many", "too many requests")
 	default:
 		response.Error(c, http.StatusInternalServerError, "internal", "internal error")
 	}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
@@ -11,8 +11,19 @@ export default function RegisterPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [codeSending, setCodeSending] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +33,7 @@ export default function RegisterPage() {
     try {
       await apiFetch("/auth/register", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, code }),
         requireAuth: false,
       });
 
@@ -32,6 +43,29 @@ export default function RegisterPage() {
       setError(message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSendCode = async () => {
+    if (!email) {
+      setError("Email is required");
+      return;
+    }
+    if (cooldown > 0) return;
+    setCodeSending(true);
+    setError("");
+    try {
+      await apiFetch("/auth/register/code", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+        requireAuth: false,
+      });
+      setCooldown(60);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to send code";
+      setError(message);
+    } finally {
+      setCodeSending(false);
     }
   };
 
@@ -70,6 +104,29 @@ export default function RegisterPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-medium uppercase text-muted-foreground" htmlFor="code">
+              Verification Code
+            </label>
+            <div className="flex gap-2">
+              <Input
+                id="code"
+                type="text"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="6-digit code"
+                required
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSendCode}
+                disabled={codeSending || cooldown > 0}
+              >
+                {cooldown > 0 ? `${cooldown}s` : (codeSending ? "Sending..." : "Send")}
+              </Button>
+            </div>
           </div>
 
           {error && (

@@ -21,6 +21,11 @@ func NewAuthHandler(auth *service.AuthService) *AuthHandler {
 type authRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	Code     string `json:"code"`
+}
+
+type sendCodeRequest struct {
+	Email string `json:"email"`
 }
 
 type passwordUpdateRequest struct {
@@ -39,7 +44,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
 		return
 	}
-	user, token, err := h.auth.Register(c.Request.Context(), req.Email, req.Password)
+	if req.Code == "" {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
+	user, token, err := h.auth.Register(c.Request.Context(), req.Email, req.Password, req.Code)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -64,6 +73,24 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"user": user, "token": token})
+}
+
+func (h *AuthHandler) SendRegisterCode(c *gin.Context) {
+	var req sendCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
+	req.Email = strings.TrimSpace(req.Email)
+	if req.Email == "" {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
+	if err := h.auth.SendRegisterCode(c.Request.Context(), req.Email); err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {

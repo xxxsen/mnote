@@ -1,6 +1,9 @@
 package handler_test
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 	"os"
 	"testing"
@@ -14,12 +17,27 @@ import (
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/handler"
 	"github.com/xxxsen/mnote/internal/middleware"
+	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/password"
+	"github.com/xxxsen/mnote/internal/pkg/timeutil"
 	"github.com/xxxsen/mnote/internal/repo"
 	"github.com/xxxsen/mnote/internal/service"
 	"github.com/xxxsen/mnote/test/testutil"
 )
 
-func setupRouter(t *testing.T) (http.Handler, func()) {
+type noopSender struct{}
+
+func (noopSender) Send(to, subject, body string) error {
+	return nil
+}
+
+func newTestID() string {
+	buf := make([]byte, 16)
+	_, _ = rand.Read(buf)
+	return hex.EncodeToString(buf)
+}
+
+func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) error) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -28,12 +46,14 @@ func setupRouter(t *testing.T) (http.Handler, func()) {
 	docRepo := repo.NewDocumentRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
 	oauthRepo := repo.NewOAuthRepo(db)
+	emailCodeRepo := repo.NewEmailVerificationRepo(db)
 	tagRepo := repo.NewTagRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
 
 	jwtSecret := []byte("test-secret")
-	authService := service.NewAuthService(userRepo, jwtSecret, time.Hour)
+	verifyService := service.NewEmailVerificationService(emailCodeRepo, noopSender{})
+	authService := service.NewAuthService(userRepo, verifyService, jwtSecret, time.Hour)
 	oauthService := service.NewOAuthService(userRepo, oauthRepo, jwtSecret, time.Hour, config.OAuthConfig{})
 	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, 10)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
@@ -75,8 +95,25 @@ func setupRouter(t *testing.T) (http.Handler, func()) {
 	)
 	require.NoError(t, err)
 
+	seed := func(email, code string) error {
+		hash, err := password.Hash(code)
+		if err != nil {
+			return err
+		}
+		now := timeutil.NowUnix()
+		return emailCodeRepo.Create(context.Background(), &model.EmailVerificationCode{
+			ID:        newTestID(),
+			Email:     email,
+			Purpose:   "register",
+			CodeHash:  hash,
+			Used:      0,
+			Ctime:     now,
+			ExpiresAt: now + 600,
+		})
+	}
+
 	return engine, func() {
 		cleanup()
 		_ = os.RemoveAll(tmpDir)
-	}
+	}, seed
 }

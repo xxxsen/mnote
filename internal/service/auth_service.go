@@ -21,14 +21,21 @@ type AuthService struct {
 	users     *repo.UserRepo
 	jwtSecret []byte
 	jwtTTL    time.Duration
+	verify    *EmailVerificationService
 }
 
-func NewAuthService(users *repo.UserRepo, secret []byte, ttl time.Duration) *AuthService {
-	return &AuthService{users: users, jwtSecret: secret, jwtTTL: ttl}
+func NewAuthService(users *repo.UserRepo, verify *EmailVerificationService, secret []byte, ttl time.Duration) *AuthService {
+	return &AuthService{users: users, verify: verify, jwtSecret: secret, jwtTTL: ttl}
 }
 
-func (s *AuthService) Register(ctx context.Context, email, plainPassword string) (*model.User, string, error) {
+func (s *AuthService) Register(ctx context.Context, email, plainPassword, code string) (*model.User, string, error) {
 	now := timeutil.NowUnix()
+	if s.verify == nil {
+		return nil, "", appErr.ErrInvalid
+	}
+	if err := s.verify.VerifyRegisterCode(ctx, email, code); err != nil {
+		return nil, "", err
+	}
 	hash, err := password.Hash(plainPassword)
 	if err != nil {
 		return nil, "", err
@@ -54,6 +61,18 @@ func (s *AuthService) Register(ctx context.Context, email, plainPassword string)
 		return nil, "", err
 	}
 	return user, token, nil
+}
+
+func (s *AuthService) SendRegisterCode(ctx context.Context, email string) error {
+	if s.verify == nil {
+		return appErr.ErrInvalid
+	}
+	if _, err := s.users.GetByEmail(ctx, email); err == nil {
+		return appErr.ErrConflict
+	} else if err != appErr.ErrNotFound {
+		return err
+	}
+	return s.verify.SendRegisterCode(ctx, email)
 }
 
 func (s *AuthService) Login(ctx context.Context, email, plainPassword string) (*model.User, string, error) {

@@ -18,6 +18,7 @@ type Config struct {
 	FileStore      FileStoreConfig  `json:"file_store"`
 	AI             AIConfig         `json:"ai"`
 	OAuth          OAuthConfig      `json:"oauth"`
+	Mail           MailConfig       `json:"mail"`
 }
 
 type FileStoreConfig struct {
@@ -44,6 +45,14 @@ type OAuthProviderConfig struct {
 	RedirectURL  string   `json:"redirect_url"`
 	Scopes       []string `json:"scopes"`
 	Enabled      bool     `json:"enabled"`
+}
+
+type MailConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	From     string `json:"from"`
 }
 
 func Load(path string) (*Config, error) {

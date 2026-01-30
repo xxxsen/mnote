@@ -22,6 +22,7 @@ type RouterDeps struct {
 
 func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	api.POST("/auth/register", deps.Auth.Register)
+	api.POST("/auth/register/code", deps.Auth.SendRegisterCode)
 	api.POST("/auth/login", deps.Auth.Login)
 	api.POST("/auth/logout", deps.Auth.Logout)
 	api.GET("/auth/oauth/:provider/url", deps.OAuth.AuthURL)

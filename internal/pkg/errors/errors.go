@@ -8,6 +8,7 @@ var (
 	ErrForbidden    = errors.New("forbidden")
 	ErrInvalid      = errors.New("invalid")
 	ErrConflict     = errors.New("conflict")
+	ErrTooMany      = errors.New("too many requests")
 	ErrInternal     = errors.New("internal")
 )
 
