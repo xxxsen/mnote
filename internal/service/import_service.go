@@ -3,6 +3,7 @@ package service
 import (
 	"archive/zip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,20 +20,22 @@ import (
 type ImportNote struct {
 	Title   string   `json:"title"`
 	Content string   `json:"content"`
+	Summary string   `json:"summary"`
 	Tags    []string `json:"tags"`
 	Source  string   `json:"source"`
 }
 
 type ImportJob struct {
-	ID        string
-	UserID    string
-	Notes     []ImportNote
-	Tags      []string
-	CreatedAt time.Time
-	Status    string
-	Processed int
-	Total     int
-	Report    *ImportReport
+	ID             string
+	UserID         string
+	Notes          []ImportNote
+	Tags           []string
+	CreatedAt      time.Time
+	Status         string
+	Processed      int
+	Total          int
+	Report         *ImportReport
+	RequireContent bool
 }
 
 type ImportPreview struct {
@@ -120,14 +123,94 @@ func (s *ImportService) CreateHedgeDocJob(ctx context.Context, userID string, fi
 	}
 
 	job := &ImportJob{
-		ID:        newID(),
-		UserID:    userID,
-		Notes:     notes,
-		Tags:      allTags,
-		CreatedAt: time.Now(),
-		Status:    "ready",
-		Processed: 0,
-		Total:     len(notes),
+		ID:             newID(),
+		UserID:         userID,
+		Notes:          notes,
+		Tags:           allTags,
+		CreatedAt:      time.Now(),
+		Status:         "ready",
+		Processed:      0,
+		Total:          len(notes),
+		RequireContent: false,
+	}
+	s.mu.Lock()
+	s.jobs[job.ID] = job
+	s.mu.Unlock()
+	return job, nil
+}
+
+type notesImportPayload struct {
+	Title   string   `json:"title"`
+	Content string   `json:"content"`
+	Summary string   `json:"summary,omitempty"`
+	TagList []string `json:"tag_list,omitempty"`
+}
+
+func (s *ImportService) CreateNotesJob(ctx context.Context, userID string, filePath string) (*ImportJob, error) {
+	reader, err := zip.OpenReader(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	notes := make([]ImportNote, 0)
+	uniqueTags := make(map[string]bool)
+	for _, file := range reader.File {
+		if file.FileInfo().IsDir() {
+			continue
+		}
+		if strings.ToLower(filepath.Ext(file.Name)) != ".json" {
+			continue
+		}
+		opened, err := file.Open()
+		if err != nil {
+			return nil, err
+		}
+		contentBytes, err := io.ReadAll(opened)
+		_ = opened.Close()
+		if err != nil {
+			return nil, err
+		}
+		var payload notesImportPayload
+		if err := json.Unmarshal(contentBytes, &payload); err != nil {
+			notes = append(notes, ImportNote{Title: "", Content: "", Summary: "", Tags: []string{}, Source: file.Name})
+			continue
+		}
+		title := strings.TrimSpace(payload.Title)
+		content := payload.Content
+		if content != "" {
+			content = strings.TrimRight(content, "\n")
+		}
+		cleanTags := normalizeTags(payload.TagList)
+		for _, tag := range cleanTags {
+			uniqueTags[tag] = true
+		}
+		notes = append(notes, ImportNote{
+			Title:   title,
+			Content: content,
+			Summary: strings.TrimSpace(payload.Summary),
+			Tags:    cleanTags,
+			Source:  file.Name,
+		})
+	}
+	if len(notes) == 0 {
+		return nil, appErr.ErrInvalid
+	}
+	allTags := make([]string, 0, len(uniqueTags))
+	for tag := range uniqueTags {
+		allTags = append(allTags, tag)
+	}
+
+	job := &ImportJob{
+		ID:             newID(),
+		UserID:         userID,
+		Notes:          notes,
+		Tags:           allTags,
+		CreatedAt:      time.Now(),
+		Status:         "ready",
+		Processed:      0,
+		Total:          len(notes),
+		RequireContent: true,
 	}
 	s.mu.Lock()
 	s.jobs[job.ID] = job
@@ -197,7 +280,7 @@ func (s *ImportService) Status(userID, jobID string) (*ImportJob, error) {
 func (s *ImportService) runImport(ctx context.Context, job *ImportJob, mode string) {
 	report := &ImportReport{}
 	for _, note := range job.Notes {
-		if note.Title == "" {
+		if note.Title == "" || (job.RequireContent && strings.TrimSpace(note.Content) == "") {
 			report.Failed += 1
 			report.Errors = append(report.Errors, fmt.Sprintf("empty title in %s", note.Source))
 			report.FailedTitles = append(report.FailedTitles, note.Source)
@@ -244,10 +327,15 @@ func (s *ImportService) runImport(ctx context.Context, job *ImportJob, mode stri
 			continue
 		}
 		if existingID != "" && mode == "overwrite" {
+			var summary *string
+			if note.Summary != "" {
+				summary = &note.Summary
+			}
 			err = s.documents.Update(ctx, job.UserID, existingID, DocumentUpdateInput{
 				Title:   note.Title,
 				Content: note.Content,
 				TagIDs:  tagIDs,
+				Summary: summary,
 			})
 			if err != nil {
 				report.Failed += 1
@@ -268,6 +356,7 @@ func (s *ImportService) runImport(ctx context.Context, job *ImportJob, mode stri
 			Title:   finalTitle,
 			Content: note.Content,
 			TagIDs:  tagIDs,
+			Summary: note.Summary,
 		})
 		if err != nil {
 			report.Failed += 1

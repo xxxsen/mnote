@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { Document, Tag } from "@/types";
-import { ChevronDown, ChevronRight, FileArchive, LogOut, Pencil, Pin, Search, Settings, Star, Upload, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, FileArchive, LogOut, Pencil, Pin, Search, Settings, Star, Upload, X } from "lucide-react";
 
 function TagEditor({
   doc,
@@ -293,6 +293,7 @@ interface TagSummary {
 
 type ImportStep = "upload" | "parsing" | "preview" | "importing" | "done";
 type ImportMode = "skip" | "overwrite" | "append";
+type ImportSource = "hedgedoc" | "notes";
 
 type ImportPreview = {
   notes_count: number;
@@ -364,6 +365,7 @@ export default function DocsPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [importStep, setImportStep] = useState<ImportStep>("upload");
   const [importMode, setImportMode] = useState<ImportMode>("append");
+  const [importSource, setImportSource] = useState<ImportSource>("hedgedoc");
   const [importJobId, setImportJobId] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
@@ -795,8 +797,9 @@ export default function DocsPage() {
 
   const apiBase = process.env.NEXT_PUBLIC_API_BASE || "/api/v1";
 
-  const openImportModal = useCallback(() => {
+  const openImportModal = useCallback((source: ImportSource) => {
     resetImportState();
+    setImportSource(source);
     setImportOpen(true);
   }, [resetImportState]);
 
@@ -813,7 +816,7 @@ export default function DocsPage() {
       const token = getAuthToken();
       const form = new FormData();
       form.append("file", file, file.name);
-      const uploadRes = await fetch(`${apiBase}/import/hedgedoc/upload`, {
+      const uploadRes = await fetch(`${apiBase}/import/${importSource}/upload`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: form,
@@ -834,7 +837,7 @@ export default function DocsPage() {
         throw new Error("Invalid upload response");
       }
       setImportJobId(jobId);
-      const preview = await apiFetch<ImportPreview>(`/import/hedgedoc/${jobId}/preview`);
+      const preview = await apiFetch<ImportPreview>(`/import/${importSource}/${jobId}/preview`);
       setImportPreview(preview);
       setImportStep("preview");
     } catch (err) {
@@ -842,14 +845,14 @@ export default function DocsPage() {
       setImportError(err instanceof Error ? err.message : "Import failed");
       setImportStep("upload");
     }
-  }, [apiBase]);
+  }, [apiBase, importSource]);
 
   const handleImportConfirm = useCallback(async () => {
     if (!importJobId) return;
     setImportError(null);
     setImportStep("importing");
     try {
-      await apiFetch<{ ok: boolean }>(`/import/hedgedoc/${importJobId}/confirm`, {
+      await apiFetch<{ ok: boolean }>(`/import/${importSource}/${importJobId}/confirm`, {
         method: "POST",
         body: JSON.stringify({ mode: importMode }),
       });
@@ -860,7 +863,7 @@ export default function DocsPage() {
           status: string;
           progress: number;
           report: ImportReport | null;
-        }>(`/import/hedgedoc/${importJobId}/status`);
+        }>(`/import/${importSource}/${importJobId}/status`);
         setImportProgress(status.progress);
         if (status.status === "done") {
           setImportReport(status.report || null);
@@ -876,7 +879,43 @@ export default function DocsPage() {
       setImportError(err instanceof Error ? err.message : "Import failed");
       setImportStep("preview");
     }
-  }, [fetchSidebarTags, fetchSummary, fetchTags, importJobId, importMode, tagSearch]);
+  }, [fetchSidebarTags, fetchSummary, fetchTags, importJobId, importMode, importSource, tagSearch]);
+
+  const handleExportNotes = useCallback(async () => {
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`${apiBase}/export/notes`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.status === 401) {
+        removeAuthToken();
+        window.location.href = "/login";
+        return;
+      }
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const payload = await res.json().catch(() => ({}));
+        const code = payload?.code;
+        if (typeof code === "number" && code !== 0) {
+          throw new Error(payload?.msg || payload?.message || "Export failed");
+        }
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const disposition = res.headers.get("content-disposition") || "";
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      link.href = url;
+      link.download = match?.[1] || "mnote-notes.zip";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      toast({ description: err instanceof Error ? err.message : "Export failed", variant: "error" });
+    }
+  }, [apiBase, toast]);
 
   return (
     <div className="flex h-screen flex-col md:flex-row bg-background text-foreground">
@@ -1201,24 +1240,42 @@ export default function DocsPage() {
                     </button>
                     {showImportMenu && (
                       <div className="absolute right-full top-0 mr-1 w-44 rounded-md border border-border bg-popover p-1 shadow-md">
-                        <button
-                          onClick={() => {
-                            setShowUserMenu(false);
-                            setShowImportMenu(false);
-                            openImportModal();
-                          }}
-                          className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-                        >
-                          <FileArchive className="mr-2 h-4 w-4" />
-                          HedgeDoc
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-                  >
+                          <button
+                            onClick={() => {
+                              setShowUserMenu(false);
+                              setShowImportMenu(false);
+                              openImportModal("hedgedoc");
+                            }}
+                            className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                          >
+                            <FileArchive className="mr-2 h-4 w-4" />
+                            HedgeDoc
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowUserMenu(false);
+                              setShowImportMenu(false);
+                              openImportModal("notes");
+                            }}
+                            className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                          >
+                            <FileArchive className="mr-2 h-4 w-4" />
+                            Notes (JSON)
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleExportNotes}
+                      className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      <span>Export Notes</span>
+                    </button>
+                    <button
+                      onClick={handleLogout}
+                      className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                    >
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Sign out</span>
                   </button>
@@ -1341,9 +1398,13 @@ export default function DocsPage() {
           <div className="relative w-full max-w-2xl rounded-2xl border border-border bg-background shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <div>
-                <div className="text-sm font-bold">Import from HedgeDoc</div>
+                <div className="text-sm font-bold">
+                  {importSource === "hedgedoc" ? "Import from HedgeDoc" : "Import Notes (JSON)"}
+                </div>
                 <div className="text-[11px] text-muted-foreground">
-                  Upload a HedgeDoc export ZIP to import notes
+                  {importSource === "hedgedoc"
+                    ? "Upload a HedgeDoc export ZIP to import notes"
+                    : "Upload a notes JSON ZIP to import notes"}
                 </div>
               </div>
               <button
@@ -1368,7 +1429,9 @@ export default function DocsPage() {
                     <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 text-primary mx-auto mb-3">
                       <FileArchive className="h-5 w-5" />
                     </div>
-                    <div className="text-sm font-medium">Upload HedgeDoc ZIP</div>
+                    <div className="text-sm font-medium">
+                      {importSource === "hedgedoc" ? "Upload HedgeDoc ZIP" : "Upload Notes JSON ZIP"}
+                    </div>
                     <div className="text-xs text-muted-foreground mt-1">Only .zip files are supported</div>
                     <label className="inline-flex items-center gap-2 mt-4 cursor-pointer rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold hover:bg-accent">
                       <Upload className="h-4 w-4" />
@@ -1387,9 +1450,15 @@ export default function DocsPage() {
                       <div className="text-xs text-muted-foreground mt-2">{importFileName}</div>
                     )}
                   </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    We will extract tags from lines starting with <code className="font-mono">###### tags:</code> and remove them from the content.
-                  </div>
+                  {importSource === "hedgedoc" ? (
+                    <div className="text-[11px] text-muted-foreground">
+                      We will extract tags from lines starting with <code className="font-mono">###### tags:</code> and remove them from the content.
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-muted-foreground">
+                      Each JSON file should include title and content, with optional summary and tag_list.
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -63,6 +63,7 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.DELETE("/tags/:id", deps.Tags.Delete)
 
 	authGroup.GET("/export", deps.Export.Export)
+	authGroup.GET("/export/notes", deps.Export.ExportNotes)
 	authGroup.POST("/files/upload", deps.Files.Upload)
 	authGroup.POST("/ai/polish", deps.AI.Polish)
 	authGroup.POST("/ai/generate", deps.AI.Generate)
@@ -72,6 +73,10 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.GET("/import/hedgedoc/:job_id/preview", deps.Import.HedgeDocPreview)
 	authGroup.POST("/import/hedgedoc/:job_id/confirm", deps.Import.HedgeDocConfirm)
 	authGroup.GET("/import/hedgedoc/:job_id/status", deps.Import.HedgeDocStatus)
+	authGroup.POST("/import/notes/upload", deps.Import.NotesUpload)
+	authGroup.GET("/import/notes/:job_id/preview", deps.Import.NotesPreview)
+	authGroup.POST("/import/notes/:job_id/confirm", deps.Import.NotesConfirm)
+	authGroup.GET("/import/notes/:job_id/status", deps.Import.NotesStatus)
 
 	api.GET("/public/share/:token", deps.Shares.PublicGet)
 	api.GET("/files/:key", deps.Files.Get)
