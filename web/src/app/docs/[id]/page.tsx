@@ -7,7 +7,8 @@ import CodeMirror from "@uiw/react-codemirror";
 import { EditorView, placeholder } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
-import { LanguageDescription } from "@codemirror/language";
+import { LanguageDescription, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import { undo, redo, indentWithTab } from "@codemirror/commands";
 import { keymap } from "@codemirror/view";
 import ReactMarkdown from "react-markdown";
@@ -405,6 +406,15 @@ const Toolbar = memo(({
   </div>
 ));
 Toolbar.displayName = "Toolbar";
+
+const headingStyle = HighlightStyle.define([
+  { tag: tags.heading1, color: "#d97706", fontWeight: "bold" },
+  { tag: tags.heading2, color: "#d97706", fontWeight: "bold" },
+  { tag: tags.heading3, color: "#d97706", fontWeight: "bold" },
+  { tag: tags.heading4, color: "#d97706", fontWeight: "bold" },
+  { tag: tags.heading5, color: "#d97706", fontWeight: "bold" },
+  { tag: tags.heading6, color: "#d97706", fontWeight: "bold" },
+]);
 
 export default function EditorPage() {
   const params = useParams();
@@ -2021,6 +2031,7 @@ export default function EditorPage() {
                            return LanguageDescription.matchLanguageName(languages, languageName);
                          } 
                        }), 
+                       syntaxHighlighting(headingStyle),
                        EditorView.lineWrapping, 
                        keymap.of([indentWithTab]),
                        EditorView.updateListener.of((update) => {
