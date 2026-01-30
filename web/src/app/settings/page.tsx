@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { apiFetch } from "@/lib/api";
-import { Github, Chrome } from "lucide-react";
+import { Github, Chrome, Link2, Unlink } from "lucide-react";
 
 type BindingItem = {
   provider: "github" | "google";
@@ -168,17 +168,32 @@ export default function SettingsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                        status.bound ? "border-primary/30 text-primary bg-primary/10" : "border-border text-muted-foreground bg-muted"
-                      }`}>
-                        {status.bound ? "CONNECTED" : "DISCONNECTED"}
-                      </span>
+                      <span className={`h-2.5 w-2.5 rounded-full ${
+                        status.bound ? "bg-emerald-500" : "bg-amber-400"
+                      }`} aria-hidden />
                       {loading ? (
-                        <Button variant="outline" disabled>Loading...</Button>
+                        <Button variant="outline" disabled className="h-9 w-9 p-0" aria-label="Loading">
+                          <span className="text-xs">...</span>
+                        </Button>
                       ) : status.bound ? (
-                        <Button variant="outline" onClick={() => unbind(key)}>Unbind</Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => unbind(key)}
+                          className="h-9 w-9 p-0"
+                          aria-label={`Unbind ${label}`}
+                          title={`Unbind ${label}`}
+                        >
+                          <Unlink className="h-4 w-4" />
+                        </Button>
                       ) : (
-                        <Button onClick={() => startBind(key)}>Bind</Button>
+                        <Button
+                          onClick={() => startBind(key)}
+                          className="h-9 w-9 p-0"
+                          aria-label={`Bind ${label}`}
+                          title={`Bind ${label}`}
+                        >
+                          <Link2 className="h-4 w-4" />
+                        </Button>
                       )}
                     </div>
                   </div>
