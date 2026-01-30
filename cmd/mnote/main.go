@@ -23,6 +23,7 @@ import (
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/handler"
 	"github.com/xxxsen/mnote/internal/middleware"
+	"github.com/xxxsen/mnote/internal/oauth"
 	"github.com/xxxsen/mnote/internal/repo"
 	"github.com/xxxsen/mnote/internal/service"
 )
@@ -96,7 +97,31 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, mailSender)
 	allowRegister := cfg.Properties.EnableUserRegister
 	authService := service.NewAuthService(userRepo, verifyService, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), allowRegister)
-	oauthService := service.NewOAuthService(userRepo, oauthRepo, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), cfg.OAuth, cfg.Properties)
+	oauthProviders := map[string]oauth.Provider{}
+	client := &http.Client{Timeout: 10 * time.Second}
+	if cfg.Properties.EnableGithubOauth {
+		provider, err := oauth.NewProvider("github", oauth.ProviderArgs{Config: oauth.ProviderConfig{
+			ClientID:     cfg.OAuth.Github.ClientID,
+			ClientSecret: cfg.OAuth.Github.ClientSecret,
+			RedirectURL:  cfg.OAuth.Github.RedirectURL,
+			Scopes:       cfg.OAuth.Github.Scopes,
+		}, Client: client})
+		if err == nil {
+			oauthProviders["github"] = provider
+		}
+	}
+	if cfg.Properties.EnableGoogleOauth {
+		provider, err := oauth.NewProvider("google", oauth.ProviderArgs{Config: oauth.ProviderConfig{
+			ClientID:     cfg.OAuth.Google.ClientID,
+			ClientSecret: cfg.OAuth.Google.ClientSecret,
+			RedirectURL:  cfg.OAuth.Google.RedirectURL,
+			Scopes:       cfg.OAuth.Google.Scopes,
+		}, Client: client})
+		if err == nil {
+			oauthProviders["google"] = provider
+		}
+	}
+	oauthService := service.NewOAuthService(userRepo, oauthRepo, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), oauthProviders)
 	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, cfg.VersionMaxKeep)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)

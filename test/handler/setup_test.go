@@ -18,6 +18,7 @@ import (
 	"github.com/xxxsen/mnote/internal/handler"
 	"github.com/xxxsen/mnote/internal/middleware"
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/oauth"
 	"github.com/xxxsen/mnote/internal/pkg/password"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
 	"github.com/xxxsen/mnote/internal/repo"
@@ -54,7 +55,7 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	jwtSecret := []byte("test-secret")
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, noopSender{})
 	authService := service.NewAuthService(userRepo, verifyService, jwtSecret, time.Hour, true)
-	oauthService := service.NewOAuthService(userRepo, oauthRepo, jwtSecret, time.Hour, config.OAuthConfig{}, config.Properties{})
+	oauthService := service.NewOAuthService(userRepo, oauthRepo, jwtSecret, time.Hour, map[string]oauth.Provider{})
 	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, 10)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
