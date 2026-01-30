@@ -9,7 +9,6 @@ import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { LanguageDescription, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { vscodeDark } from "@uiw/codemirror-theme-vscode";
 import { undo, redo, indentWithTab } from "@codemirror/commands";
 import { keymap } from "@codemirror/view";
 import ReactMarkdown from "react-markdown";
@@ -408,18 +407,36 @@ const Toolbar = memo(({
 ));
 Toolbar.displayName = "Toolbar";
 
-const amberHeadingStyle = HighlightStyle.define([
+const typoraNightHighlightStyle = HighlightStyle.define([
   { tag: tags.heading1, color: "#f59e0b", fontWeight: "bold", fontSize: "1.4em" },
   { tag: tags.heading2, color: "#f59e0b", fontWeight: "bold", fontSize: "1.25em" },
   { tag: tags.heading3, color: "#f59e0b", fontWeight: "bold", fontSize: "1.15em" },
   { tag: tags.heading4, color: "#f59e0b", fontWeight: "bold" },
   { tag: tags.heading5, color: "#f59e0b", fontWeight: "bold" },
   { tag: tags.heading6, color: "#f59e0b", fontWeight: "bold" },
+  { tag: tags.keyword, color: "#f38ba8" },
+  { tag: tags.operator, color: "#89dceb" },
+  { tag: tags.string, color: "#98c379" },
+  { tag: tags.number, color: "#d19a66" },
+  { tag: tags.comment, color: "#777", fontStyle: "italic" },
+  { tag: tags.link, color: "#6db1ff", textDecoration: "underline" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strong, fontWeight: "bold" },
+  { tag: tags.variableName, color: "#bdbdbd" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "#89b4fa" },
+  { tag: tags.typeName, color: "#fab387" },
+  { tag: tags.propertyName, color: "#89dceb" },
+  { tag: tags.className, color: "#fab387" },
+  { tag: tags.meta, color: "#f38ba8" },
+  { tag: tags.monospace, color: "#bdbdbd", backgroundColor: "rgba(255,255,255,0.05)", borderRadius: "4px", padding: "0 4px" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
 ]);
 
-const editorBaseTheme = EditorView.theme({
+const typoraNightTheme = EditorView.theme({
   "&": {
     fontSize: "16px",
+    backgroundColor: "#262a30",
+    color: "#bdbdbd",
   },
   "&.cm-focused": {
     outline: "none",
@@ -428,14 +445,28 @@ const editorBaseTheme = EditorView.theme({
     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
     lineHeight: "1.6",
   },
-  ".cm-content": {
-    padding: "20px 0",
-  },
   ".cm-gutters": {
+    backgroundColor: "#262a30",
     border: "none",
+    color: "#4b5263",
     minWidth: "40px",
   },
-});
+  ".cm-activeLineGutter": {
+    backgroundColor: "#2c313a",
+    color: "#bdbdbd",
+    fontWeight: "bold",
+  },
+  ".cm-activeLine": {
+    backgroundColor: "#2c313a",
+  },
+  ".cm-cursor": {
+    borderLeft: "2px solid #f59e0b",
+  },
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
+    backgroundColor: "rgba(137, 180, 250, 0.2) !important",
+  },
+}, { dark: true });
+
 
 export default function EditorPage() {
   const params = useParams();
@@ -2047,7 +2078,7 @@ export default function EditorPage() {
                       <CodeMirror
                         value={content}
                         height="100%"
-                        theme={vscodeDark}
+                        theme={typoraNightTheme}
                      extensions={[
                         markdown({ 
                           codeLanguages: (info) => {
@@ -2055,8 +2086,7 @@ export default function EditorPage() {
                             return LanguageDescription.matchLanguageName(languages, languageName);
                           } 
                         }), 
-                        syntaxHighlighting(amberHeadingStyle),
-                        editorBaseTheme,
+                        syntaxHighlighting(typoraNightHighlightStyle),
                         EditorView.lineWrapping, 
                         keymap.of([indentWithTab]),
 
