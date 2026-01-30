@@ -55,7 +55,7 @@ export default function TagsPage() {
       setOffset(nextOffset + items.length);
     } catch (e) {
       console.error(e);
-      toast({ description: "Failed to load tags data", variant: "error" });
+      toast({ description: e instanceof Error ? e : "Failed to load tags data", variant: "error" });
     } finally {
       fetchingRef.current = false;
       setLoading(false);
@@ -88,7 +88,7 @@ export default function TagsPage() {
       setTags(prev => prev.filter(t => t.id !== tag.id));
     } catch (e) {
       console.error(e);
-      toast({ description: "Failed to delete tag", variant: "error" });
+      toast({ description: e instanceof Error ? e : "Failed to delete tag", variant: "error" });
     } finally {
       setDeletingId(null);
     }

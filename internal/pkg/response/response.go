@@ -1,8 +1,6 @@
 package response
 
 import (
-	"fmt"
-
 	"github.com/gin-gonic/gin"
 	"github.com/xxxsen/common/webapi/proxyutil"
 )
@@ -13,7 +11,7 @@ type codeErr struct {
 }
 
 func (e codeErr) Error() string {
-	return fmt.Sprintf("%d:%s", e.code, e.msg)
+	return e.msg
 }
 
 func (e codeErr) Code() uint32 {

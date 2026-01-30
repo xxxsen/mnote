@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch, setAuthEmail, setAuthToken } from "@/lib/api";
+import { apiFetch, setAuthEmail, setAuthToken, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Chrome, Github } from "lucide-react";
@@ -46,7 +46,7 @@ export default function LoginPage() {
       setAuthEmail(res.user.email);
       router.push("/docs");
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Login failed";
+      const message = err instanceof ApiError ? `${err.message} (Code: ${err.code})` : (err instanceof Error ? err.message : "Login failed");
       setError(message);
     } finally {
       setIsLoading(false);
@@ -62,7 +62,7 @@ export default function LoginPage() {
       });
       window.location.href = res.url;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "OAuth login failed";
+      const message = err instanceof ApiError ? `${err.message} (Code: ${err.code})` : (err instanceof Error ? err.message : "OAuth login failed");
       setError(message);
       setOauthLoading(null);
     }

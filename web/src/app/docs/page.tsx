@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch, removeAuthEmail, removeAuthToken, getAuthEmail, getAuthToken } from "@/lib/api";
+import { apiFetch, removeAuthEmail, removeAuthToken, getAuthEmail, getAuthToken, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
@@ -102,7 +102,7 @@ function TagEditor({
       resetSearch();
     } catch (err) {
       console.error(err);
-      toast({ description: "Failed to add tag", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Failed to add tag", variant: "error" });
     }
   };
 
@@ -776,8 +776,9 @@ export default function DocsPage() {
       router.push(`/docs/${doc.id}`);
     } catch (err) {
       console.error(err);
-      toast({ description: "Failed to create document", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Failed to update tag pin", variant: "error" });
     }
+
   };
 
   const handleUpdateTags = async (doc: DocumentWithTags, newTagIds: string[]) => {
@@ -890,7 +891,7 @@ export default function DocsPage() {
       const code = payload?.code;
       if (typeof code === "number" && code !== 0) {
         const message = payload?.msg || "Upload failed";
-        throw new Error(message);
+        throw new ApiError(message, code);
       }
       const jobId = payload?.data?.job_id || payload?.job_id;
       if (!jobId) {
@@ -954,11 +955,12 @@ export default function DocsPage() {
       }
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
-        const payload = await res.json().catch(() => ({}));
-        const code = payload?.code;
-        if (typeof code === "number" && code !== 0) {
-          throw new Error(payload?.msg || payload?.message || "Export failed");
-        }
+      const payload = await res.json().catch(() => ({}));
+      const code = payload?.code;
+      if (typeof code === "number" && code !== 0) {
+        throw new ApiError(payload?.msg || payload?.message || "Export failed", code);
+      }
+
       }
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -973,7 +975,7 @@ export default function DocsPage() {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error(err);
-      toast({ description: err instanceof Error ? err.message : "Export failed", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Export failed", variant: "error" });
     }
   }, [apiBase, toast]);
 
@@ -984,8 +986,9 @@ export default function DocsPage() {
       toast({ description: "Share link copied" });
     } catch (err) {
       console.error(err);
-      toast({ description: "Failed to copy link", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Failed to copy link", variant: "error" });
     }
+
   }, [toast]);
 
   return (

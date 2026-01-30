@@ -44,6 +44,15 @@ interface FetchOptions extends RequestInit {
 
 const ERR_UNAUTHORIZED = 10000001;
 
+export class ApiError extends Error {
+  code: number;
+  constructor(message: string, code: number) {
+    super(message);
+    this.code = code;
+    this.name = "ApiError";
+  }
+}
+
 export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
   const { requireAuth = true, headers = {}, ...rest } = options;
   
@@ -68,19 +77,19 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
     removeAuthToken();
     removeAuthEmail();
     window.location.href = "/login";
-    throw new Error("Unauthorized");
+    throw new ApiError("Unauthorized", 401);
   }
 
   if (res.status === 204) return {} as T;
 
   const payload = await res.json().catch(() => ({}));
   if (!payload || typeof payload !== "object") {
-    throw new Error(`API Error: ${res.status}`);
+    throw new ApiError(`API Error: ${res.status}`, res.status);
   }
   const code = (payload as { code?: number }).code;
   if (typeof code !== "number") {
     if (!res.ok) {
-      throw new Error(`API Error: ${res.status}`);
+      throw new ApiError(`API Error: ${res.status}`, res.status);
     }
     return payload as T;
   }
@@ -89,10 +98,10 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
       removeAuthToken();
       removeAuthEmail();
       window.location.href = "/login";
-      throw new Error("Unauthorized");
+      throw new ApiError("Unauthorized", code);
     }
-  const msg = (payload as { msg?: string; message?: string }).msg || (payload as { message?: string }).message || "API Error";
-    throw new Error(msg);
+    const msg = (payload as { msg?: string; message?: string }).msg || (payload as { message?: string }).message || "API Error";
+    throw new ApiError(msg, code);
   }
   return (payload as { data?: T }).data as T;
 }
@@ -118,12 +127,12 @@ export async function uploadFile(file: File): Promise<UploadResult> {
     removeAuthToken();
     removeAuthEmail();
     window.location.href = "/login";
-    throw new Error("Unauthorized");
+    throw new ApiError("Unauthorized", 401);
   }
 
   const data = await res.json();
   if (!data || typeof data !== "object") {
-    throw new Error(`API Error: ${res.status}`);
+    throw new ApiError(`API Error: ${res.status}`, res.status);
   }
   const code = (data as { code?: number }).code;
   if (typeof code === "number" && code !== 0) {
@@ -131,10 +140,10 @@ export async function uploadFile(file: File): Promise<UploadResult> {
       removeAuthToken();
       removeAuthEmail();
       window.location.href = "/login";
-      throw new Error("Unauthorized");
+      throw new ApiError("Unauthorized", code);
     }
     const msg = (data as { msg?: string; message?: string }).msg || (data as { message?: string }).message || "API Error";
-    throw new Error(msg);
+    throw new ApiError(msg, code);
   }
   if (data && typeof data === "object" && "data" in data) {
     return (data as { data?: UploadResult }).data as UploadResult;

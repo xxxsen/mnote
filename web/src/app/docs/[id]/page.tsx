@@ -733,7 +733,7 @@ export default function EditorPage() {
       
     } catch (err) {
       console.error(err);
-      toast({ description: "Document not found", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Document not found", variant: "error" });
       router.push("/docs");
     } finally {
       setLoading(false);
@@ -1087,7 +1087,7 @@ export default function EditorPage() {
       } catch (err) {
         console.error(err);
         replacePlaceholder(placeholder, "");
-        toast({ description: "Upload failed", variant: "error" });
+        toast({ description: err instanceof Error ? err : "Upload failed", variant: "error" });
       }
     },
     [insertTextAtCursor, randomString, replacePlaceholder, toast]
@@ -1309,7 +1309,7 @@ export default function EditorPage() {
         setLastSavedAt(Math.floor(Date.now() / 1000));
       } catch (err) {
         console.error(err);
-        toast({ description: "Failed to save tags", variant: "error" });
+        toast({ description: err instanceof Error ? err : "Failed to save tags", variant: "error" });
         setSelectedTagIDs(previous);
       }
   },
@@ -1373,7 +1373,7 @@ export default function EditorPage() {
       clearTagQuery();
     } catch (err) {
       console.error(err);
-        toast({ description: "Failed to add tag", variant: "error" });
+        toast({ description: err instanceof Error ? err : "Failed to add tag", variant: "error" });
     }
   }, [allTags, clearTagQuery, findExistingTagByName, isValidTagName, mergeTags, normalizeTagName, saveTagIDs, selectedTagIDs, tagQuery, tagSuggestions, toast]);
 
@@ -1480,7 +1480,7 @@ export default function EditorPage() {
       closeAiModal();
     } catch (err) {
       console.error(err);
-      toast({ description: "Failed to apply summary", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Failed to apply summary", variant: "error" });
     } finally {
       setAiLoading(false);
     }
@@ -1530,7 +1530,7 @@ export default function EditorPage() {
       closeAiModal();
     } catch (err) {
       console.error(err);
-      toast({ description: "Failed to apply tags", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Failed to apply tags", variant: "error" });
     } finally {
       setAiLoading(false);
     }
@@ -1691,7 +1691,7 @@ export default function EditorPage() {
       }
     } catch (err) {
       console.error(err);
-      toast({ description: "Failed to save", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Failed to save", variant: "error" });
     } finally {
       setSaving(false);
     }
@@ -1703,7 +1703,7 @@ export default function EditorPage() {
       router.push("/docs");
     } catch (err) {
       console.error(err);
-      toast({ description: "Failed to delete", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Failed to delete", variant: "error" });
     }
   };
 
@@ -1753,7 +1753,7 @@ export default function EditorPage() {
       setShareUrl(url);
     } catch (err) {
       console.error(err);
-      toast({ description: "Failed to create share link", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Failed to create share link", variant: "error" });
     }
   };
 
@@ -1781,7 +1781,7 @@ export default function EditorPage() {
       setShareUrl("");
     } catch (err) {
       console.error(err);
-      toast({ description: "Failed to revoke share link", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Failed to revoke share link", variant: "error" });
     }
   };
 

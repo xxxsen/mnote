@@ -48,7 +48,7 @@ function SettingsContent() {
       setBindings(next);
     } catch (err) {
       console.error(err);
-      toast({ description: "Failed to load bindings", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Failed to load bindings", variant: "error" });
     } finally {
       setLoading(false);
     }
@@ -95,7 +95,7 @@ function SettingsContent() {
       window.location.href = res.url;
     } catch (err) {
       console.error(err);
-      toast({ description: "Failed to start binding", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Failed to start binding", variant: "error" });
     }
   };
 
@@ -105,7 +105,7 @@ function SettingsContent() {
       fetchBindings();
     } catch (err) {
       console.error(err);
-      toast({ description: "Failed to unbind provider", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Failed to unbind provider", variant: "error" });
     }
   };
 
@@ -128,8 +128,9 @@ function SettingsContent() {
       setNewPassword("");
     } catch (err) {
       console.error(err);
-      toast({ description: "Failed to update password.", variant: "error" });
+      toast({ description: err instanceof Error ? err : "Failed to update password", variant: "error" });
     } finally {
+
       setSavingPassword(false);
     }
   };

@@ -2,11 +2,13 @@
 
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 
+import { ApiError } from "@/lib/api";
+
 type ToastVariant = "default" | "success" | "error";
 
 type ToastInput = {
   title?: string;
-  description: string;
+  description: string | ApiError | Error;
   variant?: ToastVariant;
   duration?: number;
 };
@@ -41,10 +43,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const toast = useCallback(
     (input: ToastInput) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      let description = "";
+      if (typeof input.description === "string") {
+        description = input.description;
+      } else if (input.description instanceof ApiError) {
+        description = `${input.description.message} (Code: ${input.description.code})`;
+      } else if (input.description instanceof Error) {
+        description = input.description.message;
+      }
+
       const item: ToastItem = {
         id,
         title: input.title,
-        description: input.description,
+        description,
         variant: input.variant || "default",
         duration: input.duration ?? 3200,
       };
