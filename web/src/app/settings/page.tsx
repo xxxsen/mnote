@@ -126,69 +126,103 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="max-w-3xl mx-auto p-6 space-y-6">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-2xl font-bold">Account Settings</div>
-            <div className="text-sm text-muted-foreground">Manage linked OAuth providers.</div>
+    <div className="min-h-screen bg-gradient-to-b from-muted/40 via-background to-background text-foreground">
+      <div className="max-w-4xl mx-auto px-6 py-10 space-y-8">
+        <div className="rounded-2xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Account</div>
+              <div className="text-3xl font-bold tracking-tight mt-2">Account Settings</div>
+              <div className="text-sm text-muted-foreground mt-1">Connect providers and manage your security options.</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => router.push(returnTo)}>Back to Docs</Button>
+            </div>
           </div>
-          <Button variant="outline" onClick={() => router.push(returnTo)}>Back to Docs</Button>
         </div>
 
-        <div className="border border-border rounded-lg divide-y divide-border bg-card">
-          {providers.map(({ key, label, icon: Icon }) => {
-            const status = bindings[key] || { bound: false };
-            return (
-              <div key={key} className="p-4 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full border border-border flex items-center justify-center bg-muted">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="font-medium">{label}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {status.bound ? `Linked${status.email ? ` as ${status.email}` : ""}` : "Not linked"}
+        <div className="space-y-6">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold">Connected Accounts</div>
+                <div className="text-xs text-muted-foreground">Link providers for quick sign in.</div>
+              </div>
+            </div>
+            <div className="border border-border rounded-2xl bg-card shadow-sm overflow-hidden">
+              {providers.map(({ key, label, icon: Icon }) => {
+                const status = bindings[key] || { bound: false };
+                return (
+                  <div key={key} className="flex items-center justify-between gap-4 px-4 py-4 border-b border-border/70 last:border-b-0">
+                    <div className="flex items-center gap-3">
+                      <div className={`h-11 w-11 rounded-xl border border-border flex items-center justify-center ${
+                        status.bound ? "bg-primary/10 text-primary" : "bg-muted"
+                      }`}>
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <div className="font-medium">{label}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {status.bound ? `Linked${status.email ? ` as ${status.email}` : ""}` : "Not linked"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                        status.bound ? "border-primary/30 text-primary bg-primary/10" : "border-border text-muted-foreground bg-muted"
+                      }`}>
+                        {status.bound ? "CONNECTED" : "DISCONNECTED"}
+                      </span>
+                      {loading ? (
+                        <Button variant="outline" disabled>Loading...</Button>
+                      ) : status.bound ? (
+                        <Button variant="outline" onClick={() => unbind(key)}>Unbind</Button>
+                      ) : (
+                        <Button onClick={() => startBind(key)}>Bind</Button>
+                      )}
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <div className="text-sm font-semibold">Security</div>
+              <div className="text-xs text-muted-foreground">Keep your account protected.</div>
+            </div>
+            <div className="border border-border rounded-2xl bg-card p-5 shadow-sm space-y-4">
+              <div>
+                <div className="font-medium">Password</div>
+                <div className="text-xs text-muted-foreground mt-1">Leave current password blank if you signed up with OAuth.</div>
+              </div>
+              <div className="grid gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Current password</label>
+                  <Input
+                    type="password"
+                    placeholder="Current password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                  />
                 </div>
-                <div>
-                  {loading ? (
-                    <Button variant="outline" disabled>Loading...</Button>
-                  ) : status.bound ? (
-                    <Button variant="outline" onClick={() => unbind(key)}>Unbind</Button>
-                  ) : (
-                    <Button onClick={() => startBind(key)}>Bind</Button>
-                  )}
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">New password</label>
+                  <Input
+                    type="password"
+                    placeholder="New password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
                 </div>
               </div>
-            );
-          })}
-        </div>
-
-        <div className="border border-border rounded-lg bg-card p-4 space-y-3">
-          <div>
-            <div className="font-medium">Password</div>
-            <div className="text-xs text-muted-foreground">Leave current password blank if you signed up with OAuth.</div>
-          </div>
-          <div className="grid gap-3">
-            <Input
-              type="password"
-              placeholder="Current password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-            />
-            <Input
-              type="password"
-              placeholder="New password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-            />
-          </div>
-          <div>
-            <Button onClick={updatePassword} disabled={savingPassword}>
-              {savingPassword ? "Saving..." : "Update Password"}
-            </Button>
+              <div>
+                <Button onClick={updatePassword} disabled={savingPassword} className="w-full">
+                  {savingPassword ? "Saving..." : "Update Password"}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
