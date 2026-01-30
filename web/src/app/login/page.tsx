@@ -102,26 +102,28 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        <div className="mt-6 space-y-2">
+        <div className="mt-6 flex items-center justify-center gap-3">
           <Button
             type="button"
             variant="outline"
-            className="w-full"
+            className="h-10 w-10 rounded-full p-0"
             onClick={() => handleOAuth("github")}
             disabled={oauthLoading !== null}
+            aria-label="Continue with GitHub"
+            title={oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
           >
-            <Github className="mr-2 h-4 w-4" />
-            {oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
+            <Github className="h-4 w-4" />
           </Button>
           <Button
             type="button"
             variant="outline"
-            className="w-full"
+            className="h-10 w-10 rounded-full p-0"
             onClick={() => handleOAuth("google")}
             disabled={oauthLoading !== null}
+            aria-label="Continue with Google"
+            title={oauthLoading === "google" ? "Connecting..." : "Continue with Google"}
           >
-            <Chrome className="mr-2 h-4 w-4" />
-            {oauthLoading === "google" ? "Connecting..." : "Continue with Google"}
+            <Chrome className="h-4 w-4" />
           </Button>
         </div>
 
