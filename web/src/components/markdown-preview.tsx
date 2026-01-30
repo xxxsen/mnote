@@ -8,6 +8,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
+import { Copy, Check } from "lucide-react";
 import Mermaid from "@/components/mermaid";
 import { GoSandbox } from "@/components/go-sandbox";
 import { cn } from "@/lib/utils";
@@ -220,7 +221,7 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
   const handleCopyLocal = React.useCallback(() => {
     const onSuccess = () => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setTimeout(() => setCopied(false), 1000);
     };
 
     if (navigator.clipboard && window.isSecureContext) {
@@ -267,9 +268,14 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
             event.stopPropagation();
             handleCopyLocal();
           }}
-          className="text-[10px] px-2 h-5 flex items-center justify-center rounded border border-transparent hover:border-border bg-transparent hover:bg-background text-muted-foreground/40 hover:text-foreground transition-all min-w-[50px] font-bold tracking-tighter"
+          className="h-6 w-6 flex items-center justify-center rounded-md border border-transparent hover:border-border hover:bg-background transition-all"
+          title="Copy"
         >
-          {copied ? "COPIED" : "COPY"}
+          {copied ? (
+            <Check className="h-3 w-3 text-green-500" />
+          ) : (
+            <Copy className="h-3 w-3 text-muted-foreground/50" />
+          )}
         </button>
       </div>
       <div className="p-3 pt-2">
@@ -310,7 +316,7 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
   const handleCopyLocal = React.useCallback(() => {
     const onSuccess = () => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setTimeout(() => setCopied(false), 1000);
     };
 
     if (navigator.clipboard && window.isSecureContext) {
@@ -382,9 +388,14 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
             event.stopPropagation();
             handleCopyLocal();
           }}
-          className="text-[10px] px-2 h-5 flex items-center justify-center rounded border border-transparent hover:border-border bg-transparent hover:bg-background text-muted-foreground/40 hover:text-foreground transition-all min-w-[50px] font-bold tracking-tighter"
+          className="h-6 w-6 flex items-center justify-center rounded-md border border-transparent hover:border-border hover:bg-background transition-all"
+          title="Copy"
         >
-          {copied ? "COPIED" : "COPY"}
+          {copied ? (
+            <Check className="h-3 w-3 text-green-500" />
+          ) : (
+            <Copy className="h-3 w-3 text-muted-foreground/50" />
+          )}
         </button>
       </div>
       <div className="p-4 flex justify-center">

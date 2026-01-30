@@ -29,7 +29,7 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), 1000);
     } catch (err) {
       console.error("Failed to copy code:", err);
     }
@@ -122,15 +122,15 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 px-2.5 text-[10px] font-bold rounded-lg hover:bg-muted transition-all"
+            className="h-7 w-7 p-0 rounded-lg hover:bg-muted transition-all"
             onClick={handleCopy}
+            title="Copy Code"
           >
             {copied ? (
-              <Check className="h-3 w-3 mr-1.5 text-green-500" />
+              <Check className="h-3.5 w-3.5 text-green-500" />
             ) : (
-              <Copy className="h-3 w-3 mr-1.5" />
+              <Copy className="h-3.5 w-3.5 text-muted-foreground/60" />
             )}
-            {copied ? "COPIED" : "COPY"}
           </Button>
           <Button
             size="sm"
