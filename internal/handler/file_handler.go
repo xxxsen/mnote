@@ -96,26 +96,32 @@ func (h *FileHandler) Get(c *gin.Context) {
 	}
 	defer file.Close()
 	contentType := mime.TypeByExtension(filepath.Ext(key))
-	if seeker, ok := file.(io.ReadSeeker); ok && (contentType == "" || contentType == "application/octet-stream") {
-		buf := make([]byte, 512)
-		n, _ := seeker.Read(buf)
-		if n > 0 {
-			detected := http.DetectContentType(buf[:n])
-			if detected != "application/octet-stream" {
-				contentType = detected
+	if contentType == "" || contentType == "application/octet-stream" {
+		if seeker, ok := file.(io.ReadSeeker); ok {
+			buf := make([]byte, 512)
+			n, _ := seeker.Read(buf)
+			if n > 0 {
+				detected := http.DetectContentType(buf[:n])
+				if detected != "application/octet-stream" {
+					contentType = detected
+				}
 			}
+			_, _ = seeker.Seek(0, io.SeekStart)
 		}
-		_, _ = seeker.Seek(0, io.SeekStart)
 	}
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
 	c.Header("Content-Type", contentType)
 	c.Header("X-Content-Type-Options", "nosniff")
-	if !strings.HasPrefix(contentType, "image/") && !strings.HasPrefix(contentType, "video/") && !strings.HasPrefix(contentType, "audio/") {
+	isMedia := strings.HasPrefix(contentType, "image/") ||
+		strings.HasPrefix(contentType, "video/") ||
+		strings.HasPrefix(contentType, "audio/") ||
+		contentType == "application/pdf"
+
+	if !isMedia {
 		c.Header("Content-Disposition", "attachment; filename="+key)
 	}
-	c.Header("Content-Security-Policy", "default-src 'none'; sandbox")
 	_, _ = io.Copy(c.Writer, file)
 }
 

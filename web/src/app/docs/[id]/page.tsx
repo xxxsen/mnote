@@ -438,7 +438,6 @@ export default function EditorPage() {
   const [aiRemovedTagIDs, setAiRemovedTagIDs] = useState<string[]>([]);
   const [aiError, setAiError] = useState<string | null>(null);
   const [slashMenu, setSlashMenu] = useState<{ open: boolean; x: number; y: number; filter: string }>({ open: false, x: 0, y: 0, filter: "" });
-  const [hoverImage, setHoverImage] = useState<{ url: string; x: number; y: number } | null>(null);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
   const [quickOpenQuery, setQuickOpenQuery] = useState("");
   const [quickOpenResults, setQuickOpenResults] = useState<Document[]>([]);
@@ -2013,32 +2012,10 @@ export default function EditorPage() {
                       value={content}
                       height="100%"
                    extensions={[
-                     markdown(), 
-                     EditorView.lineWrapping, 
-                      EditorView.domEventHandlers({
-                        mousemove: (event, view) => {
-                         const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
-                         if (pos === null) {
-                           setHoverImage(null);
-                           return;
-                         }
-                         const line = view.state.doc.lineAt(pos);
-                         const lineText = line.text;
-                         const imgRegex = /!\[.*?\]\((.*?)\)/g;
-                         let match;
-                         while ((match = imgRegex.exec(lineText)) !== null) {
-                           const start = line.from + match.index;
-                           const end = start + match[0].length;
-                           if (pos >= start && pos <= end) {
-                             setHoverImage({ url: match[1], x: event.clientX, y: event.clientY });
-                             return;
-                           }
-                         }
-                         setHoverImage(null);
-                       },
-                        mouseleave: () => setHoverImage(null),
-                      }),
+                      markdown(), 
+                      EditorView.lineWrapping, 
                       EditorView.updateListener.of((update) => {
+
                         if (update.selectionSet || update.docChanged) {
                           updateCursorInfo(update.view);
                           
@@ -2100,18 +2077,9 @@ export default function EditorPage() {
                     }}
                   />
 
-                 
-                 {hoverImage && (
-                    <div 
-                      className="fixed z-[70] pointer-events-none p-1 bg-background border border-border rounded-lg shadow-2xl animate-in fade-in zoom-in-95 duration-200"
-                      style={{ left: hoverImage.x + 20, top: hoverImage.y - 100 }}
-                    >
-                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                       <img src={hoverImage.url} alt="Preview" className="max-w-[200px] max-h-[200px] rounded object-contain" />
-                    </div>
-                 )}
-                 
+                  
                  {slashMenu.open && (
+
                     <div 
                       className="fixed z-[60] bg-popover border border-border rounded-lg shadow-2xl p-1 w-48 animate-in fade-in zoom-in-95 duration-200"
                       style={{ left: slashMenu.x, top: slashMenu.y }}

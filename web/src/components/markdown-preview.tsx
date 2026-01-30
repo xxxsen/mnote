@@ -544,7 +544,7 @@ const MarkdownPreview = memo(
 
         if (isVideo) {
           return (
-            <span className="inline-flex flex-col items-center w-full my-4">
+            <span className="flex flex-col items-center w-full my-4 relative z-10">
               <video 
                 src={src} 
                 controls 
@@ -562,7 +562,7 @@ const MarkdownPreview = memo(
 
         if (isAudio) {
           return (
-            <span className="inline-flex flex-col items-center w-full my-4">
+            <span className="flex flex-col items-center w-full my-4 relative z-10">
               <audio 
                 src={src} 
                 controls 
