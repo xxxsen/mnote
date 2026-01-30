@@ -461,30 +461,18 @@ const MarkdownPreview = memo(
           const isMermaid = className.includes("language-mermaid");
           const isGo = className.includes("language-go") || className.includes("language-golang");
           const isRunnable = (metastring && metastring.includes("[runnable]")) || className.includes("[runnable]");
+          const isFenced = className.startsWith("language-");
 
-          if (isToc || isMermaid || (isGo && isRunnable)) {
+          if (isToc || isMermaid || (isGo && isRunnable) || isFenced) {
             return <>{children}</>;
           }
         }
-        return (
-          <pre 
-            {...props} 
-            style={{ 
-              margin: 0, 
-              padding: 0, 
-              background: "transparent", 
-              border: "none",
-              boxShadow: "none"
-            }}
-          >
-            {children}
-          </pre>
-        );
+        return <pre {...props}>{children}</pre>;
       },
       /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
       code(props: any) {
         const { className, children, metastring, ...rest } = props;
-        const match = /language-(\S+)/.exec(className || "");
+        const match = /language-(\S*)/.exec(className || "");
         const isMermaid = match && match[1] === "mermaid";
         const isToc = match && (match[1] === "toc" || match[1] === "TOC");
 
@@ -505,7 +493,7 @@ const MarkdownPreview = memo(
 
         if (match) {
           const languageMatch = match[1];
-          let language = languageMatch;
+          let language = languageMatch || "text";
           let fileName = "";
           let isRunnable = false;
 
