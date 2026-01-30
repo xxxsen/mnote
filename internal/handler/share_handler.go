@@ -49,3 +49,12 @@ func (h *ShareHandler) PublicGet(c *gin.Context) {
 	}
 	response.Success(c, detail)
 }
+
+func (h *ShareHandler) List(c *gin.Context) {
+	items, err := h.documents.ListSharedDocuments(c.Request.Context(), getUserID(c))
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"items": items})
+}

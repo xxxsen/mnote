@@ -97,3 +97,35 @@ func (r *ShareRepo) GetActiveByDocument(ctx context.Context, userID, docID strin
 	}
 	return &share, nil
 }
+
+type SharedDocument struct {
+	ID      string
+	Title   string
+	Summary string
+	Mtime   int64
+	Token   string
+}
+
+func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID string) ([]SharedDocument, error) {
+	const sqlStr = `
+		SELECT d.id, d.title, d.summary, d.mtime, s.token
+		FROM shares s
+		JOIN documents d ON d.id = s.document_id AND d.user_id = s.user_id
+		WHERE s.user_id = ? AND s.state = ? AND d.state = ?
+		ORDER BY d.mtime DESC
+	`
+	rows, err := r.db.QueryContext(ctx, sqlStr, userID, ShareStateActive, 1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]SharedDocument, 0)
+	for rows.Next() {
+		var item SharedDocument
+		if err := rows.Scan(&item.ID, &item.Title, &item.Summary, &item.Mtime, &item.Token); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}

@@ -356,3 +356,39 @@ func (s *DocumentService) GetShareByToken(ctx context.Context, token string) (*P
 		Tags:     tags,
 	}, nil
 }
+
+type SharedDocumentSummary struct {
+	ID      string   `json:"id"`
+	Title   string   `json:"title"`
+	Summary string   `json:"summary"`
+	Mtime   int64    `json:"mtime"`
+	Token   string   `json:"token"`
+	TagIDs  []string `json:"tag_ids"`
+}
+
+func (s *DocumentService) ListSharedDocuments(ctx context.Context, userID string) ([]SharedDocumentSummary, error) {
+	items, err := s.shares.ListActiveDocuments(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	docIDs := make([]string, 0, len(items))
+	for _, item := range items {
+		docIDs = append(docIDs, item.ID)
+	}
+	tagIDsByDoc, err := s.tags.ListTagIDsByDocIDs(ctx, userID, docIDs)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]SharedDocumentSummary, 0, len(items))
+	for _, item := range items {
+		results = append(results, SharedDocumentSummary{
+			ID:      item.ID,
+			Title:   item.Title,
+			Summary: item.Summary,
+			Mtime:   item.Mtime,
+			Token:   item.Token,
+			TagIDs:  tagIDsByDoc[item.ID],
+		})
+	}
+	return results, nil
+}

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { Document, Tag } from "@/types";
-import { ChevronDown, ChevronRight, Download, FileArchive, LogOut, Pencil, Pin, Search, Settings, Star, Upload, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Download, FileArchive, LogOut, Pencil, Pin, Search, Settings, Share2, Star, Upload, X } from "lucide-react";
 
 function TagEditor({
   doc,
@@ -282,6 +282,7 @@ function generatePixelAvatar(seed: string) {
 interface DocumentWithTags extends Document {
   tag_ids?: string[];
   tags?: Tag[];
+  share_token?: string;
 }
 
 interface TagSummary {
@@ -294,6 +295,15 @@ interface TagSummary {
 type ImportStep = "upload" | "parsing" | "preview" | "importing" | "done";
 type ImportMode = "skip" | "overwrite" | "append";
 type ImportSource = "hedgedoc" | "notes";
+
+type SharedItem = {
+  id: string;
+  title: string;
+  summary?: string;
+  tag_ids?: string[];
+  mtime: number;
+  token: string;
+};
 
 type ImportPreview = {
   notes_count: number;
@@ -334,6 +344,7 @@ export default function DocsPage() {
   const [recentDocs, setRecentDocs] = useState<DocumentWithTags[]>([]);
   const [totalDocs, setTotalDocs] = useState(0);
   const [starredTotal, setStarredTotal] = useState(0);
+  const [sharedTotal, setSharedTotal] = useState(0);
   const [tags, setTags] = useState<Tag[]>([]);
   const [sidebarTags, setSidebarTags] = useState<TagSummary[]>([]);
   const [sidebarLoading, setSidebarLoading] = useState(false);
@@ -354,6 +365,7 @@ export default function DocsPage() {
   const [search, setSearch] = useState(searchParams.get("q") || "");
   const [selectedTag, setSelectedTag] = useState(searchParams.get("tag_id") || "");
   const [showStarred, setShowStarred] = useState(false);
+  const [showShared, setShowShared] = useState(false);
   const [tagSearch, setTagSearch] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string>("");
   const [userEmail, setUserEmail] = useState<string>("");
@@ -456,6 +468,35 @@ export default function DocsPage() {
       setLoading(true);
     }
     try {
+      if (showShared) {
+        const res = await apiFetch<{ items: SharedItem[] }>("/shares");
+        const items = res?.items || [];
+        const tagIDs = new Set<string>();
+        setDocs(items.map((item) => ({
+          id: item.id,
+          user_id: "",
+          title: item.title,
+          content: item.summary || "",
+          summary: item.summary || "",
+          state: 1,
+          pinned: 0,
+          starred: 0,
+          ctime: item.mtime,
+          mtime: item.mtime,
+          tags: [],
+          tag_ids: item.tag_ids || [],
+          share_token: item.token,
+        } as DocumentWithTags)));
+        items.forEach((item) => {
+          (item.tag_ids || []).forEach((id) => tagIDs.add(id));
+        });
+        if (tagIDs.size > 0) {
+          await fetchTagsByIDs(Array.from(tagIDs));
+        }
+        setHasMore(false);
+        setNextOffset(0);
+        return;
+      }
       const query = new URLSearchParams();
       if (search) query.set("q", search);
       if (selectedTag) query.set("tag_id", selectedTag);
@@ -501,7 +542,7 @@ export default function DocsPage() {
       setLoadingMore(false);
       fetchInFlightRef.current = false;
     }
-  }, [fetchTagsByIDs, mergeTags, search, selectedTag, showStarred]);
+  }, [fetchTagsByIDs, mergeTags, search, selectedTag, showStarred, showShared]);
 
   const fetchSummary = useCallback(async () => {
     try {
@@ -509,6 +550,15 @@ export default function DocsPage() {
       setRecentDocs(sortRecentDocs((res?.recent || []) as DocumentWithTags[]));
       setTotalDocs(res?.total || 0);
       setStarredTotal(res?.starred_total || 0);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  const fetchSharedSummary = useCallback(async () => {
+    try {
+      const shared = await apiFetch<{ items: SharedItem[] }>("/shares");
+      setSharedTotal(shared?.items?.length || 0);
     } catch (e) {
       console.error(e);
     }
@@ -608,9 +658,10 @@ export default function DocsPage() {
     const timer = setTimeout(() => {
       fetchDocs(0, false);
       fetchSummary();
+      fetchSharedSummary();
     }, 300);
     return () => clearTimeout(timer);
-  }, [fetchDocs, fetchSummary, showStarred]);
+  }, [fetchDocs, fetchSummary, fetchSharedSummary, showStarred, showShared]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -926,6 +977,17 @@ export default function DocsPage() {
     }
   }, [apiBase, toast]);
 
+  const handleCopyShare = useCallback(async (token: string) => {
+    try {
+      const url = `${window.location.origin}/share/${token}`;
+      await navigator.clipboard.writeText(url);
+      toast({ description: "Share link copied" });
+    } catch (err) {
+      console.error(err);
+      toast({ description: "Failed to copy link", variant: "error" });
+    }
+  }, [toast]);
+
   return (
     <div className="flex h-screen flex-col md:flex-row bg-background text-foreground">
       <aside className="w-full md:w-64 border-r border-border p-4 flex-col gap-4 hidden md:flex">
@@ -939,16 +1001,16 @@ export default function DocsPage() {
             </div>
             <div className="flex flex-col gap-1">
               <button
-                onClick={() => { setSelectedTag(""); setShowStarred(false); }}
+                onClick={() => { setSelectedTag(""); setShowStarred(false); setShowShared(false); }}
                 className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
-                  selectedTag === "" && !showStarred
+                  selectedTag === "" && !showStarred && !showShared
                     ? "bg-accent text-accent-foreground" 
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}
               >
                 <span>All Notes</span>
                 <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
-                  selectedTag === "" && !showStarred
+                  selectedTag === "" && !showStarred && !showShared
                     ? "bg-background/20 text-accent-foreground"
                     : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
                 }`}>
@@ -956,7 +1018,7 @@ export default function DocsPage() {
                 </span>
               </button>
               <button
-                onClick={() => { setSelectedTag(""); setShowStarred(true); }}
+                onClick={() => { setSelectedTag(""); setShowStarred(true); setShowShared(false); }}
                 className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
                   showStarred
                     ? "bg-accent text-accent-foreground" 
@@ -974,7 +1036,27 @@ export default function DocsPage() {
                 }`}>
                   {starredTotal}
                 </span>
-              </button>
+                </button>
+                <button
+                  onClick={() => { setSelectedTag(""); setShowStarred(false); setShowShared(true); }}
+                  className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
+                    showShared
+                      ? "bg-accent text-accent-foreground" 
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  <div className="flex items-center">
+                    <Share2 className={`mr-2 h-4 w-4 ${showShared ? "fill-current" : ""}`} />
+                    <span>Shared</span>
+                  </div>
+                  <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
+                    showShared
+                      ? "bg-background/20 text-accent-foreground"
+                      : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
+                  }`}>
+                    {sharedTotal}
+                  </span>
+                </button>
             </div>
           </div>
 
@@ -1048,55 +1130,57 @@ export default function DocsPage() {
             className="flex-1 overflow-y-auto no-scrollbar"
           >
             <div ref={tagListRef} className="flex flex-col gap-1">
-            {sidebarTags.map((tag) => (
-              <button
-                key={tag.id}
-                onClick={() => { setSelectedTag(tag.id); setShowStarred(false); }}
-                className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
-                  selectedTag === tag.id
-                    ? "bg-accent text-accent-foreground" 
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                <span className="truncate">#{tag.name}</span>
-                <div className="ml-2 flex items-center gap-1">
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleTagPin(tag);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleToggleTagPin(tag);
-                      }
-                    }}
-                    title={tag.pinned ? "Unpin tag" : "Pin tag"}
-                    aria-label={tag.pinned ? "Unpin tag" : "Pin tag"}
-                    className={`rounded p-1 transition-colors ${
-                      tag.pinned
-                        ? "text-primary opacity-100"
-                        : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+              {sidebarTags.map((tag) => {
+                return (
+                  <button
+                    key={tag.id}
+                    onClick={() => { setSelectedTag(tag.id); setShowStarred(false); setShowShared(false); }}
+                    className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
+                      selectedTag === tag.id
+                        ? "bg-accent text-accent-foreground" 
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
                     }`}
                   >
-                    <Pin className={`h-3 w-3 ${tag.pinned ? "fill-current" : ""}`} />
-                  </span>
-                  <span className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
-                    selectedTag === tag.id
-                      ? "bg-background/20 text-accent-foreground"
-                      : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
-                  }`}>
-                    {tag.count}
-                  </span>
-                </div>
-              </button>
-            ))}
-            {sidebarLoading && (
-              <div className="px-2 py-2 text-xs text-muted-foreground">Loading tags...</div>
-            )}
+                    <span className="truncate">#{tag.name}</span>
+                    <div className="ml-2 flex items-center gap-1">
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleTagPin(tag);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleToggleTagPin(tag);
+                          }
+                        }}
+                        title={tag.pinned ? "Unpin tag" : "Pin tag"}
+                        aria-label={tag.pinned ? "Unpin tag" : "Pin tag"}
+                        className={`rounded p-1 transition-colors ${
+                          tag.pinned
+                            ? "text-primary opacity-100"
+                            : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+                        }`}
+                      >
+                        <Pin className={`h-3 w-3 ${tag.pinned ? "fill-current" : ""}`} />
+                      </span>
+                      <span className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
+                        selectedTag === tag.id
+                          ? "bg-background/20 text-accent-foreground"
+                          : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
+                      }`}>
+                        {tag.count}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+              {sidebarLoading && (
+                <div className="px-2 py-2 text-xs text-muted-foreground">Loading tags...</div>
+              )}
               {!sidebarLoading && sidebarHasMore && (
                 <div className="flex items-center gap-1 px-2 py-2 text-[10px] uppercase tracking-widest text-muted-foreground">
                   <ChevronDown className="h-3 w-3 animate-bounce" />
@@ -1155,11 +1239,13 @@ export default function DocsPage() {
                        if (filteredTags.length > 0) {
                          e.preventDefault();
                          const tag = filteredTags[activeTagIndex];
-                         if (tag) {
-                           setSelectedTag(tag.id);
-                           setSearch("");
-                           setShowTagSelector(false);
-                         }
+                          if (tag) {
+                            setSelectedTag(tag.id);
+                            setShowStarred(false);
+                            setShowShared(false);
+                            setSearch("");
+                            setShowTagSelector(false);
+                          }
                        }
                      }
                    }
@@ -1181,11 +1267,13 @@ export default function DocsPage() {
                    {filteredTags.map((tag, index) => (
                        <button
                          key={tag.id}
-                         onClick={() => {
-                           setSelectedTag(tag.id);
-                           setSearch("");
-                           setShowTagSelector(false);
-                         }}
+                          onClick={() => {
+                            setSelectedTag(tag.id);
+                            setShowStarred(false);
+                            setShowShared(false);
+                            setSearch("");
+                            setShowTagSelector(false);
+                          }}
                          className={`flex w-full items-center px-3 py-2 text-sm rounded-md text-left transition-colors ${
                            index === activeTagIndex 
                              ? "bg-accent text-accent-foreground" 
@@ -1298,7 +1386,7 @@ export default function DocsPage() {
              <div className="flex justify-center py-20 text-muted-foreground animate-pulse">Loading...</div>
           ) : docs.length === 0 ? (
              <div className="text-center py-20 text-muted-foreground">
-               No micro notes found.
+               {showShared ? "No shared notes found." : "No micro notes found."}
              </div>
            ) : (
             <div className="space-y-6">
@@ -1306,6 +1394,7 @@ export default function DocsPage() {
                 {docs.map((doc, index) => {
                   const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter(Boolean) as Tag[];
                   const isEditing = editingDocId === doc.id;
+                  const previewContent = showShared ? (doc.summary || "") : doc.content;
                 
                 return (
                   <div
@@ -1324,26 +1413,43 @@ export default function DocsPage() {
 
                       {!isEditing && (
                         <div className="absolute top-2 right-2 flex gap-1 z-20">
-                          <button
-                            onClick={(e) => handleStarToggle(e, doc)}
-                            className={`p-1.5 rounded-full transition-all ${
-                              doc.starred 
-                                ? "text-yellow-500 opacity-100 bg-background/80 shadow-sm" 
-                                : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
-                            }`}
-                          >
-                            <Star className={`h-3.5 w-3.5 ${doc.starred ? "fill-current" : ""}`} />
-                          </button>
-                          <button
-                            onClick={(e) => handlePinToggle(e, doc)}
-                            className={`p-1.5 rounded-full transition-all ${
-                              doc.pinned 
-                                ? "text-foreground opacity-100 bg-background/80 shadow-sm" 
-                                : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
-                            }`}
-                          >
-                            <Pin className={`h-3.5 w-3.5 ${doc.pinned ? "fill-current" : ""}`} />
-                          </button>
+                          {showShared ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (doc.share_token) {
+                                  handleCopyShare(doc.share_token);
+                                }
+                              }}
+                              className="p-1.5 rounded-full transition-all text-muted-foreground opacity-100 bg-background/80 shadow-sm hover:text-foreground"
+                              title="Copy share link"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                onClick={(e) => handleStarToggle(e, doc)}
+                                className={`p-1.5 rounded-full transition-all ${
+                                  doc.starred 
+                                    ? "text-yellow-500 opacity-100 bg-background/80 shadow-sm" 
+                                    : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
+                                }`}
+                              >
+                                <Star className={`h-3.5 w-3.5 ${doc.starred ? "fill-current" : ""}`} />
+                              </button>
+                              <button
+                                onClick={(e) => handlePinToggle(e, doc)}
+                                className={`p-1.5 rounded-full transition-all ${
+                                  doc.pinned 
+                                    ? "text-foreground opacity-100 bg-background/80 shadow-sm" 
+                                    : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
+                                }`}
+                              >
+                                <Pin className={`h-3.5 w-3.5 ${doc.pinned ? "fill-current" : ""}`} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
 
@@ -1351,7 +1457,7 @@ export default function DocsPage() {
                     
                     <div className="relative flex-1 min-h-0 mb-2 overflow-hidden">
                       <div className="text-sm text-muted-foreground whitespace-pre-wrap font-sans pb-8 break-words">
-                        {doc.content || <span className="italic opacity-50">Empty</span>}
+                        {previewContent || <span className="italic opacity-50">Empty</span>}
                       </div>
                       <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-card to-transparent pointer-events-none" />
                     </div>

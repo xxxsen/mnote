@@ -53,6 +53,7 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.POST("/documents/:id/share", deps.Shares.Create)
 	authGroup.GET("/documents/:id/share", deps.Shares.GetActive)
 	authGroup.DELETE("/documents/:id/share", deps.Shares.Revoke)
+	authGroup.GET("/shares", deps.Shares.List)
 
 	authGroup.POST("/tags", deps.Tags.Create)
 	authGroup.POST("/tags/batch", deps.Tags.CreateBatch)
