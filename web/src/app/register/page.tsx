@@ -39,6 +39,7 @@ export default function RegisterPage() {
     return () => clearInterval(timer);
   }, [cooldown]);
 
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -61,7 +62,7 @@ export default function RegisterPage() {
   };
 
   const handleSendCode = async () => {
-    if (!email) {
+    if (!email.trim()) {
       setError("Email is required");
       return;
     }
@@ -148,7 +149,7 @@ export default function RegisterPage() {
                 type="button"
                 variant="outline"
                 onClick={handleSendCode}
-                disabled={codeSending || cooldown > 0}
+                disabled={codeSending || cooldown > 0 || !email.trim()}
               >
                 {cooldown > 0 ? `${cooldown}s` : (codeSending ? "Sending..." : "Send")}
               </Button>

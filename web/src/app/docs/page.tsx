@@ -485,7 +485,7 @@ export default function DocsPage() {
       await fetchTagsByIDs(Array.from(missingTagIDs));
       setDocs((prev) => {
         if (append) {
-          return sortDocs([...prev, ...enrichedDocs]);
+          return [...prev, ...enrichedDocs];
         }
         return sortDocs(enrichedDocs);
       });

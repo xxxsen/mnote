@@ -44,6 +44,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
 		return
 	}
+	if !isEmailValid(req.Email) {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
 	if req.Code == "" {
 		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
 		return
@@ -67,6 +71,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
 		return
 	}
+	if !isEmailValid(req.Email) {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
 	user, token, err := h.auth.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
 		handleError(c, err)
@@ -83,6 +91,10 @@ func (h *AuthHandler) SendRegisterCode(c *gin.Context) {
 	}
 	req.Email = strings.TrimSpace(req.Email)
 	if req.Email == "" {
+		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
+		return
+	}
+	if !isEmailValid(req.Email) {
 		response.Error(c, http.StatusBadRequest, "invalid", "invalid request")
 		return
 	}
@@ -108,4 +120,8 @@ func (h *AuthHandler) UpdatePassword(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"ok": true})
+}
+
+func isEmailValid(email string) bool {
+	return strings.Count(email, "@") == 1
 }
