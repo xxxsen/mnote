@@ -3,6 +3,7 @@ package handler
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/xxxsen/common/logutil"
+	"github.com/xxxsen/common/trace"
 	"go.uber.org/zap"
 
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
@@ -18,7 +19,7 @@ func getUserID(c *gin.Context) string {
 
 func handleError(c *gin.Context, err error) {
 	if err != nil {
-		requestID, _ := c.Get("request_id")
+		requestID, _ := trace.GetTraceId(c.Request.Context())
 		userID, _ := c.Get("user_id")
 		logutil.GetLogger(c.Request.Context()).Error(
 			"request error",

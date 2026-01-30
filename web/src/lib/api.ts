@@ -91,7 +91,7 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
       window.location.href = "/login";
       throw new Error("Unauthorized");
     }
-    const msg = (payload as { msg?: string }).msg || "API Error";
+  const msg = (payload as { msg?: string; message?: string }).msg || (payload as { message?: string }).message || "API Error";
     throw new Error(msg);
   }
   return (payload as { data?: T }).data as T;
@@ -133,7 +133,7 @@ export async function uploadFile(file: File): Promise<UploadResult> {
       window.location.href = "/login";
       throw new Error("Unauthorized");
     }
-    const msg = (data as { msg?: string }).msg || "API Error";
+    const msg = (data as { msg?: string; message?: string }).msg || (data as { message?: string }).message || "API Error";
     throw new Error(msg);
   }
   if (data && typeof data === "object" && "data" in data) {
