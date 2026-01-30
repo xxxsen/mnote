@@ -10,3 +10,4 @@ web/.turbo/
 __debug_bin*
 /bin
 /sample
+web/public/yaegi.wasm

@@ -1,3 +1,8 @@
+FROM golang:1.25-alpine AS wasm-builder
+WORKDIR /src
+COPY wasm/yaegi-wrapper/ ./
+RUN GOOS=js GOARCH=wasm go build -o yaegi.wasm main.go
+
 FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
@@ -8,6 +13,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+COPY --from=wasm-builder /src/yaegi.wasm ./public/yaegi.wasm
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
