@@ -17,9 +17,10 @@ const ThemedSyntaxHighlighter =
 interface CodeSandboxProps {
   code: string;
   language: string;
+  fileName?: string;
 }
 
-export const CodeSandbox = ({ code, language }: CodeSandboxProps) => {
+export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
   const [output, setOutput] = useState<{ type: "stdout" | "stderr" | "system"; content: string }[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -194,6 +195,7 @@ export const CodeSandbox = ({ code, language }: CodeSandboxProps) => {
 
   const displayLanguage = language === 'py' ? 'python' : language === 'js' ? 'javascript' : language;
   const isGo = language === 'go' || language === 'golang';
+  const displayTitle = fileName || `${displayLanguage} Sandbox`;
 
   return (
     <div className="my-6 border border-border/60 rounded-xl overflow-hidden bg-card/50 backdrop-blur-sm shadow-lg group text-left">
@@ -203,7 +205,7 @@ export const CodeSandbox = ({ code, language }: CodeSandboxProps) => {
             <Hash className="h-3 w-3 text-blue-500" />
           </div>
           <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-mono text-left">
-            {displayLanguage} Sandbox
+            {displayTitle}
           </span>
         </div>
         <div className="flex items-center gap-2">

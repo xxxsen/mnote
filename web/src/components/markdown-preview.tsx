@@ -535,7 +535,7 @@ const MarkdownPreview = memo(
 
           const runnableLangs = ["go", "golang", "js", "javascript", "py", "python"];
           if (isRunnable && runnableLangs.includes(language)) {
-            return <CodeSandbox code={rawCode} language={language} />;
+            return <CodeSandbox code={rawCode} language={language} fileName={fileName} />;
           }
 
           return (
