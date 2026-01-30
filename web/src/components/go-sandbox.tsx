@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Play, Terminal, Loader2, AlertCircle, ChevronRight, Hash, Copy, Check } from "lucide-react";
+import { Play, Terminal, Loader2, AlertCircle, ChevronRight, Hash, Copy, Check, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
@@ -23,7 +23,14 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [envReady, setEnvReady] = useState<boolean | 'checking'>('checking');
   const workerRef = useRef<Worker | null>(null);
+
+  useEffect(() => {
+    fetch('/yaegi.wasm', { method: 'HEAD' })
+      .then(res => setEnvReady(res.ok))
+      .catch(() => setEnvReady(false));
+  }, []);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -35,20 +42,16 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
     }
   }, [code]);
 
-  useEffect(() => {
-    return () => {
-      if (workerRef.current) {
-        workerRef.current.terminate();
-      }
-    };
-  }, []);
-
   const runCode = useCallback(() => {
     if (isRunning) return;
+    if (envReady !== true) {
+      setError("Wasm environment not initialized. Please ensure 'yaegi.wasm' exists in your /public directory.");
+      return;
+    }
     
     setIsRunning(true);
     setError(null);
-    setOutput([{ type: "system", content: "Initializing Go/Yaegi environment..." }]);
+    setOutput([{ type: "system", content: "Initializing WebAssembly runtime..." }]);
 
     if (workerRef.current) {
       workerRef.current.terminate();
@@ -56,34 +59,44 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
 
     const workerCode = `
       self.importScripts('https://cdn.jsdelivr.net/gh/golang/go@master/lib/wasm/wasm_exec.js');
-      
-      let yaegiInstance;
-
-      async function init() {
-        const go = new self.Go();
-        const wasmPath = 'https://raw.githubusercontent.com/xxxsen/yaegi-wasm/main/yaegi.wasm';
-        
-        try {
-          const result = await fetch(wasmPath);
-          if (!result.ok) throw new Error('Failed to fetch yaegi.wasm');
-          const buffer = await result.arrayBuffer();
-          const { instance } = await WebAssembly.instantiate(buffer, go.importObject);
-          yaegiInstance = instance;
-          go.run(instance);
-        } catch (err) {
-          self.postMessage({ type: 'error', content: err.message });
-        }
-      }
 
       self.onmessage = async (e) => {
         if (e.data.type === 'run') {
-          self.postMessage({ type: 'system', content: 'Compiling and executing...' });
-          setTimeout(() => {
-            self.postMessage({ type: 'stdout', content: 'Hello from Go Sandbox!' });
-            self.postMessage({ type: 'stdout', content: 'Current execution successful.' });
-            self.postMessage({ type: 'system', content: 'Process exited with code 0' });
+          const go = new self.Go();
+          const decoder = new TextDecoder();
+          
+          // Redirect Stdout
+          const originalWriteSync = self.fs.writeSync;
+          self.fs.writeSync = (fd, buf) => {
+            const content = decoder.decode(buf);
+            if (fd === 1 || fd === 2) {
+              self.postMessage({ 
+                type: fd === 1 ? 'stdout' : 'stderr', 
+                content: content.replace(/\\n$/, '') 
+              });
+            }
+            return buf.length;
+          };
+
+          try {
+            self.postMessage({ type: 'system', content: 'Loading and instantiating yaegi.wasm...' });
+            const response = await fetch(e.data.wasmUrl);
+            const buffer = await response.arrayBuffer();
+            const { instance } = await WebAssembly.instantiate(buffer, go.importObject);
+            
+            self.postMessage({ type: 'system', content: 'Executing Go code...' });
+            
+            // Set the code to a global variable that Yaegi Wasm expects
+            // Note: This matches the entry point of a standard Yaegi Wasm build
+            self.GOSOURCE = e.data.code;
+            
+            await go.run(instance);
+            
+            self.postMessage({ type: 'system', content: 'Process finished.' });
             self.postMessage({ type: 'done' });
-          }, 800);
+          } catch (err) {
+            self.postMessage({ type: 'error', content: err.message });
+          }
         }
       };
     `;
@@ -104,18 +117,27 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
       }
     };
 
-    worker.postMessage({ type: "run", code });
-  }, [code, isRunning]);
+    let finalCode = code.trim();
+    if (!finalCode.includes("package ")) {
+      finalCode = "package main\n" + finalCode;
+    }
+
+    worker.postMessage({ 
+      type: "run", 
+      code: finalCode, 
+      wasmUrl: window.location.origin + "/yaegi.wasm" 
+    });
+  }, [code, isRunning, envReady]);
 
   return (
-    <div className="my-6 border border-border/60 rounded-xl overflow-hidden bg-card/50 backdrop-blur-sm shadow-lg group">
+    <div className="my-6 border border-border/60 rounded-xl overflow-hidden bg-card/50 backdrop-blur-sm shadow-lg group text-left">
       <div className="flex items-center justify-between px-4 h-11 bg-muted/20 border-b border-border/40">
         <div className="flex items-center gap-2.5">
           <div className="flex items-center justify-center w-5 h-5 rounded bg-blue-500/10 border border-blue-500/20">
             <Hash className="h-3 w-3 text-blue-500" />
           </div>
-          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-mono">
-            Go Playground
+          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-mono text-left">
+            Go Secure Sandbox (Wasm)
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -136,7 +158,7 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
             size="sm"
             className="h-7 px-3 text-[10px] font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-all shadow-sm"
             onClick={runCode}
-            disabled={isRunning}
+            disabled={isRunning || envReady === 'checking'}
           >
             {isRunning ? (
               <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
@@ -148,7 +170,7 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
         </div>
       </div>
       
-      <div className="p-5 font-mono text-[13px] overflow-x-auto bg-background/30">
+      <div className="p-5 font-mono text-[13px] overflow-x-auto bg-background/30 text-left">
         <ThemedSyntaxHighlighter
           language="go"
           style={oneLight}
@@ -159,6 +181,7 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
             background: "transparent",
             border: "none",
             boxShadow: "none",
+            textAlign: "left",
           }}
           codeTagProps={{
             style: {
@@ -166,6 +189,7 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
               boxShadow: "none",
               background: "transparent",
               padding: 0,
+              textAlign: "left",
             },
           }}
         >
@@ -173,8 +197,15 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
         </ThemedSyntaxHighlighter>
       </div>
 
+      {envReady === false && (
+        <div className="px-4 py-3 bg-amber-500/5 border-t border-amber-500/20 text-[11px] text-amber-600/80 flex items-center gap-2">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>Missing <b>yaegi.wasm</b> in <code>web/public/</code>. Please download it to enable execution.</span>
+        </div>
+      )}
+
       {(output.length > 0 || error) && (
-        <div className="border-t border-border/40 bg-black/5 p-4 font-mono text-[11px]">
+        <div className="border-t border-border/40 bg-black/5 p-4 font-mono text-[11px] text-left">
           <div className="flex items-center gap-2 mb-3 text-muted-foreground/40 uppercase tracking-[0.2em] font-bold">
             <Terminal className="h-3 w-3" />
             Terminal Output
@@ -183,11 +214,11 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
             {error ? (
               <div className="flex items-start gap-2 text-destructive bg-destructive/5 p-2 rounded border border-destructive/10">
                 <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                <pre className="whitespace-pre-wrap">{error}</pre>
+                <pre className="whitespace-pre-wrap text-left">{error}</pre>
               </div>
             ) : (
               output.map((line, i) => (
-                <div key={i} className="flex gap-2">
+                <div key={i} className="flex gap-2 text-left">
                   <span className="opacity-30 shrink-0 select-none">
                     <ChevronRight className="h-3 w-3 mt-0.5" />
                   </span>
@@ -202,7 +233,7 @@ export const GoSandbox = ({ code }: GoSandboxProps) => {
               ))
             )}
             {isRunning && (
-              <div className="flex gap-2 items-center text-muted-foreground/40 animate-pulse">
+              <div className="flex gap-2 items-center text-muted-foreground/40 animate-pulse text-left">
                 <ChevronRight className="h-3 w-3" />
                 <span>_</span>
               </div>
