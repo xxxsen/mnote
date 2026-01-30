@@ -1064,7 +1064,7 @@ export default function DocsPage() {
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0">
-        <header className="h-14 border-b border-border flex items-center px-4 gap-4 justify-between bg-background z-10">
+        <header className="relative h-14 border-b border-border flex items-center px-4 gap-4 justify-between bg-background z-40">
            <div className="flex items-center gap-2 flex-1 max-w-md relative">
              <Search className="h-4 w-4 text-muted-foreground shrink-0" />
              <div className="flex items-center gap-1.5 flex-1 min-w-0">
@@ -1170,7 +1170,7 @@ export default function DocsPage() {
                 )}
               </button>
               {showUserMenu && (
-                <div className="absolute right-0 top-full mt-2 w-48 rounded-md border border-border bg-popover p-1 shadow-md z-50 animate-in fade-in zoom-in-95 duration-200">
+                <div className="absolute right-0 top-full mt-2 w-48 rounded-md border border-border bg-popover p-1 shadow-md z-[100] animate-in fade-in zoom-in-95 duration-200">
                   <div className="px-2 py-1.5 text-xs text-muted-foreground truncate border-b border-border/50 mb-1">
                     {userEmail || "Signed in"}
                   </div>
