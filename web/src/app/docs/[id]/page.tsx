@@ -407,14 +407,64 @@ const Toolbar = memo(({
 ));
 Toolbar.displayName = "Toolbar";
 
-const headingStyle = HighlightStyle.define([
-  { tag: tags.heading1, color: "#d97706", fontWeight: "bold" },
-  { tag: tags.heading2, color: "#d97706", fontWeight: "bold" },
-  { tag: tags.heading3, color: "#d97706", fontWeight: "bold" },
-  { tag: tags.heading4, color: "#d97706", fontWeight: "bold" },
-  { tag: tags.heading5, color: "#d97706", fontWeight: "bold" },
-  { tag: tags.heading6, color: "#d97706", fontWeight: "bold" },
+const editorHighlightStyle = HighlightStyle.define([
+  { tag: tags.heading1, color: "#f59e0b", fontWeight: "bold", fontSize: "1.4em" },
+  { tag: tags.heading2, color: "#f59e0b", fontWeight: "bold", fontSize: "1.25em" },
+  { tag: tags.heading3, color: "#f59e0b", fontWeight: "bold", fontSize: "1.15em" },
+  { tag: tags.heading4, color: "#f59e0b", fontWeight: "bold" },
+  { tag: tags.heading5, color: "#f59e0b", fontWeight: "bold" },
+  { tag: tags.heading6, color: "#f59e0b", fontWeight: "bold" },
+  { tag: tags.keyword, color: "#c678dd" },
+  { tag: tags.operator, color: "#56b6c2" },
+  { tag: tags.string, color: "#98c379" },
+  { tag: tags.number, color: "#d19a66" },
+  { tag: tags.comment, color: "#5c6370", fontStyle: "italic" },
+  { tag: tags.link, color: "#61afef", textDecoration: "underline" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strong, fontWeight: "bold" },
+  { tag: tags.monospace, color: "#abb2bf", backgroundColor: "rgba(255,255,255,0.05)", borderRadius: "4px", padding: "0 4px" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
 ]);
+
+const editorTheme = EditorView.theme({
+  "&": {
+    fontSize: "15px",
+    backgroundColor: "#16161a !important",
+    color: "#abb2bf !important",
+  },
+  "&.cm-focused": {
+    outline: "none",
+  },
+  ".cm-scroller": {
+    fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+    lineHeight: "1.6",
+    backgroundColor: "#16161a !important",
+  },
+  ".cm-content": {
+    padding: "20px 0",
+  },
+  ".cm-gutters": {
+    backgroundColor: "#16161a !important",
+    border: "none",
+    color: "#4b5263 !important",
+    borderRight: "1px solid rgba(255,255,255,0.02)",
+    minWidth: "40px",
+  },
+  ".cm-activeLineGutter": {
+    backgroundColor: "#1e1e24 !important",
+    color: "#abb2bf !important",
+    fontWeight: "bold",
+  },
+  ".cm-activeLine": {
+    backgroundColor: "#1e1e24 !important",
+  },
+  ".cm-cursor": {
+    borderLeft: "2px solid #f59e0b !important",
+  },
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
+    backgroundColor: "rgba(245, 158, 11, 0.15) !important",
+  },
+}, { dark: true });
 
 export default function EditorPage() {
   const params = useParams();
@@ -1945,7 +1995,12 @@ export default function EditorPage() {
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
         
-        .cm-editor { font-family: 'JetBrains Mono', 'Fira Code', monospace !important; }
+        .cm-editor { 
+          font-family: 'JetBrains Mono', 'Fira Code', monospace !important; 
+          background-color: #16161a !important;
+        }
+        .cm-scroller { background-color: #16161a !important; }
+        .cm-gutters { background-color: #16161a !important; border: none !important; }
         
         .prose h1, .prose h2, .prose h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
         .prose p { margin-bottom: 1em; line-height: 1.7; }
@@ -2021,9 +2076,10 @@ export default function EditorPage() {
 
                  <div className="flex-1 overflow-hidden min-h-0">
 
-                    <CodeMirror
+                     <CodeMirror
                        value={content}
                        height="100%"
+                       theme={editorTheme}
                     extensions={[
                        markdown({ 
                          codeLanguages: (info) => {
@@ -2031,9 +2087,10 @@ export default function EditorPage() {
                            return LanguageDescription.matchLanguageName(languages, languageName);
                          } 
                        }), 
-                       syntaxHighlighting(headingStyle),
+                       syntaxHighlighting(editorHighlightStyle),
                        EditorView.lineWrapping, 
                        keymap.of([indentWithTab]),
+
                        EditorView.updateListener.of((update) => {
 
 
