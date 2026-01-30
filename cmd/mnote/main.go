@@ -20,6 +20,7 @@ import (
 
 	"github.com/xxxsen/mnote/internal/ai"
 	"github.com/xxxsen/mnote/internal/config"
+	"github.com/xxxsen/mnote/internal/db"
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/handler"
 	"github.com/xxxsen/mnote/internal/middleware"
@@ -57,14 +58,14 @@ func main() {
 			)
 			logutil.GetLogger(context.Background()).Info("config loaded", zap.String("config", configPath))
 
-			db, err := repo.Open(cfg.DBPath)
+			conn, err := db.Open(cfg.DBPath)
 			if err != nil {
 				return fmt.Errorf("open db: %w", err)
 			}
-			if err := repo.ApplyMigrations(db); err != nil {
+			if err := db.ApplyMigrations(conn); err != nil {
 				return fmt.Errorf("migrations: %w", err)
 			}
-			return runServer(cfg, db)
+			return runServer(cfg, conn)
 		},
 	}
 
