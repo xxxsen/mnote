@@ -6,7 +6,10 @@ import { useParams, useRouter } from "next/navigation";
 import CodeMirror from "@uiw/react-codemirror";
 import { EditorView, placeholder } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
-import { undo, redo } from "@codemirror/commands";
+import { languages } from "@codemirror/language-data";
+import { LanguageDescription } from "@codemirror/language";
+import { undo, redo, indentWithTab } from "@codemirror/commands";
+import { keymap } from "@codemirror/view";
 import ReactMarkdown from "react-markdown";
 import { apiFetch, uploadFile } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -2009,12 +2012,19 @@ export default function EditorPage() {
                  <div className="flex-1 overflow-hidden min-h-0">
 
                     <CodeMirror
-                      value={content}
-                      height="100%"
-                   extensions={[
-                      markdown(), 
-                      EditorView.lineWrapping, 
-                      EditorView.updateListener.of((update) => {
+                       value={content}
+                       height="100%"
+                    extensions={[
+                       markdown({ 
+                         codeLanguages: (info) => {
+                           const languageName = info.includes(':') ? info.split(':')[0] : info;
+                           return LanguageDescription.matchLanguageName(languages, languageName);
+                         } 
+                       }), 
+                       EditorView.lineWrapping, 
+                       keymap.of([indentWithTab]),
+                       EditorView.updateListener.of((update) => {
+
 
                         if (update.selectionSet || update.docChanged) {
                           updateCursorInfo(update.view);
