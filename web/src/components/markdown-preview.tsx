@@ -9,6 +9,7 @@ import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
 import Mermaid from "@/components/mermaid";
+import { GoSandbox } from "@/components/go-sandbox";
 import { cn } from "@/lib/utils";
 
 interface MarkdownPreviewProps {
@@ -128,6 +129,21 @@ const remarkSoftBreaks = () => {
     };
     walk(tree);
   };
+};
+
+const rehypeCodeMeta = () => (tree: HastNode) => {
+  const walk = (node: HastNode) => {
+    if (node.type === "element" && node.tagName === "code") {
+      if (node.data && node.data.meta) {
+        node.properties = node.properties || {};
+        node.properties.metastring = node.data.meta;
+      }
+    }
+    if (node.children) {
+      node.children.forEach(walk);
+    }
+  };
+  walk(tree);
 };
 
 const getHastText = (node: HastNode): string => {
@@ -435,22 +451,42 @@ const MarkdownPreview = memo(
     () => ({
       pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
         if (
-          React.isValidElement<{ className?: string }>(children) &&
-          children.props.className
+          React.isValidElement(children)
         ) {
-          const className = children.props.className;
+          /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+          const childProps = children.props as any;
+          const className = (childProps.className as string) || "";
+          const metastring = (childProps.metastring as string) || "";
           const isToc = className.includes("language-toc");
           const isMermaid = className.includes("language-mermaid");
-          if (isToc || isMermaid || className.includes("language-")) {
+          const isGo = className.includes("language-go") || className.includes("language-golang");
+          const isRunnable = (metastring && metastring.includes("[runnable]")) || className.includes("[runnable]");
+
+          if (isToc || isMermaid || (isGo && isRunnable)) {
             return <>{children}</>;
           }
         }
-        return <pre {...props}>{children}</pre>;
+        return (
+          <pre 
+            {...props} 
+            style={{ 
+              margin: 0, 
+              padding: 0, 
+              background: "transparent", 
+              border: "none",
+              boxShadow: "none"
+            }}
+          >
+            {children}
+          </pre>
+        );
       },
-      code({ className, children, ...props }: React.HTMLAttributes<HTMLElement>) {
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      code(props: any) {
+        const { className, children, metastring, ...rest } = props;
         const match = /language-(\S+)/.exec(className || "");
         const isMermaid = match && match[1] === "mermaid";
-        const isToc = match && match[1] === "toc";
+        const isToc = match && (match[1] === "toc" || match[1] === "TOC");
 
         if (isToc) {
           return (
@@ -468,28 +504,37 @@ const MarkdownPreview = memo(
         }
 
         if (match) {
-          const { inline: _inline, node: _node, ...rest } =
-            props as React.HTMLAttributes<HTMLElement> & {
-              inline?: boolean;
-              node?: HastNode;
-            };
-          void _inline;
-          
           const languageMatch = match[1];
           let language = languageMatch;
           let fileName = "";
+          let isRunnable = false;
+
+          const rawCode = Array.isArray(children)
+            ? children.join("")
+            : String(children).replace(/\n$/, "");
 
           if (language.includes(":")) {
             const parts = language.split(":");
             language = parts[0];
             fileName = parts[1];
-          } else if (_node?.data?.meta) {
-            fileName = _node.data.meta;
+          } 
+          
+          const meta = metastring || "";
+          if (meta.includes("[runnable]") || language.includes("[runnable]") || (className && className.includes("[runnable]"))) {
+            isRunnable = true;
           }
 
-          const rawCode = Array.isArray(children)
-            ? children.join("")
-            : String(children).replace(/\n$/, "");
+          if (language.includes("[runnable]")) {
+            language = language.replace("[runnable]", "");
+          }
+
+          if (!fileName && meta && !meta.includes("[runnable]")) {
+            fileName = meta;
+          }
+
+          if (isRunnable && (language === "go" || language === "golang")) {
+            return <GoSandbox code={rawCode} />;
+          }
 
           return (
             <CodeBlock
@@ -502,11 +547,12 @@ const MarkdownPreview = memo(
         }
 
         return (
-          <code className={className} {...props}>
+          <code className={className} {...rest}>
             {children}
           </code>
         );
       },
+
       h1({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
         return <h1 id={id}>{children}</h1>;
       },
@@ -606,7 +652,7 @@ const MarkdownPreview = memo(
     []
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rehypePlugins = useMemo<any[]>(() => [rehypeRaw, [rehypeKatex, { strict: "warn" }], rehypeSlugger], [rehypeSlugger]);
+  const rehypePlugins = useMemo<any[]>(() => [rehypeCodeMeta, rehypeRaw, [rehypeKatex, { strict: "warn" }], rehypeSlugger], [rehypeSlugger]);
 
   return (
     <div className={cn("relative h-full min-h-0 w-full", showTocAside ? "flex gap-8" : "")}>
