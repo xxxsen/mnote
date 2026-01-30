@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import { Document, DocumentVersion } from "@/types";
+import { Document, DocumentVersion, DocumentVersionSummary } from "@/types";
 import { computeDiff, DiffRow } from "@/lib/diff";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -16,6 +16,7 @@ export default function RevertPage() {
   const router = useRouter();
   const { toast } = useToast();
   const id = params.id as string;
+  const versionParam = searchParams.get("version");
   const versionId = searchParams.get("versionId");
 
   const [doc, setDoc] = useState<Document | null>(null);
@@ -54,22 +55,47 @@ export default function RevertPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [docRes, versionsRes] = await Promise.all([
-          apiFetch<{ document: Document }>(`/documents/${id}`),
-          apiFetch<DocumentVersion[]>(`/documents/${id}/versions`)
+        const docPromise = apiFetch<{ document: Document }>(`/documents/${id}`);
+        const parsedVersion = versionParam ? Number(versionParam) : NaN;
+        const versionNumber = Number.isFinite(parsedVersion) && parsedVersion > 0 ? parsedVersion : null;
+
+        if (!versionNumber && versionId) {
+          const [docRes, versionsRes] = await Promise.all([
+            docPromise,
+            apiFetch<DocumentVersionSummary[]>(`/documents/${id}/versions`)
+          ]);
+          const currentDoc = docRes.document;
+          const summary = versionsRes.find(v => v.id === versionId);
+          if (!currentDoc || !summary) {
+            router.push(`/docs/${id}`);
+            return;
+          }
+          const versionRes = await apiFetch<DocumentVersion>(`/documents/${id}/versions/${summary.version}`);
+          setDoc(currentDoc);
+          setSelectedVersion(versionRes);
+          setDiffRows(computeDiff(currentDoc.content, versionRes.content));
+          return;
+        }
+
+        if (!versionNumber) {
+          router.push(`/docs/${id}`);
+          return;
+        }
+
+        const [docRes, versionRes] = await Promise.all([
+          docPromise,
+          apiFetch<DocumentVersion>(`/documents/${id}/versions/${versionNumber}`)
         ]);
 
         const currentDoc = docRes.document;
-        const version = versionsRes.find(v => v.id === versionId);
-
-        if (!currentDoc || !version) {
+        if (!currentDoc || !versionRes) {
           router.push(`/docs/${id}`);
           return;
         }
 
         setDoc(currentDoc);
-        setSelectedVersion(version);
-        setDiffRows(computeDiff(currentDoc.content, version.content));
+        setSelectedVersion(versionRes);
+        setDiffRows(computeDiff(currentDoc.content, versionRes.content));
       } catch (e) {
         console.error(e);
         router.push(`/docs/${id}`);
@@ -78,10 +104,10 @@ export default function RevertPage() {
       }
     };
 
-    if (id && versionId) {
+    if (id && (versionParam || versionId)) {
       loadData();
     }
-  }, [id, versionId, router]);
+  }, [id, versionId, versionParam, router]);
 
   useEffect(() => {
     if (diffIndices.length === 0) return;

@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import MarkdownPreview from "@/components/markdown-preview";
-import { Document, Tag, DocumentVersion, Share } from "@/types";
+import { Document, Tag, DocumentVersionSummary, Share } from "@/types";
 import {
   Save,
   Share2,
@@ -419,7 +419,7 @@ export default function EditorPage() {
   const [showDetails, setShowDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<"tags" | "summary" | "history" | "share">("tags");
   
-  const [versions, setVersions] = useState<DocumentVersion[]>([]);
+  const [versions, setVersions] = useState<DocumentVersionSummary[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [selectedTagIDs, setSelectedTagIDs] = useState<string[]>([]);
   const [tagQuery, setTagQuery] = useState("");
@@ -1721,15 +1721,15 @@ export default function EditorPage() {
 
   const loadVersions = async () => {
     try {
-      const v = await apiFetch<DocumentVersion[]>(`/documents/${id}/versions`);
+      const v = await apiFetch<DocumentVersionSummary[]>(`/documents/${id}/versions`);
       setVersions(v);
     } catch (e) {
       console.error(e);
     }
   };
 
-  const handleRevert = (v: DocumentVersion) => {
-    router.push(`/docs/${id}/revert?versionId=${v.id}`);
+  const handleRevert = (v: DocumentVersionSummary) => {
+    router.push(`/docs/${id}/revert?version=${v.version}`);
   };
 
   const toggleTag = (tagID: string) => {

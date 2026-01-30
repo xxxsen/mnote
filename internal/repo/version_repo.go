@@ -88,6 +88,32 @@ func (r *VersionRepo) List(ctx context.Context, userID, docID string) ([]model.D
 	return versions, rows.Err()
 }
 
+func (r *VersionRepo) ListSummaries(ctx context.Context, userID, docID string) ([]model.DocumentVersionSummary, error) {
+	where := map[string]interface{}{
+		"user_id":     userID,
+		"document_id": docID,
+		"_orderby":    "version desc",
+	}
+	sqlStr, args, err := builder.BuildSelect("document_versions", where, []string{"id", "document_id", "version", "title", "ctime"})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	versions := make([]model.DocumentVersionSummary, 0)
+	for rows.Next() {
+		var v model.DocumentVersionSummary
+		if err := rows.Scan(&v.ID, &v.DocumentID, &v.Version, &v.Title, &v.Ctime); err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	return versions, rows.Err()
+}
+
 func (r *VersionRepo) ListByUser(ctx context.Context, userID string) ([]model.DocumentVersion, error) {
 	where := map[string]interface{}{
 		"user_id":  userID,
@@ -136,4 +162,25 @@ func (r *VersionRepo) GetByVersion(ctx context.Context, userID, docID string, ve
 		return nil, err
 	}
 	return &v, nil
+}
+
+func (r *VersionRepo) DeleteOldVersions(ctx context.Context, userID, docID string, keep int) error {
+	if keep <= 0 {
+		return nil
+	}
+	const sqlStr = `
+		DELETE FROM document_versions
+		WHERE user_id = ?
+		  AND document_id = ?
+		  AND id NOT IN (
+			SELECT id
+			FROM document_versions
+			WHERE user_id = ?
+			  AND document_id = ?
+			ORDER BY version DESC
+			LIMIT ?
+		  )
+	`
+	_, err := r.db.ExecContext(ctx, sqlStr, userID, docID, userID, docID, keep)
+	return err
 }

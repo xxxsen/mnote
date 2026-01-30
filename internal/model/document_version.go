@@ -9,3 +9,11 @@ type DocumentVersion struct {
 	Content    string `json:"content"`
 	Ctime      int64  `json:"ctime"`
 }
+
+type DocumentVersionSummary struct {
+	ID         string `json:"id"`
+	DocumentID string `json:"document_id"`
+	Version    int    `json:"version"`
+	Title      string `json:"title"`
+	Ctime      int64  `json:"ctime"`
+}

@@ -28,6 +28,14 @@ export interface DocumentVersion {
   ctime: number;
 }
 
+export interface DocumentVersionSummary {
+  id: string;
+  document_id: string;
+  version: number;
+  title: string;
+  ctime: number;
+}
+
 export interface Share {
   id: string;
   user_id: string;

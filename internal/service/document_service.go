@@ -10,12 +10,13 @@ import (
 )
 
 type DocumentService struct {
-	docs     *repo.DocumentRepo
-	versions *repo.VersionRepo
-	tags     *repo.DocumentTagRepo
-	shares   *repo.ShareRepo
-	tagRepo  *repo.TagRepo
-	userRepo *repo.UserRepo
+	docs           *repo.DocumentRepo
+	versions       *repo.VersionRepo
+	tags           *repo.DocumentTagRepo
+	shares         *repo.ShareRepo
+	tagRepo        *repo.TagRepo
+	userRepo       *repo.UserRepo
+	versionMaxKeep int
 }
 
 type DocumentSummary struct {
@@ -25,8 +26,8 @@ type DocumentSummary struct {
 	StarredTotal int
 }
 
-func NewDocumentService(docs *repo.DocumentRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo, tagRepo *repo.TagRepo, userRepo *repo.UserRepo) *DocumentService {
-	return &DocumentService{docs: docs, versions: versions, tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo}
+func NewDocumentService(docs *repo.DocumentRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo, tagRepo *repo.TagRepo, userRepo *repo.UserRepo, versionMaxKeep int) *DocumentService {
+	return &DocumentService{docs: docs, versions: versions, tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo, versionMaxKeep: versionMaxKeep}
 }
 
 type PublicShareDetail struct {
@@ -75,6 +76,9 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 		Ctime:      now,
 	}
 	if err := s.versions.Create(ctx, version); err != nil {
+		return nil, err
+	}
+	if err := s.pruneVersions(ctx, userID, doc.ID); err != nil {
 		return nil, err
 	}
 	if input.TagIDs != nil {
@@ -135,6 +139,9 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 		Ctime:      now,
 	}
 	if err := s.versions.Create(ctx, version); err != nil {
+		return err
+	}
+	if err := s.pruneVersions(ctx, userID, docID); err != nil {
 		return err
 	}
 	if input.TagIDs != nil {
@@ -254,11 +261,11 @@ func (s *DocumentService) Delete(ctx context.Context, userID, docID string) erro
 	return nil
 }
 
-func (s *DocumentService) ListVersions(ctx context.Context, userID, docID string) ([]model.DocumentVersion, error) {
+func (s *DocumentService) ListVersions(ctx context.Context, userID, docID string) ([]model.DocumentVersionSummary, error) {
 	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
 		return nil, err
 	}
-	return s.versions.List(ctx, userID, docID)
+	return s.versions.ListSummaries(ctx, userID, docID)
 }
 
 func (s *DocumentService) GetVersion(ctx context.Context, userID, docID string, version int) (*model.DocumentVersion, error) {
@@ -266,6 +273,13 @@ func (s *DocumentService) GetVersion(ctx context.Context, userID, docID string, 
 		return nil, err
 	}
 	return s.versions.GetByVersion(ctx, userID, docID, version)
+}
+
+func (s *DocumentService) pruneVersions(ctx context.Context, userID, docID string) error {
+	if s.versionMaxKeep <= 0 {
+		return nil
+	}
+	return s.versions.DeleteOldVersions(ctx, userID, docID, s.versionMaxKeep)
 }
 
 func (s *DocumentService) CreateShare(ctx context.Context, userID, docID string) (*model.Share, error) {

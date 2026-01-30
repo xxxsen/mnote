@@ -3,6 +3,7 @@
     "jwt_secret": "dev-secret",
     "port": 8080,
     "jwt_ttl_hours": 72,
+    "version_max_keep": 10,
     "log_config": {
         "level": "debug",
         "console": true

@@ -9,13 +9,14 @@ import (
 )
 
 type Config struct {
-	DBPath      string           `json:"db_path"`
-	JWTSecret   string           `json:"jwt_secret"`
-	Port        int              `json:"port"`
-	JWTTTLHours int              `json:"jwt_ttl_hours"`
-	LogConfig   logger.LogConfig `json:"log_config"`
-	FileStore   FileStoreConfig  `json:"file_store"`
-	AI          AIConfig         `json:"ai"`
+	DBPath         string           `json:"db_path"`
+	JWTSecret      string           `json:"jwt_secret"`
+	Port           int              `json:"port"`
+	JWTTTLHours    int              `json:"jwt_ttl_hours"`
+	VersionMaxKeep int              `json:"version_max_keep"`
+	LogConfig      logger.LogConfig `json:"log_config"`
+	FileStore      FileStoreConfig  `json:"file_store"`
+	AI             AIConfig         `json:"ai"`
 }
 
 type FileStoreConfig struct {
@@ -53,6 +54,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.JWTTTLHours == 0 {
 		cfg.JWTTTLHours = 72
+	}
+	if cfg.VersionMaxKeep == 0 {
+		cfg.VersionMaxKeep = 10
 	}
 	if cfg.LogConfig.Level == "" {
 		cfg.LogConfig.Level = "info"
