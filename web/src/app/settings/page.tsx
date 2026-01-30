@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ type ProviderStatus = {
   email?: string;
 };
 
-export default function SettingsPage() {
+function SettingsContent() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -269,5 +269,17 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center p-6 text-sm text-muted-foreground">
+        Loading settings...
+      </div>
+    }>
+      <SettingsContent />
+    </Suspense>
   );
 }
