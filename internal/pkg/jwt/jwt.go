@@ -9,12 +9,14 @@ import (
 
 type Claims struct {
 	UserID string `json:"user_id"`
+	Email  string `json:"email,omitempty"`
 	jwtlib.RegisteredClaims
 }
 
-func GenerateToken(userID string, secret []byte, ttl time.Duration) (string, error) {
+func GenerateToken(userID, email string, secret []byte, ttl time.Duration) (string, error) {
 	claims := Claims{
 		UserID: userID,
+		Email:  email,
 		RegisteredClaims: jwtlib.RegisteredClaims{
 			ExpiresAt: jwtlib.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwtlib.NewNumericDate(time.Now()),
@@ -24,7 +26,7 @@ func GenerateToken(userID string, secret []byte, ttl time.Duration) (string, err
 	return token.SignedString(secret)
 }
 
-func ParseToken(tokenString string, secret []byte) (string, error) {
+func ParseToken(tokenString string, secret []byte) (*Claims, error) {
 	token, err := jwtlib.ParseWithClaims(tokenString, &Claims{}, func(token *jwtlib.Token) (interface{}, error) {
 		if token.Method.Alg() != jwtlib.SigningMethodHS256.Alg() {
 			return nil, errors.New("unexpected signing method")
@@ -32,11 +34,11 @@ func ParseToken(tokenString string, secret []byte) (string, error) {
 		return secret, nil
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	claims, ok := token.Claims.(*Claims)
 	if !ok || !token.Valid {
-		return "", errors.New("invalid token")
+		return nil, errors.New("invalid token")
 	}
-	return claims.UserID, nil
+	return claims, nil
 }

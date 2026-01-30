@@ -26,13 +26,16 @@ func JWTAuth(secret []byte) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		userID, err := jwt.ParseToken(parts[1], secret)
+		claims, err := jwt.ParseToken(parts[1], secret)
 		if err != nil {
 			response.Error(c, errcode.ErrUnauthorized, "invalid token")
 			c.Abort()
 			return
 		}
-		c.Set(ContextUserIDKey, userID)
+		c.Set(ContextUserIDKey, claims.UserID)
+		if claims.Email != "" {
+			c.Set("user_email", claims.Email)
+		}
 		c.Next()
 	}
 }

@@ -59,7 +59,7 @@ func (s *OAuthService) LoginOrCreate(ctx context.Context, profile *oauth.Profile
 		if err != nil {
 			return nil, "", err
 		}
-		token, err := jwt.GenerateToken(user.ID, s.jwtSecret, s.jwtTTL)
+		token, err := jwt.GenerateToken(user.ID, user.Email, s.jwtSecret, s.jwtTTL)
 		if err != nil {
 			return nil, "", err
 		}
@@ -95,7 +95,7 @@ func (s *OAuthService) LoginOrCreate(ctx context.Context, profile *oauth.Profile
 	if err := s.oauths.Create(ctx, account); err != nil {
 		return nil, "", err
 	}
-	token, err := jwt.GenerateToken(user.ID, s.jwtSecret, s.jwtTTL)
+	token, err := jwt.GenerateToken(user.ID, user.Email, s.jwtSecret, s.jwtTTL)
 	if err != nil {
 		return nil, "", err
 	}

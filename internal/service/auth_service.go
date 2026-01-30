@@ -60,7 +60,7 @@ func (s *AuthService) Register(ctx context.Context, email, plainPassword, code s
 		}
 		return nil, "", err
 	}
-	token, err := jwt.GenerateToken(user.ID, s.jwtSecret, s.jwtTTL)
+	token, err := jwt.GenerateToken(user.ID, user.Email, s.jwtSecret, s.jwtTTL)
 	if err != nil {
 		return nil, "", err
 	}
@@ -90,7 +90,7 @@ func (s *AuthService) Login(ctx context.Context, email, plainPassword string) (*
 	if err := password.Compare(user.PasswordHash, plainPassword); err != nil {
 		return nil, "", appErr.ErrUnauthorized
 	}
-	token, err := jwt.GenerateToken(user.ID, s.jwtSecret, s.jwtTTL)
+	token, err := jwt.GenerateToken(user.ID, user.Email, s.jwtSecret, s.jwtTTL)
 	if err != nil {
 		return nil, "", err
 	}
