@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch, setAuthToken } from "@/lib/api";
+import { apiFetch, setAuthEmail, setAuthToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -20,13 +20,14 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const res = await apiFetch<{ token: string }>("/auth/login", {
+      const res = await apiFetch<{ token: string; user: { email: string } }>("/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
         requireAuth: false,
       });
 
       setAuthToken(res.token);
+      setAuthEmail(res.user.email);
       router.push("/docs");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Login failed";

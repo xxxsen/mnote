@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch, removeAuthToken, getAuthToken } from "@/lib/api";
+import { apiFetch, removeAuthEmail, removeAuthToken, getAuthEmail, getAuthToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
@@ -386,19 +386,13 @@ export default function DocsPage() {
   }, [tagIndex]);
 
   useEffect(() => {
-    const token = getAuthToken();
-    if (token) {
-       try {
-         const payload = JSON.parse(atob(token.split('.')[1]));
-         const email = payload.email || payload.sub || "user";
-         setUserEmail(email);
-         setAvatarUrl(generatePixelAvatar(email));
-       } catch {
-         setAvatarUrl(generatePixelAvatar("anon"));
-       }
-    } else {
-        setAvatarUrl(generatePixelAvatar("anon"));
+    const storedEmail = getAuthEmail();
+    if (storedEmail) {
+      setUserEmail(storedEmail);
+      setAvatarUrl(generatePixelAvatar(storedEmail));
+      return;
     }
+    setAvatarUrl(generatePixelAvatar("anon"));
   }, []);
 
   useEffect(() => {
@@ -739,6 +733,7 @@ export default function DocsPage() {
 
   const handleLogout = () => {
     removeAuthToken();
+    removeAuthEmail();
     router.push("/login");
   };
 

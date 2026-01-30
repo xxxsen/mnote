@@ -13,9 +13,28 @@ export const setAuthToken = (token: string) => {
   }
 };
 
+export const getAuthEmail = () => {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("mnote_email");
+  }
+  return null;
+};
+
+export const setAuthEmail = (email: string) => {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("mnote_email", email);
+  }
+};
+
 export const removeAuthToken = () => {
   if (typeof window !== "undefined") {
     localStorage.removeItem("mnote_token");
+  }
+};
+
+export const removeAuthEmail = () => {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("mnote_email");
   }
 };
 
@@ -45,6 +64,7 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
 
   if (res.status === 401 && requireAuth) {
     removeAuthToken();
+    removeAuthEmail();
     window.location.href = "/login";
     throw new Error("Unauthorized");
   }
@@ -83,6 +103,7 @@ export async function uploadFile(file: File): Promise<UploadResult> {
 
   if (res.status === 401) {
     removeAuthToken();
+    removeAuthEmail();
     window.location.href = "/login";
     throw new Error("Unauthorized");
   }
