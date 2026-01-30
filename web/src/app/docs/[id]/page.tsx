@@ -419,7 +419,7 @@ const amberHeadingStyle = HighlightStyle.define([
 
 const editorBaseTheme = EditorView.theme({
   "&": {
-    fontSize: "15px",
+    fontSize: "16px",
   },
   "&.cm-focused": {
     outline: "none",
