@@ -19,7 +19,7 @@ type Config struct {
 	AI             AIConfig         `json:"ai"`
 	OAuth          OAuthConfig      `json:"oauth"`
 	Mail           MailConfig       `json:"mail"`
-	Auth           AuthConfig       `json:"auth"`
+	Properties     Properties       `json:"properties"`
 }
 
 type FileStoreConfig struct {
@@ -45,7 +45,6 @@ type OAuthProviderConfig struct {
 	ClientSecret string   `json:"client_secret"`
 	RedirectURL  string   `json:"redirect_url"`
 	Scopes       []string `json:"scopes"`
-	Enabled      bool     `json:"enabled"`
 }
 
 type MailConfig struct {
@@ -56,8 +55,10 @@ type MailConfig struct {
 	From     string `json:"from"`
 }
 
-type AuthConfig struct {
-	AllowRegister *bool `json:"allow_register"`
+type Properties struct {
+	EnableGithubOauth  bool `json:"enable_github_oauth"`
+	EnableGoogleOauth  bool `json:"enable_google_oauth"`
+	EnableUserRegister bool `json:"enable_user_register"`
 }
 
 func Load(path string) (*Config, error) {
@@ -104,14 +105,10 @@ func Load(path string) (*Config, error) {
 	if cfg.AI.Model == "" {
 		cfg.AI.Model = "gemini-3-flash-preview"
 	}
-	if cfg.Auth.AllowRegister == nil {
-		value := true
-		cfg.Auth.AllowRegister = &value
-	}
-	if cfg.OAuth.Github.Enabled && len(cfg.OAuth.Github.Scopes) == 0 {
+	if cfg.Properties.EnableGithubOauth && len(cfg.OAuth.Github.Scopes) == 0 {
 		cfg.OAuth.Github.Scopes = []string{"user:email"}
 	}
-	if cfg.OAuth.Google.Enabled && len(cfg.OAuth.Google.Scopes) == 0 {
+	if cfg.Properties.EnableGoogleOauth && len(cfg.OAuth.Google.Scopes) == 0 {
 		cfg.OAuth.Google.Scopes = []string{"openid", "email", "profile"}
 	}
 	return &cfg, nil

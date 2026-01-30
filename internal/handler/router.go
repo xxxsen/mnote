@@ -7,17 +7,18 @@ import (
 )
 
 type RouterDeps struct {
-	Auth      *AuthHandler
-	OAuth     *OAuthHandler
-	Documents *DocumentHandler
-	Versions  *VersionHandler
-	Shares    *ShareHandler
-	Tags      *TagHandler
-	Export    *ExportHandler
-	Files     *FileHandler
-	AI        *AIHandler
-	Import    *ImportHandler
-	JWTSecret []byte
+	Auth       *AuthHandler
+	OAuth      *OAuthHandler
+	Properties *PropertiesHandler
+	Documents  *DocumentHandler
+	Versions   *VersionHandler
+	Shares     *ShareHandler
+	Tags       *TagHandler
+	Export     *ExportHandler
+	Files      *FileHandler
+	AI         *AIHandler
+	Import     *ImportHandler
+	JWTSecret  []byte
 }
 
 func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
@@ -25,6 +26,7 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	api.POST("/auth/register/code", deps.Auth.SendRegisterCode)
 	api.POST("/auth/login", deps.Auth.Login)
 	api.POST("/auth/logout", deps.Auth.Logout)
+	api.GET("/properties", deps.Properties.Get)
 	api.GET("/auth/oauth/:provider/url", deps.OAuth.AuthURL)
 	api.GET("/auth/oauth/:provider/callback", deps.OAuth.Callback)
 

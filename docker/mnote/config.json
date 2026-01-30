@@ -23,14 +23,12 @@
     },
     "oauth": {
         "github": {
-            "enabled": false,
             "client_id": "",
             "client_secret": "",
             "redirect_url": "http://localhost/api/v1/auth/oauth/github/callback",
             "scopes": ["user:email"]
         },
         "google": {
-            "enabled": false,
             "client_id": "",
             "client_secret": "",
             "redirect_url": "http://localhost/api/v1/auth/oauth/google/callback",
@@ -44,7 +42,9 @@
         "password": "",
         "from": "no-reply@example.com"
     },
-    "auth": {
-        "allow_register": true
+    "properties": {
+        "enable_github_oauth": false,
+        "enable_google_oauth": false,
+        "enable_user_register": true
     }
 }

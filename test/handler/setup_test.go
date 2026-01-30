@@ -54,7 +54,7 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	jwtSecret := []byte("test-secret")
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, noopSender{})
 	authService := service.NewAuthService(userRepo, verifyService, jwtSecret, time.Hour, true)
-	oauthService := service.NewOAuthService(userRepo, oauthRepo, jwtSecret, time.Hour, config.OAuthConfig{})
+	oauthService := service.NewOAuthService(userRepo, oauthRepo, jwtSecret, time.Hour, config.OAuthConfig{}, config.Properties{})
 	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, 10)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
@@ -71,15 +71,16 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	require.NoError(t, err)
 
 	deps := handler.RouterDeps{
-		Auth:      handler.NewAuthHandler(authService),
-		OAuth:     handler.NewOAuthHandler(oauthService),
-		Documents: handler.NewDocumentHandler(documentService),
-		Versions:  handler.NewVersionHandler(documentService),
-		Shares:    handler.NewShareHandler(documentService),
-		Tags:      handler.NewTagHandler(tagService),
-		Export:    handler.NewExportHandler(exportService),
-		Files:     handler.NewFileHandler(store),
-		JWTSecret: jwtSecret,
+		Auth:       handler.NewAuthHandler(authService),
+		OAuth:      handler.NewOAuthHandler(oauthService),
+		Properties: handler.NewPropertiesHandler(config.Properties{}),
+		Documents:  handler.NewDocumentHandler(documentService),
+		Versions:   handler.NewVersionHandler(documentService),
+		Shares:     handler.NewShareHandler(documentService),
+		Tags:       handler.NewTagHandler(tagService),
+		Export:     handler.NewExportHandler(exportService),
+		Files:      handler.NewFileHandler(store),
+		JWTSecret:  jwtSecret,
 	}
 
 	engine, err := webapi.NewEngine(

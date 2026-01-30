@@ -16,6 +16,20 @@ export default function RegisterPage() {
   const [codeSending, setCodeSending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [error, setError] = useState("");
+  const [properties, setProperties] = useState<Record<string, boolean> | null>(null);
+
+  useEffect(() => {
+    const loadProperties = async () => {
+      try {
+        const res = await apiFetch<{ properties: Record<string, boolean> }>("/properties", { requireAuth: false });
+        setProperties(res?.properties || {});
+      } catch (err) {
+        console.error(err);
+        setProperties({});
+      }
+    };
+    loadProperties();
+  }, []);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -68,6 +82,18 @@ export default function RegisterPage() {
       setCodeSending(false);
     }
   };
+
+  if (properties && !properties.enable_user_register) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-4">
+        <div className="w-full max-w-sm border border-border bg-card p-8 shadow-sm text-center space-y-3">
+          <div className="text-lg font-semibold">Registration Disabled</div>
+          <div className="text-sm text-muted-foreground">New user registration is currently closed.</div>
+          <Button onClick={() => router.push("/login")}>Back to Login</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">

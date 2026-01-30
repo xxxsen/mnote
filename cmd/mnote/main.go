@@ -94,12 +94,9 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 
 	mailSender := service.NewEmailSender(cfg.Mail)
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, mailSender)
-	allowRegister := true
-	if cfg.Auth.AllowRegister != nil {
-		allowRegister = *cfg.Auth.AllowRegister
-	}
+	allowRegister := cfg.Properties.EnableUserRegister
 	authService := service.NewAuthService(userRepo, verifyService, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), allowRegister)
-	oauthService := service.NewOAuthService(userRepo, oauthRepo, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), cfg.OAuth)
+	oauthService := service.NewOAuthService(userRepo, oauthRepo, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), cfg.OAuth, cfg.Properties)
 	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, cfg.VersionMaxKeep)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
@@ -130,17 +127,18 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	fileHandler := handler.NewFileHandler(store)
 
 	deps := handler.RouterDeps{
-		Auth:      authHandler,
-		OAuth:     oauthHandler,
-		Documents: documentHandler,
-		Versions:  versionHandler,
-		Shares:    shareHandler,
-		Tags:      tagHandler,
-		Export:    exportHandler,
-		Files:     fileHandler,
-		AI:        aiHandler,
-		Import:    importHandler,
-		JWTSecret: []byte(cfg.JWTSecret),
+		Auth:       authHandler,
+		OAuth:      oauthHandler,
+		Properties: handler.NewPropertiesHandler(cfg.Properties),
+		Documents:  documentHandler,
+		Versions:   versionHandler,
+		Shares:     shareHandler,
+		Tags:       tagHandler,
+		Export:     exportHandler,
+		Files:      fileHandler,
+		AI:         aiHandler,
+		Import:     importHandler,
+		JWTSecret:  []byte(cfg.JWTSecret),
 	}
 
 	engine, err := webapi.NewEngine(

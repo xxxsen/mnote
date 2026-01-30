@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiFetch, setAuthEmail, setAuthToken } from "@/lib/api";
@@ -15,6 +15,20 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [oauthLoading, setOauthLoading] = useState<string | null>(null);
+  const [properties, setProperties] = useState<Record<string, boolean> | null>(null);
+
+  useEffect(() => {
+    const loadProperties = async () => {
+      try {
+        const res = await apiFetch<{ properties: Record<string, boolean> }>("/properties", { requireAuth: false });
+        setProperties(res?.properties || {});
+      } catch (err) {
+        console.error(err);
+        setProperties({});
+      }
+    };
+    loadProperties();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,37 +116,45 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        <div className="mt-6 flex items-center justify-center gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            className="h-10 w-10 rounded-full p-0"
-            onClick={() => handleOAuth("github")}
-            disabled={oauthLoading !== null}
-            aria-label="Continue with GitHub"
-            title={oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
-          >
-            <Github className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-10 w-10 rounded-full p-0"
-            onClick={() => handleOAuth("google")}
-            disabled={oauthLoading !== null}
-            aria-label="Continue with Google"
-            title={oauthLoading === "google" ? "Connecting..." : "Continue with Google"}
-          >
-            <Chrome className="h-4 w-4" />
-          </Button>
-        </div>
+        {(properties?.enable_github_oauth || properties?.enable_google_oauth) && (
+          <div className="mt-6 flex items-center justify-center gap-3">
+            {properties?.enable_github_oauth && (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 w-10 rounded-full p-0"
+                onClick={() => handleOAuth("github")}
+                disabled={oauthLoading !== null}
+                aria-label="Continue with GitHub"
+                title={oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
+              >
+                <Github className="h-4 w-4" />
+              </Button>
+            )}
+            {properties?.enable_google_oauth && (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 w-10 rounded-full p-0"
+                onClick={() => handleOAuth("google")}
+                disabled={oauthLoading !== null}
+                aria-label="Continue with Google"
+                title={oauthLoading === "google" ? "Connecting..." : "Continue with Google"}
+              >
+                <Chrome className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        )}
 
-        <div className="mt-6 text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{" "}
-          <Link href="/register" className="underline underline-offset-4 hover:text-primary">
-            Register
-          </Link>
-        </div>
+        {properties?.enable_user_register && (
+          <div className="mt-6 text-center text-sm text-muted-foreground">
+            Don&apos;t have an account?{" "}
+            <Link href="/register" className="underline underline-offset-4 hover:text-primary">
+              Register
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );

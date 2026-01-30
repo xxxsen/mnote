@@ -24,6 +24,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [bindings, setBindings] = useState<Record<string, ProviderStatus>>({});
+  const [properties, setProperties] = useState<Record<string, boolean> | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
@@ -56,6 +57,19 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchBindings();
   }, [fetchBindings]);
+
+  useEffect(() => {
+    const loadProperties = async () => {
+      try {
+        const res = await apiFetch<{ properties: Record<string, boolean> }>("/properties", { requireAuth: false });
+        setProperties(res?.properties || {});
+      } catch (err) {
+        console.error(err);
+        setProperties({});
+      }
+    };
+    loadProperties();
+  }, []);
 
   useEffect(() => {
     const status = searchParams.get("oauth");
@@ -125,6 +139,13 @@ export default function SettingsPage() {
     { key: "google" as const, label: "Google", icon: Chrome },
   ];
 
+  const enabledProviders = providers.filter((provider) => {
+    if (!properties) return false;
+    if (provider.key === "github") return properties.enable_github_oauth;
+    if (provider.key === "google") return properties.enable_google_oauth;
+    return false;
+  });
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-muted/40 via-background to-background text-foreground">
       <div className="max-w-4xl mx-auto px-6 py-10 space-y-8">
@@ -150,7 +171,13 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="border border-border rounded-2xl bg-card shadow-sm overflow-hidden">
-              {providers.map(({ key, label, icon: Icon }) => {
+              {properties && enabledProviders.length === 0 && (
+                <div className="px-4 py-6 text-sm text-muted-foreground">OAuth is disabled.</div>
+              )}
+              {!properties && (
+                <div className="px-4 py-6 text-sm text-muted-foreground">Loading providers...</div>
+              )}
+              {enabledProviders.map(({ key, label, icon: Icon }) => {
                 const status = bindings[key] || { bound: false };
                 return (
                   <div key={key} className="flex items-center justify-between gap-4 px-4 py-4 border-b border-border/70 last:border-b-0">

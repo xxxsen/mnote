@@ -25,22 +25,24 @@ type OAuthProfile struct {
 }
 
 type OAuthService struct {
-	users     *repo.UserRepo
-	oauths    *repo.OAuthRepo
-	jwtSecret []byte
-	jwtTTL    time.Duration
-	cfg       config.OAuthConfig
-	client    *http.Client
+	users      *repo.UserRepo
+	oauths     *repo.OAuthRepo
+	jwtSecret  []byte
+	jwtTTL     time.Duration
+	cfg        config.OAuthConfig
+	properties config.Properties
+	client     *http.Client
 }
 
-func NewOAuthService(users *repo.UserRepo, oauths *repo.OAuthRepo, secret []byte, ttl time.Duration, cfg config.OAuthConfig) *OAuthService {
+func NewOAuthService(users *repo.UserRepo, oauths *repo.OAuthRepo, secret []byte, ttl time.Duration, cfg config.OAuthConfig, properties config.Properties) *OAuthService {
 	return &OAuthService{
-		users:     users,
-		oauths:    oauths,
-		jwtSecret: secret,
-		jwtTTL:    ttl,
-		cfg:       cfg,
-		client:    &http.Client{Timeout: 10 * time.Second},
+		users:      users,
+		oauths:     oauths,
+		jwtSecret:  secret,
+		jwtTTL:     ttl,
+		cfg:        cfg,
+		properties: properties,
+		client:     &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -49,7 +51,7 @@ func (s *OAuthService) GetAuthURL(provider, state string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !cfg.Enabled {
+	if !s.providerEnabled(provider) {
 		return "", appErr.ErrInvalid
 	}
 	if cfg.ClientID == "" || cfg.ClientSecret == "" || cfg.RedirectURL == "" {
@@ -72,7 +74,7 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, provider, code string) 
 	if err != nil {
 		return nil, err
 	}
-	if !cfg.Enabled {
+	if !s.providerEnabled(provider) {
 		return nil, appErr.ErrInvalid
 	}
 	if cfg.ClientID == "" || cfg.ClientSecret == "" || cfg.RedirectURL == "" {
@@ -403,5 +405,16 @@ func (s *OAuthService) providerConfig(provider string) (config.OAuthProviderConf
 		return s.cfg.Google, nil
 	default:
 		return config.OAuthProviderConfig{}, appErr.ErrInvalid
+	}
+}
+
+func (s *OAuthService) providerEnabled(provider string) bool {
+	switch provider {
+	case "github":
+		return s.properties.EnableGithubOauth
+	case "google":
+		return s.properties.EnableGoogleOauth
+	default:
+		return false
 	}
 }
