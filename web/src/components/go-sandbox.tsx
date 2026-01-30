@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Play, Terminal, Loader2, AlertCircle, ChevronRight, Hash, Copy, Check, Download } from "lucide-react";
+import { Play, Terminal, Loader2, AlertCircle, ChevronRight, Hash, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
