@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useRef, useTransition, useMemo
 import { createPortal } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
 import CodeMirror from "@uiw/react-codemirror";
-import { EditorView, placeholder } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { LanguageDescription, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
@@ -410,43 +410,33 @@ const Toolbar = memo(({
 Toolbar.displayName = "Toolbar";
 
 const amberHeadingStyle = HighlightStyle.define([
-  { tag: [tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6], color: "#f59e0b", fontWeight: "bold" },
-  { tag: tags.heading1, fontSize: "1.4em" },
-  { tag: tags.heading2, fontSize: "1.25em" },
-  { tag: tags.heading3, fontSize: "1.15em" },
+  { tag: [tags.heading, tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6], color: "#f59e0b", fontWeight: "bold" },
+  { tag: tags.strong, fontWeight: "bold" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.link, color: "#4fc1ff", textDecoration: "underline" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
 ]);
 
 const editorBaseTheme = EditorView.theme({
   "&": {
     fontSize: "16px",
-    backgroundColor: "#1e1e1e !important",
   },
   "&.cm-focused": {
     outline: "none",
   },
   ".cm-scroller": {
     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-    lineHeight: "1.6",
+    lineHeight: "1.5",
   },
   ".cm-content": {
     padding: "20px 0",
-    color: "#d4d4d4",
   },
   ".cm-gutters": {
-    backgroundColor: "#1e1e1e !important",
     border: "none",
-    color: "#858585",
     minWidth: "40px",
   },
-  ".cm-activeLine": {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-  },
-  ".cm-activeLineGutter": {
-    backgroundColor: "transparent",
-    color: "#cccccc",
-  },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-    backgroundColor: "rgba(38, 79, 120, 0.5) !important",
+    backgroundColor: "#264f78 !important",
   },
 }, { dark: true });
 
@@ -1981,12 +1971,10 @@ export default function EditorPage() {
         }
       ]
     }), 
-    vscodeDark,
     syntaxHighlighting(amberHeadingStyle),
     editorBaseTheme,
     EditorView.lineWrapping, 
     keymap.of([indentWithTab]),
-    placeholder("start by entering a title here\n===\n\nhere is the body of note."),
     EditorView.updateListener.of((update) => {
       if (update.selectionSet || update.docChanged) {
         updateCursorInfo(update.view);
@@ -2021,6 +2009,7 @@ export default function EditorPage() {
       }
     }),
   ], [updateCursorInfo]);
+
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
@@ -2114,15 +2103,17 @@ export default function EditorPage() {
 
                  <div className="flex-1 overflow-hidden min-h-0">
 
-                      <CodeMirror
-                        value={content}
-                        height="100%"
-                        extensions={editorExtensions}
-                        onChange={(val) => {
-                          contentRef.current = val;
-                          setContent(val);
-                          schedulePreviewUpdate();
-                        }}
+                       <CodeMirror
+                         value={content}
+                         height="100%"
+                         theme={vscodeDark}
+                         extensions={editorExtensions}
+                         placeholder="start by entering a title here\n===\n\nhere is the body of note."
+                         onChange={(val) => {
+                           contentRef.current = val;
+                           setContent(val);
+                           schedulePreviewUpdate();
+                         }}
 
                     className={`h-full w-full min-w-0 text-base`}
                     onCreateEditor={(view) => {
