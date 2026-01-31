@@ -2137,7 +2137,10 @@ export default function EditorPage() {
                          height="100%"
                          theme={vscodeDark}
                          extensions={editorExtensions}
-                         placeholder="start by entering a title here\n===\n\nhere is the body of note."
+                          placeholder={`start by entering a title here
+===
+
+here is the body of note.`}
                          onChange={(val) => {
                            contentRef.current = val;
                            setContent(val);
