@@ -24,6 +24,7 @@ const Mermaid = memo(({ chart }: MermaidProps) => {
         securityLevel: "loose",
         fontFamily: "var(--font-mono)",
         logLevel: "fatal",
+        suppressErrorRendering: true,
         themeVariables: {
           primaryColor: "#E9D5FF",
           primaryTextColor: "#1F2937",
@@ -42,6 +43,11 @@ const Mermaid = memo(({ chart }: MermaidProps) => {
           clusterBorder: "#F59E0B",
           titleColor: "#0F172A",
         },
+      });
+      // Also set it via setConfig just in case initialize was already called elsewhere
+      mermaid.mermaidAPI.setConfig({
+        suppressErrorRendering: true,
+        logLevel: "fatal"
       });
       initialized.current = true;
     }
