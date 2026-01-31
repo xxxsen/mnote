@@ -9,6 +9,8 @@ import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { LanguageDescription, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
+import { styleTags } from "@lezer/highlight";
+import { vscodeDark } from "@uiw/codemirror-theme-vscode";
 import { undo, redo, indentWithTab } from "@codemirror/commands";
 import { keymap } from "@codemirror/view";
 import ReactMarkdown from "react-markdown";
@@ -407,36 +409,17 @@ const Toolbar = memo(({
 ));
 Toolbar.displayName = "Toolbar";
 
-const typoraNightHighlightStyle = HighlightStyle.define([
-  { tag: tags.heading1, color: "#f59e0b", fontWeight: "bold", fontSize: "1.4em" },
-  { tag: tags.heading2, color: "#f59e0b", fontWeight: "bold", fontSize: "1.25em" },
-  { tag: tags.heading3, color: "#f59e0b", fontWeight: "bold", fontSize: "1.15em" },
-  { tag: tags.heading4, color: "#f59e0b", fontWeight: "bold" },
-  { tag: tags.heading5, color: "#f59e0b", fontWeight: "bold" },
-  { tag: tags.heading6, color: "#f59e0b", fontWeight: "bold" },
-  { tag: tags.keyword, color: "#f38ba8" },
-  { tag: tags.operator, color: "#89dceb" },
-  { tag: tags.string, color: "#98c379" },
-  { tag: tags.number, color: "#d19a66" },
-  { tag: tags.comment, color: "#777", fontStyle: "italic" },
-  { tag: tags.link, color: "#6db1ff", textDecoration: "underline" },
-  { tag: tags.emphasis, fontStyle: "italic" },
-  { tag: tags.strong, fontWeight: "bold" },
-  { tag: tags.variableName, color: "#bdbdbd" },
-  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "#89b4fa" },
-  { tag: tags.typeName, color: "#fab387" },
-  { tag: tags.propertyName, color: "#89dceb" },
-  { tag: tags.className, color: "#fab387" },
-  { tag: tags.meta, color: "#f38ba8" },
-  { tag: tags.monospace, color: "#bdbdbd", backgroundColor: "rgba(255,255,255,0.05)", borderRadius: "4px", padding: "0 4px" },
-  { tag: tags.strikethrough, textDecoration: "line-through" },
+const amberHeadingStyle = HighlightStyle.define([
+  { tag: [tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6], color: "#f59e0b", fontWeight: "bold" },
+  { tag: tags.heading1, fontSize: "1.4em" },
+  { tag: tags.heading2, fontSize: "1.25em" },
+  { tag: tags.heading3, fontSize: "1.15em" },
 ]);
 
-const typoraNightTheme = EditorView.theme({
+const editorBaseTheme = EditorView.theme({
   "&": {
     fontSize: "16px",
-    backgroundColor: "#262a30",
-    color: "#bdbdbd",
+    backgroundColor: "#1e1e1e !important",
   },
   "&.cm-focused": {
     outline: "none",
@@ -445,28 +428,27 @@ const typoraNightTheme = EditorView.theme({
     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
     lineHeight: "1.6",
   },
+  ".cm-content": {
+    padding: "20px 0",
+    color: "#d4d4d4",
+  },
   ".cm-gutters": {
-    backgroundColor: "#262a30",
+    backgroundColor: "#1e1e1e !important",
     border: "none",
-    color: "#4b5263",
+    color: "#858585",
     minWidth: "40px",
   },
-  ".cm-activeLineGutter": {
-    backgroundColor: "#2c313a",
-    color: "#bdbdbd",
-    fontWeight: "bold",
-  },
   ".cm-activeLine": {
-    backgroundColor: "#2c313a",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
   },
-  ".cm-cursor": {
-    borderLeft: "2px solid #f59e0b",
+  ".cm-activeLineGutter": {
+    backgroundColor: "transparent",
+    color: "#cccccc",
   },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-    backgroundColor: "rgba(137, 180, 250, 0.2) !important",
+    backgroundColor: "rgba(38, 79, 120, 0.5) !important",
   },
 }, { dark: true });
-
 
 export default function EditorPage() {
   const params = useParams();
@@ -1983,6 +1965,63 @@ export default function EditorPage() {
   const aiExistingCount = Math.max(0, aiExistingTags.length - aiRemovedTagIDs.length);
   const aiAvailableSlots = Math.max(0, MAX_TAGS - aiExistingCount);
 
+  const editorExtensions = useMemo(() => [
+    markdown({ 
+      codeLanguages: (info) => {
+        const languageName = info.includes(':') ? info.split(':')[0] : info;
+        return LanguageDescription.matchLanguageName(languages, languageName);
+      },
+      extensions: [
+        {
+          props: [
+            styleTags({
+              HeaderMark: tags.heading
+            })
+          ]
+        }
+      ]
+    }), 
+    vscodeDark,
+    syntaxHighlighting(amberHeadingStyle),
+    editorBaseTheme,
+    EditorView.lineWrapping, 
+    keymap.of([indentWithTab]),
+    placeholder("start by entering a title here\n===\n\nhere is the body of note."),
+    EditorView.updateListener.of((update) => {
+      if (update.selectionSet || update.docChanged) {
+        updateCursorInfo(update.view);
+        if (update.docChanged) {
+          const state = update.view.state;
+          const pos = state.selection.main.head;
+          const line = state.doc.lineAt(pos);
+          const lineText = line.text;
+          const relativePos = pos - line.from;
+          const lastSlashIndex = lineText.lastIndexOf("/", relativePos - 1);
+          if (lastSlashIndex !== -1 && (lastSlashIndex === 0 || lineText[lastSlashIndex - 1] === " ")) {
+            const filter = lineText.slice(lastSlashIndex + 1, relativePos);
+            if (!filter.includes(" ")) {
+              const coords = update.view.coordsAtPos(pos);
+              if (coords) {
+                startTransition(() => {
+                  setSlashMenu({
+                    open: true,
+                    x: coords.left,
+                    y: coords.bottom + 5,
+                    filter: filter
+                  });
+                });
+                return;
+              }
+            }
+          }
+          startTransition(() => {
+            setSlashMenu(prev => prev.open ? { ...prev, open: false } : prev);
+          });
+        }
+      }
+    }),
+  ], [updateCursorInfo]);
+
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
 
@@ -2078,63 +2117,13 @@ export default function EditorPage() {
                       <CodeMirror
                         value={content}
                         height="100%"
-                        theme={typoraNightTheme}
-                     extensions={[
-                        markdown({ 
-                          codeLanguages: (info) => {
-                            const languageName = info.includes(':') ? info.split(':')[0] : info;
-                            return LanguageDescription.matchLanguageName(languages, languageName);
-                          } 
-                        }), 
-                        syntaxHighlighting(typoraNightHighlightStyle),
-                        EditorView.lineWrapping, 
-                        keymap.of([indentWithTab]),
+                        extensions={editorExtensions}
+                        onChange={(val) => {
+                          contentRef.current = val;
+                          setContent(val);
+                          schedulePreviewUpdate();
+                        }}
 
-
-                       EditorView.updateListener.of((update) => {
-
-
-                        if (update.selectionSet || update.docChanged) {
-                          updateCursorInfo(update.view);
-                          
-                          if (update.docChanged) {
-                            const state = update.view.state;
-                            const pos = state.selection.main.head;
-                            const line = state.doc.lineAt(pos);
-                            const lineText = line.text;
-                            const relativePos = pos - line.from;
-                            
-                            const lastSlashIndex = lineText.lastIndexOf("/", relativePos - 1);
-                             if (lastSlashIndex !== -1 && (lastSlashIndex === 0 || lineText[lastSlashIndex - 1] === " ")) {
-                                const filter = lineText.slice(lastSlashIndex + 1, relativePos);
-                                if (!filter.includes(" ")) {
-                                   const coords = update.view.coordsAtPos(pos);
-                                   if (coords) {
-                                      startTransition(() => {
-                                        setSlashMenu({
-                                           open: true,
-                                           x: coords.left,
-                                           y: coords.bottom + 5,
-                                           filter: filter
-                                        });
-                                      });
-                                      return;
-                                   }
-                                }
-                             }
-                             startTransition(() => {
-                                setSlashMenu(prev => prev.open ? { ...prev, open: false } : prev);
-                             });
-                         }
-                       }
-                     }),
-                     placeholder("start by entering a title here\n===\n\nhere is the body of note.")
-                   ]}
-                    onChange={(val) => {
-                      contentRef.current = val;
-                      setContent(val);
-                      schedulePreviewUpdate();
-                    }}
                     className={`h-full w-full min-w-0 text-base`}
                     onCreateEditor={(view) => {
                       editorViewRef.current = view;
