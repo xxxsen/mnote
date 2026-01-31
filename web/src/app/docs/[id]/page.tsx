@@ -412,7 +412,8 @@ const Toolbar = memo(({
 Toolbar.displayName = "Toolbar";
 
 const amberHeadingStyle = HighlightStyle.define([
-  { tag: [tags.heading, tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6], color: "#f59e0b", fontWeight: "700" },
+  { tag: [tags.heading, tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6].filter(Boolean), color: "#f59e0b", fontWeight: "700" },
+  { tag: [tags.monospace, tags.literal, tags.meta, tags.keyword, tags.operator, tags.string, tags.number, tags.variableName, tags.typeName, tags.className, tags.propertyName].filter(Boolean), color: "#9cdcfe", fontWeight: "400" },
   { tag: tags.strong, fontWeight: "700" },
   { tag: tags.emphasis, fontStyle: "italic" },
   { tag: tags.link, color: "#4fc1ff", textDecoration: "underline" },
@@ -432,6 +433,10 @@ const editorBaseTheme = EditorView.theme({
   },
   ".cm-line": {
     padding: "0 4px",
+    lineHeight: "1.6",
+  },
+  ".cm-line *": {
+    lineHeight: "inherit",
   },
   ".cm-content": {
     padding: "20px 0",
@@ -2037,6 +2042,9 @@ export default function EditorPage() {
         
         .prose h1, .prose h2, .prose h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
         .prose p { margin-bottom: 1em; line-height: 1.7; }
+        
+        /* Hide Mermaid internal error messages */
+        #mermaid-error-box, .mermaid-error-overlay { display: none !important; }
       `}</style>
       <Header 
         router={router}

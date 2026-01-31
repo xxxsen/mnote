@@ -23,6 +23,7 @@ const Mermaid = memo(({ chart }: MermaidProps) => {
         theme: "base",
         securityLevel: "loose",
         fontFamily: "var(--font-mono)",
+        logLevel: "fatal",
         themeVariables: {
           primaryColor: "#E9D5FF",
           primaryTextColor: "#1F2937",
