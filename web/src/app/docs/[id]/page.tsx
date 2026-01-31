@@ -14,6 +14,8 @@ import { vscodeDark } from "@uiw/codemirror-theme-vscode";
 import { undo, redo, indentWithTab } from "@codemirror/commands";
 import { keymap } from "@codemirror/view";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import { apiFetch, uploadFile } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -410,8 +412,8 @@ const Toolbar = memo(({
 Toolbar.displayName = "Toolbar";
 
 const amberHeadingStyle = HighlightStyle.define([
-  { tag: [tags.heading, tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6], color: "#f59e0b", fontWeight: "bold" },
-  { tag: tags.strong, fontWeight: "bold" },
+  { tag: [tags.heading, tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6], color: "#f59e0b", fontWeight: "700" },
+  { tag: tags.strong, fontWeight: "700" },
   { tag: tags.emphasis, fontStyle: "italic" },
   { tag: tags.link, color: "#4fc1ff", textDecoration: "underline" },
   { tag: tags.strikethrough, textDecoration: "line-through" },
@@ -426,7 +428,10 @@ const editorBaseTheme = EditorView.theme({
   },
   ".cm-scroller": {
     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-    lineHeight: "1.5",
+    lineHeight: "1.6",
+  },
+  ".cm-line": {
+    padding: "0 4px",
   },
   ".cm-content": {
     padding: "20px 0",
@@ -434,6 +439,7 @@ const editorBaseTheme = EditorView.theme({
   ".cm-gutters": {
     border: "none",
     minWidth: "40px",
+    backgroundColor: "transparent",
   },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
     backgroundColor: "#264f78 !important",
@@ -2723,6 +2729,8 @@ export default function EditorPage() {
           {!tocCollapsed && (
             <div className="toc-wrapper text-sm max-h-[60vh] overflow-y-auto p-4 custom-scrollbar">
               <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw]}
                 components={{
                   a: (props) => {
                     const href = props.href || "";

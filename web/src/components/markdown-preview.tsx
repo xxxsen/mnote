@@ -175,12 +175,16 @@ const extractHeadings = (content: string) => {
 
 const buildTocMarkdown = (headings: Heading[]) => {
   if (headings.length === 0) return "";
-  const minLevel = headings.reduce((min, heading) => Math.min(min, heading.level), headings[0].level);
+  // Use the first heading as the baseline to avoid starting with deep indentation
+  // which can be misinterpreted as a code block in markdown.
+  const firstLevel = headings[0].level;
+  const slugger = createSlugger();
+  
   return headings
     .map((heading) => {
-      const normalizedLevel = heading.level - minLevel + 1;
-      const indent = "  ".repeat(Math.max(0, normalizedLevel - 1));
-      const slug = heading.id || createSlugger()(heading.text);
+      const normalizedLevel = Math.max(1, heading.level - firstLevel + 1);
+      const indent = "  ".repeat(normalizedLevel - 1);
+      const slug = heading.id || slugger(heading.text);
       return `${indent}- [${heading.text}](#${slug})`;
     })
     .join("\n");
