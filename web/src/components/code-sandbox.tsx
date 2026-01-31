@@ -110,16 +110,17 @@ export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
           </Button>
           <Button
             size="sm"
-            className="h-7 px-3 text-[10px] font-bold rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-all shadow-sm"
+            variant="ghost"
+            className="h-7 w-7 p-0 rounded-lg hover:bg-blue-500/10 transition-all flex items-center justify-center"
             onClick={runCode}
             disabled={isRunning || (isGo && goEnvReady === 'checking')}
+            title={isRunning ? "Executing..." : "Run Code"}
           >
             {isRunning ? (
-              <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
             ) : (
-              <Play className="h-3 w-3 mr-1.5 fill-current" />
+              <Play className="h-3.5 w-3.5 text-blue-500 fill-blue-500" />
             )}
-            {isRunning ? "EXECUTING..." : "RUN CODE"}
           </Button>
         </div>
       </div>
