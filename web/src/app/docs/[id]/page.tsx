@@ -2186,15 +2186,26 @@ export default function EditorPage() {
               </div>
              </div>
 
-               <div className="h-full bg-background overflow-hidden min-w-0 md:flex-[0_0_50%] w-full hidden md:block">
-                   <MarkdownPreview 
-                      content={previewContent} 
-                      className="h-full overflow-auto" 
-                      ref={previewRef}
-                      onScroll={handlePreviewScroll}
-                       onTocLoaded={handleTocLoaded}
-                   />
-               </div>
+                <div 
+                  className="h-full bg-[#f8fafc] overflow-auto custom-scrollbar min-w-0 md:flex-[0_0_50%] w-full hidden md:block border-l border-border selection:bg-indigo-100"
+                  ref={previewRef}
+                  onScroll={handlePreviewScroll}
+                >
+                    <div className="min-h-full p-4 md:p-8 lg:p-12">
+                      <div className="max-w-4xl mx-auto">
+                        <article className="w-full bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 relative overflow-visible">
+                          <div className="p-6 md:p-10 lg:p-12">
+                            <MarkdownPreview 
+                               content={previewContent} 
+                               className="markdown-body h-auto overflow-visible p-0 bg-transparent text-slate-800" 
+                               onTocLoaded={handleTocLoaded}
+                            />
+                          </div>
+                        </article>
+                      </div>
+                    </div>
+                </div>
+
 
         </div>
 
