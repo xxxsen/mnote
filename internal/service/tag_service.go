@@ -2,11 +2,7 @@ package service
 
 import (
 	"context"
-	"errors"
 	"strings"
-
-	sqlite "modernc.org/sqlite"
-	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
@@ -33,15 +29,12 @@ func (s *TagService) Create(ctx context.Context, userID, name string) (*model.Ta
 		Mtime:  now,
 	}
 	if err := s.tags.Create(ctx, tag); err != nil {
-		var sqlErr *sqlite.Error
-		if errors.As(err, &sqlErr) {
-			if sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE || sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT {
-				items, listErr := s.tags.ListByNames(ctx, userID, []string{name})
-				if listErr == nil && len(items) > 0 {
-					return &items[0], nil
-				}
-				return nil, appErr.ErrConflict
+		if appErr.IsConflict(err) {
+			items, listErr := s.tags.ListByNames(ctx, userID, []string{name})
+			if listErr == nil && len(items) > 0 {
+				return &items[0], nil
 			}
+			return nil, appErr.ErrConflict
 		}
 		return nil, err
 	}
@@ -81,11 +74,8 @@ func (s *TagService) CreateBatch(ctx context.Context, userID string, names []str
 		})
 	}
 	if err := s.tags.CreateBatch(ctx, newTags); err != nil {
-		var sqlErr *sqlite.Error
-		if errors.As(err, &sqlErr) {
-			if sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE || sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT {
-				return nil, appErr.ErrConflict
-			}
+		if appErr.IsConflict(err) {
+			return nil, appErr.ErrConflict
 		}
 		return nil, err
 	}

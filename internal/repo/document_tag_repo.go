@@ -7,6 +7,7 @@ import (
 	"github.com/didi/gendry/builder"
 
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/dbutil"
 )
 
 type DocumentTagRepo struct {
@@ -27,6 +28,7 @@ func (r *DocumentTagRepo) Add(ctx context.Context, docTag *model.DocumentTag) er
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	_, err = r.db.ExecContext(ctx, sqlStr, args...)
 	return err
 }
@@ -37,6 +39,7 @@ func (r *DocumentTagRepo) DeleteByDoc(ctx context.Context, userID, docID string)
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	_, err = r.db.ExecContext(ctx, sqlStr, args...)
 	return err
 }
@@ -47,6 +50,7 @@ func (r *DocumentTagRepo) DeleteByTag(ctx context.Context, userID, tagID string)
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	_, err = r.db.ExecContext(ctx, sqlStr, args...)
 	return err
 }
@@ -57,6 +61,7 @@ func (r *DocumentTagRepo) ListTagIDs(ctx context.Context, userID, docID string) 
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -79,6 +84,7 @@ func (r *DocumentTagRepo) ListDocIDsByTag(ctx context.Context, userID, tagID str
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -101,6 +107,7 @@ func (r *DocumentTagRepo) ListByUser(ctx context.Context, userID string) ([]mode
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -133,6 +140,7 @@ func (r *DocumentTagRepo) ListTagIDsByDocIDs(ctx context.Context, userID string,
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err

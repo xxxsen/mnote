@@ -9,7 +9,7 @@ import (
 )
 
 type Config struct {
-	DBPath         string             `json:"db_path"`
+	Database       DatabaseConfig     `json:"database"`
 	JWTSecret      string             `json:"jwt_secret"`
 	Port           int                `json:"port"`
 	JWTTTLHours    int                `json:"jwt_ttl_hours"`
@@ -22,6 +22,16 @@ type Config struct {
 	Mail           MailConfig         `json:"mail"`
 	Properties     Properties         `json:"properties"`
 	AIProvider     []AIProviderConfig `json:"ai_provider"`
+}
+
+type DatabaseConfig struct {
+	DSN      string `json:"dsn"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	User     string `json:"user"`
+	Password string `json:"password"`
+	DBName   string `json:"dbname"`
+	SSLMode  string `json:"sslmode"`
 }
 
 type FileStoreConfig struct {
@@ -99,8 +109,8 @@ func Load(path string) (*Config, error) {
 	if err := json.NewDecoder(file).Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
-	if cfg.DBPath == "" {
-		return nil, fmt.Errorf("db_path is required")
+	if cfg.Database.Host == "" && cfg.Database.DSN == "" {
+		return nil, fmt.Errorf("database.host or database.dsn is required")
 	}
 	if cfg.JWTSecret == "" {
 		return nil, fmt.Errorf("jwt_secret is required")

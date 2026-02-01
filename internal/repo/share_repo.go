@@ -7,6 +7,7 @@ import (
 	"github.com/didi/gendry/builder"
 
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/dbutil"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 )
 
@@ -37,8 +38,15 @@ func (r *ShareRepo) Create(ctx context.Context, share *model.Share) error {
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	_, err = r.db.ExecContext(ctx, sqlStr, args...)
-	return err
+	if err != nil {
+		if dbutil.IsConflict(err) {
+			return appErr.ErrConflict
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *ShareRepo) RevokeByDocument(ctx context.Context, userID, docID string, mtime int64) error {
@@ -48,6 +56,7 @@ func (r *ShareRepo) RevokeByDocument(ctx context.Context, userID, docID string, 
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	_, err = r.db.ExecContext(ctx, sqlStr, args...)
 	return err
 }
@@ -58,6 +67,7 @@ func (r *ShareRepo) GetByToken(ctx context.Context, token string) (*model.Share,
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -83,6 +93,7 @@ func (r *ShareRepo) GetActiveByDocument(ctx context.Context, userID, docID strin
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -121,6 +132,7 @@ func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID string, quer
 	}
 	sqlStr += " ORDER BY d.mtime DESC"
 
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err

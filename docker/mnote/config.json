@@ -1,5 +1,13 @@
 {
-    "db_path": "/data/db/data.db",
+    "database": {
+        "type": "postgres",
+        "host": "mnote-db",
+        "port": 5432,
+        "user": "mnote",
+        "password": "mnote_pass",
+        "dbname": "mnote",
+        "sslmode": "disable"
+    },
     "jwt_secret": "dev-secret-change-me",
     "port": 8080,
     "jwt_ttl_hours": 72,

@@ -3,23 +3,33 @@ package db
 import (
 	"database/sql"
 	"embed"
+	"fmt"
 	"io/fs"
 	"sort"
 	"strings"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/lib/pq"
+
+	"github.com/xxxsen/mnote/internal/config"
 )
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-func Open(dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dbPath)
+func Open(cfg config.DatabaseConfig) (*sql.DB, error) {
+	dsn := cfg.DSN
+	if dsn == "" {
+		sslmode := cfg.SSLMode
+		if sslmode == "" {
+			sslmode = "disable"
+		}
+		dsn = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+			cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, sslmode)
+	}
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
 	if err := db.Ping(); err != nil {
 		return nil, err
 	}
@@ -50,10 +60,10 @@ func ApplyMigrations(db *sql.DB) error {
 				continue
 			}
 			if _, err := db.Exec(q); err != nil {
-				if strings.Contains(err.Error(), "duplicate column name") {
+				if strings.Contains(err.Error(), "already exists") {
 					continue
 				}
-				return err
+				return fmt.Errorf("execute query in %s: %w", file, err)
 			}
 		}
 	}

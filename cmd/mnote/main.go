@@ -58,7 +58,7 @@ func main() {
 			)
 			logutil.GetLogger(context.Background()).Info("config loaded", zap.String("config", configPath))
 
-			conn, err := db.Open(cfg.DBPath)
+			conn, err := db.Open(cfg.Database)
 			if err != nil {
 				return fmt.Errorf("open db: %w", err)
 			}
@@ -81,7 +81,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	logutil.GetLogger(context.Background()).Info(
 		"starting server",
 		zap.Int("port", cfg.Port),
-		zap.String("db_path", cfg.DBPath),
+		zap.String("db_host", cfg.Database.Host),
 		zap.String("file_store", cfg.FileStore.Type),
 	)
 

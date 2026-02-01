@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 	"time"
 
@@ -49,41 +48,18 @@ func (s *AIService) SemanticSearch(ctx context.Context, userID, query string, to
 		logger.Error("failed to embed search query", zap.Error(err))
 		return nil, err
 	}
-	allEmbs, err := s.embeddings.ListByUser(ctx, userID)
-	if err != nil {
-		logger.Error("failed to list embeddings", zap.Error(err))
-		return nil, err
-	}
-	type match struct {
-		docID string
-		score float32
-	}
-	// Threshold for semantic similarity.
-	// Dense embeddings are noisy. 0.55-0.65 is generally a safe range for Chinese tech terms.
+
 	threshold := float32(0.55)
 	if len([]rune(query)) <= 2 {
-		threshold = 0.70 // Be very strict with tiny queries
+		threshold = 0.70
 	}
 
-	matches := make([]match, 0, len(allEmbs))
-	for _, item := range allEmbs {
-		score := cosineSimilarity(queryEmb, item.Embedding)
-		if score >= threshold {
-			matches = append(matches, match{docID: item.DocumentID, score: score})
-		}
+	res, err := s.embeddings.Search(ctx, userID, queryEmb, threshold, topK)
+	if err != nil {
+		logger.Error("failed to search in database", zap.Error(err))
+		return nil, err
 	}
-	sort.Slice(matches, func(i, j int) bool {
-		return matches[i].score > matches[j].score
-	})
-	if topK > len(matches) {
-		topK = len(matches)
-	}
-	result := make([]string, 0, topK)
-	for i := 0; i < topK; i++ {
-		logger.Debug("semantic match", zap.String("doc_id", matches[i].docID), zap.Float32("score", matches[i].score))
-		result = append(result, matches[i].docID)
-	}
-	return result, nil
+	return res, nil
 }
 
 func (s *AIService) SyncEmbedding(ctx context.Context, userID, docID, title, content string) error {

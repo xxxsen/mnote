@@ -7,6 +7,7 @@ import (
 	"github.com/didi/gendry/builder"
 
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/dbutil"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 )
 
@@ -32,6 +33,7 @@ func (r *VersionRepo) Create(ctx context.Context, version *model.DocumentVersion
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	_, err = r.db.ExecContext(ctx, sqlStr, args...)
 	return err
 }
@@ -47,6 +49,7 @@ func (r *VersionRepo) GetLatestVersion(ctx context.Context, userID, docID string
 	if err != nil {
 		return 0, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return 0, err
@@ -72,6 +75,7 @@ func (r *VersionRepo) List(ctx context.Context, userID, docID string) ([]model.D
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -98,6 +102,7 @@ func (r *VersionRepo) ListSummaries(ctx context.Context, userID, docID string) (
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -123,6 +128,7 @@ func (r *VersionRepo) ListByUser(ctx context.Context, userID string) ([]model.Do
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -149,6 +155,7 @@ func (r *VersionRepo) GetByVersion(ctx context.Context, userID, docID string, ve
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -168,17 +175,17 @@ func (r *VersionRepo) DeleteOldVersions(ctx context.Context, userID, docID strin
 	if keep <= 0 {
 		return nil
 	}
-	const sqlStr = `
+	sqlStr := `
 		DELETE FROM document_versions
-		WHERE user_id = ?
-		  AND document_id = ?
+		WHERE user_id = $1
+		  AND document_id = $2
 		  AND id NOT IN (
 			SELECT id
 			FROM document_versions
-			WHERE user_id = ?
-			  AND document_id = ?
+			WHERE user_id = $3
+			  AND document_id = $4
 			ORDER BY version DESC
-			LIMIT ?
+			LIMIT $5
 		  )
 	`
 	_, err := r.db.ExecContext(ctx, sqlStr, userID, docID, userID, docID, keep)
