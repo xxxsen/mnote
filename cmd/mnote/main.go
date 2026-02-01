@@ -24,7 +24,10 @@ import (
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/handler"
 	"github.com/xxxsen/mnote/internal/middleware"
+	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/oauth"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
+	"github.com/xxxsen/mnote/internal/pkg/password"
 	"github.com/xxxsen/mnote/internal/repo"
 	"github.com/xxxsen/mnote/internal/service"
 )
@@ -77,6 +80,29 @@ func main() {
 	}
 }
 
+func injectTestUser(ctx context.Context, r *repo.UserRepo) error {
+	email := "test@test.com"
+	_, err := r.GetByEmail(ctx, email)
+	if err == nil {
+		return nil
+	}
+	if err != appErr.ErrNotFound {
+		return err
+	}
+	hash, err := password.Hash("test")
+	if err != nil {
+		return err
+	}
+	user := &model.User{
+		ID:           "test_user",
+		Email:        email,
+		PasswordHash: hash,
+		Ctime:        time.Now().Unix(),
+		Mtime:        time.Now().Unix(),
+	}
+	return r.Create(ctx, user)
+}
+
 func runServer(cfg *config.Config, db *sql.DB) error {
 	logutil.GetLogger(context.Background()).Info(
 		"starting server",
@@ -86,6 +112,12 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	)
 
 	userRepo := repo.NewUserRepo(db)
+	if cfg.Properties.EnableTestMode {
+		if err := injectTestUser(context.Background(), userRepo); err != nil {
+			logutil.GetLogger(context.Background()).Fatal("failed to inject test user", zap.Error(err))
+		}
+		logutil.GetLogger(context.Background()).Info("test mode enabled, test user injected")
+	}
 	docRepo := repo.NewDocumentRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
 	oauthRepo := repo.NewOAuthRepo(db)

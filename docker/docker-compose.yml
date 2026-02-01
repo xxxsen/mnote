@@ -25,7 +25,7 @@ services:
       - POSTGRES_USER=mnote
       - POSTGRES_PASSWORD=mnote_pass
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      - mnote-db-data:/var/lib/postgresql/data
     networks:
       - mnote
     restart: always
@@ -60,3 +60,6 @@ services:
 networks:
   mnote:
     name: mnote_network
+
+volumes:
+  mnote-db-data:

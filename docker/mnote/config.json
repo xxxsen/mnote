@@ -65,13 +65,19 @@
             "client_id": "",
             "client_secret": "",
             "redirect_url": "http://localhost/api/v1/auth/oauth/github/callback",
-            "scopes": ["user:email"]
+            "scopes": [
+                "user:email"
+            ]
         },
         "google": {
             "client_id": "",
             "client_secret": "",
             "redirect_url": "http://localhost/api/v1/auth/oauth/google/callback",
-            "scopes": ["openid", "email", "profile"]
+            "scopes": [
+                "openid",
+                "email",
+                "profile"
+            ]
         }
     },
     "mail": {
@@ -84,6 +90,7 @@
     "properties": {
         "enable_github_oauth": false,
         "enable_google_oauth": false,
-        "enable_user_register": true
+        "enable_user_register": true,
+        "enable_test_mode": true
     }
 }
