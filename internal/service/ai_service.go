@@ -103,7 +103,7 @@ func (s *AIService) SyncEmbedding(ctx context.Context, userID, docID, title, con
 
 	emb, err := s.Embed(ctx, textToEmbed, "RETRIEVAL_DOCUMENT")
 	if err != nil {
-		logger.Error("failed to generate embedding", zap.Error(err))
+		logger.Error("failed to generate embedding", zap.Error(err), zap.String("title", title))
 		return err
 	}
 
@@ -112,13 +112,55 @@ func (s *AIService) SyncEmbedding(ctx context.Context, userID, docID, title, con
 		UserID:      userID,
 		Embedding:   emb,
 		ContentHash: contentHash,
-		Mtime:       time.Now().UnixMilli(),
+		Mtime:       time.Now().Unix(),
 	}); err != nil {
-		logger.Error("failed to save embedding", zap.Error(err))
+		logger.Error("failed to save embedding", zap.Error(err), zap.String("title", title))
 		return err
 	}
-	logger.Info("embedding synced")
+	logger.Info("embedding synced", zap.String("title", title))
 	return nil
+}
+
+func (s *AIService) StartWorker(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.processPendingEmbeddings(ctx)
+			}
+		}
+	}()
+}
+
+func (s *AIService) processPendingEmbeddings(ctx context.Context) {
+	docs, err := s.embeddings.ListStaleDocuments(ctx, 50)
+	if err != nil {
+		logutil.GetLogger(ctx).Error("failed to list stale documents", zap.Error(err))
+		return
+	}
+	if len(docs) == 0 {
+		return
+	}
+	logutil.GetLogger(ctx).Info("processing stale embeddings", zap.Int("count", len(docs)))
+	for _, doc := range docs {
+		err := s.SyncEmbedding(ctx, doc.UserID, doc.ID, doc.Title, doc.Content)
+		if err != nil {
+			// Check for rate limit. This depends on provider implementation.
+			// Most standard providers return error messages containing "rate limit" or 429.
+			errMsg := strings.ToLower(err.Error())
+			if strings.Contains(errMsg, "rate") || strings.Contains(errMsg, "limit") || strings.Contains(errMsg, "429") {
+				logutil.GetLogger(ctx).Warn("ai rate limit triggered, cooling down...", zap.Error(err))
+				time.Sleep(10 * time.Second)
+				continue
+			}
+		}
+		// Small delay to avoid hammering the API
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func cosineSimilarity(a, b []float32) float32 {

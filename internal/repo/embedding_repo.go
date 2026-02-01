@@ -86,3 +86,27 @@ func (r *EmbeddingRepo) GetByDocID(ctx context.Context, docID string) (*model.Do
 	}
 	return &item, nil
 }
+
+func (r *EmbeddingRepo) ListStaleDocuments(ctx context.Context, limit int) ([]model.Document, error) {
+	const query = `
+		SELECT d.id, d.user_id, d.title, d.content 
+		FROM documents d 
+		LEFT JOIN document_embeddings e ON d.id = e.document_id 
+		WHERE (e.document_id IS NULL OR d.mtime > e.mtime) AND d.state = ?
+		LIMIT ?
+	`
+	rows, err := r.db.QueryContext(ctx, query, DocumentStateNormal, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var docs []model.Document
+	for rows.Next() {
+		var doc model.Document
+		if err := rows.Scan(&doc.ID, &doc.UserID, &doc.Title, &doc.Content); err != nil {
+			return nil, err
+		}
+		docs = append(docs, doc)
+	}
+	return docs, rows.Err()
+}

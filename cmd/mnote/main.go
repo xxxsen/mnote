@@ -261,6 +261,8 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	aiService.StartWorker(ctx)
+
 	go func() {
 		if err := engine.Run(); err != nil && err != http.ErrServerClosed {
 			logutil.GetLogger(context.Background()).Error("server error", zap.Error(err))

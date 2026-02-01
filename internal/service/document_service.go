@@ -319,7 +319,6 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 	if err := s.docs.Update(ctx, doc, updateSummary); err != nil {
 		return err
 	}
-	_ = s.ai.SyncEmbedding(context.Background(), userID, docID, input.Title, input.Content)
 
 	versionNumber := 1
 	if latest, err := s.versions.GetLatestVersion(ctx, userID, docID); err == nil {
@@ -369,7 +368,6 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 	if err := s.docs.Create(ctx, doc); err != nil {
 		return nil, err
 	}
-	_ = s.ai.SyncEmbedding(context.Background(), userID, doc.ID, doc.Title, doc.Content)
 
 	version := &model.DocumentVersion{
 		ID:         newID(),
