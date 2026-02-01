@@ -363,6 +363,8 @@ export default function DocsPage() {
   const [hasMore, setHasMore] = useState(true);
   const [nextOffset, setNextOffset] = useState(0);
   const [search, setSearch] = useState(searchParams.get("q") || "");
+  const [aiSearchDocs, setAiSearchDocs] = useState<DocumentWithTags[]>([]);
+  const [aiSearching, setAiSearching] = useState(false);
   const [selectedTag, setSelectedTag] = useState(searchParams.get("tag_id") || "");
   const [showStarred, setShowStarred] = useState(false);
   const [showShared, setShowShared] = useState(false);
@@ -458,6 +460,23 @@ export default function DocsPage() {
     },
     [mergeTags]
   );
+
+  const fetchAiSearch = useCallback(async (query: string) => {
+    if (!query) {
+      setAiSearchDocs([]);
+      return;
+    }
+    setAiSearching(true);
+    try {
+      const res = await apiFetch<{ items: DocumentWithTags[] }>(`/ai/search?q=${encodeURIComponent(query)}`);
+      setAiSearchDocs(res?.items || []);
+    } catch (e) {
+      console.error(e);
+      setAiSearchDocs([]);
+    } finally {
+      setAiSearching(false);
+    }
+  }, []);
 
   const fetchDocs = useCallback(async (offset: number, append: boolean) => {
     if (fetchInFlightRef.current) return;
@@ -657,11 +676,16 @@ export default function DocsPage() {
     setLoadingMore(false);
     const timer = setTimeout(() => {
       fetchDocs(0, false);
+      if (search && !search.startsWith("/")) {
+        void fetchAiSearch(search);
+      } else {
+        setAiSearchDocs([]);
+      }
       fetchSummary();
       fetchSharedSummary();
     }, 300);
     return () => clearTimeout(timer);
-  }, [fetchDocs, fetchSummary, fetchSharedSummary, showStarred, showShared]);
+  }, [fetchDocs, fetchSummary, fetchSharedSummary, showStarred, showShared, search, fetchAiSearch]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -1385,6 +1409,49 @@ export default function DocsPage() {
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
+          {aiSearchDocs.length > 0 && (
+            <div className="mb-10">
+               <div className="flex items-center gap-2 mb-4">
+                  <div className="bg-indigo-500/10 p-1 rounded-md">
+                    <Search className="h-4 w-4 text-indigo-500" />
+                  </div>
+                  <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex-1">AI Semantic Discovery</h2>
+                  {aiSearching && <div className="text-[10px] text-muted-foreground animate-pulse">Analyzing library...</div>}
+               </div>
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {aiSearchDocs.map((doc) => {
+                     const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter(Boolean) as Tag[];
+                     return (
+                        <div
+                          key={`ai-${doc.id}`}
+                          onClick={() => router.push(`/docs/${doc.id}`)}
+                          className="group relative flex flex-col border border-indigo-500/30 bg-indigo-500/5 p-4 h-56 hover:border-indigo-500 transition-colors cursor-pointer rounded-[8px] overflow-hidden"
+                        >
+                           <div className="absolute top-2 right-2 text-indigo-500/40 group-hover:text-indigo-500 transition-colors">
+                              <Search className="h-3 w-3" />
+                           </div>
+                           <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
+                           <div className="relative flex-1 min-h-0 mb-2 overflow-hidden">
+                              <div className="text-sm text-muted-foreground whitespace-pre-wrap font-sans pb-8 break-words line-clamp-6">
+                                {doc.summary || doc.content}
+                              </div>
+                              <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-background/10 to-transparent pointer-events-none" />
+                           </div>
+                           <div className="mt-auto flex flex-wrap gap-1 justify-center pt-2">
+                              {docTags.map(tag => (
+                                <span key={tag.id} className="text-[10px] bg-indigo-500/10 text-indigo-600 px-1.5 py-0.5 rounded-full border border-indigo-500/10">
+                                  #{tag.name}
+                                </span>
+                              ))}
+                           </div>
+                        </div>
+                     );
+                  })}
+               </div>
+               <div className="mt-6 border-b border-border shadow-sm shadow-indigo-500/10" />
+            </div>
+          )}
+
           {loading ? (
              <div className="flex justify-center py-20 text-muted-foreground animate-pulse">Loading...</div>
           ) : docs.length === 0 ? (

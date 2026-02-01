@@ -49,6 +49,10 @@ func (p *openrouterProvider) Name() string {
 	return "openrouter"
 }
 
+func (p *openrouterProvider) Embed(ctx context.Context, model string, text string, taskType string) ([]float32, error) {
+	return nil, fmt.Errorf("openrouter embedding not implemented")
+}
+
 func (p *openrouterProvider) Generate(ctx context.Context, model string, prompt string) (string, error) {
 	if p.apiKey == "" {
 		return "", ErrUnavailable

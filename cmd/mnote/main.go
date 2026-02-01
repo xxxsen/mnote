@@ -93,6 +93,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	tagRepo := repo.NewTagRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
+	embeddingRepo := repo.NewEmbeddingRepo(db)
 
 	mailSender := service.NewEmailSender(cfg.Mail)
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, mailSender)
@@ -125,9 +126,6 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		oauthProviders["google"] = provider
 	}
 	oauthService := service.NewOAuthService(userRepo, oauthRepo, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), oauthProviders)
-	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, cfg.VersionMaxKeep)
-	tagService := service.NewTagService(tagRepo, docTagRepo)
-	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
 	providerArgs := cfg.AI.Data
 	if providerArgs == nil {
 		providerArgs = cfg.AI
@@ -136,7 +134,10 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("init ai provider: %w", err)
 	}
-	aiService := service.NewAIService(aiProvider, cfg.AI.Model, cfg.AI.MaxInputChars, cfg.AI.Timeout)
+	aiService := service.NewAIService(aiProvider, embeddingRepo, cfg.AI.Model, "gemini-embedding-001", cfg.AI.MaxInputChars, cfg.AI.Timeout)
+	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, aiService, cfg.VersionMaxKeep)
+	tagService := service.NewTagService(tagRepo, docTagRepo)
+	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
 	importService := service.NewImportService(documentService, tagService)
 
 	authHandler := handler.NewAuthHandler(authService)

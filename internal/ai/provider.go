@@ -9,6 +9,7 @@ import (
 type IAIProvider interface {
 	Name() string
 	Generate(ctx context.Context, model string, prompt string) (string, error)
+	Embed(ctx context.Context, model string, text string, taskType string) ([]float32, error)
 }
 
 type ProviderFactory func(args interface{}) (IAIProvider, error)
