@@ -678,14 +678,14 @@ export default function DocsPage() {
       setLoading(true);
       setLoadingMore(false);
       fetchDocs(0, false);
-      if (search && !search.startsWith("/")) {
+      if (search && !search.startsWith("/") && !showStarred && !showShared && !selectedTag) {
         void fetchAiSearch(search);
       } else {
         setAiSearchDocs([]);
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [fetchDocs, showStarred, showShared, search, fetchAiSearch]);
+  }, [fetchDocs, showStarred, showShared, selectedTag, search, fetchAiSearch]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
