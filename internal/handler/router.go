@@ -70,6 +70,7 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.POST("/ai/generate", deps.AI.Generate)
 	authGroup.POST("/ai/summary", deps.AI.Summary)
 	authGroup.POST("/ai/tags", deps.AI.Tags)
+	authGroup.GET("/ai/search", deps.AI.Search)
 	authGroup.POST("/import/hedgedoc/upload", deps.Import.HedgeDocUpload)
 	authGroup.GET("/import/hedgedoc/:job_id/preview", deps.Import.HedgeDocPreview)
 	authGroup.POST("/import/hedgedoc/:job_id/confirm", deps.Import.HedgeDocConfirm)

@@ -56,7 +56,7 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, noopSender{})
 	authService := service.NewAuthService(userRepo, verifyService, jwtSecret, time.Hour, true)
 	oauthService := service.NewOAuthService(userRepo, oauthRepo, jwtSecret, time.Hour, map[string]oauth.Provider{})
-	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, 10)
+	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
 

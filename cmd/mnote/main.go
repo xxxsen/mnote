@@ -93,6 +93,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	tagRepo := repo.NewTagRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
+	embeddingRepo := repo.NewEmbeddingRepo(db)
 
 	mailSender := service.NewEmailSender(cfg.Mail)
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, mailSender)
@@ -125,18 +126,90 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		oauthProviders["google"] = provider
 	}
 	oauthService := service.NewOAuthService(userRepo, oauthRepo, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), oauthProviders)
-	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, cfg.VersionMaxKeep)
+
+	aiProviders := make(map[string]ai.IAIProvider)
+	embedProviders := make(map[string]ai.IEmbedProvider)
+	for _, pcfg := range cfg.AIProvider {
+		logutil.GetLogger(context.Background()).Info("init ai provider", zap.String("name", pcfg.Name), zap.String("type", pcfg.Type))
+		if pcfg.Type == "" || pcfg.Type == "generator" || pcfg.Type == "all" {
+			p, err := ai.NewProvider(pcfg.Name, pcfg.Data)
+			if err != nil {
+				return fmt.Errorf("init ai provider %s: %w", pcfg.Name, err)
+			}
+			aiProviders[pcfg.Name] = p
+		}
+		if pcfg.Type == "embedder" || pcfg.Type == "all" {
+			ep, err := ai.NewEmbedProvider(pcfg.Name, pcfg.Data)
+			if err != nil {
+				return fmt.Errorf("init embed provider %s: %w", pcfg.Name, err)
+			}
+			embedProviders[pcfg.Name] = ep
+		}
+	}
+
+	getGen := func(name string, f config.AIFeatureConfig) (ai.IGenerator, error) {
+		f = f.GetOrDefault(cfg.AI)
+		if f.Provider == "" || f.Model == "" {
+			return nil, fmt.Errorf("ai feature %s: provider or model not configured", name)
+		}
+		p, ok := aiProviders[f.Provider]
+		if !ok {
+			return nil, fmt.Errorf("ai feature %s: provider %s not found or incompatible (type: generator)", name, f.Provider)
+		}
+		logutil.GetLogger(context.Background()).Info("ai feature init", zap.String("feature", name), zap.String("provider", f.Provider), zap.String("model", f.Model))
+		return ai.NewGenerator(p, f.Model), nil
+	}
+	getEmb := func(name string, f config.AIFeatureConfig) (ai.IEmbedder, error) {
+		f = f.GetOrDefault(cfg.AI)
+		if f.Provider == "" || f.Model == "" {
+			return nil, fmt.Errorf("ai feature %s: provider or model not configured", name)
+		}
+		p, ok := embedProviders[f.Provider]
+		if !ok {
+			return nil, fmt.Errorf("ai feature %s: provider %s not found or incompatible (type: embedder)", name, f.Provider)
+		}
+		logutil.GetLogger(context.Background()).Info("ai feature init", zap.String("feature", name), zap.String("provider", f.Provider), zap.String("model", f.Model))
+		return ai.NewEmbedder(p, f.Model), nil
+	}
+
+	polishGen, err := getGen("polish", cfg.AI.Polish)
+	if err != nil {
+		return err
+	}
+	genGen, err := getGen("generate", cfg.AI.Generate)
+	if err != nil {
+		return err
+	}
+	tagGen, err := getGen("tagging", cfg.AI.Tagging)
+	if err != nil {
+		return err
+	}
+	sumGen, err := getGen("summary", cfg.AI.Summary)
+	if err != nil {
+		return err
+	}
+	embGen, err := getEmb("embed", cfg.AI.Embed)
+	if err != nil {
+		return err
+	}
+
+	aiManager := ai.NewManager(
+		polishGen,
+		genGen,
+		tagGen,
+		sumGen,
+		embGen,
+		ai.ManagerConfig{
+			Timeout:       cfg.AI.Timeout,
+			MaxInputChars: cfg.AI.MaxInputChars,
+		},
+	)
+
+	aiService := service.NewAIService(aiManager, embeddingRepo)
+	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, aiService, cfg.VersionMaxKeep)
+
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
-	providerArgs := cfg.AI.Data
-	if providerArgs == nil {
-		providerArgs = cfg.AI
-	}
-	aiProvider, err := ai.NewProvider(cfg.AI.Provider, providerArgs)
-	if err != nil {
-		return fmt.Errorf("init ai provider: %w", err)
-	}
-	aiService := service.NewAIService(aiProvider, cfg.AI.Model, cfg.AI.MaxInputChars, cfg.AI.Timeout)
 	importService := service.NewImportService(documentService, tagService)
 
 	authHandler := handler.NewAuthHandler(authService)
@@ -187,6 +260,8 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	aiService.StartWorker(ctx)
 
 	go func() {
 		if err := engine.Run(); err != nil && err != http.ErrServerClosed {

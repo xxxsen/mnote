@@ -44,6 +44,46 @@ func (p *geminiProvider) Generate(ctx context.Context, model string, prompt stri
 	return strings.TrimSpace(resp.Text()), nil
 }
 
+type geminiEmbedProvider struct {
+	apiKey string
+}
+
+func (p *geminiEmbedProvider) Name() string {
+	return "gemini"
+}
+
+func (p *geminiEmbedProvider) Embed(ctx context.Context, model string, text string, taskType string) ([]float32, error) {
+	if p.apiKey == "" {
+		return nil, ErrUnavailable
+	}
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  p.apiKey,
+		Backend: genai.BackendGeminiAPI,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var config *genai.EmbedContentConfig
+	if taskType != "" {
+		config = &genai.EmbedContentConfig{
+			TaskType: taskType,
+		}
+	}
+	resp, err := client.Models.EmbedContent(
+		ctx,
+		model,
+		[]*genai.Content{{Parts: []*genai.Part{{Text: text}}}},
+		config,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Embeddings == nil || len(resp.Embeddings) == 0 {
+		return nil, fmt.Errorf("no embedding values returned")
+	}
+	return resp.Embeddings[0].Values, nil
+}
+
 func createGeminiFactory(args interface{}) (IAIProvider, error) {
 	cfg := &geminiConfig{}
 	if err := decodeConfig(args, cfg); err != nil {
@@ -55,8 +95,20 @@ func createGeminiFactory(args interface{}) (IAIProvider, error) {
 	return provider, nil
 }
 
+func createGeminiEmbedFactory(args interface{}) (IEmbedProvider, error) {
+	cfg := &geminiConfig{}
+	if err := decodeConfig(args, cfg); err != nil {
+		return nil, err
+	}
+	provider := &geminiEmbedProvider{
+		apiKey: strings.TrimSpace(cfg.APIKey),
+	}
+	return provider, nil
+}
+
 func init() {
 	Register("gemini", createGeminiFactory)
+	RegisterEmbed("gemini", createGeminiEmbedFactory)
 }
 
 func decodeConfig(args interface{}, dst interface{}) error {

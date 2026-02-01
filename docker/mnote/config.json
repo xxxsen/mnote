@@ -1,9 +1,10 @@
 {
     "db_path": "/data/db/data.db",
-    "jwt_secret": "dev-secret",
+    "jwt_secret": "dev-secret-change-me",
     "port": 8080,
     "jwt_ttl_hours": 72,
     "version_max_keep": 10,
+    "max_upload_size": 20971520,
     "log_config": {
         "level": "debug",
         "console": true
@@ -14,12 +15,42 @@
             "dir": "/data/uploads"
         }
     },
+    "ai_provider": [
+        {
+            "name": "gemini",
+            "type": "all",
+            "data": {
+                "api_key": "YOUR_GEMINI_API_KEY"
+            }
+        },
+        {
+            "name": "openrouter",
+            "type": "generator",
+            "data": {
+                "api_key": "YOUR_OPENROUTER_API_KEY",
+                "http_referer": "https://github.com/xxxsen/mnote",
+                "x_title": "mnote"
+            }
+        }
+    ],
     "ai": {
         "provider": "gemini",
-        "api_key": "abc",
-        "model": "flash",
-        "timeout": 10,
-        "max_input_chars": 0
+        "model": "gemini-1.5-flash",
+        "timeout": 30,
+        "max_input_chars": 32000,
+        "polish": {
+            "provider": "openrouter",
+            "model": "anthropic/claude-3.5-sonnet"
+        },
+        "generate": {
+            "model": "gemini-1.5-pro"
+        },
+        "tagging": {},
+        "summary": {},
+        "embed": {
+            "provider": "gemini",
+            "model": "text-embedding-004"
+        }
     },
     "oauth": {
         "github": {

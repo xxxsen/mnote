@@ -16,7 +16,12 @@ type DocumentService struct {
 	shares         *repo.ShareRepo
 	tagRepo        *repo.TagRepo
 	userRepo       *repo.UserRepo
+	ai             *AIService
 	versionMaxKeep int
+}
+
+func NewDocumentService(docs *repo.DocumentRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo, tagRepo *repo.TagRepo, userRepo *repo.UserRepo, ai *AIService, versionMaxKeep int) *DocumentService {
+	return &DocumentService{docs: docs, versions: versions, tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo, ai: ai, versionMaxKeep: versionMaxKeep}
 }
 
 type DocumentSummary struct {
@@ -26,143 +31,21 @@ type DocumentSummary struct {
 	StarredTotal int
 }
 
-func NewDocumentService(docs *repo.DocumentRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo, tagRepo *repo.TagRepo, userRepo *repo.UserRepo, versionMaxKeep int) *DocumentService {
-	return &DocumentService{docs: docs, versions: versions, tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo, versionMaxKeep: versionMaxKeep}
-}
-
 type PublicShareDetail struct {
 	Document *model.Document `json:"document"`
 	Author   string          `json:"author"`
 	Tags     []model.Tag     `json:"tags"`
 }
 
-type DocumentCreateInput struct {
-	Title   string
-	Content string
-	TagIDs  []string
-	Summary string
+func (s *DocumentService) Search(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error) {
+	if query == "" && tagID == "" {
+		return s.docs.List(ctx, userID, starred, limit, offset, orderBy)
+	}
+	return s.docs.SearchLike(ctx, userID, query, tagID, starred, limit, offset, orderBy)
 }
 
-type DocumentUpdateInput struct {
-	Title   string
-	Content string
-	TagIDs  []string
-	Summary *string
-}
-
-func (s *DocumentService) Create(ctx context.Context, userID string, input DocumentCreateInput) (*model.Document, error) {
-	now := timeutil.NowUnix()
-	doc := &model.Document{
-		ID:      newID(),
-		UserID:  userID,
-		Title:   input.Title,
-		Content: input.Content,
-		Summary: input.Summary,
-		State:   repo.DocumentStateNormal,
-		Pinned:  0,
-		Ctime:   now,
-		Mtime:   now,
-	}
-	if err := s.docs.Create(ctx, doc); err != nil {
-		return nil, err
-	}
-	version := &model.DocumentVersion{
-		ID:         newID(),
-		UserID:     userID,
-		DocumentID: doc.ID,
-		Version:    1,
-		Title:      doc.Title,
-		Content:    doc.Content,
-		Ctime:      now,
-	}
-	if err := s.versions.Create(ctx, version); err != nil {
-		return nil, err
-	}
-	if err := s.pruneVersions(ctx, userID, doc.ID); err != nil {
-		return nil, err
-	}
-	if input.TagIDs != nil {
-		if err := s.tags.DeleteByDoc(ctx, userID, doc.ID); err != nil {
-			return nil, err
-		}
-		for _, tagID := range input.TagIDs {
-			if err := s.tags.Add(ctx, &model.DocumentTag{UserID: userID, DocumentID: doc.ID, TagID: tagID}); err != nil {
-				return nil, err
-			}
-		}
-	}
-	return doc, nil
-}
-
-func (s *DocumentService) UpdatePinned(ctx context.Context, userID, docID string, pinned int) error {
-	if pinned != 0 && pinned != 1 {
-		return appErr.ErrInvalid
-	}
-	return s.docs.UpdatePinned(ctx, userID, docID, pinned)
-}
-
-func (s *DocumentService) UpdateStarred(ctx context.Context, userID, docID string, starred int) error {
-	if starred != 0 && starred != 1 {
-		return appErr.ErrInvalid
-	}
-	return s.docs.UpdateStarred(ctx, userID, docID, starred)
-}
-
-func (s *DocumentService) Update(ctx context.Context, userID, docID string, input DocumentUpdateInput) error {
-	now := timeutil.NowUnix()
-	doc := &model.Document{
-		ID:      docID,
-		UserID:  userID,
-		Title:   input.Title,
-		Content: input.Content,
-		Summary: "",
-		Mtime:   now,
-	}
-	updateSummary := input.Summary != nil
-	if updateSummary {
-		doc.Summary = *input.Summary
-	}
-	if err := s.docs.Update(ctx, doc, updateSummary); err != nil {
-		return err
-	}
-	versionNumber := 1
-	if latest, err := s.versions.GetLatestVersion(ctx, userID, docID); err == nil {
-		versionNumber = latest + 1
-	}
-	version := &model.DocumentVersion{
-		ID:         newID(),
-		UserID:     userID,
-		DocumentID: docID,
-		Version:    versionNumber,
-		Title:      input.Title,
-		Content:    input.Content,
-		Ctime:      now,
-	}
-	if err := s.versions.Create(ctx, version); err != nil {
-		return err
-	}
-	if err := s.pruneVersions(ctx, userID, docID); err != nil {
-		return err
-	}
-	if input.TagIDs != nil {
-		if err := s.tags.DeleteByDoc(ctx, userID, docID); err != nil {
-			return err
-		}
-		for _, tagID := range input.TagIDs {
-			if err := s.tags.Add(ctx, &model.DocumentTag{UserID: userID, DocumentID: docID, TagID: tagID}); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (s *DocumentService) UpdateSummary(ctx context.Context, userID, docID, summary string) error {
-	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
-		return err
-	}
-	now := timeutil.NowUnix()
-	return s.docs.UpdateSummary(ctx, userID, docID, summary, now)
+func (s *DocumentService) Get(ctx context.Context, userID, docID string) (*model.Document, error) {
+	return s.docs.GetByID(ctx, userID, docID)
 }
 
 func (s *DocumentService) UpdateTags(ctx context.Context, userID, docID string, tagIDs []string) error {
@@ -180,26 +63,65 @@ func (s *DocumentService) UpdateTags(ctx context.Context, userID, docID string, 
 	return nil
 }
 
-func (s *DocumentService) Get(ctx context.Context, userID, docID string) (*model.Document, error) {
-	return s.docs.GetByID(ctx, userID, docID)
+func (s *DocumentService) UpdateSummary(ctx context.Context, userID, docID, summary string) error {
+	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
+		return err
+	}
+	now := timeutil.NowUnix()
+	return s.docs.UpdateSummary(ctx, userID, docID, summary, now)
+}
+
+func (s *DocumentService) UpdatePinned(ctx context.Context, userID, docID string, pinned int) error {
+	if pinned != 0 && pinned != 1 {
+		return appErr.ErrInvalid
+	}
+	return s.docs.UpdatePinned(ctx, userID, docID, pinned)
+}
+
+func (s *DocumentService) UpdateStarred(ctx context.Context, userID, docID string, starred int) error {
+	if starred != 0 && starred != 1 {
+		return appErr.ErrInvalid
+	}
+	return s.docs.UpdateStarred(ctx, userID, docID, starred)
+}
+
+func (s *DocumentService) ListSharedDocuments(ctx context.Context, userID string, query string) ([]SharedDocumentSummary, error) {
+	items, err := s.shares.ListActiveDocuments(ctx, userID, query)
+	if err != nil {
+		return nil, err
+	}
+	docIDs := make([]string, 0, len(items))
+	for _, item := range items {
+		docIDs = append(docIDs, item.ID)
+	}
+	tagIDsByDoc, err := s.tags.ListTagIDsByDocIDs(ctx, userID, docIDs)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]SharedDocumentSummary, 0, len(items))
+	for _, item := range items {
+		results = append(results, SharedDocumentSummary{
+			ID:      item.ID,
+			Title:   item.Title,
+			Summary: item.Summary,
+			Mtime:   item.Mtime,
+			Token:   item.Token,
+			TagIDs:  tagIDsByDoc[item.ID],
+		})
+	}
+	return results, nil
 }
 
 func (s *DocumentService) GetByTitle(ctx context.Context, userID, title string) (*model.Document, error) {
 	return s.docs.GetByTitle(ctx, userID, title)
 }
 
-func (s *DocumentService) List(ctx context.Context, userID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error) {
-	return s.docs.List(ctx, userID, starred, limit, offset, orderBy)
-}
-
-func (s *DocumentService) Search(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error) {
-	if query == "" && tagID == "" {
-		return s.docs.List(ctx, userID, starred, limit, offset, orderBy)
-	}
-	return s.docs.SearchLike(ctx, userID, query, tagID, starred, limit, offset, orderBy)
+func (s *DocumentService) ListByIDs(ctx context.Context, userID string, docIDs []string) ([]model.Document, error) {
+	return s.docs.ListByIDs(ctx, userID, docIDs)
 }
 
 func (s *DocumentService) Summary(ctx context.Context, userID string, recentLimit uint) (*DocumentSummary, error) {
+
 	recent, err := s.docs.List(ctx, userID, nil, recentLimit, 0, "mtime desc")
 	if err != nil {
 		return nil, err
@@ -366,29 +288,111 @@ type SharedDocumentSummary struct {
 	TagIDs  []string `json:"tag_ids"`
 }
 
-func (s *DocumentService) ListSharedDocuments(ctx context.Context, userID string) ([]SharedDocumentSummary, error) {
-	items, err := s.shares.ListActiveDocuments(ctx, userID)
-	if err != nil {
+type DocumentCreateInput struct {
+	Title   string
+	Content string
+	TagIDs  []string
+	Summary string
+}
+
+type DocumentUpdateInput struct {
+	Title   string
+	Content string
+	TagIDs  []string
+	Summary *string
+}
+
+func (s *DocumentService) Update(ctx context.Context, userID, docID string, input DocumentUpdateInput) error {
+	now := timeutil.NowUnix()
+	doc := &model.Document{
+		ID:      docID,
+		UserID:  userID,
+		Title:   input.Title,
+		Content: input.Content,
+		Summary: "",
+		Mtime:   now,
+	}
+	updateSummary := input.Summary != nil
+	if updateSummary {
+		doc.Summary = *input.Summary
+	}
+	if err := s.docs.Update(ctx, doc, updateSummary); err != nil {
+		return err
+	}
+
+	versionNumber := 1
+	if latest, err := s.versions.GetLatestVersion(ctx, userID, docID); err == nil {
+		versionNumber = latest + 1
+	}
+	version := &model.DocumentVersion{
+		ID:         newID(),
+		UserID:     userID,
+		DocumentID: docID,
+		Version:    versionNumber,
+		Title:      input.Title,
+		Content:    input.Content,
+		Ctime:      now,
+	}
+	if err := s.versions.Create(ctx, version); err != nil {
+		return err
+	}
+	if err := s.pruneVersions(ctx, userID, docID); err != nil {
+		return err
+	}
+	if input.TagIDs != nil {
+		if err := s.tags.DeleteByDoc(ctx, userID, docID); err != nil {
+			return err
+		}
+		for _, tagID := range input.TagIDs {
+			if err := s.tags.Add(ctx, &model.DocumentTag{UserID: userID, DocumentID: docID, TagID: tagID}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *DocumentService) Create(ctx context.Context, userID string, input DocumentCreateInput) (*model.Document, error) {
+	now := timeutil.NowUnix()
+	doc := &model.Document{
+		ID:      newID(),
+		UserID:  userID,
+		Title:   input.Title,
+		Content: input.Content,
+		Summary: input.Summary,
+		State:   repo.DocumentStateNormal,
+		Pinned:  0,
+		Ctime:   now,
+		Mtime:   now,
+	}
+	if err := s.docs.Create(ctx, doc); err != nil {
 		return nil, err
 	}
-	docIDs := make([]string, 0, len(items))
-	for _, item := range items {
-		docIDs = append(docIDs, item.ID)
+
+	version := &model.DocumentVersion{
+		ID:         newID(),
+		UserID:     userID,
+		DocumentID: doc.ID,
+		Version:    1,
+		Title:      doc.Title,
+		Content:    doc.Content,
+		Ctime:      now,
 	}
-	tagIDsByDoc, err := s.tags.ListTagIDsByDocIDs(ctx, userID, docIDs)
-	if err != nil {
+	if err := s.versions.Create(ctx, version); err != nil {
 		return nil, err
 	}
-	results := make([]SharedDocumentSummary, 0, len(items))
-	for _, item := range items {
-		results = append(results, SharedDocumentSummary{
-			ID:      item.ID,
-			Title:   item.Title,
-			Summary: item.Summary,
-			Mtime:   item.Mtime,
-			Token:   item.Token,
-			TagIDs:  tagIDsByDoc[item.ID],
-		})
+	if err := s.pruneVersions(ctx, userID, doc.ID); err != nil {
+		return nil, err
 	}
-	return results, nil
+	if input.TagIDs != nil {
+		if err := s.tags.DeleteByDoc(ctx, userID, doc.ID); err != nil {
+			return nil, err
+		}
+		for _, tagID := range input.TagIDs {
+			if err := s.tags.Add(ctx, &model.DocumentTag{UserID: userID, DocumentID: doc.ID, TagID: tagID}); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return doc, nil
 }

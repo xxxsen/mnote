@@ -51,7 +51,8 @@ func (h *ShareHandler) PublicGet(c *gin.Context) {
 }
 
 func (h *ShareHandler) List(c *gin.Context) {
-	items, err := h.documents.ListSharedDocuments(c.Request.Context(), getUserID(c))
+	query := c.Query("q")
+	items, err := h.documents.ListSharedDocuments(c.Request.Context(), getUserID(c), query)
 	if err != nil {
 		handleError(c, err)
 		return
