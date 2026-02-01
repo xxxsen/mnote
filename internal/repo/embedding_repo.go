@@ -62,9 +62,9 @@ func (r *EmbeddingRepo) GetByDocID(ctx context.Context, docID string) (*model.Do
 	return &item, nil
 }
 
-func (r *EmbeddingRepo) Search(ctx context.Context, userID string, query []float32, threshold float32, topK int) ([]string, error) {
+func (r *EmbeddingRepo) Search(ctx context.Context, userID string, query []float32, threshold float32, topK int) ([]string, []float32, error) {
 	const queryStr = `
-		SELECT document_id
+		SELECT document_id, (1 - (embedding <=> $2)) as score
 		FROM document_embeddings
 		WHERE user_id = $1 AND (1 - (embedding <=> $2)) >= $3
 		ORDER BY embedding <=> $2
@@ -72,18 +72,21 @@ func (r *EmbeddingRepo) Search(ctx context.Context, userID string, query []float
 	`
 	rows, err := r.db.QueryContext(ctx, queryStr, userID, pgvector.NewVector(query), threshold, topK)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
-	var result []string
+	var ids []string
+	var scores []float32
 	for rows.Next() {
 		var docID string
-		if err := rows.Scan(&docID); err != nil {
-			return nil, err
+		var score float32
+		if err := rows.Scan(&docID, &score); err != nil {
+			return nil, nil, err
 		}
-		result = append(result, docID)
+		ids = append(ids, docID)
+		scores = append(scores, score)
 	}
-	return result, nil
+	return ids, scores, nil
 }
 
 func (r *EmbeddingRepo) ListStaleDocuments(ctx context.Context, limit int) ([]model.Document, error) {

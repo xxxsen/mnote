@@ -54,12 +54,15 @@ func (s *AIService) SemanticSearch(ctx context.Context, userID, query string, to
 		threshold = 0.70
 	}
 
-	res, err := s.embeddings.Search(ctx, userID, queryEmb, threshold, topK)
+	ids, scores, err := s.embeddings.Search(ctx, userID, queryEmb, threshold, topK)
 	if err != nil {
 		logger.Error("failed to search in database", zap.Error(err))
 		return nil, err
 	}
-	return res, nil
+	for i, id := range ids {
+		logger.Debug("semantic match result", zap.String("doc_id", id), zap.Float32("score", scores[i]))
+	}
+	return ids, nil
 }
 
 func (s *AIService) SyncEmbedding(ctx context.Context, userID, docID, title, content string) error {
