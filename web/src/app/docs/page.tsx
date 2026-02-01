@@ -666,26 +666,26 @@ export default function DocsPage() {
     if (initialFetchRef.current) return;
     initialFetchRef.current = true;
     fetchTags("");
-  }, [fetchTags]);
+    fetchSummary();
+    fetchSharedSummary();
+  }, [fetchTags, fetchSummary, fetchSharedSummary]);
 
   useEffect(() => {
-    setDocs([]);
-    setHasMore(true);
-    setNextOffset(0);
-    setLoading(true);
-    setLoadingMore(false);
     const timer = setTimeout(() => {
+      setDocs([]);
+      setHasMore(true);
+      setNextOffset(0);
+      setLoading(true);
+      setLoadingMore(false);
       fetchDocs(0, false);
       if (search && !search.startsWith("/")) {
         void fetchAiSearch(search);
       } else {
         setAiSearchDocs([]);
       }
-      fetchSummary();
-      fetchSharedSummary();
     }, 300);
     return () => clearTimeout(timer);
-  }, [fetchDocs, fetchSummary, fetchSharedSummary, showStarred, showShared, search, fetchAiSearch]);
+  }, [fetchDocs, showStarred, showShared, search, fetchAiSearch]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
