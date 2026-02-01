@@ -2,12 +2,8 @@ package service
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
-
-	sqlite "modernc.org/sqlite"
-	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
@@ -52,12 +48,6 @@ func (s *AuthService) Register(ctx context.Context, email, plainPassword, code s
 		Mtime:        now,
 	}
 	if err := s.users.Create(ctx, user); err != nil {
-		var sqlErr *sqlite.Error
-		if errors.As(err, &sqlErr) {
-			if sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE || sqlErr.Code() == sqlite3.SQLITE_CONSTRAINT {
-				return nil, "", appErr.ErrConflict
-			}
-		}
 		return nil, "", err
 	}
 	token, err := jwt.GenerateToken(user.ID, user.Email, s.jwtSecret, s.jwtTTL)

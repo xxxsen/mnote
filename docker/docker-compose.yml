@@ -13,6 +13,21 @@ services:
     networks:
       - mnote
     command: run --config=/config/config.json
+    depends_on:
+      - mnote-db
+    restart: always
+
+  mnote-db:
+    image: pgvector/pgvector:pg17
+    container_name: mnote-db
+    environment:
+      - POSTGRES_DB=mnote
+      - POSTGRES_USER=mnote
+      - POSTGRES_PASSWORD=mnote_pass
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    networks:
+      - mnote
     restart: always
 
   mnote-web:

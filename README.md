@@ -4,7 +4,7 @@
 
 ## 组成
 
-- mnote-backend：Go API 服务，SQLite 存储
+- mnote-backend：Go API 服务，PostgreSQL 存储 (支持 pgvector)
 - mnote-web：Next.js 前端
 - mnote-gateway：Nginx 反向代理，统一入口
 
@@ -41,6 +41,21 @@ services:
     expose:
       - "8080"
     command: run --config=/config/config.json
+    depends_on:
+      - mnote-db
+    networks:
+      - mnote
+    restart: always
+
+  mnote-db:
+    image: pgvector/pgvector:pg17
+    container_name: mnote-db
+    environment:
+      - POSTGRES_DB=mnote
+      - POSTGRES_USER=mnote
+      - POSTGRES_PASSWORD=mnote_pass
+    volumes:
+      - /path/to/your/postgres_data:/var/lib/postgresql/data
     networks:
       - mnote
     restart: always

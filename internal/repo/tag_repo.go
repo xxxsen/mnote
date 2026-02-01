@@ -7,6 +7,7 @@ import (
 	"github.com/didi/gendry/builder"
 
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/dbutil"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 )
 
@@ -31,8 +32,15 @@ func (r *TagRepo) Create(ctx context.Context, tag *model.Tag) error {
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	_, err = r.db.ExecContext(ctx, sqlStr, args...)
-	return err
+	if err != nil {
+		if dbutil.IsConflict(err) {
+			return appErr.ErrConflict
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *TagRepo) CreateBatch(ctx context.Context, tags []model.Tag) error {
@@ -54,8 +62,15 @@ func (r *TagRepo) CreateBatch(ctx context.Context, tags []model.Tag) error {
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	_, err = r.db.ExecContext(ctx, sqlStr, args...)
-	return err
+	if err != nil {
+		if dbutil.IsConflict(err) {
+			return appErr.ErrConflict
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *TagRepo) List(ctx context.Context, userID string) ([]model.Tag, error) {
@@ -64,6 +79,7 @@ func (r *TagRepo) List(ctx context.Context, userID string) ([]model.Tag, error) 
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -93,6 +109,7 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 		if err != nil {
 			return nil, err
 		}
+		sqlStr, args = dbutil.Finalize(sqlStr, args)
 		rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 		if err != nil {
 			return nil, err
@@ -120,6 +137,7 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 		if err != nil {
 			return nil, err
 		}
+		exactSQL, exactArgs = dbutil.Finalize(exactSQL, exactArgs)
 		rows, err := r.db.QueryContext(ctx, exactSQL, exactArgs...)
 		if err != nil {
 			return nil, err
@@ -161,6 +179,7 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -194,8 +213,9 @@ func (r *TagRepo) ListSummary(ctx context.Context, userID string, query string, 
 		sqlStr += " AND t.name LIKE ?"
 		args = append(args, "%"+query+"%")
 	}
-	sqlStr += " GROUP BY t.id, t.name, t.pinned HAVING cnt > 0 ORDER BY t.pinned DESC, cnt DESC, mtime DESC LIMIT ? OFFSET ?"
+	sqlStr += " GROUP BY t.id, t.name, t.pinned HAVING COUNT(dt.tag_id) > 0 ORDER BY t.pinned DESC, cnt DESC, mtime DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, offset)
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -222,6 +242,7 @@ func (r *TagRepo) ListByIDs(ctx context.Context, userID string, ids []string) ([
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -254,6 +275,7 @@ func (r *TagRepo) ListByNames(ctx context.Context, userID string, names []string
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, argsList = dbutil.Finalize(sqlStr, argsList)
 	rows, err := r.db.QueryContext(ctx, sqlStr, argsList...)
 	if err != nil {
 		return nil, err
@@ -283,6 +305,7 @@ func (r *TagRepo) UpdatePinned(ctx context.Context, userID, tagID string, pinned
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	result, err := r.db.ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return err
@@ -306,6 +329,7 @@ func (r *TagRepo) Delete(ctx context.Context, userID, tagID string) error {
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	result, err := r.db.ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return err

@@ -7,6 +7,7 @@ import (
 	"github.com/didi/gendry/builder"
 
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/dbutil"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 )
 
@@ -32,8 +33,15 @@ func (r *OAuthRepo) Create(ctx context.Context, account *model.OAuthAccount) err
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	_, err = r.db.ExecContext(ctx, sqlStr, args...)
-	return err
+	if err != nil {
+		if dbutil.IsConflict(err) {
+			return appErr.ErrConflict
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *OAuthRepo) GetByProviderUserID(ctx context.Context, provider, providerUserID string) (*model.OAuthAccount, error) {
@@ -45,6 +53,7 @@ func (r *OAuthRepo) GetByProviderUserID(ctx context.Context, provider, providerU
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -69,6 +78,7 @@ func (r *OAuthRepo) GetByUserProvider(ctx context.Context, userID, provider stri
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -90,6 +100,7 @@ func (r *OAuthRepo) ListByUser(ctx context.Context, userID string) ([]model.OAut
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -111,6 +122,7 @@ func (r *OAuthRepo) CountByUser(ctx context.Context, userID string) (int, error)
 	if err != nil {
 		return 0, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return 0, err
@@ -132,6 +144,7 @@ func (r *OAuthRepo) DeleteByUserProvider(ctx context.Context, userID, provider s
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	result, err := r.db.ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return err

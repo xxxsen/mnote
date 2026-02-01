@@ -7,6 +7,7 @@ import (
 	"github.com/didi/gendry/builder"
 
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/dbutil"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 )
 
@@ -30,8 +31,15 @@ func (r *UserRepo) Create(ctx context.Context, user *model.User) error {
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	_, err = r.db.ExecContext(ctx, sqlStr, args...)
-	return err
+	if err != nil {
+		if dbutil.IsConflict(err) {
+			return appErr.ErrConflict
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*model.User, error) {
@@ -40,6 +48,7 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*model.User, e
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -61,6 +70,7 @@ func (r *UserRepo) GetByID(ctx context.Context, userID string) (*model.User, err
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -86,6 +96,7 @@ func (r *UserRepo) UpdatePassword(ctx context.Context, userID, passwordHash stri
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	result, err := r.db.ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return err

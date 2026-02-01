@@ -2,8 +2,8 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  ctime INTEGER NOT NULL,
-  mtime INTEGER NOT NULL
+  ctime BIGINT NOT NULL,
+  mtime BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS documents (
@@ -11,12 +11,12 @@ CREATE TABLE IF NOT EXISTS documents (
   user_id TEXT NOT NULL,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
-  summary TEXT NOT NULL DEFAULT "",
+  summary TEXT NOT NULL DEFAULT '',
   state INTEGER NOT NULL,
   pinned INTEGER NOT NULL DEFAULT 0,
   starred INTEGER NOT NULL DEFAULT 0,
-  ctime INTEGER NOT NULL,
-  mtime INTEGER NOT NULL
+  ctime BIGINT NOT NULL,
+  mtime BIGINT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_documents_user_mtime ON documents(user_id, mtime);
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS document_versions (
   version INTEGER NOT NULL,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
-  ctime INTEGER NOT NULL
+  ctime BIGINT NOT NULL
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_doc_version
@@ -41,8 +41,8 @@ CREATE TABLE IF NOT EXISTS tags (
   user_id TEXT NOT NULL,
   name TEXT NOT NULL,
   pinned INTEGER NOT NULL DEFAULT 0,
-  ctime INTEGER NOT NULL,
-  mtime INTEGER NOT NULL,
+  ctime BIGINT NOT NULL,
+  mtime BIGINT NOT NULL,
   UNIQUE(user_id, name)
 );
 
@@ -61,8 +61,8 @@ CREATE TABLE IF NOT EXISTS shares (
   document_id TEXT NOT NULL,
   token TEXT NOT NULL UNIQUE,
   state INTEGER NOT NULL,
-  ctime INTEGER NOT NULL,
-  mtime INTEGER NOT NULL
+  ctime BIGINT NOT NULL,
+  mtime BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS oauth_accounts (
@@ -71,8 +71,8 @@ CREATE TABLE IF NOT EXISTS oauth_accounts (
   provider TEXT NOT NULL,
   provider_user_id TEXT NOT NULL,
   email TEXT NOT NULL,
-  ctime INTEGER NOT NULL,
-  mtime INTEGER NOT NULL,
+  ctime BIGINT NOT NULL,
+  mtime BIGINT NOT NULL,
   UNIQUE(provider, provider_user_id),
   UNIQUE(user_id, provider)
 );
@@ -85,8 +85,8 @@ CREATE TABLE IF NOT EXISTS email_verification_codes (
   purpose TEXT NOT NULL,
   code_hash TEXT NOT NULL,
   used INTEGER NOT NULL DEFAULT 0,
-  ctime INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL
+  ctime BIGINT NOT NULL,
+  expires_at BIGINT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_email_codes_email_purpose_ctime ON email_verification_codes(email, purpose, ctime);

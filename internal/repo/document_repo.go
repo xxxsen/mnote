@@ -7,6 +7,7 @@ import (
 	"github.com/didi/gendry/builder"
 
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/dbutil"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 )
 
@@ -40,8 +41,15 @@ func (r *DocumentRepo) Create(ctx context.Context, doc *model.Document) error {
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	_, err = r.db.ExecContext(ctx, sqlStr, args...)
-	return err
+	if err != nil {
+		if dbutil.IsConflict(err) {
+			return appErr.ErrConflict
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *DocumentRepo) Update(ctx context.Context, doc *model.Document, updateSummary bool) error {
@@ -62,6 +70,7 @@ func (r *DocumentRepo) Update(ctx context.Context, doc *model.Document, updateSu
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	result, err := r.db.ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return err
@@ -90,6 +99,7 @@ func (r *DocumentRepo) UpdateSummary(ctx context.Context, userID, docID, summary
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	result, err := r.db.ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return err
@@ -117,6 +127,7 @@ func (r *DocumentRepo) UpdatePinned(ctx context.Context, userID, docID string, p
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	result, err := r.db.ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return err
@@ -144,6 +155,7 @@ func (r *DocumentRepo) UpdateStarred(ctx context.Context, userID, docID string, 
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	result, err := r.db.ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return err
@@ -168,6 +180,7 @@ func (r *DocumentRepo) GetByID(ctx context.Context, userID, docID string) (*mode
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -195,6 +208,7 @@ func (r *DocumentRepo) GetByTitle(ctx context.Context, userID, title string) (*m
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -229,6 +243,7 @@ func (r *DocumentRepo) List(ctx context.Context, userID string, starred *int, li
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -263,6 +278,7 @@ func (r *DocumentRepo) ListByIDs(ctx context.Context, userID string, docIDs []st
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -286,6 +302,7 @@ func (r *DocumentRepo) Count(ctx context.Context, userID string, starred *int) (
 		query += " AND starred = ?"
 		args = append(args, *starred)
 	}
+	query, args = dbutil.Finalize(query, args)
 	row := r.db.QueryRowContext(ctx, query, args...)
 	var count int
 	if err := row.Scan(&count); err != nil {
@@ -320,6 +337,7 @@ func (r *DocumentRepo) SearchLike(ctx context.Context, userID, query, tagID stri
 	if err != nil {
 		return nil, err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
@@ -350,6 +368,7 @@ func (r *DocumentRepo) Delete(ctx context.Context, userID, docID string, mtime i
 	if err != nil {
 		return err
 	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	result, err := r.db.ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		return err
