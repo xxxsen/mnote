@@ -44,7 +44,15 @@ func (p *geminiProvider) Generate(ctx context.Context, model string, prompt stri
 	return strings.TrimSpace(resp.Text()), nil
 }
 
-func (p *geminiProvider) Embed(ctx context.Context, model string, text string, taskType string) ([]float32, error) {
+type geminiEmbedProvider struct {
+	apiKey string
+}
+
+func (p *geminiEmbedProvider) Name() string {
+	return "gemini"
+}
+
+func (p *geminiEmbedProvider) Embed(ctx context.Context, model string, text string, taskType string) ([]float32, error) {
 	if p.apiKey == "" {
 		return nil, ErrUnavailable
 	}
@@ -87,8 +95,20 @@ func createGeminiFactory(args interface{}) (IAIProvider, error) {
 	return provider, nil
 }
 
+func createGeminiEmbedFactory(args interface{}) (IEmbedProvider, error) {
+	cfg := &geminiConfig{}
+	if err := decodeConfig(args, cfg); err != nil {
+		return nil, err
+	}
+	provider := &geminiEmbedProvider{
+		apiKey: strings.TrimSpace(cfg.APIKey),
+	}
+	return provider, nil
+}
+
 func init() {
 	Register("gemini", createGeminiFactory)
+	RegisterEmbed("gemini", createGeminiEmbedFactory)
 }
 
 func decodeConfig(args interface{}, dst interface{}) error {

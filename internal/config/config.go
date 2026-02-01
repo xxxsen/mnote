@@ -9,18 +9,19 @@ import (
 )
 
 type Config struct {
-	DBPath         string           `json:"db_path"`
-	JWTSecret      string           `json:"jwt_secret"`
-	Port           int              `json:"port"`
-	JWTTTLHours    int              `json:"jwt_ttl_hours"`
-	VersionMaxKeep int              `json:"version_max_keep"`
-	MaxUploadSize  int64            `json:"max_upload_size"`
-	LogConfig      logger.LogConfig `json:"log_config"`
-	FileStore      FileStoreConfig  `json:"file_store"`
-	AI             AIConfig         `json:"ai"`
-	OAuth          OAuthConfig      `json:"oauth"`
-	Mail           MailConfig       `json:"mail"`
-	Properties     Properties       `json:"properties"`
+	DBPath         string             `json:"db_path"`
+	JWTSecret      string             `json:"jwt_secret"`
+	Port           int                `json:"port"`
+	JWTTTLHours    int                `json:"jwt_ttl_hours"`
+	VersionMaxKeep int                `json:"version_max_keep"`
+	MaxUploadSize  int64              `json:"max_upload_size"`
+	LogConfig      logger.LogConfig   `json:"log_config"`
+	FileStore      FileStoreConfig    `json:"file_store"`
+	AI             AIConfig           `json:"ai"`
+	OAuth          OAuthConfig        `json:"oauth"`
+	Mail           MailConfig         `json:"mail"`
+	Properties     Properties         `json:"properties"`
+	AIProvider     []AIProviderConfig `json:"ai_provider"`
 }
 
 type FileStoreConfig struct {
@@ -28,12 +29,37 @@ type FileStoreConfig struct {
 	Data interface{} `json:"data"`
 }
 
+type AIProviderConfig struct {
+	Name string      `json:"name"`
+	Type string      `json:"type"` // generator, embedder, all
+	Data interface{} `json:"data"`
+}
+
+type AIFeatureConfig struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+}
+
+func (f AIFeatureConfig) GetOrDefault(c AIConfig) AIFeatureConfig {
+	if f.Provider == "" {
+		f.Provider = c.Provider
+	}
+	if f.Model == "" {
+		f.Model = c.Model
+	}
+	return f
+}
+
 type AIConfig struct {
-	Provider      string      `json:"provider"`
-	Model         string      `json:"model"`
-	Timeout       int         `json:"timeout"`
-	MaxInputChars int         `json:"max_input_chars"`
-	Data          interface{} `json:"data"`
+	Provider      string          `json:"provider"`
+	Model         string          `json:"model"`
+	Polish        AIFeatureConfig `json:"polish"`
+	Generate      AIFeatureConfig `json:"generate"`
+	Tagging       AIFeatureConfig `json:"tagging"`
+	Summary       AIFeatureConfig `json:"summary"`
+	Embed         AIFeatureConfig `json:"embed"`
+	Timeout       int             `json:"timeout"`
+	MaxInputChars int             `json:"max_input_chars"`
 }
 
 type OAuthConfig struct {
@@ -97,17 +123,11 @@ func Load(path string) (*Config, error) {
 	if cfg.FileStore.Type == "" {
 		cfg.FileStore.Type = "local"
 	}
-	if cfg.AI.Provider == "" {
-		cfg.AI.Provider = "gemini"
-	}
 	if cfg.AI.Timeout == 0 {
 		cfg.AI.Timeout = 30
 	}
 	if cfg.AI.MaxInputChars == 0 {
 		cfg.AI.MaxInputChars = 32000
-	}
-	if cfg.AI.Model == "" {
-		cfg.AI.Model = "gemini-3-flash-preview"
 	}
 	if cfg.Properties.EnableGithubOauth && len(cfg.OAuth.Github.Scopes) == 0 {
 		cfg.OAuth.Github.Scopes = []string{"user:email"}
