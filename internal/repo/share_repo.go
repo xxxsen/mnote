@@ -106,15 +106,22 @@ type SharedDocument struct {
 	Token   string
 }
 
-func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID string) ([]SharedDocument, error) {
-	const sqlStr = `
+func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID string, query string) ([]SharedDocument, error) {
+	sqlStr := `
 		SELECT d.id, d.title, d.summary, d.mtime, s.token
 		FROM shares s
 		JOIN documents d ON d.id = s.document_id AND d.user_id = s.user_id
 		WHERE s.user_id = ? AND s.state = ? AND d.state = ?
-		ORDER BY d.mtime DESC
 	`
-	rows, err := r.db.QueryContext(ctx, sqlStr, userID, ShareStateActive, 1)
+	args := []interface{}{userID, ShareStateActive, 1}
+	if query != "" {
+		sqlStr += " AND (d.title LIKE ? OR d.content LIKE ?)"
+		like := "%" + query + "%"
+		args = append(args, like, like)
+	}
+	sqlStr += " ORDER BY d.mtime DESC"
+
+	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, err
 	}

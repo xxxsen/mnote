@@ -85,8 +85,8 @@ func (s *DocumentService) UpdateStarred(ctx context.Context, userID, docID strin
 	return s.docs.UpdateStarred(ctx, userID, docID, starred)
 }
 
-func (s *DocumentService) ListSharedDocuments(ctx context.Context, userID string) ([]SharedDocumentSummary, error) {
-	items, err := s.shares.ListActiveDocuments(ctx, userID)
+func (s *DocumentService) ListSharedDocuments(ctx context.Context, userID string, query string) ([]SharedDocumentSummary, error) {
+	items, err := s.shares.ListActiveDocuments(ctx, userID, query)
 	if err != nil {
 		return nil, err
 	}

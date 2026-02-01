@@ -488,7 +488,9 @@ export default function DocsPage() {
     }
     try {
       if (showShared) {
-        const res = await apiFetch<{ items: SharedItem[] }>("/shares");
+        const params = new URLSearchParams();
+        if (search) params.set("q", search);
+        const res = await apiFetch<{ items: SharedItem[] }>(`/shares?${params.toString()}`);
         const items = res?.items || [];
         const tagIDs = new Set<string>();
         setDocs(items.map((item) => ({
