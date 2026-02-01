@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/pgvector/pgvector-go"
 	"github.com/xxxsen/mnote/internal/model"
@@ -62,15 +63,21 @@ func (r *EmbeddingRepo) GetByDocID(ctx context.Context, docID string) (*model.Do
 	return &item, nil
 }
 
-func (r *EmbeddingRepo) Search(ctx context.Context, userID string, query []float32, threshold float32, topK int) ([]string, []float32, error) {
-	const queryStr = `
+func (r *EmbeddingRepo) Search(ctx context.Context, userID string, query []float32, threshold float32, topK int, excludeID string) ([]string, []float32, error) {
+	queryStr := `
 		SELECT document_id, (1 - (embedding <=> $2)) as score
 		FROM document_embeddings
 		WHERE user_id = $1 AND (1 - (embedding <=> $2)) >= $3
-		ORDER BY embedding <=> $2
-		LIMIT $4
 	`
-	rows, err := r.db.QueryContext(ctx, queryStr, userID, pgvector.NewVector(query), threshold, topK)
+	args := []interface{}{userID, pgvector.NewVector(query), threshold}
+	if excludeID != "" {
+		queryStr += " AND document_id != $4"
+		args = append(args, excludeID)
+	}
+	queryStr += fmt.Sprintf("\n\t\tORDER BY embedding <=> $2\n\t\tLIMIT $%d", len(args)+1)
+	args = append(args, topK)
+
+	rows, err := r.db.QueryContext(ctx, queryStr, args...)
 	if err != nil {
 		return nil, nil, err
 	}

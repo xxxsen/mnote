@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -133,8 +134,15 @@ func (h *AIHandler) Search(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalid, "query required")
 		return
 	}
+	limitStr := c.DefaultQuery("limit", "4")
+	limit, _ := strconv.Atoi(limitStr)
+	if limit <= 0 || limit > 20 {
+		limit = 4
+	}
+	excludeID := c.Query("exclude_id")
+
 	userID := getUserID(c)
-	docIDs, err := h.ai.SemanticSearch(c.Request.Context(), userID, query, 4)
+	docIDs, scores, err := h.ai.SemanticSearch(c.Request.Context(), userID, query, limit, excludeID)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -148,15 +156,23 @@ func (h *AIHandler) Search(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	// Sort docs to match docIDs order
+
+	type documentWithScore struct {
+		model.Document
+		Score float32 `json:"score"`
+	}
+
 	docMap := make(map[string]model.Document)
 	for _, doc := range docs {
 		docMap[doc.ID] = doc
 	}
-	results := make([]model.Document, 0, len(docIDs))
-	for _, id := range docIDs {
+	results := make([]documentWithScore, 0, len(docIDs))
+	for i, id := range docIDs {
 		if doc, ok := docMap[id]; ok {
-			results = append(results, doc)
+			results = append(results, documentWithScore{
+				Document: doc,
+				Score:    scores[i],
+			})
 		}
 	}
 	response.Success(c, gin.H{"items": results})

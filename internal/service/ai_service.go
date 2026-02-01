@@ -41,28 +41,30 @@ func (s *AIService) Embed(ctx context.Context, text string, taskType string) ([]
 	return s.manager.Embed(ctx, text, taskType)
 }
 
-func (s *AIService) SemanticSearch(ctx context.Context, userID, query string, topK int) ([]string, error) {
+func (s *AIService) SemanticSearch(ctx context.Context, userID, query string, topK int, excludeID string) ([]string, []float32, error) {
+	query = strings.TrimSpace(query)
 	logger := logutil.GetLogger(ctx).With(zap.String("user_id", userID), zap.String("query", query))
 	queryEmb, err := s.Embed(ctx, query, "RETRIEVAL_QUERY")
 	if err != nil {
 		logger.Error("failed to embed search query", zap.Error(err))
-		return nil, err
+		return nil, nil, err
 	}
 
-	threshold := float32(0.55)
+	threshold := float32(0.75)
 	if len([]rune(query)) <= 2 {
-		threshold = 0.70
+		threshold = 0.85
 	}
 
-	ids, scores, err := s.embeddings.Search(ctx, userID, queryEmb, threshold, topK)
+	ids, scores, err := s.embeddings.Search(ctx, userID, queryEmb, threshold, topK, excludeID)
 	if err != nil {
 		logger.Error("failed to search in database", zap.Error(err))
-		return nil, err
+		return nil, nil, err
 	}
+	logger.Info("semantic search performed", zap.Int("top_k", topK), zap.Float32("threshold", threshold), zap.Int("results", len(ids)))
 	for i, id := range ids {
-		logger.Debug("semantic match result", zap.String("doc_id", id), zap.Float32("score", scores[i]))
+		logger.Info("semantic match result", zap.String("doc_id", id), zap.Float32("score", scores[i]))
 	}
-	return ids, nil
+	return ids, scores, nil
 }
 
 func (s *AIService) SyncEmbedding(ctx context.Context, userID, docID, title, content string) error {
