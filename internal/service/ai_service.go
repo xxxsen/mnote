@@ -216,7 +216,9 @@ func (s *AIService) StartWorker(ctx context.Context) {
 }
 
 func (s *AIService) processPendingEmbeddings(ctx context.Context) {
-	docs, err := s.embeddings.ListStaleDocuments(ctx, 50)
+	// Only re-embed documents that haven't been modified in the last 5 minutes
+	cutoff := time.Now().Unix() - 300
+	docs, err := s.embeddings.ListStaleDocuments(ctx, 50, cutoff)
 	if err != nil {
 		logutil.GetLogger(ctx).Error("failed to list stale documents", zap.Error(err))
 		return
