@@ -186,15 +186,9 @@ func (s *AIService) SyncEmbedding(ctx context.Context, userID, docID, title, con
 		return err
 	}
 
-	representativeEmb := []float32{}
-	if len(chunkEmbeddings) > 0 {
-		representativeEmb = chunkEmbeddings[0].Embedding
-	}
-
 	if err := s.embeddings.Save(ctx, &model.DocumentEmbedding{
 		DocumentID:  docID,
 		UserID:      userID,
-		Embedding:   representativeEmb,
 		ContentHash: contentHash,
 		Mtime:       now,
 	}); err != nil {

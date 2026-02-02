@@ -3,7 +3,6 @@ package repo
 import (
 	"context"
 	"database/sql"
-	"fmt"
 
 	"github.com/pgvector/pgvector-go"
 	"github.com/xxxsen/mnote/internal/model"
@@ -19,15 +18,14 @@ func NewEmbeddingRepo(db *sql.DB) *EmbeddingRepo {
 
 func (r *EmbeddingRepo) Save(ctx context.Context, emb *model.DocumentEmbedding) error {
 	const query = `
-		INSERT INTO document_embeddings (document_id, user_id, embedding, content_hash, mtime)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO document_embeddings (document_id, user_id, content_hash, mtime)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (document_id) DO UPDATE SET
 			user_id = EXCLUDED.user_id,
-			embedding = EXCLUDED.embedding,
 			content_hash = EXCLUDED.content_hash,
 			mtime = EXCLUDED.mtime
 	`
-	_, err := r.db.ExecContext(ctx, query, emb.DocumentID, emb.UserID, pgvector.NewVector(emb.Embedding), emb.ContentHash, emb.Mtime)
+	_, err := r.db.ExecContext(ctx, query, emb.DocumentID, emb.UserID, emb.ContentHash, emb.Mtime)
 	return err
 }
 
@@ -107,69 +105,14 @@ func (r *EmbeddingRepo) SearchChunks(ctx context.Context, userID string, query [
 	return results, nil
 }
 
-func (r *EmbeddingRepo) ListByUser(ctx context.Context, userID string) ([]model.DocumentEmbedding, error) {
-	const query = `SELECT document_id, user_id, embedding, content_hash, mtime FROM document_embeddings WHERE user_id = $1`
-	rows, err := r.db.QueryContext(ctx, query, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var results []model.DocumentEmbedding
-	for rows.Next() {
-		var item model.DocumentEmbedding
-		var v pgvector.Vector
-		if err := rows.Scan(&item.DocumentID, &item.UserID, &v, &item.ContentHash, &item.Mtime); err != nil {
-			return nil, err
-		}
-		item.Embedding = v.Slice()
-		results = append(results, item)
-	}
-	return results, nil
-}
-
 func (r *EmbeddingRepo) GetByDocID(ctx context.Context, docID string) (*model.DocumentEmbedding, error) {
-	const query = `SELECT document_id, user_id, embedding, content_hash, mtime FROM document_embeddings WHERE document_id = $1`
+	const query = `SELECT document_id, user_id, content_hash, mtime FROM document_embeddings WHERE document_id = $1`
 	row := r.db.QueryRowContext(ctx, query, docID)
 	var item model.DocumentEmbedding
-	var v pgvector.Vector
-	if err := row.Scan(&item.DocumentID, &item.UserID, &v, &item.ContentHash, &item.Mtime); err != nil {
+	if err := row.Scan(&item.DocumentID, &item.UserID, &item.ContentHash, &item.Mtime); err != nil {
 		return nil, err
 	}
-	item.Embedding = v.Slice()
 	return &item, nil
-}
-
-func (r *EmbeddingRepo) Search(ctx context.Context, userID string, query []float32, threshold float32, topK int, excludeID string) ([]string, []float32, error) {
-	queryStr := `
-		SELECT document_id, (1 - (embedding <=> $2)) as score
-		FROM document_embeddings
-		WHERE user_id = $1 AND (1 - (embedding <=> $2)) >= $3
-	`
-	args := []interface{}{userID, pgvector.NewVector(query), threshold}
-	if excludeID != "" {
-		queryStr += " AND document_id != $4"
-		args = append(args, excludeID)
-	}
-	queryStr += fmt.Sprintf("\n\t\tORDER BY embedding <=> $2\n\t\tLIMIT $%d", len(args)+1)
-	args = append(args, topK)
-
-	rows, err := r.db.QueryContext(ctx, queryStr, args...)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rows.Close()
-	var ids []string
-	var scores []float32
-	for rows.Next() {
-		var docID string
-		var score float32
-		if err := rows.Scan(&docID, &score); err != nil {
-			return nil, nil, err
-		}
-		ids = append(ids, docID)
-		scores = append(scores, score)
-	}
-	return ids, scores, nil
 }
 
 func (r *EmbeddingRepo) ListStaleDocuments(ctx context.Context, limit int) ([]model.Document, error) {
