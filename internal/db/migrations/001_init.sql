@@ -90,3 +90,30 @@ CREATE TABLE IF NOT EXISTS email_verification_codes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_email_codes_email_purpose_ctime ON email_verification_codes(email, purpose, ctime);
+
+-- Embeddings
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS document_embeddings (
+    document_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    mtime BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_doc_embeddings_user ON document_embeddings(user_id);
+
+CREATE TABLE IF NOT EXISTS chunk_embeddings (
+    chunk_id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    embedding vector NOT NULL,
+    token_count INT NOT NULL,
+    chunk_type TEXT NOT NULL,
+    position INT NOT NULL,
+    mtime BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_doc ON chunk_embeddings(document_id);
+CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_user ON chunk_embeddings(user_id);
