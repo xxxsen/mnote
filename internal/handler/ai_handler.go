@@ -137,7 +137,7 @@ func (h *AIHandler) Search(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "4")
 	limit, _ := strconv.Atoi(limitStr)
 	if limit <= 0 || limit > 20 {
-		limit = 4
+		limit = 20
 	}
 	excludeID := c.Query("exclude_id")
 
