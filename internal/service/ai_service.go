@@ -54,7 +54,7 @@ func (s *AIService) SemanticSearch(ctx context.Context, userID, query string, to
 	}
 
 	recallTopK := 80
-	threshold := float32(0.3)
+	threshold := float32(0.4)
 	chunkResults, err := s.embeddings.SearchChunks(ctx, userID, queryEmb, threshold, recallTopK)
 	if err != nil {
 		logger.Error("failed to search chunks", zap.Error(err))
