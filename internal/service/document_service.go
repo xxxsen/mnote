@@ -44,6 +44,39 @@ func (s *DocumentService) Search(ctx context.Context, userID, query, tagID strin
 	return s.docs.SearchLike(ctx, userID, query, tagID, starred, limit, offset, orderBy)
 }
 
+func (s *DocumentService) SemanticSearch(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error) {
+	if query != "" && s.ai != nil {
+		ids, scores, err := s.ai.SemanticSearch(ctx, userID, query, int(limit+offset), "")
+		if err == nil && len(ids) > 0 {
+			docs, err := s.docs.ListByIDs(ctx, userID, ids)
+			if err == nil {
+				idMap := make(map[string]model.Document)
+				for _, d := range docs {
+					idMap[d.ID] = d
+				}
+				sortedDocs := make([]model.Document, 0, len(ids))
+				for i, id := range ids {
+					if d, ok := idMap[id]; ok {
+						if scores[i] < 0.6 {
+							continue
+						}
+						sortedDocs = append(sortedDocs, d)
+					}
+				}
+				if int(offset) < len(sortedDocs) {
+					end := int(offset + limit)
+					if end > len(sortedDocs) || limit == 0 {
+						end = len(sortedDocs)
+					}
+					return sortedDocs[offset:end], nil
+				}
+				return []model.Document{}, nil
+			}
+		}
+	}
+	return s.docs.SearchLike(ctx, userID, query, tagID, starred, limit, offset, orderBy)
+}
+
 func (s *DocumentService) Get(ctx context.Context, userID, docID string) (*model.Document, error) {
 	return s.docs.GetByID(ctx, userID, docID)
 }

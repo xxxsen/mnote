@@ -14,6 +14,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/xxxsen/common v0.1.29
+	github.com/yuin/goldmark v1.4.13
 	go.uber.org/zap v1.23.0
 	golang.org/x/crypto v0.47.0
 	google.golang.org/genai v1.43.0

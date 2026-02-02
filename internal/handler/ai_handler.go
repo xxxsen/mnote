@@ -139,21 +139,15 @@ func (h *AIHandler) Search(c *gin.Context) {
 	if limit <= 0 || limit > 20 {
 		limit = 20
 	}
-	excludeID := c.Query("exclude_id")
 
 	userID := getUserID(c)
-	docIDs, scores, err := h.ai.SemanticSearch(c.Request.Context(), userID, query, limit, excludeID)
+	docs, err := h.documents.SemanticSearch(c.Request.Context(), userID, query, "", nil, uint(limit), 0, "")
 	if err != nil {
 		handleError(c, err)
 		return
 	}
-	if len(docIDs) == 0 {
+	if len(docs) == 0 {
 		response.Success(c, gin.H{"items": []interface{}{}})
-		return
-	}
-	docs, err := h.documents.ListByIDs(c.Request.Context(), userID, docIDs)
-	if err != nil {
-		handleError(c, err)
 		return
 	}
 
@@ -162,18 +156,13 @@ func (h *AIHandler) Search(c *gin.Context) {
 		Score float32 `json:"score"`
 	}
 
-	docMap := make(map[string]model.Document)
+	results := make([]documentWithScore, 0, len(docs))
 	for _, doc := range docs {
-		docMap[doc.ID] = doc
-	}
-	results := make([]documentWithScore, 0, len(docIDs))
-	for i, id := range docIDs {
-		if doc, ok := docMap[id]; ok {
-			results = append(results, documentWithScore{
-				Document: doc,
-				Score:    scores[i],
-			})
-		}
+		results = append(results, documentWithScore{
+			Document: doc,
+			Score:    0,
+		})
 	}
 	response.Success(c, gin.H{"items": results})
+
 }
