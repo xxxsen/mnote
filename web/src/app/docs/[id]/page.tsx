@@ -464,7 +464,7 @@ const editorBaseTheme = EditorView.theme({
 export default function EditorPage() {
   const params = useParams();
   const router = useRouter();
-  const [id] = useState(params.id as string);
+  const id = params.id as string;
   const { toast } = useToast();
   const [tabs, setTabs] = useState<{ id: string; title: string }[]>([]);
 
@@ -484,6 +484,56 @@ export default function EditorPage() {
   const [tagResults, setTagResults] = useState<Tag[]>([]);
   const [tagSearchLoading, setTagSearchLoading] = useState(false);
   const [tagDropdownIndex, setTagDropdownIndex] = useState(0);
+
+  const [similarDocs, setSimilarDocs] = useState<any[]>([]);
+  const [similarLoading, setSimilarLoading] = useState(false);
+  const [similarCollapsed, setSimilarCollapsed] = useState(true);
+  const [similarIconVisible, setSimilarIconVisible] = useState(false);
+  const similarTimerRef = useRef<number | null>(null);
+
+  const fetchSimilar = useCallback(async (q: string) => {
+    if (!q || q.length < 2) {
+      setSimilarDocs([]);
+      return;
+    }
+    setSimilarLoading(true);
+    try {
+      const res = await apiFetch<{ items: any[] }>(`/ai/search?q=${encodeURIComponent(q)}&limit=5&exclude_id=${id}`);
+      const items = res?.items || [];
+      setSimilarDocs(items);
+    } catch (e) {
+      console.error(e);
+      setSimilarDocs([]);
+    } finally {
+      setSimilarLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (similarTimerRef.current) window.clearTimeout(similarTimerRef.current);
+    if (!title || title.length < 2) {
+      setSimilarIconVisible(false);
+      return;
+    }
+    setSimilarIconVisible(true);
+    if (!similarCollapsed) {
+      similarTimerRef.current = window.setTimeout(() => {
+        fetchSimilar(title);
+      }, 1000);
+    }
+    return () => {
+      if (similarTimerRef.current) window.clearTimeout(similarTimerRef.current);
+    };
+  }, [title, fetchSimilar, similarCollapsed]);
+
+  const handleToggleSimilar = useCallback(() => {
+    if (similarCollapsed) {
+      setSimilarCollapsed(false);
+      fetchSimilar(title);
+    } else {
+      setSimilarCollapsed(true);
+    }
+  }, [similarCollapsed, fetchSimilar, title]);
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiAction, setAiAction] = useState<AIAction | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -506,6 +556,23 @@ export default function EditorPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [activeShare, setActiveShare] = useState<Share | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const handleOpenPreview = useCallback(async (docID: string) => {
+    setPreviewLoading(true);
+    try {
+      const res = await apiFetch<{ document: Document }>(`/documents/${docID}`);
+      setPreviewDoc(res?.document || null);
+    } catch (e) {
+      console.error(e);
+      toast({ description: "Failed to load document preview", variant: "error" });
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [toast]);
+
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [popoverAnchor, setPopoverAnchor] = useState<{ top: number; left: number } | null>(null);
@@ -2249,12 +2316,13 @@ here is the body of note.`}
                 >
                   History
                 </button>
-                <button 
+                 <button 
                   className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "share" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
                   onClick={() => { setActiveTab("share"); loadShare(); }}
                 >
                   Share
                 </button>
+
              </div>
 
              <div className="flex-1 overflow-y-auto p-4">
@@ -2389,7 +2457,8 @@ here is the body of note.`}
                  </div>
                )}
 
-                {activeTab === "share" && (
+                 {activeTab === "share" && (
+
                    <div className="space-y-4">
                      {activeShare ? (
                        <Button variant="outline" className="w-full text-xs font-bold" onClick={handleRevokeShare}>
@@ -2444,6 +2513,148 @@ here is the body of note.`}
         charCount={charCount}
         hasUnsavedChanges={hasUnsavedChanges}
       />
+
+      {similarIconVisible && (
+        <div className={`fixed bottom-12 right-6 z-[100] transition-all duration-300 ${similarCollapsed ? "w-10 h-10" : "w-72 max-h-[400px]"} flex flex-col bg-background/80 backdrop-blur-md border border-border shadow-2xl rounded-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4`}>
+          {similarCollapsed ? (
+            <button 
+              onClick={handleToggleSimilar}
+              className="w-full h-full flex items-center justify-center text-primary hover:bg-muted/50 transition-colors relative"
+              title="Find similar notes"
+            >
+              <Sparkles className={`h-5 w-5 ${similarLoading ? "animate-pulse" : ""}`} />
+              {similarDocs.length > 0 && (
+                <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-[8px] font-bold rounded-full flex items-center justify-center border-2 border-background">
+                  {similarDocs.length}
+                </div>
+              )}
+            </button>
+          ) : (
+            <>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <Sparkles className={`h-3.5 w-3.5 text-primary ${similarLoading ? "animate-spin" : ""}`} />
+                  <span className="text-xs font-bold uppercase tracking-wider">Similar Notes</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button 
+                    onClick={() => setSimilarCollapsed(true)}
+                    className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                    title="Collapse"
+                  >
+                    <ChevronRight className="h-3.5 w-3.5 rotate-90" />
+                  </button>
+                  <button 
+                    onClick={() => { setSimilarDocs([]); setSimilarIconVisible(false); }}
+                    className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                    title="Close"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-2 no-scrollbar">
+                {similarLoading && similarDocs.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
+                    <RefreshCw className="h-5 w-5 animate-spin opacity-50" />
+                    <span className="text-[10px] font-mono uppercase tracking-widest">Searching...</span>
+                  </div>
+                ) : similarDocs.length === 0 ? (
+                  <div className="text-center py-12 text-sm text-muted-foreground">
+                    No similar notes found.
+                  </div>
+                ) : (
+                  similarDocs.map((doc: any) => (
+                    <div 
+                      key={doc.id} 
+                      onClick={() => handleOpenPreview(doc.id)}
+                      className="p-3 border border-border rounded-xl cursor-pointer hover:border-primary transition-all bg-background/50 hover:bg-background group"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-tighter">
+                          {Math.round((doc.score || 0) * 100)}% Match
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/docs/${doc.id}`);
+                            }}
+                            className="p-1 hover:bg-muted rounded-md transition-colors"
+                            title="Open full page"
+                          >
+                             <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="font-bold text-xs leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+                        {doc.title || "Untitled"}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="px-3 py-2 border-t border-border bg-muted/10">
+                <p className="text-[9px] text-muted-foreground text-center italic">
+                  Based on your current title
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {(previewDoc || previewLoading) && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-12">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setPreviewDoc(null)} />
+          <div className="relative w-full max-w-4xl h-[80vh] bg-background border border-border rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/10">
+              <div className="flex items-center gap-3">
+                 <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                    <Home className="h-5 w-5" />
+                 </div>
+                 <div>
+                    <h3 className="text-sm font-bold truncate max-w-[200px] md:max-w-md">
+                      {previewLoading ? "Loading..." : previewDoc?.title || "Untitled"}
+                    </h3>
+                    {!previewLoading && (
+                      <p className="text-[10px] text-muted-foreground font-mono">PREVIEW MODE</p>
+                    )}
+                 </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {!previewLoading && (
+                   <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="h-8 rounded-lg text-xs"
+                    onClick={() => router.push(`/docs/${previewDoc?.id}`)}
+                  >
+                    Open Full Note
+                  </Button>
+                )}
+                <button 
+                  onClick={() => setPreviewDoc(null)}
+                  className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6 md:p-10 no-scrollbar bg-card/30">
+              {previewLoading ? (
+                <div className="h-full flex flex-col items-center justify-center gap-4 text-muted-foreground">
+                  <RefreshCw className="h-8 w-8 animate-spin opacity-20" />
+                  <p className="text-xs font-mono tracking-widest uppercase">Fetching content</p>
+                </div>
+              ) : (
+                <MarkdownPreview content={previewDoc?.content || ""} className="max-w-none prose-lg" />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {aiModalOpen && (
         <div className="fixed inset-0 z-[170] flex items-center justify-center p-4">
