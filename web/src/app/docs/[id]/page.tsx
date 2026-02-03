@@ -494,6 +494,7 @@ export default function EditorPage() {
   const [similarCollapsed, setSimilarCollapsed] = useState(true);
   const [similarIconVisible, setSimilarIconVisible] = useState(false);
   const similarTimerRef = useRef<number | null>(null);
+  const skipSimilarFetchRef = useRef(false);
 
   const fetchSimilar = useCallback(async (q: string) => {
     if (!q || q.length < 2) {
@@ -521,6 +522,10 @@ export default function EditorPage() {
     }
     setSimilarIconVisible(true);
     if (!similarCollapsed) {
+      if (skipSimilarFetchRef.current) {
+        skipSimilarFetchRef.current = false;
+        return;
+      }
       similarTimerRef.current = window.setTimeout(() => {
         fetchSimilar(title);
       }, 1000);
@@ -533,6 +538,7 @@ export default function EditorPage() {
   const handleToggleSimilar = useCallback(() => {
     if (similarCollapsed) {
       setSimilarCollapsed(false);
+      skipSimilarFetchRef.current = true;
       fetchSimilar(title);
     } else {
       setSimilarCollapsed(true);
