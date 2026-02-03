@@ -18,6 +18,7 @@ type Config struct {
 	LogConfig      logger.LogConfig   `json:"log_config"`
 	FileStore      FileStoreConfig    `json:"file_store"`
 	AI             AIConfig           `json:"ai"`
+	AIJob          AIJobConfig        `json:"ai_job"`
 	OAuth          OAuthConfig        `json:"oauth"`
 	Mail           MailConfig         `json:"mail"`
 	Properties     Properties         `json:"properties"`
@@ -70,6 +71,11 @@ type AIConfig struct {
 	Embed         AIFeatureConfig `json:"embed"`
 	Timeout       int             `json:"timeout"`
 	MaxInputChars int             `json:"max_input_chars"`
+}
+
+type AIJobConfig struct {
+	SummaryDelaySeconds   int64 `json:"summary_delay_seconds"`
+	EmbeddingDelaySeconds int64 `json:"embedding_delay_seconds"`
 }
 
 type OAuthConfig struct {
@@ -139,6 +145,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.AI.MaxInputChars == 0 {
 		cfg.AI.MaxInputChars = 32000
+	}
+	if cfg.AIJob.SummaryDelaySeconds == 0 {
+		cfg.AIJob.SummaryDelaySeconds = 300
+	}
+	if cfg.AIJob.EmbeddingDelaySeconds == 0 {
+		cfg.AIJob.EmbeddingDelaySeconds = 300
 	}
 	if cfg.Properties.EnableGithubOauth && len(cfg.OAuth.Github.Scopes) == 0 {
 		cfg.OAuth.Github.Scopes = []string{"user:email"}

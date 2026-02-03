@@ -23,12 +23,14 @@ import (
 	"github.com/xxxsen/mnote/internal/db"
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/handler"
+	"github.com/xxxsen/mnote/internal/job"
 	"github.com/xxxsen/mnote/internal/middleware"
 	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/oauth"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/password"
 	"github.com/xxxsen/mnote/internal/repo"
+	"github.com/xxxsen/mnote/internal/schedule"
 	"github.com/xxxsen/mnote/internal/service"
 )
 
@@ -119,6 +121,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		logutil.GetLogger(context.Background()).Info("test mode enabled, test user injected")
 	}
 	docRepo := repo.NewDocumentRepo(db)
+	summaryRepo := repo.NewDocumentSummaryRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
 	oauthRepo := repo.NewOAuthRepo(db)
 	emailCodeRepo := repo.NewEmailVerificationRepo(db)
@@ -238,10 +241,10 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	)
 
 	aiService := service.NewAIService(aiManager, embeddingRepo)
-	documentService := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, aiService, cfg.VersionMaxKeep)
+	documentService := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, aiService, cfg.VersionMaxKeep)
 
 	tagService := service.NewTagService(tagRepo, docTagRepo)
-	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
+	exportService := service.NewExportService(docRepo, summaryRepo, versionRepo, tagRepo, docTagRepo)
 	importService := service.NewImportService(documentService, tagService)
 
 	authHandler := handler.NewAuthHandler(authService)
@@ -293,7 +296,16 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	aiService.StartWorker(ctx)
+	scheduler := schedule.NewCronScheduler()
+	cronEveryMinute := "*/1 * * * *"
+	if err := scheduler.AddJob(job.NewAIEmbeddingJob(aiService, cfg.AIJob.EmbeddingDelaySeconds), cronEveryMinute); err != nil {
+		return fmt.Errorf("schedule ai_embedding: %w", err)
+	}
+	if err := scheduler.AddJob(job.NewAISummaryJob(documentService, cfg.AIJob.SummaryDelaySeconds), cronEveryMinute); err != nil {
+		return fmt.Errorf("schedule ai_summary: %w", err)
+	}
+	scheduler.Start(ctx)
+	defer scheduler.Stop()
 
 	go func() {
 		if err := engine.Run(); err != nil && err != http.ErrServerClosed {

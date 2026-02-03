@@ -60,6 +60,10 @@
             "model": "text-embedding-004"
         }
     },
+    "ai_job": {
+        "summary_delay_seconds": 300,
+        "embedding_delay_seconds": 300
+    },
     "oauth": {
         "github": {
             "client_id": "",

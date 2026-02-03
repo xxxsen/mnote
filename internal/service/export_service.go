@@ -23,10 +23,11 @@ type ExportPayload struct {
 }
 
 type ExportService struct {
-	docs     *repo.DocumentRepo
-	versions *repo.VersionRepo
-	tags     *repo.TagRepo
-	docTags  *repo.DocumentTagRepo
+	docs      *repo.DocumentRepo
+	summaries *repo.DocumentSummaryRepo
+	versions  *repo.VersionRepo
+	tags      *repo.TagRepo
+	docTags   *repo.DocumentTagRepo
 }
 
 type NotesExportItem struct {
@@ -36,13 +37,16 @@ type NotesExportItem struct {
 	TagList []string `json:"tag_list,omitempty"`
 }
 
-func NewExportService(docs *repo.DocumentRepo, versions *repo.VersionRepo, tags *repo.TagRepo, docTags *repo.DocumentTagRepo) *ExportService {
-	return &ExportService{docs: docs, versions: versions, tags: tags, docTags: docTags}
+func NewExportService(docs *repo.DocumentRepo, summaries *repo.DocumentSummaryRepo, versions *repo.VersionRepo, tags *repo.TagRepo, docTags *repo.DocumentTagRepo) *ExportService {
+	return &ExportService{docs: docs, summaries: summaries, versions: versions, tags: tags, docTags: docTags}
 }
 
 func (s *ExportService) Export(ctx context.Context, userID string) (*ExportPayload, error) {
 	docs, err := s.docs.List(ctx, userID, nil, 0, 0, "")
 	if err != nil {
+		return nil, err
+	}
+	if err := s.attachSummaries(ctx, userID, docs); err != nil {
 		return nil, err
 	}
 	versions, err := s.versions.ListByUser(ctx, userID)
@@ -63,6 +67,9 @@ func (s *ExportService) Export(ctx context.Context, userID string) (*ExportPaylo
 func (s *ExportService) ExportNotesZip(ctx context.Context, userID string) (string, error) {
 	docs, err := s.docs.List(ctx, userID, nil, 0, 0, "")
 	if err != nil {
+		return "", err
+	}
+	if err := s.attachSummaries(ctx, userID, docs); err != nil {
 		return "", err
 	}
 	tags, err := s.tags.List(ctx, userID)
@@ -134,4 +141,22 @@ func (s *ExportService) ExportNotesZip(ctx context.Context, userID string) (stri
 		return "", err
 	}
 	return tmp.Name(), nil
+}
+
+func (s *ExportService) attachSummaries(ctx context.Context, userID string, docs []model.Document) error {
+	if len(docs) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		ids = append(ids, doc.ID)
+	}
+	summaries, err := s.summaries.ListByDocIDs(ctx, userID, ids)
+	if err != nil {
+		return err
+	}
+	for i := range docs {
+		docs[i].Summary = summaries[docs[i].ID]
+	}
+	return nil
 }

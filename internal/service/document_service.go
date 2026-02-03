@@ -2,6 +2,12 @@ package service
 
 import (
 	"context"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/xxxsen/common/logutil"
+	"go.uber.org/zap"
 
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
@@ -11,6 +17,7 @@ import (
 
 type DocumentService struct {
 	docs           *repo.DocumentRepo
+	summaries      *repo.DocumentSummaryRepo
 	versions       *repo.VersionRepo
 	tags           *repo.DocumentTagRepo
 	shares         *repo.ShareRepo
@@ -20,8 +27,10 @@ type DocumentService struct {
 	versionMaxKeep int
 }
 
-func NewDocumentService(docs *repo.DocumentRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo, tagRepo *repo.TagRepo, userRepo *repo.UserRepo, ai *AIService, versionMaxKeep int) *DocumentService {
-	return &DocumentService{docs: docs, versions: versions, tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo, ai: ai, versionMaxKeep: versionMaxKeep}
+const minSummaryChars = 100
+
+func NewDocumentService(docs *repo.DocumentRepo, summaries *repo.DocumentSummaryRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo, tagRepo *repo.TagRepo, userRepo *repo.UserRepo, ai *AIService, versionMaxKeep int) *DocumentService {
+	return &DocumentService{docs: docs, summaries: summaries, versions: versions, tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo, ai: ai, versionMaxKeep: versionMaxKeep}
 }
 
 type DocumentSummary struct {
@@ -39,9 +48,17 @@ type PublicShareDetail struct {
 
 func (s *DocumentService) Search(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error) {
 	if query == "" && tagID == "" {
-		return s.docs.List(ctx, userID, starred, limit, offset, orderBy)
+		docs, err := s.docs.List(ctx, userID, starred, limit, offset, orderBy)
+		if err != nil {
+			return nil, err
+		}
+		return s.attachSummaries(ctx, userID, docs)
 	}
-	return s.docs.SearchLike(ctx, userID, query, tagID, starred, limit, offset, orderBy)
+	docs, err := s.docs.SearchLike(ctx, userID, query, tagID, starred, limit, offset, orderBy)
+	if err != nil {
+		return nil, err
+	}
+	return s.attachSummaries(ctx, userID, docs)
 }
 
 func (s *DocumentService) SemanticSearch(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error) {
@@ -57,6 +74,10 @@ func (s *DocumentService) SemanticSearch(ctx context.Context, userID, query, tag
 	}
 
 	docs, err := s.docs.ListByIDs(ctx, userID, ids)
+	if err != nil {
+		return nil, err
+	}
+	docs, err = s.attachSummaries(ctx, userID, docs)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +105,14 @@ func (s *DocumentService) SemanticSearch(ctx context.Context, userID, query, tag
 }
 
 func (s *DocumentService) Get(ctx context.Context, userID, docID string) (*model.Document, error) {
-	return s.docs.GetByID(ctx, userID, docID)
+	doc, err := s.docs.GetByID(ctx, userID, docID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachSummary(ctx, userID, doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
 }
 
 func (s *DocumentService) UpdateTags(ctx context.Context, userID, docID string, tagIDs []string) error {
@@ -107,7 +135,10 @@ func (s *DocumentService) UpdateSummary(ctx context.Context, userID, docID, summ
 		return err
 	}
 	now := timeutil.NowUnix()
-	return s.docs.UpdateSummary(ctx, userID, docID, summary, now)
+	if err := s.summaries.Upsert(ctx, userID, docID, summary, now); err != nil {
+		return err
+	}
+	return s.docs.TouchMtime(ctx, userID, docID, now)
 }
 
 func (s *DocumentService) UpdatePinned(ctx context.Context, userID, docID string, pinned int) error {
@@ -152,16 +183,31 @@ func (s *DocumentService) ListSharedDocuments(ctx context.Context, userID string
 }
 
 func (s *DocumentService) GetByTitle(ctx context.Context, userID, title string) (*model.Document, error) {
-	return s.docs.GetByTitle(ctx, userID, title)
+	doc, err := s.docs.GetByTitle(ctx, userID, title)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachSummary(ctx, userID, doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
 }
 
 func (s *DocumentService) ListByIDs(ctx context.Context, userID string, docIDs []string) ([]model.Document, error) {
-	return s.docs.ListByIDs(ctx, userID, docIDs)
+	docs, err := s.docs.ListByIDs(ctx, userID, docIDs)
+	if err != nil {
+		return nil, err
+	}
+	return s.attachSummaries(ctx, userID, docs)
 }
 
 func (s *DocumentService) Summary(ctx context.Context, userID string, recentLimit uint) (*DocumentSummary, error) {
 
 	recent, err := s.docs.List(ctx, userID, nil, recentLimit, 0, "mtime desc")
+	if err != nil {
+		return nil, err
+	}
+	recent, err = s.attachSummaries(ctx, userID, recent)
 	if err != nil {
 		return nil, err
 	}
@@ -348,15 +394,15 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 		UserID:  userID,
 		Title:   input.Title,
 		Content: input.Content,
-		Summary: "",
 		Mtime:   now,
 	}
-	updateSummary := input.Summary != nil
-	if updateSummary {
-		doc.Summary = *input.Summary
-	}
-	if err := s.docs.Update(ctx, doc, updateSummary); err != nil {
+	if err := s.docs.Update(ctx, doc); err != nil {
 		return err
+	}
+	if input.Summary != nil {
+		if err := s.summaries.Upsert(ctx, userID, docID, *input.Summary, now); err != nil {
+			return err
+		}
 	}
 
 	versionNumber := 1
@@ -398,7 +444,6 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 		UserID:  userID,
 		Title:   input.Title,
 		Content: input.Content,
-		Summary: input.Summary,
 		State:   repo.DocumentStateNormal,
 		Pinned:  0,
 		Ctime:   now,
@@ -406,6 +451,12 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 	}
 	if err := s.docs.Create(ctx, doc); err != nil {
 		return nil, err
+	}
+	if input.Summary != "" {
+		if err := s.summaries.Upsert(ctx, userID, doc.ID, input.Summary, now); err != nil {
+			return nil, err
+		}
+		doc.Summary = input.Summary
 	}
 
 	version := &model.DocumentVersion{
@@ -434,4 +485,101 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 		}
 	}
 	return doc, nil
+}
+
+func (s *DocumentService) ProcessPendingSummaries(ctx context.Context, delaySeconds int64) error {
+	if s.ai == nil {
+		return nil
+	}
+	if s.summaries == nil {
+		return nil
+	}
+	logger := logutil.GetLogger(ctx)
+	if delaySeconds < 0 {
+		delaySeconds = 0
+	}
+	cutoff := time.Now().Unix() - delaySeconds
+	docs, err := s.summaries.ListPendingDocuments(ctx, 50, cutoff)
+	if err != nil {
+		logger.Error("failed to list pending summaries", zap.Error(err))
+		return err
+	}
+	if len(docs) == 0 {
+		return nil
+	}
+	logger.Info("processing pending summaries", zap.Int("count", len(docs)))
+	for _, doc := range docs {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if utf8.RuneCountInString(doc.Content) < minSummaryChars {
+			now := timeutil.NowUnix()
+			if err := s.summaries.Upsert(ctx, doc.UserID, doc.ID, "", now); err != nil {
+				logger.Error("failed to mark empty summary", zap.String("doc_id", doc.ID), zap.Error(err))
+			}
+			continue
+		}
+		summary, err := s.ai.Summarize(ctx, doc.Content)
+		if err != nil {
+			errMsg := strings.ToLower(err.Error())
+			if strings.Contains(errMsg, "rate") || strings.Contains(errMsg, "limit") || strings.Contains(errMsg, "429") {
+				logger.Warn("ai rate limit triggered, cooling down...", zap.Error(err))
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(10 * time.Second):
+				}
+				continue
+			}
+			logger.Error("failed to summarize document", zap.String("doc_id", doc.ID), zap.Error(err))
+			continue
+		}
+		now := timeutil.NowUnix()
+		if err := s.summaries.Upsert(ctx, doc.UserID, doc.ID, summary, now); err != nil {
+			logger.Error("failed to save summary", zap.String("doc_id", doc.ID), zap.Error(err))
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	return nil
+}
+
+func (s *DocumentService) attachSummary(ctx context.Context, userID string, doc *model.Document) error {
+	if doc == nil {
+		return nil
+	}
+	summary, err := s.summaries.GetByDocID(ctx, userID, doc.ID)
+	if err == nil {
+		doc.Summary = summary
+		return nil
+	}
+	if err == appErr.ErrNotFound {
+		doc.Summary = ""
+		return nil
+	}
+	return err
+}
+
+func (s *DocumentService) attachSummaries(ctx context.Context, userID string, docs []model.Document) ([]model.Document, error) {
+	if len(docs) == 0 {
+		return docs, nil
+	}
+	ids := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		ids = append(ids, doc.ID)
+	}
+	summaries, err := s.summaries.ListByDocIDs(ctx, userID, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range docs {
+		docs[i].Summary = summaries[docs[i].ID]
+	}
+	return docs, nil
 }

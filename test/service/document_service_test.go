@@ -16,13 +16,14 @@ func TestDocumentServiceVersioningAndDelete(t *testing.T) {
 	defer cleanup()
 
 	docRepo := repo.NewDocumentRepo(db)
+	summaryRepo := repo.NewDocumentSummaryRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
 	tagRepo := repo.NewTagRepo(db)
 	userRepo := repo.NewUserRepo(db)
 
-	docs := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
+	docs := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
 
 	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})
 	require.NoError(t, err)
@@ -49,13 +50,14 @@ func TestDocumentServiceShareState(t *testing.T) {
 	defer cleanup()
 
 	docRepo := repo.NewDocumentRepo(db)
+	summaryRepo := repo.NewDocumentSummaryRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
 	tagRepo := repo.NewTagRepo(db)
 	userRepo := repo.NewUserRepo(db)
 
-	docs := service.NewDocumentService(docRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
+	docs := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
 
 	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})
 	require.NoError(t, err)

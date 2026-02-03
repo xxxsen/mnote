@@ -119,9 +119,10 @@ type SharedDocument struct {
 
 func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID string, query string) ([]SharedDocument, error) {
 	sqlStr := `
-		SELECT d.id, d.title, d.summary, d.mtime, s.token
+		SELECT d.id, d.title, COALESCE(ds.summary, '') AS summary, d.mtime, s.token
 		FROM shares s
 		JOIN documents d ON d.id = s.document_id AND d.user_id = s.user_id
+		LEFT JOIN document_summaries ds ON ds.document_id = d.id AND ds.user_id = d.user_id
 		WHERE s.user_id = ? AND s.state = ? AND d.state = ?
 	`
 	args := []interface{}{userID, ShareStateActive, 1}
