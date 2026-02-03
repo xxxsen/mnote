@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS documents (
   user_id TEXT NOT NULL,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
-  summary TEXT NOT NULL DEFAULT '',
   state INTEGER NOT NULL,
   pinned INTEGER NOT NULL DEFAULT 0,
   starred INTEGER NOT NULL DEFAULT 0,
@@ -117,3 +116,14 @@ CREATE TABLE IF NOT EXISTS chunk_embeddings (
 
 CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_doc ON chunk_embeddings(document_id);
 CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_user ON chunk_embeddings(user_id);
+
+CREATE TABLE IF NOT EXISTS document_summaries (
+  document_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  ctime BIGINT NOT NULL,
+  mtime BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_summaries_user ON document_summaries(user_id);
+
