@@ -52,7 +52,7 @@ type AIFeatureConfig struct {
 	Model    string `json:"model"`
 }
 
-func (f AIFeatureConfig) GetOrDefault(c AIConfig) AIFeatureConfig {
+func (f AIFeatureConfig) WithDefaults(c AIConfig) AIFeatureConfig {
 	if f.Provider == "" {
 		f.Provider = c.Provider
 	}
@@ -63,15 +63,15 @@ func (f AIFeatureConfig) GetOrDefault(c AIConfig) AIFeatureConfig {
 }
 
 type AIConfig struct {
-	Provider      string          `json:"provider"`
-	Model         string          `json:"model"`
-	Polish        AIFeatureConfig `json:"polish"`
-	Generate      AIFeatureConfig `json:"generate"`
-	Tagging       AIFeatureConfig `json:"tagging"`
-	Summary       AIFeatureConfig `json:"summary"`
-	Embed         AIFeatureConfig `json:"embed"`
-	Timeout       int             `json:"timeout"`
-	MaxInputChars int             `json:"max_input_chars"`
+	Provider      string            `json:"provider"`
+	Model         string            `json:"model"`
+	Polish        []AIFeatureConfig `json:"polish"`
+	Generate      []AIFeatureConfig `json:"generate"`
+	Tagging       []AIFeatureConfig `json:"tagging"`
+	Summary       []AIFeatureConfig `json:"summary"`
+	Embed         []AIFeatureConfig `json:"embed"`
+	Timeout       int               `json:"timeout"`
+	MaxInputChars int               `json:"max_input_chars"`
 }
 
 type AIJobConfig struct {

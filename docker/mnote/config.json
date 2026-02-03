@@ -52,19 +52,25 @@
         "model": "gemini-1.5-flash",
         "timeout": 30,
         "max_input_chars": 32000,
-        "polish": {
-            "provider": "openrouter",
-            "model": "anthropic/claude-3.5-sonnet"
-        },
-        "generate": {
-            "model": "gemini-1.5-pro"
-        },
-        "tagging": {},
-        "summary": {},
-        "embed": {
-            "provider": "gemini",
-            "model": "text-embedding-004"
-        }
+        "polish": [
+            {
+                "provider": "openrouter",
+                "model": "anthropic/claude-3.5-sonnet"
+            }
+        ],
+        "generate": [
+            {
+                "model": "gemini-1.5-pro"
+            }
+        ],
+        "tagging": [],
+        "summary": [],
+        "embed": [
+            {
+                "provider": "gemini",
+                "model": "text-embedding-004"
+            }
+        ]
     },
     "ai_job": {
         "summary_delay_seconds": 300,

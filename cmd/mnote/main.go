@@ -216,29 +216,60 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		}
 	}
 
-	getGen := func(name string, f config.AIFeatureConfig) (ai.IGenerator, error) {
-		f = f.GetOrDefault(cfg.AI)
-		if f.Provider == "" || f.Model == "" {
-			return nil, fmt.Errorf("ai feature %s: provider or model not configured", name)
+	normalizeFeatureList := func(list []config.AIFeatureConfig) []config.AIFeatureConfig {
+		if len(list) == 0 {
+			return []config.AIFeatureConfig{{Provider: cfg.AI.Provider, Model: cfg.AI.Model}}
 		}
-		p, ok := aiProviders[f.Provider]
-		if !ok {
-			return nil, fmt.Errorf("ai feature %s: provider %s not found or incompatible (type: generator)", name, f.Provider)
+		result := make([]config.AIFeatureConfig, 0, len(list))
+		for _, item := range list {
+			result = append(result, item.WithDefaults(cfg.AI))
 		}
-		logutil.GetLogger(context.Background()).Info("ai feature init", zap.String("feature", name), zap.String("provider", f.Provider), zap.String("model", f.Model))
-		return ai.NewGenerator(p, f.Model), nil
+		return result
 	}
-	getEmb := func(name string, f config.AIFeatureConfig) (ai.IEmbedder, error) {
-		f = f.GetOrDefault(cfg.AI)
-		if f.Provider == "" || f.Model == "" {
+
+	getGen := func(name string, list []config.AIFeatureConfig) (ai.IGenerator, error) {
+		items := normalizeFeatureList(list)
+		if len(items) == 0 {
 			return nil, fmt.Errorf("ai feature %s: provider or model not configured", name)
 		}
-		p, ok := embedProviders[f.Provider]
-		if !ok {
-			return nil, fmt.Errorf("ai feature %s: provider %s not found or incompatible (type: embedder)", name, f.Provider)
+		entries := make([]ai.GeneratorEntry, 0, len(items))
+		for _, f := range items {
+			if f.Provider == "" || f.Model == "" {
+				return nil, fmt.Errorf("ai feature %s: provider or model not configured", name)
+			}
+			p, ok := aiProviders[f.Provider]
+			if !ok {
+				return nil, fmt.Errorf("ai feature %s: provider %s not found or incompatible (type: generator)", name, f.Provider)
+			}
+			logutil.GetLogger(context.Background()).Info("ai feature init", zap.String("feature", name), zap.String("provider", f.Provider), zap.String("model", f.Model))
+			entries = append(entries, ai.GeneratorEntry{
+				Name:      fmt.Sprintf("%s/%s", f.Provider, f.Model),
+				Generator: ai.NewGenerator(p, f.Model),
+			})
 		}
-		logutil.GetLogger(context.Background()).Info("ai feature init", zap.String("feature", name), zap.String("provider", f.Provider), zap.String("model", f.Model))
-		return ai.NewEmbedder(p, f.Model), nil
+		return ai.NewGroupGenerator(entries), nil
+	}
+	getEmb := func(name string, list []config.AIFeatureConfig) (ai.IEmbedder, error) {
+		items := normalizeFeatureList(list)
+		if len(items) == 0 {
+			return nil, fmt.Errorf("ai feature %s: provider or model not configured", name)
+		}
+		entries := make([]ai.EmbedderEntry, 0, len(items))
+		for _, f := range items {
+			if f.Provider == "" || f.Model == "" {
+				return nil, fmt.Errorf("ai feature %s: provider or model not configured", name)
+			}
+			p, ok := embedProviders[f.Provider]
+			if !ok {
+				return nil, fmt.Errorf("ai feature %s: provider %s not found or incompatible (type: embedder)", name, f.Provider)
+			}
+			logutil.GetLogger(context.Background()).Info("ai feature init", zap.String("feature", name), zap.String("provider", f.Provider), zap.String("model", f.Model))
+			entries = append(entries, ai.EmbedderEntry{
+				Name:     fmt.Sprintf("%s/%s", f.Provider, f.Model),
+				Embedder: ai.NewEmbedder(p, f.Model),
+			})
+		}
+		return ai.NewGroupEmbedder(entries), nil
 	}
 
 	polishGen, err := getGen("polish", cfg.AI.Polish)
