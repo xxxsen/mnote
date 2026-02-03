@@ -45,6 +45,18 @@
                 "http_referer": "https://github.com/xxxsen/mnote",
                 "x_title": "mnote"
             }
+        },
+        {
+            "name": "openai",
+            "type": "openai",
+            "capacities": [
+                "generator",
+                "embedder"
+            ],
+            "data": {
+                "api_key": "YOUR_OPENAI_LIKE_API_KEY",
+                "base_url": "https://api.openai.com/v1"
+            }
         }
     ],
     "ai": {
