@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -163,8 +162,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	}
 	oauthService := service.NewOAuthService(userRepo, oauthRepo, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), oauthProviders)
 
-	aiProviders := make(map[string]ai.IAIProvider)
-	embedProviders := make(map[string]ai.IEmbedProvider)
+	aiProviders := make(map[string]ai.IProvider)
 	providerNames := make(map[string]struct{})
 	for _, pcfg := range cfg.AIProvider {
 		name := pcfg.Name
@@ -175,45 +173,12 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 			return fmt.Errorf("ai provider name duplicated: %s", name)
 		}
 		providerNames[name] = struct{}{}
-		capSet := map[string]struct{}{}
-		for _, cap := range pcfg.Capacities {
-			key := strings.ToLower(strings.TrimSpace(cap))
-			if key == "" {
-				continue
-			}
-			if key == ai.CapacityAll {
-				capSet[ai.CapacityGenerator] = struct{}{}
-				capSet[ai.CapacityEmbedder] = struct{}{}
-				continue
-			}
-			capSet[key] = struct{}{}
+		logutil.GetLogger(context.Background()).Info("init ai provider", zap.String("name", name), zap.String("type", pcfg.Type))
+		p, err := ai.NewProvider(pcfg.Type, pcfg.Data)
+		if err != nil {
+			return fmt.Errorf("init ai provider %s: %w", name, err)
 		}
-		if len(capSet) == 0 {
-			return fmt.Errorf("ai provider %s: capacities is required", name)
-		}
-		caps := make([]string, 0, len(capSet))
-		for cap := range capSet {
-			caps = append(caps, cap)
-		}
-		logutil.GetLogger(context.Background()).Info("init ai provider", zap.String("name", name), zap.String("type", pcfg.Type), zap.Strings("capacities", caps))
-		for cap := range capSet {
-			switch cap {
-			case ai.CapacityGenerator:
-				p, err := ai.NewProvider(pcfg.Type, pcfg.Data)
-				if err != nil {
-					return fmt.Errorf("init ai provider %s: %w", name, err)
-				}
-				aiProviders[name] = p
-			case ai.CapacityEmbedder:
-				ep, err := ai.NewEmbedProvider(pcfg.Type, pcfg.Data)
-				if err != nil {
-					return fmt.Errorf("init embed provider %s: %w", name, err)
-				}
-				embedProviders[name] = ep
-			default:
-				return fmt.Errorf("ai provider %s: unknown capacity %s", name, cap)
-			}
-		}
+		aiProviders[name] = p
 	}
 
 	normalizeFeatureList := func(list []config.AIFeatureConfig) []config.AIFeatureConfig {
@@ -259,9 +224,9 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 			if f.Provider == "" || f.Model == "" {
 				return nil, fmt.Errorf("ai feature %s: provider or model not configured", name)
 			}
-			p, ok := embedProviders[f.Provider]
+			p, ok := aiProviders[f.Provider]
 			if !ok {
-				return nil, fmt.Errorf("ai feature %s: provider %s not found or incompatible (type: embedder)", name, f.Provider)
+				return nil, fmt.Errorf("ai feature %s: provider %s not found", name, f.Provider)
 			}
 			logutil.GetLogger(context.Background()).Info("ai feature init", zap.String("feature", name), zap.String("provider", f.Provider), zap.String("model", f.Model))
 			entries = append(entries, ai.EmbedderEntry{

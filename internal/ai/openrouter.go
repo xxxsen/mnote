@@ -45,6 +45,17 @@ type openrouterResponse struct {
 	} `json:"choices"`
 }
 
+type openrouterEmbedRequest struct {
+	Model string `json:"model"`
+	Input string `json:"input"`
+}
+
+type openrouterEmbedResponse struct {
+	Data []struct {
+		Embedding []float32 `json:"embedding"`
+	} `json:"data"`
+}
+
 func (p *openrouterProvider) Name() string {
 	return "openrouter"
 }
@@ -94,7 +105,51 @@ func (p *openrouterProvider) Generate(ctx context.Context, model string, prompt 
 	return strings.TrimSpace(out.Choices[0].Message.Content), nil
 }
 
-func createOpenRouterFactory(args interface{}) (IAIProvider, error) {
+func (p *openrouterProvider) Embed(ctx context.Context, model string, text string, taskType string) ([]float32, error) {
+	if p.apiKey == "" {
+		return nil, ErrUnavailable
+	}
+	endpoint := strings.TrimRight(p.baseURL, "/") + "/embeddings"
+	reqBody := openrouterEmbedRequest{
+		Model: model,
+		Input: text,
+	}
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	if p.httpReferer != "" {
+		req.Header.Set("HTTP-Referer", p.httpReferer)
+	}
+	if p.xTitle != "" {
+		req.Header.Set("X-Title", p.xTitle)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("openrouter request failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var out openrouterEmbedResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	if len(out.Data) == 0 {
+		return nil, fmt.Errorf("openrouter response has no embeddings")
+	}
+	return out.Data[0].Embedding, nil
+}
+
+func createOpenRouterFactory(args interface{}) (IProvider, error) {
 	cfg := &openrouterConfig{}
 	if err := decodeConfig(args, cfg); err != nil {
 		return nil, err

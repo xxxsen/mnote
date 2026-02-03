@@ -95,16 +95,7 @@ func (p *openAIProvider) Generate(ctx context.Context, model string, prompt stri
 	return strings.TrimSpace(out.Choices[0].Message.Content), nil
 }
 
-type openAIEmbedProvider struct {
-	apiKey  string
-	baseURL string
-}
-
-func (p *openAIEmbedProvider) Name() string {
-	return "openai"
-}
-
-func (p *openAIEmbedProvider) Embed(ctx context.Context, model string, text string, taskType string) ([]float32, error) {
+func (p *openAIProvider) Embed(ctx context.Context, model string, text string, taskType string) ([]float32, error) {
 	if p.apiKey == "" {
 		return nil, ErrUnavailable
 	}
@@ -142,7 +133,7 @@ func (p *openAIEmbedProvider) Embed(ctx context.Context, model string, text stri
 	return out.Data[0].Embedding, nil
 }
 
-func createOpenAIFactory(args interface{}) (IAIProvider, error) {
+func createOpenAIFactory(args interface{}) (IProvider, error) {
 	cfg := &openAIConfig{}
 	if err := decodeConfig(args, cfg); err != nil {
 		return nil, err
@@ -158,23 +149,6 @@ func createOpenAIFactory(args interface{}) (IAIProvider, error) {
 	return provider, nil
 }
 
-func createOpenAIEmbedFactory(args interface{}) (IEmbedProvider, error) {
-	cfg := &openAIConfig{}
-	if err := decodeConfig(args, cfg); err != nil {
-		return nil, err
-	}
-	baseURL := strings.TrimSpace(cfg.BaseURL)
-	if baseURL == "" {
-		baseURL = defaultOpenAIBaseURL
-	}
-	provider := &openAIEmbedProvider{
-		apiKey:  strings.TrimSpace(cfg.APIKey),
-		baseURL: baseURL,
-	}
-	return provider, nil
-}
-
 func init() {
 	Register("openai", createOpenAIFactory)
-	RegisterEmbed("openai", createOpenAIEmbedFactory)
 }

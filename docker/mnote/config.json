@@ -27,9 +27,6 @@
         {
             "name": "gemini",
             "type": "gemini",
-            "capacities": [
-                "all"
-            ],
             "data": {
                 "api_key": "YOUR_GEMINI_API_KEY"
             }
@@ -37,9 +34,6 @@
         {
             "name": "openrouter",
             "type": "openrouter",
-            "capacities": [
-                "generator"
-            ],
             "data": {
                 "api_key": "YOUR_OPENROUTER_API_KEY",
                 "http_referer": "https://github.com/xxxsen/mnote",
@@ -49,10 +43,6 @@
         {
             "name": "openai",
             "type": "openai",
-            "capacities": [
-                "generator",
-                "embedder"
-            ],
             "data": {
                 "api_key": "YOUR_OPENAI_LIKE_API_KEY",
                 "base_url": "https://api.openai.com/v1"

@@ -41,10 +41,9 @@ type FileStoreConfig struct {
 }
 
 type AIProviderConfig struct {
-	Name       string      `json:"name"`
-	Type       string      `json:"type"`
-	Capacities []string    `json:"capacities"`
-	Data       interface{} `json:"data"`
+	Name string      `json:"name"`
+	Type string      `json:"type"`
+	Data interface{} `json:"data"`
 }
 
 type AIFeatureConfig struct {
