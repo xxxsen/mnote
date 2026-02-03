@@ -97,6 +97,10 @@ type DiffLine = {
   right?: string;
 };
 
+type SimilarDoc = Document & {
+  score?: number;
+};
+
 const buildLineDiff = (before: string, after: string): DiffLine[] => {
   const leftLines = before.split("\n");
   const rightLines = after.split("\n");
@@ -485,7 +489,7 @@ export default function EditorPage() {
   const [tagSearchLoading, setTagSearchLoading] = useState(false);
   const [tagDropdownIndex, setTagDropdownIndex] = useState(0);
 
-  const [similarDocs, setSimilarDocs] = useState<any[]>([]);
+  const [similarDocs, setSimilarDocs] = useState<SimilarDoc[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
   const [similarCollapsed, setSimilarCollapsed] = useState(true);
   const [similarIconVisible, setSimilarIconVisible] = useState(false);
@@ -498,7 +502,7 @@ export default function EditorPage() {
     }
     setSimilarLoading(true);
     try {
-      const res = await apiFetch<{ items: any[] }>(`/ai/search?q=${encodeURIComponent(q)}&limit=5&exclude_id=${id}`);
+      const res = await apiFetch<{ items: SimilarDoc[] }>(`/ai/search?q=${encodeURIComponent(q)}&limit=5&exclude_id=${id}`);
       const items = res?.items || [];
       setSimilarDocs(items);
     } catch (e) {
@@ -2564,7 +2568,7 @@ here is the body of note.`}
                     No similar notes found.
                   </div>
                 ) : (
-                  similarDocs.map((doc: any) => (
+                  similarDocs.map((doc) => (
                     <div 
                       key={doc.id} 
                       onClick={() => handleOpenPreview(doc.id)}
