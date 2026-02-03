@@ -26,18 +26,26 @@
     "ai_provider": [
         {
             "name": "gemini",
-            "type": "all",
+            "type": "gemini",
             "data": {
                 "api_key": "YOUR_GEMINI_API_KEY"
             }
         },
         {
             "name": "openrouter",
-            "type": "generator",
+            "type": "openrouter",
             "data": {
                 "api_key": "YOUR_OPENROUTER_API_KEY",
                 "http_referer": "https://github.com/xxxsen/mnote",
                 "x_title": "mnote"
+            }
+        },
+        {
+            "name": "openai",
+            "type": "openai",
+            "data": {
+                "api_key": "YOUR_OPENAI_LIKE_API_KEY",
+                "base_url": "https://api.openai.com/v1"
             }
         }
     ],
@@ -46,19 +54,25 @@
         "model": "gemini-1.5-flash",
         "timeout": 30,
         "max_input_chars": 32000,
-        "polish": {
-            "provider": "openrouter",
-            "model": "anthropic/claude-3.5-sonnet"
-        },
-        "generate": {
-            "model": "gemini-1.5-pro"
-        },
-        "tagging": {},
-        "summary": {},
-        "embed": {
-            "provider": "gemini",
-            "model": "text-embedding-004"
-        }
+        "polish": [
+            {
+                "provider": "openrouter",
+                "model": "anthropic/claude-3.5-sonnet"
+            }
+        ],
+        "generate": [
+            {
+                "model": "gemini-1.5-pro"
+            }
+        ],
+        "tagging": [],
+        "summary": [],
+        "embed": [
+            {
+                "provider": "gemini",
+                "model": "text-embedding-004"
+            }
+        ]
     },
     "ai_job": {
         "summary_delay_seconds": 300,
