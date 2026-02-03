@@ -68,7 +68,7 @@ func (c *CronScheduler) wrap(job Job, spec string) func() {
 			logutil.GetLogger(context.Background()).With(
 				zap.String("job", job.Name()),
 				zap.String("spec", spec),
-			).Info("job skipped: still running")
+			).Warn("job skipped: still running")
 			return
 		}
 		defer running.Store(false)
@@ -89,6 +89,6 @@ func (c *CronScheduler) wrap(job Job, spec string) func() {
 			logger.Error("job finished", zap.Error(err), zap.Duration("duration", elapsed))
 			return
 		}
-		logger.Info("job finished", zap.Duration("duration", elapsed))
+		logger.Debug("job finished", zap.Duration("duration", elapsed))
 	}
 }
