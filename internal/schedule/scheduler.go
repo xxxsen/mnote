@@ -82,7 +82,7 @@ func (c *CronScheduler) wrap(job Job, spec string) func() {
 			zap.String("spec", spec),
 		)
 		start := time.Now()
-		logger.Info("job started")
+		logger.Debug("job started")
 		err := job.Run(ctx)
 		elapsed := time.Since(start)
 		if err != nil {

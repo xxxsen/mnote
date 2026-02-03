@@ -61,37 +61,39 @@ func (s *DocumentService) Search(ctx context.Context, userID, query, tagID strin
 	return s.attachSummaries(ctx, userID, docs)
 }
 
-func (s *DocumentService) SemanticSearch(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error) {
+func (s *DocumentService) SemanticSearch(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string, excludeID string) ([]model.Document, []float32, error) {
 	if query == "" || s.ai == nil {
-		return []model.Document{}, nil
+		return []model.Document{}, []float32{}, nil
 	}
-	ids, scores, err := s.ai.SemanticSearch(ctx, userID, query, int(limit+offset), "")
+	ids, scores, err := s.ai.SemanticSearch(ctx, userID, query, int(limit+offset), excludeID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(ids) == 0 {
-		return []model.Document{}, nil
+		return []model.Document{}, []float32{}, nil
 	}
 
 	docs, err := s.docs.ListByIDs(ctx, userID, ids)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	docs, err = s.attachSummaries(ctx, userID, docs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	idMap := make(map[string]model.Document)
 	for _, d := range docs {
 		idMap[d.ID] = d
 	}
 	sortedDocs := make([]model.Document, 0, len(ids))
+	sortedScores := make([]float32, 0, len(ids))
 	for i, id := range ids {
 		if d, ok := idMap[id]; ok {
 			if scores[i] < 0.7 {
 				continue
 			}
 			sortedDocs = append(sortedDocs, d)
+			sortedScores = append(sortedScores, scores[i])
 		}
 	}
 	if int(offset) < len(sortedDocs) {
@@ -99,9 +101,9 @@ func (s *DocumentService) SemanticSearch(ctx context.Context, userID, query, tag
 		if end > len(sortedDocs) || limit == 0 {
 			end = len(sortedDocs)
 		}
-		return sortedDocs[offset:end], nil
+		return sortedDocs[offset:end], sortedScores[offset:end], nil
 	}
-	return []model.Document{}, nil
+	return []model.Document{}, []float32{}, nil
 }
 
 func (s *DocumentService) Get(ctx context.Context, userID, docID string) (*model.Document, error) {
