@@ -200,34 +200,29 @@ func (s *AIService) SyncEmbedding(ctx context.Context, userID, docID, title, con
 	return nil
 }
 
-func (s *AIService) StartWorker(ctx context.Context) {
-	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				s.processPendingEmbeddings(ctx)
-			}
-		}
-	}()
-}
-
-func (s *AIService) processPendingEmbeddings(ctx context.Context) {
-	// Only re-embed documents that haven't been modified in the last 5 minutes
-	cutoff := time.Now().Unix() - 300
+func (s *AIService) ProcessPendingEmbeddings(ctx context.Context, delaySeconds int64) error {
+	if s == nil || s.embeddings == nil {
+		return nil
+	}
+	if delaySeconds < 0 {
+		delaySeconds = 0
+	}
+	cutoff := time.Now().Unix() - delaySeconds
 	docs, err := s.embeddings.ListStaleDocuments(ctx, 50, cutoff)
 	if err != nil {
 		logutil.GetLogger(ctx).Error("failed to list stale documents", zap.Error(err))
-		return
+		return err
 	}
 	if len(docs) == 0 {
-		return
+		return nil
 	}
 	logutil.GetLogger(ctx).Info("processing stale embeddings", zap.Int("count", len(docs)))
 	for _, doc := range docs {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		err := s.SyncEmbedding(ctx, doc.UserID, doc.ID, doc.Title, doc.Content)
 		if err != nil {
 			// Check for rate limit. This depends on provider implementation.
@@ -235,13 +230,23 @@ func (s *AIService) processPendingEmbeddings(ctx context.Context) {
 			errMsg := strings.ToLower(err.Error())
 			if strings.Contains(errMsg, "rate") || strings.Contains(errMsg, "limit") || strings.Contains(errMsg, "429") {
 				logutil.GetLogger(ctx).Warn("ai rate limit triggered, cooling down...", zap.Error(err))
-				time.Sleep(10 * time.Second)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(10 * time.Second):
+				}
 				continue
 			}
+			logutil.GetLogger(ctx).Error("failed to sync embeddings", zap.String("doc_id", doc.ID), zap.Error(err))
 		}
 		// Small delay to avoid hammering the API
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
+	return nil
 }
 
 func cosineSimilarity(a, b []float32) float32 {

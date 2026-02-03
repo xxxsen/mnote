@@ -30,7 +30,6 @@ func (r *DocumentRepo) Create(ctx context.Context, doc *model.Document) error {
 		"user_id": doc.UserID,
 		"title":   doc.Title,
 		"content": doc.Content,
-		"summary": doc.Summary,
 		"state":   doc.State,
 		"pinned":  doc.Pinned,
 		"starred": doc.Starred,
@@ -52,7 +51,7 @@ func (r *DocumentRepo) Create(ctx context.Context, doc *model.Document) error {
 	return nil
 }
 
-func (r *DocumentRepo) Update(ctx context.Context, doc *model.Document, updateSummary bool) error {
+func (r *DocumentRepo) Update(ctx context.Context, doc *model.Document) error {
 	where := map[string]interface{}{
 		"id":      doc.ID,
 		"user_id": doc.UserID,
@@ -62,9 +61,6 @@ func (r *DocumentRepo) Update(ctx context.Context, doc *model.Document, updateSu
 		"title":   doc.Title,
 		"content": doc.Content,
 		"mtime":   doc.Mtime,
-	}
-	if updateSummary {
-		update["summary"] = doc.Summary
 	}
 	sqlStr, args, err := builder.BuildUpdate("documents", where, update)
 	if err != nil {
@@ -85,15 +81,14 @@ func (r *DocumentRepo) Update(ctx context.Context, doc *model.Document, updateSu
 	return nil
 }
 
-func (r *DocumentRepo) UpdateSummary(ctx context.Context, userID, docID, summary string, mtime int64) error {
+func (r *DocumentRepo) TouchMtime(ctx context.Context, userID, docID string, mtime int64) error {
 	where := map[string]interface{}{
 		"id":      docID,
 		"user_id": userID,
 		"state":   DocumentStateNormal,
 	}
 	update := map[string]interface{}{
-		"summary": summary,
-		"mtime":   mtime,
+		"mtime": mtime,
 	}
 	sqlStr, args, err := builder.BuildUpdate("documents", where, update)
 	if err != nil {
