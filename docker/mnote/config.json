@@ -26,14 +26,20 @@
     "ai_provider": [
         {
             "name": "gemini",
-            "type": "all",
+            "type": "gemini",
+            "capacities": [
+                "all"
+            ],
             "data": {
                 "api_key": "YOUR_GEMINI_API_KEY"
             }
         },
         {
             "name": "openrouter",
-            "type": "generator",
+            "type": "openrouter",
+            "capacities": [
+                "generator"
+            ],
             "data": {
                 "api_key": "YOUR_OPENROUTER_API_KEY",
                 "http_referer": "https://github.com/xxxsen/mnote",

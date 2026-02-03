@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -164,21 +165,54 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 
 	aiProviders := make(map[string]ai.IAIProvider)
 	embedProviders := make(map[string]ai.IEmbedProvider)
+	providerNames := make(map[string]struct{})
 	for _, pcfg := range cfg.AIProvider {
-		logutil.GetLogger(context.Background()).Info("init ai provider", zap.String("name", pcfg.Name), zap.String("type", pcfg.Type))
-		if pcfg.Type == "" || pcfg.Type == "generator" || pcfg.Type == "all" {
-			p, err := ai.NewProvider(pcfg.Name, pcfg.Data)
-			if err != nil {
-				return fmt.Errorf("init ai provider %s: %w", pcfg.Name, err)
-			}
-			aiProviders[pcfg.Name] = p
+		name := pcfg.Name
+		if name == "" {
+			return fmt.Errorf("ai provider name is required")
 		}
-		if pcfg.Type == "embedder" || pcfg.Type == "all" {
-			ep, err := ai.NewEmbedProvider(pcfg.Name, pcfg.Data)
-			if err != nil {
-				return fmt.Errorf("init embed provider %s: %w", pcfg.Name, err)
+		if _, exists := providerNames[name]; exists {
+			return fmt.Errorf("ai provider name duplicated: %s", name)
+		}
+		providerNames[name] = struct{}{}
+		capSet := map[string]struct{}{}
+		for _, cap := range pcfg.Capacities {
+			key := strings.ToLower(strings.TrimSpace(cap))
+			if key == "" {
+				continue
 			}
-			embedProviders[pcfg.Name] = ep
+			if key == ai.CapacityAll {
+				capSet[ai.CapacityGenerator] = struct{}{}
+				capSet[ai.CapacityEmbedder] = struct{}{}
+				continue
+			}
+			capSet[key] = struct{}{}
+		}
+		if len(capSet) == 0 {
+			return fmt.Errorf("ai provider %s: capacities is required", name)
+		}
+		caps := make([]string, 0, len(capSet))
+		for cap := range capSet {
+			caps = append(caps, cap)
+		}
+		logutil.GetLogger(context.Background()).Info("init ai provider", zap.String("name", name), zap.String("type", pcfg.Type), zap.Strings("capacities", caps))
+		for cap := range capSet {
+			switch cap {
+			case ai.CapacityGenerator:
+				p, err := ai.NewProvider(pcfg.Type, pcfg.Data)
+				if err != nil {
+					return fmt.Errorf("init ai provider %s: %w", name, err)
+				}
+				aiProviders[name] = p
+			case ai.CapacityEmbedder:
+				ep, err := ai.NewEmbedProvider(pcfg.Type, pcfg.Data)
+				if err != nil {
+					return fmt.Errorf("init embed provider %s: %w", name, err)
+				}
+				embedProviders[name] = ep
+			default:
+				return fmt.Errorf("ai provider %s: unknown capacity %s", name, cap)
+			}
 		}
 	}
 
