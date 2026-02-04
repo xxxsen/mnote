@@ -117,6 +117,18 @@ CREATE TABLE IF NOT EXISTS chunk_embeddings (
 CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_doc ON chunk_embeddings(document_id);
 CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_user ON chunk_embeddings(user_id);
 
+CREATE TABLE IF NOT EXISTS embedding_cache (
+    model_name TEXT NOT NULL,
+    task_type TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    embedding vector NOT NULL,
+    ctime BIGINT NOT NULL,
+    PRIMARY KEY (model_name, task_type, content_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_embedding_cache_ctime ON embedding_cache(ctime);
+CREATE INDEX IF NOT EXISTS idx_embedding_cache_model_task ON embedding_cache(model_name, task_type);
+
 CREATE TABLE IF NOT EXISTS document_summaries (
   document_id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -126,4 +138,3 @@ CREATE TABLE IF NOT EXISTS document_summaries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_document_summaries_user ON document_summaries(user_id);
-

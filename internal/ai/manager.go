@@ -138,6 +138,13 @@ func (m *Manager) MaxInputChars() int {
 	return m.cfg.MaxInputChars
 }
 
+func (m *Manager) EmbeddingModelName() string {
+	if m.embedder == nil {
+		return ""
+	}
+	return m.embedder.ModelName()
+}
+
 func parseTags(output string, maxTags int) ([]string, error) {
 	clean := strings.TrimSpace(output)
 	clean = strings.TrimPrefix(clean, "```json")

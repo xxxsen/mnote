@@ -21,6 +21,7 @@ import (
 	"github.com/xxxsen/mnote/internal/ai"
 	"github.com/xxxsen/mnote/internal/config"
 	"github.com/xxxsen/mnote/internal/db"
+	"github.com/xxxsen/mnote/internal/embedcache"
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/handler"
 	"github.com/xxxsen/mnote/internal/job"
@@ -129,6 +130,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
 	embeddingRepo := repo.NewEmbeddingRepo(db)
+	embeddingCacheRepo := repo.NewEmbeddingCacheRepo(db)
 
 	mailSender := service.NewEmailSender(cfg.Mail)
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, mailSender)
@@ -257,6 +259,8 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	embGen = embedcache.WrapDBCacheToEmbedder(embGen, embeddingCacheRepo)
+	embGen = embedcache.WrapLruCacheToEmbedder(embGen, 20000, 2*time.Hour)
 
 	aiManager := ai.NewManager(
 		polishGen,
@@ -328,11 +332,15 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 
 	scheduler := schedule.NewCronScheduler()
 	cronEveryMinute := "*/1 * * * *"
+	cronEveryDay := "0 3 * * *"
 	if err := scheduler.AddJob(job.NewAIEmbeddingJob(aiService, cfg.AIJob.EmbeddingDelaySeconds), cronEveryMinute); err != nil {
 		return fmt.Errorf("schedule ai_embedding: %w", err)
 	}
 	if err := scheduler.AddJob(job.NewAISummaryJob(documentService, cfg.AIJob.SummaryDelaySeconds), cronEveryMinute); err != nil {
 		return fmt.Errorf("schedule ai_summary: %w", err)
+	}
+	if err := scheduler.AddJob(job.NewEmbeddingCacheCleanupJob(embeddingCacheRepo, 30), cronEveryDay); err != nil {
+		return fmt.Errorf("schedule embedding cache cleanup: %w", err)
 	}
 	scheduler.Start(ctx)
 	defer scheduler.Stop()

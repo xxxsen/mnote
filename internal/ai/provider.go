@@ -18,6 +18,7 @@ type IGenerator interface {
 
 type IEmbedder interface {
 	Embed(ctx context.Context, text string, taskType string) ([]float32, error)
+	ModelName() string
 }
 
 type generator struct {
@@ -44,6 +45,10 @@ func NewEmbedder(p IProvider, model string) IEmbedder {
 
 func (e *embedder) Embed(ctx context.Context, text string, taskType string) ([]float32, error) {
 	return e.provider.Embed(ctx, e.model, text, taskType)
+}
+
+func (e *embedder) ModelName() string {
+	return e.model
 }
 
 type ProviderFactory func(args interface{}) (IProvider, error)

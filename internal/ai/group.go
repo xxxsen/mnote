@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/xxxsen/common/logutil"
 	"go.uber.org/zap"
@@ -76,4 +77,18 @@ func (g *groupEmbedder) Embed(ctx context.Context, text string, taskType string)
 		return nil, fmt.Errorf("embedder not configured")
 	}
 	return nil, lastErr
+}
+
+func (g *groupEmbedder) ModelName() string {
+	names := make([]string, 0, len(g.items))
+	for _, item := range g.items {
+		if item.Name == "" {
+			continue
+		}
+		names = append(names, item.Name)
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return strings.Join(names, "|")
 }
