@@ -353,6 +353,7 @@ body {
 
 .toc-wrapper {
   margin-bottom: 1.2em;
+  overflow-x: hidden;
 }
 
 .toc-wrapper ul {
@@ -369,6 +370,8 @@ body {
   color: #2563eb;
   border-bottom: none;
   font-weight: 400;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .toc-wrapper a:hover {
