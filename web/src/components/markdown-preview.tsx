@@ -8,7 +8,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
-import { Copy, Check, Maximize2, X } from "lucide-react";
+import { Copy, Check, Maximize2, X, Bug } from "lucide-react";
 import Mermaid from "@/components/mermaid";
 import { CodeSandbox } from "@/components/code-sandbox";
 import { cn } from "@/lib/utils";
@@ -339,6 +339,9 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
     displayHeight: number;
   } | null>(null);
   const [svgSize, setSvgSize] = React.useState<{ width: number; height: number } | null>(null);
+  const [panOffset, setPanOffset] = React.useState({ x: 0, y: 0 });
+  const dragStateRef = React.useRef({ dragging: false, startX: 0, startY: 0, originX: 0, originY: 0 });
+  const [isDragging, setIsDragging] = React.useState(false);
   const normalized = chart.trim();
 
   const handleCopyLocal = React.useCallback(() => {
@@ -516,6 +519,39 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
     });
   }, []);
 
+  const handlePanStart = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (zoomLevel <= 1) return;
+    dragStateRef.current = {
+      dragging: true,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: panOffset.x,
+      originY: panOffset.y,
+    };
+    setIsDragging(true);
+  }, [zoomLevel, panOffset]);
+
+  const handlePanMove = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!dragStateRef.current.dragging) return;
+    const dx = event.clientX - dragStateRef.current.startX;
+    const dy = event.clientY - dragStateRef.current.startY;
+    setPanOffset({
+      x: dragStateRef.current.originX + dx,
+      y: dragStateRef.current.originY + dy,
+    });
+  }, []);
+
+  const handlePanEnd = React.useCallback(() => {
+    if (!dragStateRef.current.dragging) return;
+    dragStateRef.current.dragging = false;
+    setIsDragging(false);
+  }, []);
+
+  const handlePanReset = React.useCallback(() => {
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+  }, []);
+
   return (
     <>
       <div
@@ -542,6 +578,7 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
                 event.stopPropagation();
                 setZoomLevel(1);
                 setBaseScale(1);
+                setPanOffset({ x: 0, y: 0 });
                 setShowModal(true);
               }}
               className="h-6 w-6 flex items-center justify-center rounded-md border border-transparent hover:border-border hover:bg-background transition-all"
@@ -588,11 +625,11 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
               </span>
               <div className="flex items-center gap-2">
                 <button
-                  className={`h-7 px-2 rounded-md text-[10px] font-bold uppercase tracking-widest border transition-colors ${showDebug ? "border-primary text-primary bg-primary/10" : "border-border text-muted-foreground hover:text-foreground"}`}
+                  className={`h-8 w-8 flex items-center justify-center rounded-full border transition-colors ${showDebug ? "border-primary text-primary bg-primary/10" : "border-border text-muted-foreground hover:text-foreground"}`}
                   onClick={() => setShowDebug((prev) => !prev)}
                   title="Toggle debug"
                 >
-                  Debug
+                  <Bug className="h-4 w-4" />
                 </button>
                 <button
                   className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors"
@@ -605,8 +642,13 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
             </div>
             <div
               ref={modalBodyRef}
-              className={`relative flex-1 p-4 bg-card/30 mermaid-zoom ${zoomLevel > 1 ? "overflow-auto" : "overflow-hidden"}`}
+              className={`relative flex-1 p-4 bg-card/30 mermaid-zoom select-none ${zoomLevel > 1 ? "overflow-auto" : "overflow-hidden"} ${zoomLevel > 1 ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "cursor-default"}`}
               onWheel={handleZoomWheel}
+              onMouseDown={handlePanStart}
+              onMouseMove={handlePanMove}
+              onMouseUp={handlePanEnd}
+              onMouseLeave={handlePanEnd}
+              onDoubleClick={handlePanReset}
             >
               {showDebug && (
                 <div className="absolute right-3 top-3 z-10 rounded-lg border border-border bg-background/90 p-2 text-[10px] font-mono text-muted-foreground shadow-sm">
@@ -628,7 +670,8 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
                   style={{
                     width: svgSize ? `${svgSize.width * baseScale * zoomLevel}px` : undefined,
                     height: svgSize ? `${svgSize.height * baseScale * zoomLevel}px` : undefined,
-                    outline: showDebug ? "1px dashed rgba(59,130,246,0.6)" : undefined
+                    outline: showDebug ? "1px dashed rgba(59,130,246,0.6)" : undefined,
+                    transform: `translate(${panOffset.x}px, ${panOffset.y}px)`
                   }}
                 >
                   <Mermaid key={`modal-${normalized}`} chart={chart} cacheKey={`modal:${chart}`} />
