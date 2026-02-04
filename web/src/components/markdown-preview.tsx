@@ -320,7 +320,25 @@ CodeBlock.displayName = "CodeBlock";
 const MermaidBlock = memo(({ chart }: { chart: string }) => {
   const [copied, setCopied] = React.useState(false);
   const [showModal, setShowModal] = React.useState(false);
-  const [zoomLevel, setZoomLevel] = React.useState(1.1);
+  const [zoomLevel, setZoomLevel] = React.useState(1);
+  const modalBodyRef = React.useRef<HTMLDivElement | null>(null);
+  const [baseScale, setBaseScale] = React.useState(1);
+  const [showDebug, setShowDebug] = React.useState(false);
+  const [debugInfo, setDebugInfo] = React.useState<{
+    svgFound: boolean;
+    svgWidth: number;
+    svgHeight: number;
+    rectWidth: number;
+    rectHeight: number;
+    viewBox: string;
+    containerWidth: number;
+    containerHeight: number;
+    svgLength: number;
+    baseScale: number;
+    displayWidth: number;
+    displayHeight: number;
+  } | null>(null);
+  const [svgSize, setSvgSize] = React.useState<{ width: number; height: number } | null>(null);
   const normalized = chart.trim();
 
   const handleCopyLocal = React.useCallback(() => {
@@ -374,6 +392,120 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
     return knownTypes[type] || type.replace(/([A-Z])/g, ' $1').trim().toUpperCase();
   }, [normalized]);
 
+  const updateBaseScale = React.useCallback(() => {
+    const container = modalBodyRef.current;
+    if (!container) return;
+    const svg = container.querySelector("svg");
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+    if (!svg) {
+      setDebugInfo((prev) => ({
+        svgFound: false,
+        svgWidth: 0,
+        svgHeight: 0,
+        rectWidth: 0,
+        rectHeight: 0,
+        viewBox: "",
+        containerWidth,
+        containerHeight,
+        svgLength: 0,
+        baseScale: prev?.baseScale ?? 1,
+        displayWidth: 0,
+        displayHeight: 0,
+      }));
+      return;
+    }
+
+    let svgWidth = 0;
+    let svgHeight = 0;
+    const viewBox = (svg as SVGSVGElement).viewBox?.baseVal;
+    if (viewBox && viewBox.width && viewBox.height) {
+      svgWidth = viewBox.width;
+      svgHeight = viewBox.height;
+    }
+    if (!svgWidth || !svgHeight) {
+      try {
+        const box = (svg as SVGGraphicsElement).getBBox();
+        svgWidth = box.width;
+        svgHeight = box.height;
+      } catch {
+        return;
+      }
+    }
+    if (!svgWidth || !svgHeight) return;
+
+    const rect = svg.getBoundingClientRect();
+    let rectWidth = rect.width;
+    let rectHeight = rect.height;
+    if (!rectWidth || !rectHeight) {
+      const svgElement = svg as SVGSVGElement;
+      svgElement.setAttribute("width", `${svgWidth}`);
+      svgElement.setAttribute("height", `${svgHeight}`);
+      svgElement.style.width = `${svgWidth}px`;
+      svgElement.style.height = `${svgHeight}px`;
+      svgElement.style.maxWidth = "none";
+      svgElement.style.maxHeight = "none";
+      svgElement.style.display = "block";
+      rectWidth = svgWidth;
+      rectHeight = svgHeight;
+    }
+
+    const styles = window.getComputedStyle(container);
+    const paddingX = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
+    const paddingY = parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom);
+    const availableWidth = Math.max(0, container.clientWidth - paddingX);
+    const availableHeight = Math.max(0, container.clientHeight - paddingY);
+    if (!availableWidth || !availableHeight) return;
+
+    const next = Math.min(1, availableWidth / svgWidth, availableHeight / svgHeight);
+    if (!Number.isFinite(next) || next <= 0) return;
+    setBaseScale((prev) => (Math.abs(prev - next) > 0.01 ? next : prev));
+    setSvgSize({ width: svgWidth, height: svgHeight });
+    const displayWidth = svgWidth * next * zoomLevel;
+    const displayHeight = svgHeight * next * zoomLevel;
+    setDebugInfo({
+      svgFound: true,
+      svgWidth,
+      svgHeight,
+      rectWidth,
+      rectHeight,
+      viewBox: viewBox ? `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}` : "",
+      containerWidth,
+      containerHeight,
+      svgLength: svg.outerHTML.length,
+      baseScale: next,
+      displayWidth,
+      displayHeight,
+    });
+  }, [zoomLevel]);
+
+  useEffect(() => {
+    if (!showModal) return;
+    let raf = 0;
+    let retries = 0;
+    const schedule = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        updateBaseScale();
+        if (retries < 20) {
+          retries += 1;
+          schedule();
+        }
+      });
+    };
+    const container = modalBodyRef.current;
+    if (!container) return;
+    const resizeObserver = new ResizeObserver(() => updateBaseScale());
+    resizeObserver.observe(container);
+    schedule();
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      resizeObserver.disconnect();
+    };
+  }, [showModal, updateBaseScale]);
+
+
+
   const handleZoomWheel = React.useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -408,7 +540,8 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                setZoomLevel(1.1);
+                setZoomLevel(1);
+                setBaseScale(1);
                 setShowModal(true);
               }}
               className="h-6 w-6 flex items-center justify-center rounded-md border border-transparent hover:border-border hover:bg-background transition-all"
@@ -436,7 +569,7 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
         </div>
         <div className="p-4 flex justify-center">
           {normalized && normalized !== "undefined" ? (
-            <Mermaid key={normalized} chart={chart} />
+            <Mermaid key={normalized} chart={chart} cacheKey={`inline:${chart}`} />
           ) : (
             <div className="text-xs text-muted-foreground">Waiting for mermaid content...</div>
           )}
@@ -453,24 +586,52 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
               <span className="text-[10px] font-bold text-muted-foreground/70 tracking-widest font-mono uppercase">
                 {diagramType}
               </span>
-              <button
-                className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors"
-                onClick={() => setShowModal(false)}
-                title="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className={`h-7 px-2 rounded-md text-[10px] font-bold uppercase tracking-widest border transition-colors ${showDebug ? "border-primary text-primary bg-primary/10" : "border-border text-muted-foreground hover:text-foreground"}`}
+                  onClick={() => setShowDebug((prev) => !prev)}
+                  title="Toggle debug"
+                >
+                  Debug
+                </button>
+                <button
+                  className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors"
+                  onClick={() => setShowModal(false)}
+                  title="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
             <div
-              className="flex-1 overflow-auto p-4 bg-card/30 mermaid-zoom"
+              ref={modalBodyRef}
+              className={`relative flex-1 p-4 bg-card/30 mermaid-zoom ${zoomLevel > 1 ? "overflow-auto" : "overflow-hidden"}`}
               onWheel={handleZoomWheel}
             >
+              {showDebug && (
+                <div className="absolute right-3 top-3 z-10 rounded-lg border border-border bg-background/90 p-2 text-[10px] font-mono text-muted-foreground shadow-sm">
+                  <div>svg: {debugInfo?.svgFound ? "found" : "missing"}</div>
+                  <div>svg size: {debugInfo?.svgWidth ?? 0} × {debugInfo?.svgHeight ?? 0}</div>
+                  <div>rect: {debugInfo?.rectWidth ?? 0} × {debugInfo?.rectHeight ?? 0}</div>
+                  <div>viewBox: {debugInfo?.viewBox || "-"}</div>
+                  <div>container: {debugInfo?.containerWidth ?? 0} × {debugInfo?.containerHeight ?? 0}</div>
+                  <div>svg len: {debugInfo?.svgLength ?? 0}</div>
+                  <div>base: {debugInfo?.baseScale?.toFixed(2) ?? baseScale.toFixed(2)}</div>
+                  <div>zoom: {zoomLevel.toFixed(2)}</div>
+                  <div>final: {(baseScale * zoomLevel).toFixed(2)}</div>
+                  <div>display: {debugInfo?.displayWidth?.toFixed(1) ?? 0} × {debugInfo?.displayHeight?.toFixed(1) ?? 0}</div>
+                </div>
+              )}
               <div className="min-h-full w-full flex items-center justify-center">
                 <div
-                  className="w-full max-w-[1600px]"
-                  style={{ transform: `scale(${zoomLevel})`, transformOrigin: "center center" }}
+                  className="inline-block"
+                  style={{
+                    width: svgSize ? `${svgSize.width * baseScale * zoomLevel}px` : undefined,
+                    height: svgSize ? `${svgSize.height * baseScale * zoomLevel}px` : undefined,
+                    outline: showDebug ? "1px dashed rgba(59,130,246,0.6)" : undefined
+                  }}
                 >
-                  <Mermaid key={`modal-${normalized}`} chart={chart} />
+                  <Mermaid key={`modal-${normalized}`} chart={chart} cacheKey={`modal:${chart}`} />
                 </div>
               </div>
             </div>

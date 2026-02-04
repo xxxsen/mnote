@@ -5,15 +5,17 @@ import mermaid from "mermaid";
 
 interface MermaidProps {
   chart: string;
+  cacheKey?: string;
 }
 
 const svgCache = new Map<string, string>();
 
-const Mermaid = memo(({ chart }: MermaidProps) => {
+const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
   const ref = useRef<HTMLDivElement>(null);
-  const [svg, setSvg] = useState<string>(() => svgCache.get(chart) || "");
+  const resolvedCacheKey = cacheKey || chart;
+  const [svg, setSvg] = useState<string>(() => svgCache.get(resolvedCacheKey) || "");
   const [error, setError] = useState<boolean>(false);
-  const [isRendered, setIsRendered] = useState(() => svgCache.has(chart));
+  const [isRendered, setIsRendered] = useState(() => svgCache.has(resolvedCacheKey));
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -57,7 +59,7 @@ const Mermaid = memo(({ chart }: MermaidProps) => {
     const normalized = chart.trim();
     if (!normalized || normalized === "undefined" || !ref.current) return;
     
-    if (svgCache.has(chart) && svg === svgCache.get(chart)) {
+    if (svgCache.has(resolvedCacheKey) && svg === svgCache.get(resolvedCacheKey)) {
       return;
     }
 
@@ -68,7 +70,7 @@ const Mermaid = memo(({ chart }: MermaidProps) => {
       .render(id, normalized)
       .then(({ svg: renderedSvg }) => {
         if (!isMounted) return;
-        svgCache.set(chart, renderedSvg);
+        svgCache.set(resolvedCacheKey, renderedSvg);
         setSvg(renderedSvg);
         setError(false);
         setIsRendered(true);
@@ -82,7 +84,7 @@ const Mermaid = memo(({ chart }: MermaidProps) => {
     return () => {
       isMounted = false;
     };
-  }, [chart, svg]);
+  }, [chart, svg, resolvedCacheKey]);
 
   if (error) {
     return (

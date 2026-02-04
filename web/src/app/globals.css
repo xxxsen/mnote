@@ -325,14 +325,16 @@ body {
 }
 
 .mermaid-zoom .mermaid-container {
-  width: 100%;
+  width: max-content;
   max-width: none;
+  height: 100%;
 }
 
 .mermaid-zoom .mermaid-container > svg {
   width: 100% !important;
-  height: auto !important;
+  height: 100% !important;
   max-width: none !important;
+  display: block;
 }
 
 .mermaid svg .node rect {
