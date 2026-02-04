@@ -23,7 +23,7 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
       mermaid.initialize({
         startOnLoad: false,
         theme: "base",
-        securityLevel: "loose",
+        securityLevel: "strict",
         fontFamily: "var(--font-mono)",
         logLevel: "fatal",
         suppressErrorRendering: true,
@@ -86,6 +86,7 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
     };
   }, [chart, svg, resolvedCacheKey]);
 
+
   if (error) {
     return (
       <div className="border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive font-mono whitespace-pre-wrap">
@@ -94,6 +95,7 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
     );
   }
 
+  /* eslint-disable react/no-danger */
   return (
     <div
       ref={ref}
@@ -105,6 +107,7 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );
+  /* eslint-enable react/no-danger */
 });
 
 Mermaid.displayName = "Mermaid";
