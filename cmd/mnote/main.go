@@ -299,7 +299,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	deps := handler.RouterDeps{
 		Auth:       authHandler,
 		OAuth:      oauthHandler,
-		Properties: handler.NewPropertiesHandler(cfg.Properties),
+		Properties: handler.NewPropertiesHandler(cfg.Properties, cfg.Banner),
 		Documents:  documentHandler,
 		Versions:   versionHandler,
 		Shares:     shareHandler,

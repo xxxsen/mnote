@@ -75,7 +75,7 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	deps := handler.RouterDeps{
 		Auth:       handler.NewAuthHandler(authService),
 		OAuth:      handler.NewOAuthHandler(oauthService),
-		Properties: handler.NewPropertiesHandler(config.Properties{}),
+		Properties: handler.NewPropertiesHandler(config.Properties{}, config.BannerConfig{}),
 		Documents:  handler.NewDocumentHandler(documentService),
 		Versions:   handler.NewVersionHandler(documentService),
 		Shares:     handler.NewShareHandler(documentService),

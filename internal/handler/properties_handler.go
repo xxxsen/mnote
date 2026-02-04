@@ -9,12 +9,13 @@ import (
 
 type PropertiesHandler struct {
 	properties config.Properties
+	banner     config.BannerConfig
 }
 
-func NewPropertiesHandler(properties config.Properties) *PropertiesHandler {
-	return &PropertiesHandler{properties: properties}
+func NewPropertiesHandler(properties config.Properties, banner config.BannerConfig) *PropertiesHandler {
+	return &PropertiesHandler{properties: properties, banner: banner}
 }
 
 func (h *PropertiesHandler) Get(c *gin.Context) {
-	response.Success(c, gin.H{"properties": h.properties})
+	response.Success(c, gin.H{"properties": h.properties, "banner": h.banner})
 }

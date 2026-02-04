@@ -22,6 +22,7 @@ type Config struct {
 	OAuth          OAuthConfig        `json:"oauth"`
 	Mail           MailConfig         `json:"mail"`
 	Properties     Properties         `json:"properties"`
+	Banner         BannerConfig       `json:"banner"`
 	AIProvider     []AIProviderConfig `json:"ai_provider"`
 }
 
@@ -104,6 +105,13 @@ type Properties struct {
 	EnableUserRegister  bool `json:"enable_user_register"`
 	EnableEmailRegister bool `json:"enable_email_register"`
 	EnableTestMode      bool `json:"enable_test_mode"`
+}
+
+type BannerConfig struct {
+	Enable   bool   `json:"enable"`
+	Title    string `json:"title"`
+	Wording  string `json:"wording"`
+	Redirect string `json:"redirect"`
 }
 
 func Load(path string) (*Config, error) {

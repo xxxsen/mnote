@@ -105,6 +105,12 @@
         "password": "",
         "from": "no-reply@example.com"
     },
+    "banner": {
+        "enable": false,
+        "title": "",
+        "wording": "",
+        "redirect": ""
+    },
     "properties": {
         "enable_github_oauth": false,
         "enable_google_oauth": false,

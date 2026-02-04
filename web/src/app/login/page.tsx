@@ -8,6 +8,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Chrome, Github } from "lucide-react";
 
+type Properties = {
+  enable_github_oauth?: boolean;
+  enable_google_oauth?: boolean;
+  enable_user_register?: boolean;
+  enable_email_register?: boolean;
+};
+
+type BannerConfig = {
+  enable?: boolean;
+  title?: string;
+  wording?: string;
+  redirect?: string;
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -15,16 +29,19 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [oauthLoading, setOauthLoading] = useState<string | null>(null);
-  const [properties, setProperties] = useState<Record<string, boolean> | null>(null);
+  const [properties, setProperties] = useState<Properties | null>(null);
+  const [banner, setBanner] = useState<BannerConfig | null>(null);
 
   useEffect(() => {
     const loadProperties = async () => {
       try {
-        const res = await apiFetch<{ properties: Record<string, boolean> }>("/properties", { requireAuth: false });
+        const res = await apiFetch<{ properties: Properties; banner?: BannerConfig }>("/properties", { requireAuth: false });
         setProperties(res?.properties || {});
+        setBanner(res?.banner || null);
       } catch (err) {
         console.error(err);
         setProperties({});
+        setBanner(null);
       }
     };
     loadProperties();
@@ -77,6 +94,28 @@ export default function LoginPage() {
           </div>
           <p className="text-muted-foreground text-sm">Enter your credentials</p>
         </div>
+
+        {banner?.enable && (banner.title || banner.wording) && (
+          <div className="mb-6 rounded-lg border border-amber-200/60 bg-amber-50/70 px-3 py-2 text-amber-900">
+            {banner.title && (
+              <div className="text-[10px] font-semibold uppercase tracking-wider">{banner.title}</div>
+            )}
+            {banner.wording && (
+              banner.redirect ? (
+                <a
+                  href={banner.redirect}
+                  className="text-sm underline underline-offset-4 hover:text-amber-700"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {banner.wording}
+                </a>
+              ) : (
+                <div className="text-sm">{banner.wording}</div>
+              )
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
