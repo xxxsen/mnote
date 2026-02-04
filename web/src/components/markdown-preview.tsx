@@ -8,7 +8,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Maximize2, X } from "lucide-react";
 import Mermaid from "@/components/mermaid";
 import { CodeSandbox } from "@/components/code-sandbox";
 import { cn } from "@/lib/utils";
@@ -293,6 +293,8 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
             background: "transparent",
             boxShadow: "none",
             border: "none",
+            tabSize: 4,
+            MozTabSize: 4,
           }}
           codeTagProps={{
             style: {
@@ -300,6 +302,8 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
               boxShadow: "none",
               background: "transparent",
               padding: 0,
+              tabSize: 4,
+              MozTabSize: 4,
             },
           }}
           {...rest}
@@ -315,6 +319,8 @@ CodeBlock.displayName = "CodeBlock";
 
 const MermaidBlock = memo(({ chart }: { chart: string }) => {
   const [copied, setCopied] = React.useState(false);
+  const [showModal, setShowModal] = React.useState(false);
+  const [zoomLevel, setZoomLevel] = React.useState(1.1);
   const normalized = chart.trim();
 
   const handleCopyLocal = React.useCallback(() => {
@@ -368,48 +374,110 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
     return knownTypes[type] || type.replace(/([A-Z])/g, ' $1').trim().toUpperCase();
   }, [normalized]);
 
+  const handleZoomWheel = React.useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const delta = event.deltaY > 0 ? -0.1 : 0.1;
+    setZoomLevel((prev) => {
+      const next = Math.min(3, Math.max(0.5, prev + delta));
+      return Math.round(next * 10) / 10;
+    });
+  }, []);
+
   return (
-    <div
-      style={{
-        margin: 0,
-        marginBottom: "1.5em",
-        borderRadius: "var(--radius-md)",
-        backgroundColor: "#f8f9fa",
-        border: "1px solid rgba(0,0,0,0.06)",
-        boxShadow: "none",
-        position: "relative",
-        overflow: "hidden"
-      }}
-    >
-      <div className="flex items-center justify-between px-3 h-8 bg-black/[0.02] border-b border-black/[0.03]">
-        <span className="text-[10px] font-bold text-muted-foreground/50 tracking-wide font-mono uppercase">
-          {diagramType}
-        </span>
-        <button
-          type="button"
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            handleCopyLocal();
-          }}
-          className="h-6 w-6 flex items-center justify-center rounded-md border border-transparent hover:border-border hover:bg-background transition-all"
-          title="Copy"
-        >
-          {copied ? (
-            <Check className="h-3 w-3 text-green-500" />
+    <>
+      <div
+        style={{
+          margin: 0,
+          marginBottom: "1.5em",
+          borderRadius: "var(--radius-md)",
+          backgroundColor: "#f8f9fa",
+          border: "1px solid rgba(0,0,0,0.06)",
+          boxShadow: "none",
+          position: "relative",
+          overflow: "hidden"
+        }}
+      >
+        <div className="flex items-center justify-between px-3 h-8 bg-black/[0.02] border-b border-black/[0.03]">
+          <span className="text-[10px] font-bold text-muted-foreground/50 tracking-wide font-mono uppercase">
+            {diagramType}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setZoomLevel(1.1);
+                setShowModal(true);
+              }}
+              className="h-6 w-6 flex items-center justify-center rounded-md border border-transparent hover:border-border hover:bg-background transition-all"
+              title="Open preview"
+            >
+              <Maximize2 className="h-3 w-3 text-muted-foreground/50" />
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                handleCopyLocal();
+              }}
+              className="h-6 w-6 flex items-center justify-center rounded-md border border-transparent hover:border-border hover:bg-background transition-all"
+              title="Copy"
+            >
+              {copied ? (
+                <Check className="h-3 w-3 text-green-500" />
+              ) : (
+                <Copy className="h-3 w-3 text-muted-foreground/50" />
+              )}
+            </button>
+          </div>
+        </div>
+        <div className="p-4 flex justify-center">
+          {normalized && normalized !== "undefined" ? (
+            <Mermaid key={normalized} chart={chart} />
           ) : (
-            <Copy className="h-3 w-3 text-muted-foreground/50" />
+            <div className="text-xs text-muted-foreground">Waiting for mermaid content...</div>
           )}
-        </button>
+        </div>
       </div>
-      <div className="p-4 flex justify-center">
-        {normalized && normalized !== "undefined" ? (
-          <Mermaid key={normalized} chart={chart} />
-        ) : (
-          <div className="text-xs text-muted-foreground">Waiting for mermaid content...</div>
-        )}
-      </div>
-    </div>
+      {showModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-8">
+          <div
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+            onClick={() => setShowModal(false)}
+          />
+          <div className="relative w-[95vw] max-w-none h-[90vh] bg-background border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/10">
+              <span className="text-[10px] font-bold text-muted-foreground/70 tracking-widest font-mono uppercase">
+                {diagramType}
+              </span>
+              <button
+                className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors"
+                onClick={() => setShowModal(false)}
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div
+              className="flex-1 overflow-auto p-4 bg-card/30 mermaid-zoom"
+              onWheel={handleZoomWheel}
+            >
+              <div className="min-h-full w-full flex items-center justify-center">
+                <div
+                  className="w-full max-w-[1600px]"
+                  style={{ transform: `scale(${zoomLevel})`, transformOrigin: "center center" }}
+                >
+                  <Mermaid key={`modal-${normalized}`} chart={chart} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 });
 

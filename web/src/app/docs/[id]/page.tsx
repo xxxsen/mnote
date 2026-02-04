@@ -57,6 +57,7 @@ import {
   Tags,
   Undo,
   Redo,
+  Eye,
   X,
   Menu,
   Command,
@@ -279,6 +280,7 @@ type ToolbarProps = {
   handleAiPolish: () => void;
   handleAiGenerateOpen: () => void;
   handleAiTags: () => void;
+  handlePreviewOpen: () => void;
   aiBusy: boolean;
   activePopover: "emoji" | "color" | "size" | null;
   setActivePopover: (v: "emoji" | "color" | "size" | null) => void;
@@ -295,6 +297,7 @@ const Toolbar = memo(({
   handleAiPolish,
   handleAiGenerateOpen,
   handleAiTags,
+  handlePreviewOpen,
   aiBusy,
   activePopover, 
   setActivePopover, 
@@ -409,6 +412,18 @@ const Toolbar = memo(({
         disabled={aiBusy}
       >
         <Tags className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+    <div className="w-px h-3 bg-border mx-1 shrink-0" />
+    <div className="flex items-center gap-0.5">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+        onClick={handlePreviewOpen}
+        title="Preview"
+      >
+        <Eye className="h-3.5 w-3.5" />
       </Button>
     </div>
   </div>
@@ -569,6 +584,7 @@ export default function EditorPage() {
 
   const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
 
   const handleOpenPreview = useCallback(async (docID: string) => {
     setPreviewLoading(true);
@@ -2199,6 +2215,7 @@ export default function EditorPage() {
                      handleAiPolish={handleAiPolish}
                      handleAiGenerateOpen={handleAiGenerateOpen}
                      handleAiTags={handleAiTags}
+                     handlePreviewOpen={() => setShowPreviewModal(true)}
                      aiBusy={aiLoading}
                      activePopover={activePopover}
                      setActivePopover={setActivePopover}
@@ -2661,6 +2678,45 @@ here is the body of note.`}
               ) : (
                 <MarkdownPreview content={previewDoc?.content || ""} className="max-w-none prose-lg" />
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPreviewModal && (
+        <div className="fixed inset-0 z-[190] flex items-center justify-center p-4 md:p-10">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowPreviewModal(false)} />
+          <div className="relative w-full max-w-5xl h-[85vh] bg-background border border-border rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/10">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                  <Eye className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold truncate max-w-[200px] md:max-w-md">
+                    {title || "Untitled"}
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground font-mono">PREVIEW MODE</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 md:p-10 no-scrollbar bg-card/30">
+              <article className="w-full bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 relative overflow-visible">
+                <div className="p-6 md:p-10 lg:p-12">
+                  <MarkdownPreview
+                    content={contentRef.current || previewContent}
+                    className="markdown-body h-auto overflow-visible p-0 bg-transparent text-slate-800"
+                    onTocLoaded={handleTocLoaded}
+                  />
+                </div>
+              </article>
             </div>
           </div>
         </div>
