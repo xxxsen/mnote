@@ -99,10 +99,11 @@ type MailConfig struct {
 }
 
 type Properties struct {
-	EnableGithubOauth  bool `json:"enable_github_oauth"`
-	EnableGoogleOauth  bool `json:"enable_google_oauth"`
-	EnableUserRegister bool `json:"enable_user_register"`
-	EnableTestMode     bool `json:"enable_test_mode"`
+	EnableGithubOauth   bool `json:"enable_github_oauth"`
+	EnableGoogleOauth   bool `json:"enable_google_oauth"`
+	EnableUserRegister  bool `json:"enable_user_register"`
+	EnableEmailRegister bool `json:"enable_email_register"`
+	EnableTestMode      bool `json:"enable_test_mode"`
 }
 
 func Load(path string) (*Config, error) {

@@ -134,7 +134,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 
 	mailSender := service.NewEmailSender(cfg.Mail)
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, mailSender)
-	allowRegister := cfg.Properties.EnableUserRegister
+	allowRegister := cfg.Properties.EnableUserRegister && cfg.Properties.EnableEmailRegister
 	authService := service.NewAuthService(userRepo, verifyService, []byte(cfg.JWTSecret), time.Hour*time.Duration(cfg.JWTTTLHours), allowRegister)
 	oauthProviders := map[string]oauth.Provider{}
 	client := &http.Client{Timeout: 10 * time.Second}

@@ -84,7 +84,7 @@ export default function RegisterPage() {
     }
   };
 
-  if (properties && !properties.enable_user_register) {
+  if (properties && (!properties.enable_user_register || !properties.enable_email_register)) {
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
         <div className="w-full max-w-sm border border-border bg-card p-8 shadow-sm text-center space-y-3">

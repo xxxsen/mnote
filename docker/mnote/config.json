@@ -109,6 +109,7 @@
         "enable_github_oauth": false,
         "enable_google_oauth": false,
         "enable_user_register": true,
+        "enable_email_register": true,
         "enable_test_mode": true
     }
 }
