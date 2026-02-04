@@ -283,6 +283,7 @@ interface DocumentWithTags extends Document {
   tag_ids?: string[];
   tags?: Tag[];
   share_token?: string;
+  score?: number;
 }
 
 interface TagSummary {
@@ -1431,6 +1432,9 @@ export default function DocsPage() {
                         >
                            <div className="absolute top-2 right-2 text-indigo-500/40 group-hover:text-indigo-500 transition-colors">
                               <Search className="h-3 w-3" />
+                           </div>
+                           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-mono text-indigo-500/70 uppercase tracking-tighter">
+                              {Math.round((doc.score || 0) * 100)}% Match
                            </div>
                            <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
                            <div className="relative flex-1 min-h-0 mb-2 overflow-hidden">
