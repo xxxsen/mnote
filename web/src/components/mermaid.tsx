@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react/no-danger */
 
 import { useEffect, useRef, useState, memo } from "react";
 import mermaid from "mermaid";
@@ -95,7 +96,6 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
     );
   }
 
-  /* eslint-disable react/no-danger */
   return (
     <div
       ref={ref}
@@ -107,7 +107,6 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );
-  /* eslint-enable react/no-danger */
 });
 
 Mermaid.displayName = "Mermaid";
