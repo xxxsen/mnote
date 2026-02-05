@@ -31,6 +31,7 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	api.GET("/properties", deps.Properties.Get)
 	api.GET("/auth/oauth/:provider/url", deps.OAuth.AuthURL)
 	api.GET("/auth/oauth/:provider/callback", deps.OAuth.Callback)
+	api.POST("/auth/oauth/exchange", middleware.RateLimit(5*time.Second), deps.OAuth.Exchange)
 
 	authGroup := api.Group("")
 	authGroup.Use(middleware.JWTAuth(deps.JWTSecret))

@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { ChevronLeft, Trash2, Search, Tag as TagIcon } from "lucide-react";
 
+const loadingPlaceholders = ["p0", "p1", "p2", "p3", "p4"];
+
 interface TagWithUsage {
   id: string;
   name: string;
@@ -27,7 +29,7 @@ export default function TagsPage() {
   const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TagWithUsage | null>(null);
-  const returnTo = searchParams.get("return");
+  const returnTo = getSafeReturn(searchParams.get("return"));
 
   const fetchData = useCallback(async (nextOffset: number, append: boolean) => {
     if (fetchingRef.current) return;
@@ -127,8 +129,8 @@ export default function TagsPage() {
 
         {loading ? (
           <div className="flex flex-col gap-2">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-12 bg-muted/50 rounded animate-pulse" />
+            {loadingPlaceholders.map((key) => (
+              <div key={key} className="h-12 bg-muted/50 rounded animate-pulse" />
             ))}
           </div>
         ) : filteredTags.length === 0 ? (
@@ -206,4 +208,11 @@ export default function TagsPage() {
       )}
     </div>
   );
+}
+
+function getSafeReturn(value: string | null): string | null {
+  if (!value) return null;
+  if (!value.startsWith("/")) return null;
+  if (value.startsWith("//")) return null;
+  return value;
 }

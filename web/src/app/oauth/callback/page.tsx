@@ -1,29 +1,47 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { setAuthEmail, setAuthToken } from "@/lib/api";
+import { apiFetch, ApiError, setAuthEmail, setAuthToken } from "@/lib/api";
 
 function OAuthCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const token = searchParams.get("token");
-  const email = searchParams.get("email");
+  const code = searchParams.get("code");
   const errorParam = searchParams.get("error");
-  const returnTo = searchParams.get("return") || "/docs";
+  const [exchangeError, setExchangeError] = useState<string | null>(null);
+  const returnTo = getSafeReturn(searchParams.get("return")) || "/docs";
 
   useEffect(() => {
-    if (token) {
-      setAuthToken(token);
-      if (email) {
-        setAuthEmail(email);
+    if (!code) return;
+    let cancelled = false;
+    const exchange = async () => {
+      try {
+        const res = await apiFetch<{ token: string; email?: string }>("/auth/oauth/exchange", {
+          method: "POST",
+          body: JSON.stringify({ code }),
+          requireAuth: false,
+        });
+        if (cancelled) return;
+        setAuthToken(res.token);
+        if (res.email) {
+          setAuthEmail(res.email);
+        }
+        router.replace(returnTo);
+      } catch (err) {
+        if (cancelled) return;
+        const message = err instanceof ApiError ? err.message : "invalid";
+        setExchangeError(message || "invalid");
       }
-      router.replace(returnTo);
-    }
-  }, [email, returnTo, router, token]);
+    };
+    exchange();
+    return () => {
+      cancelled = true;
+    };
+  }, [code, returnTo, router]);
 
-  const error = errorParam || (token ? null : "invalid");
+  const error = errorParam || exchangeError || (code ? null : "invalid");
 
   if (!error) {
     return (
@@ -64,4 +82,11 @@ export default function OAuthCallbackPage() {
       <OAuthCallbackContent />
     </Suspense>
   );
+}
+
+function getSafeReturn(value: string | null): string | null {
+  if (!value) return null;
+  if (!value.startsWith("/")) return null;
+  if (value.startsWith("//")) return null;
+  return value;
 }
