@@ -320,7 +320,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 			handler.RegisterRoutes(group, deps)
 		}),
 		webapi.WithExtraMiddlewares(
-			middleware.CORS(),
+			middleware.CORS(cfg.CORS.AllowOrigins),
 			gzip.Gzip(gzip.DefaultCompression),
 		),
 	)

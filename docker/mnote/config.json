@@ -17,6 +17,11 @@
         "level": "debug",
         "console": true
     },
+    "cors": {
+        "allow_origins": [
+            "http://localhost:3000"
+        ]
+    },
     "file_store": {
         "type": "local",
         "data": {

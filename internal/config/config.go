@@ -16,6 +16,7 @@ type Config struct {
 	VersionMaxKeep int                `json:"version_max_keep"`
 	MaxUploadSize  int64              `json:"max_upload_size"`
 	LogConfig      logger.LogConfig   `json:"log_config"`
+	CORS           CORSConfig         `json:"cors"`
 	FileStore      FileStoreConfig    `json:"file_store"`
 	AI             AIConfig           `json:"ai"`
 	AIJob          AIJobConfig        `json:"ai_job"`
@@ -34,6 +35,10 @@ type DatabaseConfig struct {
 	Password string `json:"password"`
 	DBName   string `json:"dbname"`
 	SSLMode  string `json:"sslmode"`
+}
+
+type CORSConfig struct {
+	AllowOrigins []string `json:"allow_origins"`
 }
 
 type FileStoreConfig struct {
