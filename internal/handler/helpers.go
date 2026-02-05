@@ -47,6 +47,12 @@ func handleError(c *gin.Context, err error) {
 		response.Error(c, errcode.ErrConflict, "conflict")
 	case err == appErr.ErrTooMany:
 		response.Error(c, errcode.ErrTooMany, "too many requests")
+	case err == appErr.ErrImportTooManyNotes:
+		response.Error(c, errcode.ErrImportTooManyNotes, "too many notes")
+	case err == appErr.ErrImportNoteTooLarge:
+		response.Error(c, errcode.ErrImportNoteTooLarge, "note too large")
+	case err == appErr.ErrImportInvalidJSON:
+		response.Error(c, errcode.ErrImportInvalidJSON, "invalid json")
 	default:
 		response.Error(c, errcode.ErrInternal, "internal error")
 	}

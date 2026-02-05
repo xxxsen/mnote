@@ -131,6 +131,8 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	shareRepo := repo.NewShareRepo(db)
 	embeddingRepo := repo.NewEmbeddingRepo(db)
 	embeddingCacheRepo := repo.NewEmbeddingCacheRepo(db)
+	importJobRepo := repo.NewImportJobRepo(db)
+	importJobNoteRepo := repo.NewImportJobNoteRepo(db)
 
 	mailSender := service.NewEmailSender(cfg.Mail)
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, mailSender)
@@ -279,7 +281,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, summaryRepo, versionRepo, tagRepo, docTagRepo)
-	importService := service.NewImportService(documentService, tagService)
+	importService := service.NewImportService(documentService, tagService, importJobRepo, importJobNoteRepo)
 
 	authHandler := handler.NewAuthHandler(authService)
 	oauthHandler := handler.NewOAuthHandler(oauthService)
@@ -332,6 +334,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 
 	scheduler := schedule.NewCronScheduler()
 	cronEveryMinute := "*/1 * * * *"
+	cronEveryHour := "0 * * * *"
 	cronEveryDay := "0 3 * * *"
 	if err := scheduler.AddJob(job.NewAIEmbeddingJob(aiService, cfg.AIJob.EmbeddingDelaySeconds), cronEveryMinute); err != nil {
 		return fmt.Errorf("schedule ai_embedding: %w", err)
@@ -341,6 +344,9 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	}
 	if err := scheduler.AddJob(job.NewEmbeddingCacheCleanupJob(embeddingCacheRepo, 30), cronEveryDay); err != nil {
 		return fmt.Errorf("schedule embedding cache cleanup: %w", err)
+	}
+	if err := scheduler.AddJob(job.NewImportCleanupJob(importJobRepo, importJobNoteRepo, 24*time.Hour), cronEveryHour); err != nil {
+		return fmt.Errorf("schedule import cleanup: %w", err)
 	}
 	scheduler.Start(ctx)
 	defer scheduler.Stop()
