@@ -35,7 +35,7 @@ type ImportService struct {
 
 const (
 	maxImportNotes = 2000
-	maxNoteBytes   = 32 * 1024
+	maxNoteBytes   = 128 * 1024
 )
 
 func NewImportService(documents *DocumentService, tags *TagService, jobRepo *repo.ImportJobRepo, noteRepo *repo.ImportJobNoteRepo) *ImportService {
