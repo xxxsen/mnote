@@ -120,7 +120,7 @@ func (h *OAuthHandler) redirectAuthError(c *gin.Context, code, provider string) 
 }
 
 func (h *OAuthHandler) redirectBindResult(c *gin.Context, returnTo, status, provider string) {
-	if !strings.HasPrefix(returnTo, "/") {
+	if returnTo == "" || !strings.HasPrefix(returnTo, "/") || strings.HasPrefix(returnTo, "//") {
 		returnTo = "/settings"
 	}
 	params := url.Values{}
