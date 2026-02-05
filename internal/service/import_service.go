@@ -11,75 +11,75 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
+	"github.com/xxxsen/mnote/internal/repo"
 )
 
-type ImportNote struct {
-	Title   string   `json:"title"`
-	Content string   `json:"content"`
-	Summary string   `json:"summary"`
-	Tags    []string `json:"tags"`
-	Source  string   `json:"source"`
-}
-
-type ImportJob struct {
-	ID             string
-	UserID         string
-	Notes          []ImportNote
-	Tags           []string
-	CreatedAt      time.Time
-	Status         string
-	Processed      int
-	Total          int
-	Report         *ImportReport
-	RequireContent bool
-}
-
 type ImportPreview struct {
-	NotesCount int          `json:"notes_count"`
-	Tags       []string     `json:"tags"`
-	TagsCount  int          `json:"tags_count"`
-	Conflicts  int          `json:"conflicts"`
-	Samples    []ImportNote `json:"samples"`
-}
-
-type ImportReport struct {
-	Created      int      `json:"created"`
-	Updated      int      `json:"updated"`
-	Skipped      int      `json:"skipped"`
-	Failed       int      `json:"failed"`
-	Errors       []string `json:"errors"`
-	FailedTitles []string `json:"failed_titles"`
+	NotesCount int                `json:"notes_count"`
+	Tags       []string           `json:"tags"`
+	TagsCount  int                `json:"tags_count"`
+	Conflicts  int                `json:"conflicts"`
+	Samples    []model.ImportNote `json:"samples"`
 }
 
 type ImportService struct {
 	documents *DocumentService
 	tags      *TagService
-	jobs      map[string]*ImportJob
-	mu        sync.Mutex
+	jobRepo   *repo.ImportJobRepo
+	noteRepo  *repo.ImportJobNoteRepo
 }
 
-func NewImportService(documents *DocumentService, tags *TagService) *ImportService {
+const (
+	maxImportNotes = 2000
+	maxNoteBytes   = 32 * 1024
+)
+
+func NewImportService(documents *DocumentService, tags *TagService, jobRepo *repo.ImportJobRepo, noteRepo *repo.ImportJobNoteRepo) *ImportService {
 	return &ImportService{
 		documents: documents,
 		tags:      tags,
-		jobs:      make(map[string]*ImportJob),
+		jobRepo:   jobRepo,
+		noteRepo:  noteRepo,
 	}
 }
 
-func (s *ImportService) CreateHedgeDocJob(ctx context.Context, userID string, filePath string) (*ImportJob, error) {
+func (s *ImportService) CreateHedgeDocJob(ctx context.Context, userID string, filePath string) (*model.ImportJob, error) {
 	reader, err := zip.OpenReader(filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer reader.Close()
+	if s.jobRepo == nil || s.noteRepo == nil {
+		return nil, appErr.ErrInvalid
+	}
 
-	notes := make([]ImportNote, 0)
+	now := time.Now().Unix()
+	job := &model.ImportJob{
+		ID:             newID(),
+		UserID:         userID,
+		Source:         "hedgedoc",
+		Status:         "parsing",
+		RequireContent: false,
+		Processed:      0,
+		Total:          0,
+		Tags:           []string{},
+		Report:         nil,
+		Ctime:          now,
+		Mtime:          now,
+	}
+	if err := s.jobRepo.Create(ctx, job); err != nil {
+		return nil, err
+	}
+
+	notes := make([]model.ImportNote, 0)
+	noteRows := make([]model.ImportJobNote, 0)
 	uniqueTags := make(map[string]bool)
 	nameCounts := make(map[string]int)
+	position := 0
 	for _, file := range reader.File {
 		if file.FileInfo().IsDir() {
 			continue
@@ -87,14 +87,22 @@ func (s *ImportService) CreateHedgeDocJob(ctx context.Context, userID string, fi
 		if strings.ToLower(filepath.Ext(file.Name)) != ".md" {
 			continue
 		}
+		if position >= maxImportNotes {
+			_ = s.jobRepo.Delete(context.Background(), userID, job.ID)
+			return nil, appErr.ErrImportTooManyNotes
+		}
 		opened, err := file.Open()
 		if err != nil {
 			return nil, err
 		}
-		contentBytes, err := io.ReadAll(opened)
+		contentBytes, err := io.ReadAll(io.LimitReader(opened, maxNoteBytes+1))
 		_ = opened.Close()
 		if err != nil {
 			return nil, err
+		}
+		if len(contentBytes) > maxNoteBytes {
+			_ = s.jobRepo.Delete(context.Background(), userID, job.ID)
+			return nil, appErr.ErrImportNoteTooLarge
 		}
 		content := string(contentBytes)
 		cleaned, tags := extractHedgeDocTags(content)
@@ -107,35 +115,45 @@ func (s *ImportService) CreateHedgeDocJob(ctx context.Context, userID string, fi
 			title = "Untitled"
 		}
 		title = uniqueTitle(title, nameCounts)
-		notes = append(notes, ImportNote{
+		notes = append(notes, model.ImportNote{
 			Title:   title,
 			Content: cleaned,
 			Tags:    tags,
 			Source:  file.Name,
 		})
+		noteRows = append(noteRows, model.ImportJobNote{
+			ID:       newID(),
+			JobID:    job.ID,
+			UserID:   userID,
+			Position: position,
+			Title:    title,
+			Content:  cleaned,
+			Summary:  "",
+			Tags:     tags,
+			Source:   file.Name,
+			Ctime:    now,
+		})
+		position += 1
 	}
 	if len(notes) == 0 {
+		_ = s.jobRepo.Delete(context.Background(), userID, job.ID)
 		return nil, appErr.ErrInvalid
 	}
 	allTags := make([]string, 0, len(uniqueTags))
 	for tag := range uniqueTags {
 		allTags = append(allTags, tag)
 	}
-
-	job := &ImportJob{
-		ID:             newID(),
-		UserID:         userID,
-		Notes:          notes,
-		Tags:           allTags,
-		CreatedAt:      time.Now(),
-		Status:         "ready",
-		Processed:      0,
-		Total:          len(notes),
-		RequireContent: false,
+	if err := s.noteRepo.InsertBatch(ctx, noteRows); err != nil {
+		_ = s.jobRepo.Delete(context.Background(), userID, job.ID)
+		return nil, err
 	}
-	s.mu.Lock()
-	s.jobs[job.ID] = job
-	s.mu.Unlock()
+	job.Tags = allTags
+	job.Total = len(notes)
+	job.Status = "ready"
+	job.Mtime = time.Now().Unix()
+	if err := s.jobRepo.UpdateSummary(ctx, job); err != nil {
+		return nil, err
+	}
 	return job, nil
 }
 
@@ -146,15 +164,38 @@ type notesImportPayload struct {
 	TagList []string `json:"tag_list,omitempty"`
 }
 
-func (s *ImportService) CreateNotesJob(ctx context.Context, userID string, filePath string) (*ImportJob, error) {
+func (s *ImportService) CreateNotesJob(ctx context.Context, userID string, filePath string) (*model.ImportJob, error) {
 	reader, err := zip.OpenReader(filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer reader.Close()
+	if s.jobRepo == nil || s.noteRepo == nil {
+		return nil, appErr.ErrInvalid
+	}
 
-	notes := make([]ImportNote, 0)
+	now := time.Now().Unix()
+	job := &model.ImportJob{
+		ID:             newID(),
+		UserID:         userID,
+		Source:         "notes",
+		Status:         "parsing",
+		RequireContent: true,
+		Processed:      0,
+		Total:          0,
+		Tags:           []string{},
+		Report:         nil,
+		Ctime:          now,
+		Mtime:          now,
+	}
+	if err := s.jobRepo.Create(ctx, job); err != nil {
+		return nil, err
+	}
+
+	notes := make([]model.ImportNote, 0)
+	noteRows := make([]model.ImportJobNote, 0)
 	uniqueTags := make(map[string]bool)
+	position := 0
 	for _, file := range reader.File {
 		if file.FileInfo().IsDir() {
 			continue
@@ -162,22 +203,30 @@ func (s *ImportService) CreateNotesJob(ctx context.Context, userID string, fileP
 		if strings.ToLower(filepath.Ext(file.Name)) != ".json" {
 			continue
 		}
+		if position >= maxImportNotes {
+			_ = s.jobRepo.Delete(context.Background(), userID, job.ID)
+			return nil, appErr.ErrImportTooManyNotes
+		}
 		opened, err := file.Open()
 		if err != nil {
 			return nil, err
 		}
-		contentBytes, err := io.ReadAll(opened)
+		contentBytes, err := io.ReadAll(io.LimitReader(opened, maxNoteBytes+1))
 		_ = opened.Close()
 		if err != nil {
 			return nil, err
 		}
 		var payload notesImportPayload
 		if err := json.Unmarshal(contentBytes, &payload); err != nil {
-			notes = append(notes, ImportNote{Title: "", Content: "", Summary: "", Tags: []string{}, Source: file.Name})
-			continue
+			_ = s.jobRepo.Delete(context.Background(), userID, job.ID)
+			return nil, appErr.ErrImportInvalidJSON
 		}
 		title := strings.TrimSpace(payload.Title)
 		content := payload.Content
+		if len([]byte(content)) > maxNoteBytes {
+			_ = s.jobRepo.Delete(context.Background(), userID, job.ID)
+			return nil, appErr.ErrImportNoteTooLarge
+		}
 		if content != "" {
 			content = strings.TrimRight(content, "\n")
 		}
@@ -185,60 +234,87 @@ func (s *ImportService) CreateNotesJob(ctx context.Context, userID string, fileP
 		for _, tag := range cleanTags {
 			uniqueTags[tag] = true
 		}
-		notes = append(notes, ImportNote{
+		notes = append(notes, model.ImportNote{
 			Title:   title,
 			Content: content,
 			Summary: strings.TrimSpace(payload.Summary),
 			Tags:    cleanTags,
 			Source:  file.Name,
 		})
+		noteRows = append(noteRows, model.ImportJobNote{
+			ID:       newID(),
+			JobID:    job.ID,
+			UserID:   userID,
+			Position: position,
+			Title:    title,
+			Content:  content,
+			Summary:  strings.TrimSpace(payload.Summary),
+			Tags:     cleanTags,
+			Source:   file.Name,
+			Ctime:    now,
+		})
+		position += 1
 	}
 	if len(notes) == 0 {
+		_ = s.jobRepo.Delete(context.Background(), userID, job.ID)
 		return nil, appErr.ErrInvalid
 	}
 	allTags := make([]string, 0, len(uniqueTags))
 	for tag := range uniqueTags {
 		allTags = append(allTags, tag)
 	}
-
-	job := &ImportJob{
-		ID:             newID(),
-		UserID:         userID,
-		Notes:          notes,
-		Tags:           allTags,
-		CreatedAt:      time.Now(),
-		Status:         "ready",
-		Processed:      0,
-		Total:          len(notes),
-		RequireContent: true,
+	if err := s.noteRepo.InsertBatch(ctx, noteRows); err != nil {
+		_ = s.jobRepo.Delete(context.Background(), userID, job.ID)
+		return nil, err
 	}
-	s.mu.Lock()
-	s.jobs[job.ID] = job
-	s.mu.Unlock()
+	job.Tags = allTags
+	job.Total = len(notes)
+	job.Status = "ready"
+	job.Mtime = time.Now().Unix()
+	if err := s.jobRepo.UpdateSummary(ctx, job); err != nil {
+		return nil, err
+	}
 	return job, nil
 }
 
 func (s *ImportService) Preview(userID, jobID string) (*ImportPreview, error) {
-	job, err := s.getJob(userID, jobID)
+	job, err := s.jobRepo.Get(context.Background(), userID, jobID)
+	if err != nil {
+		return nil, err
+	}
+	if s.noteRepo == nil {
+		return nil, appErr.ErrInvalid
+	}
+	titles, err := s.noteRepo.ListTitles(context.Background(), userID, jobID)
 	if err != nil {
 		return nil, err
 	}
 	conflicts := 0
-	for _, note := range job.Notes {
-		if note.Title == "" {
+	for _, title := range titles {
+		if title == "" {
 			continue
 		}
-		if _, err := s.documents.GetByTitle(context.Background(), userID, note.Title); err == nil {
+		if _, err := s.documents.GetByTitle(context.Background(), userID, title); err == nil {
 			conflicts += 1
 		}
 	}
-	samples := make([]ImportNote, 0)
+	samples := make([]model.ImportNote, 0)
 	limit := 3
-	for i := 0; i < len(job.Notes) && i < limit; i += 1 {
-		samples = append(samples, job.Notes[i])
+	notes, err := s.noteRepo.ListByJobLimit(context.Background(), userID, jobID, limit)
+	if err != nil {
+		return nil, err
+	}
+	for _, note := range notes {
+		samples = append(samples, model.ImportNote{
+			Title:   note.Title,
+			Content: note.Content,
+			Summary: note.Summary,
+			Tags:    note.Tags,
+			Source:  note.Source,
+		})
 	}
 	return &ImportPreview{
-		NotesCount: len(job.Notes),
+		NotesCount: job.Total,
 		Tags:       job.Tags,
 		TagsCount:  len(job.Tags),
 		Conflicts:  conflicts,
@@ -247,7 +323,7 @@ func (s *ImportService) Preview(userID, jobID string) (*ImportPreview, error) {
 }
 
 func (s *ImportService) Confirm(ctx context.Context, userID, jobID string, mode string) error {
-	job, err := s.getJob(userID, jobID)
+	job, err := s.jobRepo.Get(ctx, userID, jobID)
 	if err != nil {
 		return err
 	}
@@ -261,30 +337,45 @@ func (s *ImportService) Confirm(ctx context.Context, userID, jobID string, mode 
 	if job.Status == "running" {
 		return appErr.ErrInvalid
 	}
-	job.Status = "running"
-	job.Processed = 0
-	job.Total = len(job.Notes)
-	job.Report = &ImportReport{}
+	updated, err := s.jobRepo.UpdateStatusIf(ctx, userID, jobID, job.Status, "running", time.Now().Unix())
+	if err != nil {
+		return err
+	}
+	if !updated {
+		return appErr.ErrInvalid
+	}
 	go s.runImport(context.Background(), job, mode)
 	return nil
 }
 
-func (s *ImportService) Status(userID, jobID string) (*ImportJob, error) {
-	job, err := s.getJob(userID, jobID)
+func (s *ImportService) Status(userID, jobID string) (*model.ImportJob, error) {
+	job, err := s.jobRepo.Get(context.Background(), userID, jobID)
 	if err != nil {
 		return nil, err
 	}
 	return job, nil
 }
 
-func (s *ImportService) runImport(ctx context.Context, job *ImportJob, mode string) {
-	report := &ImportReport{}
-	for _, note := range job.Notes {
+func (s *ImportService) runImport(ctx context.Context, job *model.ImportJob, mode string) {
+	report := &model.ImportReport{}
+	if s.noteRepo == nil || s.jobRepo == nil {
+		return
+	}
+	notes, err := s.noteRepo.ListByJob(ctx, job.UserID, job.ID)
+	if err != nil {
+		_ = s.jobRepo.UpdateProgress(ctx, job.UserID, job.ID, 0, job.Total, report, "done", time.Now().Unix())
+		return
+	}
+	processed := 0
+	for _, note := range notes {
 		if note.Title == "" || (job.RequireContent && strings.TrimSpace(note.Content) == "") {
 			report.Failed += 1
 			report.Errors = append(report.Errors, fmt.Sprintf("empty title in %s", note.Source))
 			report.FailedTitles = append(report.FailedTitles, note.Source)
-			job.Processed += 1
+			processed += 1
+			if processed%10 == 0 {
+				_ = s.jobRepo.UpdateProgress(ctx, job.UserID, job.ID, processed, job.Total, report, "running", time.Now().Unix())
+			}
 			continue
 		}
 		var existingID string
@@ -297,13 +388,19 @@ func (s *ImportService) runImport(ctx context.Context, job *ImportJob, mode stri
 				report.Failed += 1
 				report.Errors = append(report.Errors, fmt.Sprintf("lookup title failed: %s", note.Title))
 				report.FailedTitles = append(report.FailedTitles, note.Title)
-				job.Processed += 1
+				processed += 1
+				if processed%10 == 0 {
+					_ = s.jobRepo.UpdateProgress(ctx, job.UserID, job.ID, processed, job.Total, report, "running", time.Now().Unix())
+				}
 				continue
 			}
 		}
 		if existingID != "" && mode == "skip" {
 			report.Skipped += 1
-			job.Processed += 1
+			processed += 1
+			if processed%10 == 0 {
+				_ = s.jobRepo.UpdateProgress(ctx, job.UserID, job.ID, processed, job.Total, report, "running", time.Now().Unix())
+			}
 			continue
 		}
 		if mode == "append" {
@@ -314,7 +411,10 @@ func (s *ImportService) runImport(ctx context.Context, job *ImportJob, mode stri
 				report.Failed += 1
 				report.Errors = append(report.Errors, fmt.Sprintf("lookup title failed: %s", note.Title))
 				report.FailedTitles = append(report.FailedTitles, note.Title)
-				job.Processed += 1
+				processed += 1
+				if processed%10 == 0 {
+					_ = s.jobRepo.UpdateProgress(ctx, job.UserID, job.ID, processed, job.Total, report, "running", time.Now().Unix())
+				}
 				continue
 			}
 		}
@@ -323,7 +423,10 @@ func (s *ImportService) runImport(ctx context.Context, job *ImportJob, mode stri
 			report.Failed += 1
 			report.Errors = append(report.Errors, fmt.Sprintf("create tags failed: %s", note.Title))
 			report.FailedTitles = append(report.FailedTitles, note.Title)
-			job.Processed += 1
+			processed += 1
+			if processed%10 == 0 {
+				_ = s.jobRepo.UpdateProgress(ctx, job.UserID, job.ID, processed, job.Total, report, "running", time.Now().Unix())
+			}
 			continue
 		}
 		if existingID != "" && mode == "overwrite" {
@@ -341,11 +444,17 @@ func (s *ImportService) runImport(ctx context.Context, job *ImportJob, mode stri
 				report.Failed += 1
 				report.Errors = append(report.Errors, fmt.Sprintf("overwrite failed: %s", note.Title))
 				report.FailedTitles = append(report.FailedTitles, note.Title)
-				job.Processed += 1
+				processed += 1
+				if processed%10 == 0 {
+					_ = s.jobRepo.UpdateProgress(ctx, job.UserID, job.ID, processed, job.Total, report, "running", time.Now().Unix())
+				}
 				continue
 			}
 			report.Updated += 1
-			job.Processed += 1
+			processed += 1
+			if processed%10 == 0 {
+				_ = s.jobRepo.UpdateProgress(ctx, job.UserID, job.ID, processed, job.Total, report, "running", time.Now().Unix())
+			}
 			continue
 		}
 		finalTitle := note.Title
@@ -362,14 +471,19 @@ func (s *ImportService) runImport(ctx context.Context, job *ImportJob, mode stri
 			report.Failed += 1
 			report.Errors = append(report.Errors, fmt.Sprintf("create failed: %s", finalTitle))
 			report.FailedTitles = append(report.FailedTitles, finalTitle)
-			job.Processed += 1
+			processed += 1
+			if processed%10 == 0 {
+				_ = s.jobRepo.UpdateProgress(ctx, job.UserID, job.ID, processed, job.Total, report, "running", time.Now().Unix())
+			}
 			continue
 		}
 		report.Created += 1
-		job.Processed += 1
+		processed += 1
+		if processed%10 == 0 {
+			_ = s.jobRepo.UpdateProgress(ctx, job.UserID, job.ID, processed, job.Total, report, "running", time.Now().Unix())
+		}
 	}
-	job.Report = report
-	job.Status = "done"
+	_ = s.jobRepo.UpdateProgress(ctx, job.UserID, job.ID, processed, job.Total, report, "done", time.Now().Unix())
 }
 
 func (s *ImportService) ensureTags(ctx context.Context, userID string, tags []string) ([]string, error) {
@@ -424,19 +538,6 @@ func (s *ImportService) appendSuffix(ctx context.Context, userID, title string) 
 		}
 	}
 	return fmt.Sprintf("%s (%d)", base, time.Now().Unix())
-}
-
-func (s *ImportService) getJob(userID, jobID string) (*ImportJob, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	job, ok := s.jobs[jobID]
-	if !ok {
-		return nil, appErr.ErrNotFound
-	}
-	if job.UserID != userID {
-		return nil, appErr.ErrNotFound
-	}
-	return job, nil
 }
 
 var tagLineRegex = regexp.MustCompile(`^######\s+tags:\s*(.*)$`)

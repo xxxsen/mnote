@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/xxxsen/mnote/internal/middleware"
@@ -22,17 +24,18 @@ type RouterDeps struct {
 }
 
 func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
-	api.POST("/auth/register", deps.Auth.Register)
-	api.POST("/auth/register/code", deps.Auth.SendRegisterCode)
-	api.POST("/auth/login", deps.Auth.Login)
-	api.POST("/auth/logout", deps.Auth.Logout)
+	api.POST("/auth/register", middleware.RateLimit(5*time.Second), deps.Auth.Register)
+	api.POST("/auth/register/code", middleware.RateLimit(30*time.Second), deps.Auth.SendRegisterCode)
+	api.POST("/auth/login", middleware.RateLimit(5*time.Second), deps.Auth.Login)
+	api.POST("/auth/logout", middleware.RateLimit(5*time.Second), deps.Auth.Logout)
 	api.GET("/properties", deps.Properties.Get)
 	api.GET("/auth/oauth/:provider/url", deps.OAuth.AuthURL)
 	api.GET("/auth/oauth/:provider/callback", deps.OAuth.Callback)
+	api.POST("/auth/oauth/exchange", middleware.RateLimit(5*time.Second), deps.OAuth.Exchange)
 
 	authGroup := api.Group("")
 	authGroup.Use(middleware.JWTAuth(deps.JWTSecret))
-	authGroup.PUT("/auth/password", deps.Auth.UpdatePassword)
+	authGroup.PUT("/auth/password", middleware.RateLimit(5*time.Second), deps.Auth.UpdatePassword)
 	authGroup.GET("/auth/oauth/bindings", deps.OAuth.ListBindings)
 	authGroup.GET("/auth/oauth/:provider/bind/url", deps.OAuth.BindURL)
 	authGroup.DELETE("/auth/oauth/:provider/bind", deps.OAuth.Unbind)

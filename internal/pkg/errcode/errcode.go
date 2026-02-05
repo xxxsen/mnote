@@ -11,6 +11,9 @@ const (
 	ErrInternal
 	ErrInvalidFile
 	ErrImportFailed
+	ErrImportTooManyNotes
+	ErrImportNoteTooLarge
+	ErrImportInvalidJSON
 	ErrUploadFailed
 	ErrAIUnavailable
 )

@@ -10,7 +10,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/xxxsen/common/logutil"
+	"go.uber.org/zap"
 
+	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 	"github.com/xxxsen/mnote/internal/service"
@@ -19,10 +22,11 @@ import (
 type OAuthHandler struct {
 	oauth      *service.OAuthService
 	stateStore *oauthStateStore
+	exchange   *oauthExchangeStore
 }
 
 func NewOAuthHandler(oauth *service.OAuthService) *OAuthHandler {
-	return &OAuthHandler{oauth: oauth, stateStore: newOAuthStateStore()}
+	return &OAuthHandler{oauth: oauth, stateStore: newOAuthStateStore(), exchange: newOAuthExchangeStore()}
 }
 
 func (h *OAuthHandler) AuthURL(c *gin.Context) {
@@ -82,8 +86,46 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 		h.redirectAuthError(c, mapOAuthError(err), stored.Provider)
 		return
 	}
-	redirect := "/oauth/callback?token=" + url.QueryEscape(token) + "&email=" + url.QueryEscape(user.Email) + "&provider=" + url.QueryEscape(stored.Provider)
+	exchangeCode := h.exchange.Create(token, user.Email)
+	if exchangeCode == "" {
+		logutil.GetLogger(c.Request.Context()).Error("failed to issue oauth exchange code",
+			zap.String("provider", stored.Provider),
+			zap.String("user_id", user.ID),
+		)
+		h.redirectAuthError(c, "internal", stored.Provider)
+		return
+	}
+	logutil.GetLogger(c.Request.Context()).Info("oauth exchange code issued",
+		zap.String("provider", stored.Provider),
+		zap.String("user_id", user.ID),
+	)
+	redirect := "/oauth/callback?code=" + url.QueryEscape(exchangeCode)
 	c.Redirect(http.StatusFound, redirect)
+}
+
+type oauthExchangeRequest struct {
+	Code string `json:"code"`
+}
+
+func (h *OAuthHandler) Exchange(c *gin.Context) {
+	var req oauthExchangeRequest
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Code) == "" {
+		response.Error(c, errcode.ErrInvalid, "invalid request")
+		return
+	}
+	item, ok := h.exchange.Consume(req.Code)
+	if !ok {
+		logutil.GetLogger(c.Request.Context()).Warn("oauth exchange rejected",
+			zap.String("ip", c.ClientIP()),
+			zap.Int("code_len", len(req.Code)),
+		)
+		response.Error(c, errcode.ErrInvalid, "invalid request")
+		return
+	}
+	logutil.GetLogger(c.Request.Context()).Info("oauth exchange succeeded",
+		zap.String("ip", c.ClientIP()),
+	)
+	response.Success(c, gin.H{"token": item.Token, "email": item.Email})
 }
 
 func (h *OAuthHandler) ListBindings(c *gin.Context) {
@@ -218,4 +260,62 @@ func randomState() string {
 		return ""
 	}
 	return hex.EncodeToString(buf)
+}
+
+type oauthExchangeItem struct {
+	Token     string
+	Email     string
+	ExpiresAt time.Time
+}
+
+type oauthExchangeStore struct {
+	mu    sync.Mutex
+	items map[string]oauthExchangeItem
+}
+
+func newOAuthExchangeStore() *oauthExchangeStore {
+	return &oauthExchangeStore{items: make(map[string]oauthExchangeItem)}
+}
+
+func (s *oauthExchangeStore) Create(token, email string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupLocked()
+	code := randomState()
+	if code == "" {
+		return ""
+	}
+	s.items[code] = oauthExchangeItem{
+		Token:     token,
+		Email:     email,
+		ExpiresAt: time.Now().Add(1 * time.Minute),
+	}
+	return code
+}
+
+func (s *oauthExchangeStore) Consume(code string) (oauthExchangeItem, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupLocked()
+	item, ok := s.items[code]
+	if !ok {
+		return oauthExchangeItem{}, false
+	}
+	delete(s.items, code)
+	if time.Now().After(item.ExpiresAt) {
+		return oauthExchangeItem{}, false
+	}
+	return item, true
+}
+
+func (s *oauthExchangeStore) cleanupLocked() {
+	if len(s.items) == 0 {
+		return
+	}
+	now := time.Now()
+	for key, item := range s.items {
+		if now.After(item.ExpiresAt) {
+			delete(s.items, key)
+		}
+	}
 }

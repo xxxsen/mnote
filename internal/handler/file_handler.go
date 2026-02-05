@@ -114,12 +114,14 @@ func (h *FileHandler) Get(c *gin.Context) {
 	}
 	c.Header("Content-Type", contentType)
 	c.Header("X-Content-Type-Options", "nosniff")
-	isMedia := strings.HasPrefix(contentType, "image/") ||
+	isInline := contentType == "image/png" ||
+		contentType == "image/jpeg" ||
+		contentType == "image/gif" ||
+		contentType == "image/webp" ||
 		strings.HasPrefix(contentType, "video/") ||
-		strings.HasPrefix(contentType, "audio/") ||
-		contentType == "application/pdf"
+		strings.HasPrefix(contentType, "audio/")
 
-	if !isMedia {
+	if !isInline {
 		c.Header("Content-Disposition", "attachment; filename="+key)
 	}
 	_, _ = io.Copy(c.Writer, file)
