@@ -13,11 +13,12 @@ import (
 )
 
 type ImportHandler struct {
-	imports *service.ImportService
+	imports       *service.ImportService
+	maxUploadSize int64
 }
 
-func NewImportHandler(imports *service.ImportService) *ImportHandler {
-	return &ImportHandler{imports: imports}
+func NewImportHandler(imports *service.ImportService, maxUploadSize int64) *ImportHandler {
+	return &ImportHandler{imports: imports, maxUploadSize: maxUploadSize}
 }
 
 type importConfirmRequest struct {
@@ -28,6 +29,10 @@ func (h *ImportHandler) HedgeDocUpload(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
 		response.Error(c, errcode.ErrInvalidFile, "file is required")
+		return
+	}
+	if h.maxUploadSize > 0 && file.Size > h.maxUploadSize {
+		response.Error(c, errcode.ErrInvalidFile, "file too large (max "+formatUploadLimit(h.maxUploadSize)+")")
 		return
 	}
 	if strings.ToLower(filepath.Ext(file.Filename)) != ".zip" {
@@ -62,6 +67,10 @@ func (h *ImportHandler) NotesUpload(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
 		response.Error(c, errcode.ErrInvalidFile, "file is required")
+		return
+	}
+	if h.maxUploadSize > 0 && file.Size > h.maxUploadSize {
+		response.Error(c, errcode.ErrInvalidFile, "file too large (max "+formatUploadLimit(h.maxUploadSize)+")")
 		return
 	}
 	if strings.ToLower(filepath.Ext(file.Filename)) != ".zip" {

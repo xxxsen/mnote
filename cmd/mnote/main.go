@@ -289,7 +289,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	tagHandler := handler.NewTagHandler(tagService)
 	exportHandler := handler.NewExportHandler(exportService)
 	aiHandler := handler.NewAIHandler(aiService, documentService, tagService)
-	importHandler := handler.NewImportHandler(importService)
+	importHandler := handler.NewImportHandler(importService, cfg.MaxUploadSize)
 	store, err := filestore.New(cfg.FileStore)
 	if err != nil {
 		return fmt.Errorf("init file store: %w", err)
