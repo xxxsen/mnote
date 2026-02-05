@@ -8,7 +8,10 @@ import (
 	"path"
 	"strings"
 
-	commons3 "github.com/xxxsen/common/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 type s3Config struct {
@@ -22,7 +25,8 @@ type s3Config struct {
 }
 
 type s3Store struct {
-	client  *commons3.S3Client
+	client  *s3.Client
+	bucket  string
 	prefix  string
 	baseURL string
 }
@@ -32,30 +36,45 @@ func init() {
 }
 
 func createS3Store(args interface{}) (Store, error) {
-	config := &s3Config{}
-	if err := decodeConfig(args, config); err != nil {
+	cfg := &s3Config{}
+	if err := decodeConfig(args, cfg); err != nil {
 		return nil, err
 	}
-	if config.Endpoint == "" || config.Bucket == "" || config.SecretID == "" || config.SecretKey == "" {
+	if cfg.Endpoint == "" || cfg.Bucket == "" || cfg.SecretID == "" || cfg.SecretKey == "" {
 		return nil, fmt.Errorf("s3 endpoint/bucket/secret_id/secret_key are required")
 	}
-	if config.Region == "" {
-		config.Region = "cn"
+	if cfg.Region == "" {
+		cfg.Region = "cn"
 	}
-	client, err := commons3.New(
-		commons3.WithEndpoint(config.Endpoint),
-		commons3.WithSecret(config.SecretID, config.SecretKey),
-		commons3.WithBucket(config.Bucket),
-		commons3.WithRegion(config.Region),
-		commons3.WithSSL(config.UseSSL),
+	endpoint := strings.TrimSpace(cfg.Endpoint)
+	if endpoint != "" && !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+		if cfg.UseSSL {
+			endpoint = "https://" + strings.TrimRight(endpoint, "/")
+		} else {
+			endpoint = "http://" + strings.TrimRight(endpoint, "/")
+		}
+	}
+	awsCfg, err := config.LoadDefaultConfig(
+		context.Background(),
+		config.WithRegion(cfg.Region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.SecretID, cfg.SecretKey, "")),
 	)
 	if err != nil {
 		return nil, err
 	}
+	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
+		if endpoint != "" {
+			o.EndpointResolver = s3.EndpointResolverFromURL(endpoint)
+			o.UsePathStyle = true
+		}
+	})
 	return &s3Store{
 		client:  client,
-		prefix:  strings.Trim(config.Prefix, "/"),
-		baseURL: buildBaseURL(config),
+		bucket:  cfg.Bucket,
+		prefix:  strings.Trim(cfg.Prefix, "/"),
+		baseURL: buildBaseURL(cfg),
 	}, nil
 }
 
@@ -67,10 +86,13 @@ func (s *s3Store) Save(ctx context.Context, key string, r ReadSeekCloser, size i
 	if err != nil {
 		return err
 	}
-	if _, err := s.client.Upload(ctx, objectKey, r, size); err != nil {
-		return err
-	}
-	return nil
+	_, err = s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:        aws.String(s.bucket),
+		Key:           aws.String(objectKey),
+		Body:          r,
+		ContentLength: aws.Int64(size),
+	})
+	return err
 }
 
 func (s *s3Store) Open(ctx context.Context, key string) (io.ReadCloser, error) {
@@ -78,7 +100,14 @@ func (s *s3Store) Open(ctx context.Context, key string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.client.Download(ctx, objectKey)
+	resp, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
 }
 
 func (s *s3Store) GenerateFileRef(userID, filename string) string {
