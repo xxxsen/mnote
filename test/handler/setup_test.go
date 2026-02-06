@@ -93,7 +93,7 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 		}),
 		webapi.WithExtraMiddlewares(
 			middleware.RequestID(),
-			middleware.CORS(),
+			middleware.CORS([]string{}),
 		),
 	)
 	require.NoError(t, err)
