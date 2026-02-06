@@ -158,7 +158,7 @@ func Load(path string) (*Config, error) {
 		cfg.AI.Timeout = 30
 	}
 	if cfg.AI.MaxInputChars == 0 {
-		cfg.AI.MaxInputChars = 32000
+		cfg.AI.MaxInputChars = 64 * 1024
 	}
 	if cfg.AIJob.SummaryDelaySeconds == 0 {
 		cfg.AIJob.SummaryDelaySeconds = 300

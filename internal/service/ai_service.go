@@ -17,7 +17,6 @@ import (
 
 	"github.com/xxxsen/mnote/internal/ai"
 	"github.com/xxxsen/mnote/internal/model"
-	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/repo"
 )
 
@@ -274,6 +273,9 @@ func (s *AIService) Polish(ctx context.Context, input string) (string, error) {
 	if cached, ok := s.cache.Get(cacheKey); ok {
 		return cached, nil
 	}
+	if len(text) == 0 {
+		return "", nil
+	}
 	res, err := s.manager.Polish(ctx, text)
 	if err != nil {
 		return "", err
@@ -290,6 +292,9 @@ func (s *AIService) Generate(ctx context.Context, prompt string) (string, error)
 	cacheKey := s.cacheKey("generate", text)
 	if cached, ok := s.cache.Get(cacheKey); ok {
 		return cached, nil
+	}
+	if len(text) == 0 {
+		return "", fmt.Errorf("input text to generate")
 	}
 	res, err := s.manager.Generate(ctx, text)
 	if err != nil {
@@ -311,6 +316,9 @@ func (s *AIService) ExtractTags(ctx context.Context, input string, maxTags int) 
 			return tags, nil
 		}
 	}
+	if len(text) == 0 {
+		return []string{}, nil
+	}
 	res, err := s.manager.ExtractTags(ctx, text, maxTags)
 	if err != nil {
 		return nil, err
@@ -330,6 +338,9 @@ func (s *AIService) Summarize(ctx context.Context, input string) (string, error)
 	if cached, ok := s.cache.Get(cacheKey); ok {
 		return cached, nil
 	}
+	if len(text) == 0 {
+		return "", nil
+	}
 	res, err := s.manager.Summarize(ctx, text)
 	if err != nil {
 		return "", err
@@ -341,11 +352,11 @@ func (s *AIService) Summarize(ctx context.Context, input string) (string, error)
 func (s *AIService) cleanInput(input string) (string, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {
-		return "", appErr.ErrInvalid
+		return "", nil
 	}
 	max := s.manager.MaxInputChars()
 	if max > 0 && len(trimmed) > max {
-		return "", appErr.ErrInvalid
+		trimmed = trimmed[:max] //不报错，直接进行截断
 	}
 	return trimmed, nil
 }
