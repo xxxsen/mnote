@@ -1,5 +1,4 @@
 "use client";
-/* eslint-disable react/no-danger */
 
 import { useEffect, useRef, useState, memo } from "react";
 import mermaid from "mermaid";

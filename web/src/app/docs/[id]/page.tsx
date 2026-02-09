@@ -7,10 +7,10 @@ import CodeMirror from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
-import { LanguageDescription, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { LanguageDescription } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { styleTags } from "@lezer/highlight";
-import { vscodeDark } from "@uiw/codemirror-theme-vscode";
+import { vscodeDarkInit } from "@uiw/codemirror-theme-vscode";
 import { undo, redo, indentWithTab } from "@codemirror/commands";
 import { keymap } from "@codemirror/view";
 import ReactMarkdown from "react-markdown";
@@ -521,26 +521,24 @@ const Toolbar = memo(({
 ));
 Toolbar.displayName = "Toolbar";
 
-const amberHeadingStyle = HighlightStyle.define([
-  { tag: [tags.heading, tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6].filter(Boolean), color: "#f59e0b", fontWeight: "700" },
-  { tag: [
-    tags.monospace, tags.literal, tags.meta, tags.keyword, tags.operator, 
-    tags.string, tags.number, tags.variableName, tags.typeName, tags.className, 
-    tags.propertyName, tags.punctuation, tags.separator, tags.bracket, 
-    tags.angleBracket, tags.squareBracket, tags.paren, tags.brace, 
-    tags.processingInstruction, tags.character, tags.comment, tags.atom, 
-    tags.bool, tags.url, tags.labelName, tags.inserted, tags.deleted, 
-    tags.content, tags.list, tags.quote
-  ].filter(Boolean), color: "#9cdcfe", fontWeight: "400" },
-  { tag: tags.strong, fontWeight: "700" },
-  { tag: tags.emphasis, fontStyle: "italic" },
-  { tag: tags.link, color: "#4fc1ff", textDecoration: "underline" },
-  { tag: tags.strikethrough, textDecoration: "line-through" },
-]);
+const editorTheme = vscodeDarkInit({
+  settings: {
+    foreground: "#ffffff",
+  },
+  styles: [
+    {
+      tag: [tags.heading, tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6].filter(Boolean),
+      color: "#f59e0b",
+      fontWeight: "700",
+    },
+    { tag: [tags.content, tags.list, tags.quote].filter(Boolean), color: "#ffffff" },
+  ],
+});
 
 const editorBaseTheme = EditorView.theme({
   "&": {
     fontSize: "16px",
+    color: "#ffffff",
   },
   "&.cm-focused": {
     outline: "none",
@@ -2182,7 +2180,6 @@ export default function EditorPage() {
         }
       ]
     }), 
-    syntaxHighlighting(amberHeadingStyle),
     editorBaseTheme,
     EditorView.lineWrapping, 
     keymap.of([indentWithTab]),
@@ -2326,7 +2323,7 @@ export default function EditorPage() {
                        <CodeMirror
                          value={content}
                          height="100%"
-                         theme={vscodeDark}
+                         theme={editorTheme}
                          extensions={editorExtensions}
                           placeholder={`start by entering a title here
 ===
