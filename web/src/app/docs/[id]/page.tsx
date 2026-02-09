@@ -7,10 +7,11 @@ import CodeMirror from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
-import { LanguageDescription, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { LanguageDescription } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { styleTags } from "@lezer/highlight";
-import { vscodeDark } from "@uiw/codemirror-theme-vscode";
+import { Compartment } from "@codemirror/state";
+import { THEMES, getThemeById, loadThemePreference, saveThemePreference, type ThemeId } from "@/lib/editor-themes";
 import { undo, redo, indentWithTab } from "@codemirror/commands";
 import { keymap } from "@codemirror/view";
 import ReactMarkdown from "react-markdown";
@@ -378,23 +379,27 @@ type ToolbarProps = {
   colorButtonRef: React.RefObject<HTMLButtonElement | null>;
   sizeButtonRef: React.RefObject<HTMLButtonElement | null>;
   emojiButtonRef: React.RefObject<HTMLButtonElement | null>;
+  currentTheme: ThemeId;
+  onThemeChange: (id: ThemeId) => void;
 };
 
-const Toolbar = memo(({ 
-  handleUndo, 
-  handleRedo, 
-  handleFormat, 
-  handleInsertTable, 
+const Toolbar = memo(({
+  handleUndo,
+  handleRedo,
+  handleFormat,
+  handleInsertTable,
   handleAiPolish,
   handleAiGenerateOpen,
   handleAiTags,
   handlePreviewOpen,
   aiBusy,
-  activePopover, 
-  setActivePopover, 
-  colorButtonRef, 
-  sizeButtonRef, 
-  emojiButtonRef 
+  activePopover,
+  setActivePopover,
+  colorButtonRef,
+  sizeButtonRef,
+  emojiButtonRef,
+  currentTheme,
+  onThemeChange,
 }: ToolbarProps) => (
   <div className="flex items-center gap-1 px-2 py-1 border-b border-border bg-background/50 backdrop-blur-sm sticky top-0 z-10 flex-none overflow-x-auto overflow-y-visible no-scrollbar min-h-[36px]">
 
@@ -507,6 +512,20 @@ const Toolbar = memo(({
     </div>
     <div className="w-px h-3 bg-border mx-1 shrink-0" />
     <div className="flex items-center gap-0.5">
+      <select
+        value={currentTheme}
+        onChange={(e) => onThemeChange(e.target.value as ThemeId)}
+        className="h-7 rounded px-1.5 text-xs bg-transparent border border-border text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+        title="Editor Theme"
+        data-testid="theme-selector"
+      >
+        {THEMES.map((t) => (
+          <option key={t.id} value={t.id}>{t.label}</option>
+        ))}
+      </select>
+    </div>
+    <div className="w-px h-3 bg-border mx-1 shrink-0" />
+    <div className="flex items-center gap-0.5">
       <Button
         variant="ghost"
         size="icon"
@@ -521,55 +540,8 @@ const Toolbar = memo(({
 ));
 Toolbar.displayName = "Toolbar";
 
-const amberHeadingStyle = HighlightStyle.define([
-  { tag: [tags.heading, tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6].filter(Boolean), color: "#f59e0b", fontWeight: "700" },
-  { tag: [
-    tags.monospace, tags.literal, tags.meta, tags.keyword, tags.operator, 
-    tags.string, tags.number, tags.variableName, tags.typeName, tags.className, 
-    tags.propertyName, tags.punctuation, tags.separator, tags.bracket, 
-    tags.angleBracket, tags.squareBracket, tags.paren, tags.brace, 
-    tags.processingInstruction, tags.character, tags.comment, tags.atom, 
-    tags.bool, tags.url, tags.labelName, tags.inserted, tags.deleted, 
-    tags.content, tags.list, tags.quote
-  ].filter(Boolean), color: "#9cdcfe", fontWeight: "400" },
-  { tag: tags.strong, fontWeight: "700" },
-  { tag: tags.emphasis, fontStyle: "italic" },
-  { tag: tags.link, color: "#4fc1ff", textDecoration: "underline" },
-  { tag: tags.strikethrough, textDecoration: "line-through" },
-]);
-
-const editorBaseTheme = EditorView.theme({
-  "&": {
-    fontSize: "16px",
-  },
-  "&.cm-focused": {
-    outline: "none",
-  },
-  ".cm-scroller": {
-    fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-    lineHeight: "1.6",
-  },
-  ".cm-line": {
-    padding: "0 4px",
-    lineHeight: "1.6",
-  },
-  ".cm-line *": {
-    lineHeight: "inherit",
-    fontFamily: "inherit",
-    verticalAlign: "baseline",
-  },
-  ".cm-content": {
-    padding: "20px 0",
-  },
-  ".cm-gutters": {
-    border: "none",
-    minWidth: "40px",
-    backgroundColor: "transparent",
-  },
-  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
-    backgroundColor: "#264f78 !important",
-  },
-}, { dark: true });
+// Theme compartment for dynamic theme switching
+const themeCompartment = new Compartment();
 
 export default function EditorPage() {
   const params = useParams();
@@ -586,6 +558,7 @@ export default function EditorPage() {
   const [saving, setSaving] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<"tags" | "summary" | "history" | "share">("tags");
+  const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(loadThemePreference);
   
   const [versions, setVersions] = useState<DocumentVersionSummary[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -1482,6 +1455,17 @@ export default function EditorPage() {
     }
   }, [resetAiState, toast]);
 
+  const handleThemeChange = useCallback((id: ThemeId) => {
+    setCurrentThemeId(id);
+    saveThemePreference(id);
+    const view = editorViewRef.current;
+    if (view) {
+      view.dispatch({
+        effects: themeCompartment.reconfigure(getThemeById(id).extension),
+      });
+    }
+  }, []);
+
   const handleAiTags = useCallback(async () => {
     const snapshot = contentRef.current;
     if (!snapshot.trim()) {
@@ -2182,9 +2166,8 @@ export default function EditorPage() {
         }
       ]
     }), 
-    syntaxHighlighting(amberHeadingStyle),
-    editorBaseTheme,
-    EditorView.lineWrapping, 
+    themeCompartment.of(getThemeById(currentThemeId).extension),
+    EditorView.lineWrapping,
     keymap.of([indentWithTab]),
     EditorView.updateListener.of((update) => {
       if (update.selectionSet || update.docChanged) {
@@ -2219,7 +2202,7 @@ export default function EditorPage() {
         }
       }
     }),
-  ], [updateCursorInfo]);
+  ], [updateCursorInfo, currentThemeId]);
 
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
@@ -2319,6 +2302,8 @@ export default function EditorPage() {
                      colorButtonRef={colorButtonRef}
                      sizeButtonRef={sizeButtonRef}
                      emojiButtonRef={emojiButtonRef}
+                     currentTheme={currentThemeId}
+                     onThemeChange={handleThemeChange}
                   />
 
                  <div className="flex-1 overflow-hidden min-h-0">
@@ -2326,7 +2311,7 @@ export default function EditorPage() {
                        <CodeMirror
                          value={content}
                          height="100%"
-                         theme={vscodeDark}
+                         theme="none"
                          extensions={editorExtensions}
                           placeholder={`start by entering a title here
 ===
