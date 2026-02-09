@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
@@ -104,8 +104,11 @@ export default function TestEditorPage() {
   return (
     <div className="flex flex-col h-screen" data-testid="test-editor-root">
       <div className="flex items-center gap-3 p-3 border-b bg-neutral-900 text-white">
-        <label className="text-sm font-medium">Theme:</label>
+        <label htmlFor="test-editor-theme" className="text-sm font-medium">
+          Theme:
+        </label>
         <select
+          id="test-editor-theme"
           value={currentThemeId}
           onChange={(e) => handleThemeChange(e.target.value as ThemeId)}
           className="h-8 rounded px-2 text-sm bg-neutral-800 border border-neutral-600 text-white"
