@@ -1,6 +1,4 @@
 "use client";
-/* eslint-disable react/no-danger */
-
 import { useEffect, useRef, useState, memo } from "react";
 import mermaid from "mermaid";
 
@@ -87,6 +85,11 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
     };
   }, [chart, svg, resolvedCacheKey]);
 
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.innerHTML = svg;
+  }, [svg]);
+
 
   if (error) {
     return (
@@ -104,7 +107,6 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
         minHeight: isRendered ? "auto" : "120px",
         transition: "min-height 0.3s ease" 
       }}
-      dangerouslySetInnerHTML={{ __html: svg }}
     />
   );
 });
