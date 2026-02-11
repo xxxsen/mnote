@@ -222,27 +222,37 @@ interface CodeBlockProps {
 const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps) => {
   const [copied, setCopied] = React.useState(false);
 
+  const copyText = React.useCallback((value: string) => {
+    const fallbackCopy = () => {
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "absolute";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      return ok;
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(value).then(() => true).catch(() => fallbackCopy());
+    }
+
+    return Promise.resolve(fallbackCopy());
+  }, []);
+
   const handleCopyLocal = React.useCallback(() => {
     const onSuccess = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1000);
     };
 
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(rawCode).then(onSuccess).catch(() => {
-        const textarea = document.createElement("textarea");
-        textarea.value = rawCode;
-        textarea.setAttribute("readonly", "");
-        textarea.style.position = "absolute";
-        textarea.style.left = "-9999px";
-        document.body.appendChild(textarea);
-        textarea.select();
-        const ok = document.execCommand("copy");
-        document.body.removeChild(textarea);
-        if (ok) onSuccess();
-      });
-    }
-  }, [rawCode]);
+    void copyText(rawCode).then((ok) => {
+      if (ok) onSuccess();
+    });
+  }, [copyText, rawCode]);
 
   const displayLanguage = language.toUpperCase();
   const displayTitle = fileName || displayLanguage;
@@ -344,27 +354,37 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
   const [isDragging, setIsDragging] = React.useState(false);
   const normalized = chart.trim();
 
+  const copyText = React.useCallback((value: string) => {
+    const fallbackCopy = () => {
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "absolute";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      return ok;
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(value).then(() => true).catch(() => fallbackCopy());
+    }
+
+    return Promise.resolve(fallbackCopy());
+  }, []);
+
   const handleCopyLocal = React.useCallback(() => {
     const onSuccess = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1000);
     };
 
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(chart).then(onSuccess).catch(() => {
-        const textarea = document.createElement("textarea");
-        textarea.value = chart;
-        textarea.setAttribute("readonly", "");
-        textarea.style.position = "absolute";
-        textarea.style.left = "-9999px";
-        document.body.appendChild(textarea);
-        textarea.select();
-        const ok = document.execCommand("copy");
-        document.body.removeChild(textarea);
-        if (ok) onSuccess();
-      });
-    }
-  }, [chart]);
+    void copyText(chart).then((ok) => {
+      if (ok) onSuccess();
+    });
+  }, [chart, copyText]);
 
   const diagramType = useMemo(() => {
     const match = normalized.match(/^(\w+)/);
