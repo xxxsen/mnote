@@ -148,9 +148,35 @@ export default function SharePage() {
   }, [doc]);
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href);
-    setToast("Link copied to clipboard!");
-    setTimeout(() => setToast(null), 3000);
+    const value = window.location.href;
+
+    const fallbackCopy = () => {
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      return ok;
+    };
+
+    const copyPromise =
+      typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function"
+        ? navigator.clipboard.writeText(value).then(() => true).catch(() => fallbackCopy())
+        : Promise.resolve(fallbackCopy());
+
+    void copyPromise.then((ok) => {
+      if (ok) {
+        setToast("Link copied to clipboard!");
+      } else {
+        setToast("Failed to copy link");
+      }
+      setTimeout(() => setToast(null), 3000);
+    });
   };
 
   const handleExport = () => {
