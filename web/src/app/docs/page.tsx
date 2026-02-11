@@ -1009,8 +1009,30 @@ export default function DocsPage() {
   const handleCopyShare = useCallback(async (token: string) => {
     try {
       const url = `${window.location.origin}/share/${token}`;
-      await navigator.clipboard.writeText(url);
-      toast({ description: "Share link copied" });
+      const fallbackCopy = () => {
+        const textarea = document.createElement("textarea");
+        textarea.value = url;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(textarea);
+        return ok;
+      };
+
+      const copied =
+        typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function"
+          ? await navigator.clipboard.writeText(url).then(() => true).catch(() => fallbackCopy())
+          : fallbackCopy();
+
+      if (copied) {
+        toast({ description: "Share link copied" });
+      } else {
+        toast({ description: "Failed to copy link", variant: "error" });
+      }
     } catch (err) {
       console.error(err);
       toast({ description: err instanceof Error ? err : "Failed to copy link", variant: "error" });
