@@ -29,7 +29,151 @@ type Heading = {
 };
 
 const tocTokenRegex = /^\[(toc|TOC)]$/;
-const allowedHtmlTags = new Set(["span", "u", "br", "details", "summary", "center"]);
+const allowedHtmlTags = new Set(["span", "u", "br", "details", "summary", "center", "font", "div"]);
+
+type AdmonitionType = "warning" | "error" | "info" | "tip";
+
+const ADMONITION_TYPE_ALIASES: Record<string, AdmonitionType> = {
+  warning: "warning",
+  error: "error",
+  danger: "error",
+  info: "info",
+  note: "info",
+  tip: "tip",
+  success: "tip",
+};
+
+export const ADMONITION_STYLES: Record<AdmonitionType, React.CSSProperties> = {
+  warning: {
+    borderLeft: "4px solid #f59e0b",
+    backgroundColor: "#fffbeb",
+    color: "#78350f",
+    padding: "0.8em 1em",
+    borderRadius: "0 var(--radius-md, 4px) var(--radius-md, 4px) 0",
+    marginBottom: "0.8em",
+  },
+  error: {
+    borderLeft: "4px solid #ef4444",
+    backgroundColor: "#fef2f2",
+    color: "#7f1d1d",
+    padding: "0.8em 1em",
+    borderRadius: "0 var(--radius-md, 4px) var(--radius-md, 4px) 0",
+    marginBottom: "0.8em",
+  },
+  info: {
+    borderLeft: "4px solid #3b82f6",
+    backgroundColor: "#eff6ff",
+    color: "#1e3a5f",
+    padding: "0.8em 1em",
+    borderRadius: "0 var(--radius-md, 4px) var(--radius-md, 4px) 0",
+    marginBottom: "0.8em",
+  },
+  tip: {
+    borderLeft: "4px solid #22c55e",
+    backgroundColor: "#f0fdf4",
+    color: "#14532d",
+    padding: "0.8em 1em",
+    borderRadius: "0 var(--radius-md, 4px) var(--radius-md, 4px) 0",
+    marginBottom: "0.8em",
+  },
+};
+
+export const FONT_SIZE_MAP: Record<string, string> = {
+  "1": "0.625rem",
+  "2": "0.8125rem",
+  "3": "1rem",
+  "4": "1.125rem",
+  "5": "1.5rem",
+  "6": "2rem",
+  "7": "3rem",
+};
+
+export const toSafeInlineStyle = (value: unknown): React.CSSProperties => {
+  if (!value) return {};
+
+  const applyStyle = (acc: React.CSSProperties, propName: string, propValue: unknown) => {
+    const prop = propName.trim().toLowerCase();
+    const nextValue = String(propValue ?? "").trim();
+    if (!nextValue) return;
+    if (prop === "color") acc.color = nextValue;
+    if (prop === "font-size" || prop === "fontsize") acc.fontSize = nextValue;
+  };
+
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>).reduce<React.CSSProperties>((acc, [k, v]) => {
+      applyStyle(acc, k, v);
+      return acc;
+    }, {});
+  }
+
+  if (typeof value !== "string") return {};
+
+  return value
+    .split(";")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .reduce<React.CSSProperties>((acc, declaration) => {
+      const colonIdx = declaration.indexOf(":");
+      if (colonIdx < 0) return acc;
+      const rawProp = declaration.slice(0, colonIdx);
+      const rawVal = declaration.slice(colonIdx + 1);
+      if (!rawProp || !rawVal) return acc;
+      applyStyle(acc, rawProp, rawVal);
+      return acc;
+    }, {});
+};
+
+export const toFontSize = (value?: string | number) => {
+  if (value === undefined || value === null) return undefined;
+  const normalized = String(value).trim();
+  if (!normalized) return undefined;
+  return FONT_SIZE_MAP[normalized] ?? normalized;
+};
+
+export const convertAdmonitions = (content: string) => {
+  const lines = content.split("\n");
+  const result: string[] = [];
+  let inCodeBlock = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("```")) {
+      inCodeBlock = !inCodeBlock;
+      result.push(line);
+      continue;
+    }
+
+    const admonMatch = !inCodeBlock && trimmed.match(/^:::\s*(\w+)\s*$/i);
+    if (admonMatch) {
+      const rawType = admonMatch[1].toLowerCase();
+      const admonType = ADMONITION_TYPE_ALIASES[rawType];
+      if (admonType) {
+        const body: string[] = [];
+        let j = i + 1;
+        while (j < lines.length && lines[j].trim() !== ":::") {
+          body.push(lines[j]);
+          j += 1;
+        }
+
+        if (j < lines.length && lines[j].trim() === ":::") {
+          result.push(`<div class="md-alert md-alert-${admonType}">`);
+          result.push('');
+          result.push(...body);
+          result.push('');
+          result.push("</div>");
+          i = j;
+          continue;
+        }
+      }
+    }
+
+    result.push(line);
+  }
+
+  return result.join("\n");
+};
 
 const escapeUnsupportedHtml = (content: string) => {
   const lines = content.split("\n");
@@ -47,7 +191,7 @@ const escapeUnsupportedHtml = (content: string) => {
         const name = String(tagName).toLowerCase();
         if (allowedHtmlTags.has(name)) {
           const lowerAttrs = attrs.toLowerCase();
-          if (lowerAttrs.includes("on") || lowerAttrs.includes("javascript:")) {
+          if (/\bon[a-z]+\s*=/i.test(lowerAttrs) || lowerAttrs.includes("javascript:")) {
             return `<${slash}${name}>`;
           }
           return match;
@@ -102,6 +246,10 @@ type MdastNode = {
   type: string;
   value?: string;
   children?: MdastNode[];
+};
+
+type InlineHtmlNode = {
+  properties?: Record<string, unknown>;
 };
 
 const remarkSoftBreaks = () => {
@@ -179,7 +327,7 @@ const buildTocMarkdown = (headings: Heading[]) => {
   // which can be misinterpreted as a code block in markdown.
   const firstLevel = headings[0].level;
   const slugger = createSlugger();
-  
+
   return headings
     .map((heading) => {
       const normalizedLevel = Math.max(1, heading.level - firstLevel + 1);
@@ -390,7 +538,7 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
     const match = normalized.match(/^(\w+)/);
     if (!match) return "DIAGRAM";
     const type = match[1];
-    
+
     const knownTypes: Record<string, string> = {
       graph: "FLOWCHART",
       flowchart: "FLOWCHART",
@@ -712,273 +860,319 @@ const MarkdownPreview = memo(
     { content, className, showTocAside = false, tocClassName, onScroll, onTocLoaded },
     ref
   ) {
-  const { processedContent, tocMarkdown } = useMemo(() => {
-    const headings = extractHeadings(content);
-    const slugger = createSlugger();
-    const headingsWithIds = headings.map((heading) => ({
-      ...heading,
-      id: slugger(heading.text),
-    }));
-    const toc = buildTocMarkdown(headingsWithIds);
-    const updated = injectToc(content, toc);
-    
-    // Support \( ... \) and \[ ... \] by converting them to $ ... $ and $$ ... $$
-    const mathFixed = updated
-      .replace(/\\\((.*?)\\\)/g, '$$$1$$')
-      .replace(/\\\[(.*?)\\\]/g, '$$$$$1$$$$');
-    
-    const safeContent = escapeUnsupportedHtml(mathFixed);
-    return { processedContent: safeContent, tocMarkdown: toc };
-  }, [content]);
-
-  const rehypeSlugger = useMemo(() => {
-    return () => (tree: HastNode) => {
+    const { processedContent, tocMarkdown } = useMemo(() => {
+      const headings = extractHeadings(content);
       const slugger = createSlugger();
-      const walk = (node: HastNode) => {
-        if (node.type === "element" && node.tagName && /^h[1-6]$/.test(node.tagName)) {
-          const text = getHastText(node);
-          node.properties = node.properties || {};
-          if (!node.properties.id) {
-            node.properties.id = slugger(text);
+      const headingsWithIds = headings.map((heading) => ({
+        ...heading,
+        id: slugger(heading.text),
+      }));
+      const toc = buildTocMarkdown(headingsWithIds);
+      const updated = injectToc(content, toc);
+
+      // Support \( ... \) and \[ ... \] by converting them to $ ... $ and $$ ... $$
+      const mathFixed = updated
+        .replace(/\\\((.*?)\\\)/g, '$$$1$$')
+        .replace(/\\\[(.*?)\\\]/g, '$$$$$1$$$$');
+
+      const safeContent = escapeUnsupportedHtml(convertAdmonitions(mathFixed));
+      return { processedContent: safeContent, tocMarkdown: toc };
+    }, [content]);
+
+    const rehypeSlugger = useMemo(() => {
+      return () => (tree: HastNode) => {
+        const slugger = createSlugger();
+        const walk = (node: HastNode) => {
+          if (node.type === "element" && node.tagName && /^h[1-6]$/.test(node.tagName)) {
+            const text = getHastText(node);
+            node.properties = node.properties || {};
+            if (!node.properties.id) {
+              node.properties.id = slugger(text);
+            }
           }
-        }
-        if (node.children) {
-          node.children.forEach(walk);
-        }
+          if (node.children) {
+            node.children.forEach(walk);
+          }
+        };
+        walk(tree);
       };
-      walk(tree);
-    };
-  }, []);
+    }, []);
 
-  useEffect(() => {
-    onTocLoaded?.(tocMarkdown);
-  }, [tocMarkdown, onTocLoaded]);
+    useEffect(() => {
+      onTocLoaded?.(tocMarkdown);
+    }, [tocMarkdown, onTocLoaded]);
 
-  const markdownComponents = useMemo(
-    () => ({
-      pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
-        if (
-          React.isValidElement(children)
-        ) {
-          /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-          const childProps = children.props as any;
-          const className = (childProps.className as string) || "";
-          const metastring = (childProps.metastring as string) || "";
-          const isToc = className.includes("language-toc");
-          const isMermaid = className.includes("language-mermaid");
-          
-          const runnableLangs = ["go", "golang", "js", "javascript", "py", "python"];
-          const isRunnableLang = runnableLangs.some(lang => className.includes(`language-${lang}`));
-          const isRunnable = (metastring && metastring.includes("[runnable]")) || className.includes("[runnable]");
-          const isFenced = className.startsWith("language-");
+    const markdownComponents = useMemo(
+      () => ({
+        pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
+          if (
+            React.isValidElement(children)
+          ) {
+            /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+            const childProps = children.props as any;
+            const className = (childProps.className as string) || "";
+            const metastring = (childProps.metastring as string) || "";
+            const isToc = className.includes("language-toc");
+            const isMermaid = className.includes("language-mermaid");
 
-          if (isToc || isMermaid || (isRunnableLang && isRunnable) || isFenced) {
-            return <>{children}</>;
+            const runnableLangs = ["go", "golang", "js", "javascript", "py", "python"];
+            const isRunnableLang = runnableLangs.some(lang => className.includes(`language-${lang}`));
+            const isRunnable = (metastring && metastring.includes("[runnable]")) || className.includes("[runnable]");
+            const isFenced = className.startsWith("language-");
+
+            if (isToc || isMermaid || (isRunnableLang && isRunnable) || isFenced) {
+              return <>{children}</>;
+            }
           }
-        }
-        return <pre {...props}>{children}</pre>;
-      },
-      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-      code(props: any) {
-        const { className, children, metastring, ...rest } = props;
-        const match = /language-(\S*)/.exec(className || "");
-        const isMermaid = match && match[1] === "mermaid";
-        const isToc = match && (match[1] === "toc" || match[1] === "TOC");
+          return <pre {...props}>{children}</pre>;
+        },
+        /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+        code(props: any) {
+          const { className, children, metastring, ...rest } = props;
+          const match = /language-(\S*)/.exec(className || "");
+          const isMermaid = match && match[1] === "mermaid";
+          const isToc = match && (match[1] === "toc" || match[1] === "TOC");
 
-        if (isToc) {
-          return (
-            <nav className="toc-wrapper">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                {String(children)}
-              </ReactMarkdown>
-            </nav>
-          );
-        }
-
-        if (isMermaid) {
-          const raw = typeof children === "string" ? children : String(children ?? "");
-          return <MermaidBlock chart={raw.replace(/\n$/, "")} />;
-        }
-
-        if (match) {
-          const languageMatch = match[1];
-          let language = languageMatch || "text";
-          let fileName = "";
-          let isRunnable = false;
-
-          const rawCode = Array.isArray(children)
-            ? children.join("")
-            : String(children).replace(/\n$/, "");
-
-          if (language.includes(":")) {
-            const parts = language.split(":");
-            language = parts[0];
-            fileName = parts[1];
-          } 
-          
-          const meta = metastring || "";
-          if (meta.includes("[runnable]") || language.includes("[runnable]") || (className && className.includes("[runnable]"))) {
-            isRunnable = true;
+          if (isToc) {
+            return (
+              <nav className="toc-wrapper">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                  {String(children)}
+                </ReactMarkdown>
+              </nav>
+            );
           }
 
-          if (language.includes("[runnable]")) {
-            language = language.replace("[runnable]", "");
+          if (isMermaid) {
+            const raw = typeof children === "string" ? children : String(children ?? "");
+            return <MermaidBlock chart={raw.replace(/\n$/, "")} />;
           }
 
-          if (!fileName && meta && !meta.includes("[runnable]")) {
-            fileName = meta;
-          }
+          if (match) {
+            const languageMatch = match[1];
+            let language = languageMatch || "text";
+            let fileName = "";
+            let isRunnable = false;
 
-          const runnableLangs = ["go", "golang", "js", "javascript", "py", "python"];
-          if (isRunnable && runnableLangs.includes(language)) {
-            return <CodeSandbox code={rawCode} language={language} fileName={fileName} />;
-          }
+            const rawCode = Array.isArray(children)
+              ? children.join("")
+              : String(children).replace(/\n$/, "");
 
-          return (
-            <CodeBlock
-              language={language}
-              fileName={fileName}
-              rawCode={rawCode}
-              {...rest}
-            />
-          );
-        }
+            if (language.includes(":")) {
+              const parts = language.split(":");
+              language = parts[0];
+              fileName = parts[1];
+            }
 
-        return (
-          <code className={className} {...rest}>
-            {children}
-          </code>
-        );
-      },
+            const meta = metastring || "";
+            if (meta.includes("[runnable]") || language.includes("[runnable]") || (className && className.includes("[runnable]"))) {
+              isRunnable = true;
+            }
 
-      h1({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
-        return <h1 id={id}>{children}</h1>;
-      },
-      h2({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
-        return <h2 id={id}>{children}</h2>;
-      },
-      h3({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
-        return <h3 id={id}>{children}</h3>;
-      },
-      h4({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
-        return <h4 id={id}>{children}</h4>;
-      },
-      h5({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
-        return <h5 id={id}>{children}</h5>;
-      },
-      h6({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
-        return <h6 id={id}>{children}</h6>;
-      },
-      img({ src, alt, title, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) {
-        let filename = "";
-        const isVideo = alt?.startsWith("VIDEO:");
-        const isAudio = alt?.startsWith("AUDIO:");
-        const isPic = alt?.startsWith("PIC:");
+            if (language.includes("[runnable]")) {
+              language = language.replace("[runnable]", "");
+            }
 
-        if (isVideo || isAudio || isPic) {
-          filename = alt!.replace(/^(VIDEO|AUDIO|PIC):/, "");
-        } else if (src) {
-          try {
-            const url = new URL(src as string, "http://dummy.com");
-            const parts = url.pathname.split("/");
-            const last = parts[parts.length - 1];
-            if (last) filename = decodeURIComponent(last);
-          } catch {}
-        }
+            if (!fileName && meta && !meta.includes("[runnable]")) {
+              fileName = meta;
+            }
 
-        if (isVideo) {
-          return (
-            <span className="flex flex-col items-center w-full my-4 relative z-10">
-              <video 
-                src={src} 
-                controls 
-                className="max-w-full rounded-lg shadow-md bg-black" 
-                preload="metadata"
+            const runnableLangs = ["go", "golang", "js", "javascript", "py", "python"];
+            if (isRunnable && runnableLangs.includes(language)) {
+              return <CodeSandbox code={rawCode} language={language} fileName={fileName} />;
+            }
+
+            return (
+              <CodeBlock
+                language={language}
+                fileName={fileName}
+                rawCode={rawCode}
+                {...rest}
               />
-              {filename && (
-                <span className="text-xs text-muted-foreground font-mono opacity-80 break-all px-2 mt-2">
-                  [VIDEO: {filename}]
-                </span>
-              )}
-            </span>
-          );
-        }
+            );
+          }
 
-        if (isAudio) {
           return (
-            <span className="flex flex-col items-center w-full my-4 relative z-10">
-              <audio 
-                src={src} 
-                controls 
-                className="w-full max-w-md" 
-                preload="metadata"
-              />
-              {filename && (
-                <span className="text-xs text-muted-foreground font-mono opacity-80 break-all px-2 mt-2">
-                  [AUDIO: {filename}]
-                </span>
-              )}
-            </span>
+            <code className={className} {...rest}>
+              {children}
+            </code>
           );
-        }
+        },
 
-        return (
-          <span className="inline-flex flex-col items-center max-w-full">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={src}
-              alt={alt}
-              title={title}
-              {...props}
-              style={{ marginBottom: "0.5rem" }}
-            />
-            {filename && (
-              <span className="text-xs text-muted-foreground font-mono opacity-80 break-all px-2">
-                [{filename}]
+        h1({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
+          return <h1 id={id}>{children}</h1>;
+        },
+        h2({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
+          return <h2 id={id}>{children}</h2>;
+        },
+        h3({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
+          return <h3 id={id}>{children}</h3>;
+        },
+        h4({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
+          return <h4 id={id}>{children}</h4>;
+        },
+        h5({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
+          return <h5 id={id}>{children}</h5>;
+        },
+        h6({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
+          return <h6 id={id}>{children}</h6>;
+        },
+        img({ src, alt, title, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) {
+          let filename = "";
+          const isVideo = alt?.startsWith("VIDEO:");
+          const isAudio = alt?.startsWith("AUDIO:");
+          const isPic = alt?.startsWith("PIC:");
+
+          if (isVideo || isAudio || isPic) {
+            filename = alt!.replace(/^(VIDEO|AUDIO|PIC):/, "");
+          } else if (src) {
+            try {
+              const url = new URL(src as string, "http://dummy.com");
+              const parts = url.pathname.split("/");
+              const last = parts[parts.length - 1];
+              if (last) filename = decodeURIComponent(last);
+            } catch { }
+          }
+
+          if (isVideo) {
+            return (
+              <span className="flex flex-col items-center w-full my-4 relative z-10">
+                <video
+                  src={src}
+                  controls
+                  className="max-w-full rounded-lg shadow-md bg-black"
+                  preload="metadata"
+                />
+                {filename && (
+                  <span className="text-xs text-muted-foreground font-mono opacity-80 break-all px-2 mt-2">
+                    [VIDEO: {filename}]
+                  </span>
+                )}
               </span>
-            )}
-          </span>
-        );
-      },
-    }),
-    []
-  );
+            );
+          }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const remarkPlugins = useMemo<any[]>(
-    () => [remarkGfm, [remarkMath, { singleDollarTextMath: true }], remarkSoftBreaks],
-    []
-  );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rehypePlugins = useMemo<any[]>(() => [rehypeCodeMeta, rehypeRaw, [rehypeKatex, { strict: "warn" }], rehypeSlugger], [rehypeSlugger]);
+          if (isAudio) {
+            return (
+              <span className="flex flex-col items-center w-full my-4 relative z-10">
+                <audio
+                  src={src}
+                  controls
+                  className="w-full max-w-md"
+                  preload="metadata"
+                />
+                {filename && (
+                  <span className="text-xs text-muted-foreground font-mono opacity-80 break-all px-2 mt-2">
+                    [AUDIO: {filename}]
+                  </span>
+                )}
+              </span>
+            );
+          }
 
-  return (
-    <div className={cn("relative h-full min-h-0 w-full", showTocAside ? "flex gap-8" : "")}>
-      <div
-        ref={ref}
-        onScroll={onScroll}
-        className={cn(
-          "markdown-body px-6 py-4 overflow-y-auto bg-background text-foreground h-full flex-1 min-w-0",
-          className
-        )}
-      >
-        <ReactMarkdown
-          remarkPlugins={remarkPlugins}
-          rehypePlugins={rehypePlugins}
-          components={markdownComponents}
+          return (
+            <span className="inline-flex flex-col items-center max-w-full">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={src}
+                alt={alt}
+                title={title}
+                {...props}
+                style={{ marginBottom: "0.5rem" }}
+              />
+              {filename && (
+                <span className="text-xs text-muted-foreground font-mono opacity-80 break-all px-2">
+                  [{filename}]
+                </span>
+              )}
+            </span>
+          );
+        },
+        span({ node, style, children, ...props }: React.HTMLAttributes<HTMLSpanElement> & { node?: InlineHtmlNode }) {
+          const inlineStyle = toSafeInlineStyle(style ?? node?.properties?.style);
+          return (
+            <span {...props} style={inlineStyle}>
+              {children}
+            </span>
+          );
+        },
+        font({ node, color, size, style, children, ...props }: React.HTMLAttributes<HTMLElement> & { color?: string; size?: string; node?: HastNode }) {
+          const rawColor = color ?? String(node?.properties?.color ?? "");
+          const rawSize = (size ?? node?.properties?.size) as string | number | undefined;
+          const inlineStyle = {
+            ...toSafeInlineStyle(style ?? node?.properties?.style),
+            ...(rawColor ? { color: rawColor } : {}),
+            ...(rawSize ? { fontSize: toFontSize(rawSize) } : {}),
+          } satisfies React.CSSProperties;
+
+          return (
+            <span {...props} style={inlineStyle}>
+              {children}
+            </span>
+          );
+        },
+        div({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+          const classes = className?.split(/\s+/) ?? [];
+          const admonType = (["warning", "error", "info", "tip"] as AdmonitionType[]).find(
+            (t) => classes.includes(`md-alert-${t}`)
+          );
+          if (admonType) {
+            return (
+              <div
+                className={`md-alert md-alert-${admonType}`}
+                style={ADMONITION_STYLES[admonType]}
+                {...props}
+              >
+                {children}
+              </div>
+            );
+          }
+
+          return (
+            <div className={className} {...props}>
+              {children}
+            </div>
+          );
+        },
+      }),
+      []
+    );
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const remarkPlugins = useMemo<any[]>(
+      () => [remarkGfm, [remarkMath, { singleDollarTextMath: true }], remarkSoftBreaks],
+      []
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rehypePlugins = useMemo<any[]>(() => [rehypeCodeMeta, rehypeRaw, [rehypeKatex, { strict: "warn" }], rehypeSlugger], [rehypeSlugger]);
+
+    return (
+      <div className={cn("relative h-full min-h-0 w-full", showTocAside ? "flex gap-8" : "")}>
+        <div
+          ref={ref}
+          onScroll={onScroll}
+          className={cn(
+            "markdown-body px-6 py-4 overflow-y-auto bg-background text-foreground h-full flex-1 min-w-0",
+            className
+          )}
         >
-          {processedContent}
-        </ReactMarkdown>
+          <ReactMarkdown
+            remarkPlugins={remarkPlugins}
+            rehypePlugins={rehypePlugins}
+            components={markdownComponents}
+          >
+            {processedContent}
+          </ReactMarkdown>
+        </div>
+        {showTocAside && tocMarkdown && (
+          <aside className={cn("toc-aside hidden lg:block", tocClassName)}>
+            <div className="toc-wrapper">
+              <ReactMarkdown>{tocMarkdown}</ReactMarkdown>
+            </div>
+          </aside>
+        )}
       </div>
-      {showTocAside && tocMarkdown && (
-        <aside className={cn("toc-aside hidden lg:block", tocClassName)}>
-          <div className="toc-wrapper">
-            <ReactMarkdown>{tocMarkdown}</ReactMarkdown>
-          </div>
-        </aside>
-      )}
-    </div>
-  );
+    );
   })
 );
 
