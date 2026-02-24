@@ -915,7 +915,7 @@ const MarkdownPreview = memo(
             const isToc = className.includes("language-toc");
             const isMermaid = className.includes("language-mermaid");
 
-            const runnableLangs = ["go", "golang", "js", "javascript", "py", "python"];
+            const runnableLangs = ["go", "golang", "js", "javascript", "py", "python", "c"];
             const isRunnableLang = runnableLangs.some(lang => className.includes(`language-${lang}`));
             const isRunnable = (metastring && metastring.includes("[runnable]")) || className.includes("[runnable]");
             const isFenced = className.startsWith("language-");
@@ -977,7 +977,7 @@ const MarkdownPreview = memo(
               fileName = meta;
             }
 
-            const runnableLangs = ["go", "golang", "js", "javascript", "py", "python"];
+            const runnableLangs = ["go", "golang", "js", "javascript", "py", "python", "lua", "c"];
             if (isRunnable && runnableLangs.includes(language)) {
               return <CodeSandbox code={rawCode} language={language} fileName={fileName} />;
             }
