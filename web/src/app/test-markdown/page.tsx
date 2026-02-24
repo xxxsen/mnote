@@ -23,6 +23,18 @@ const SAMPLE = `# Markdown Preview Test
 :::tip
 这是一个 **小贴士** ✨
 :::
+
+\`\`\`lua [runnable]
+-- Lua Sandbox Test
+local function factorial(n)
+  if n <= 1 then return 1 end
+  return n * factorial(n - 1)
+end
+
+for i = 1, 10 do
+  print(string.format("factorial(%d) = %d", i, factorial(i)))
+end
+\`\`\`
 `;
 
 export default function TestMarkdownPage() {

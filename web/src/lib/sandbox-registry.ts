@@ -109,6 +109,51 @@ class SandboxRegistry {
         };
       `;
     }
+    if (language === "lua") {
+      return `
+        self.window = self;
+        self.importScripts('https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js');
+        self.onmessage = async (e) => {
+          if (e.data.type === 'run') {
+            try {
+              const fengari = self.fengari;
+              const lua = fengari.lua;
+              const lauxlib = fengari.lauxlib;
+              const lualib = fengari.lualib;
+              const L = lauxlib.luaL_newstate();
+              lualib.luaL_openlibs(L);
+
+              // Override print to capture output
+              lua.lua_pushcfunction(L, (L) => {
+                const n = lua.lua_gettop(L);
+                const parts = [];
+                for (let i = 1; i <= n; i++) {
+                  lauxlib.luaL_tolstring(L, i);
+                  parts.push(fengari.to_jsstring(lua.lua_tolstring(L, -1)));
+                  lua.lua_pop(L, 2);
+                }
+                self.postMessage({ type: 'stdout', content: parts.join('\\t') });
+                return 0;
+              });
+              lua.lua_setglobal(L, fengari.to_luastring('print'));
+
+              self.postMessage({ type: 'system', content: 'Executing Lua...' });
+              const code = fengari.to_luastring(e.data.code);
+              const status = lauxlib.luaL_dostring(L, code);
+              if (status !== lua.LUA_OK) {
+                const errMsg = lua.lua_tojsstring(L, -1);
+                self.postMessage({ type: 'error', content: errMsg });
+                return;
+              }
+              self.postMessage({ type: 'system', content: 'Process finished.' });
+              self.postMessage({ type: 'done' });
+            } catch (err) {
+              self.postMessage({ type: 'error', content: err.message });
+            }
+          }
+        };
+      `;
+    }
     return "";
   }
 
@@ -137,10 +182,10 @@ class SandboxRegistry {
   public run({ code, language, wasmUrl, onMessage }: RunOptions) {
     const key = this.getLangKey(language);
     const worker = this.getOrCreateWorker(key);
-    
+
     // Set current active listener
     this.activeListeners[key] = onMessage;
-    
+
     worker.postMessage({ type: "run", code, wasmUrl });
   }
 
