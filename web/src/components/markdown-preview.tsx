@@ -1060,7 +1060,18 @@ const MarkdownPreview = memo(
         div({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
           if (className?.split(/\s+/).includes("md-alert-warning")) {
             return (
-              <div className="md-alert md-alert-warning" {...props}>
+              <div
+                className="md-alert md-alert-warning"
+                style={{
+                  borderLeft: "4px solid #f59e0b",
+                  backgroundColor: "#fffbeb",
+                  color: "#78350f",
+                  padding: "0.8em 1em",
+                  borderRadius: "0 var(--radius-md, 4px) var(--radius-md, 4px) 0",
+                  marginBottom: "0.8em",
+                }}
+                {...props}
+              >
                 {children}
               </div>
             );
