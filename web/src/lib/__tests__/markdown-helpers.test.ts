@@ -57,7 +57,7 @@ describe("toFontSize", () => {
 describe("convertAdmonitions", () => {
     it("converts :::warning ... ::: into a div wrapper", () => {
         const input = "before\n:::warning\nwarning content\n:::\nafter";
-        const expected = 'before\n<div class="md-alert md-alert-warning">\nwarning content\n</div>\nafter';
+        const expected = 'before\n<div class="md-alert md-alert-warning">\n\nwarning content\n\n</div>\nafter';
         expect(convertAdmonitions(input)).toBe(expected);
     });
 

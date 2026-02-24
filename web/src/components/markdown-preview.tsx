@@ -108,7 +108,9 @@ export const convertAdmonitions = (content: string) => {
 
       if (j < lines.length && lines[j].trim() === ":::") {
         result.push('<div class="md-alert md-alert-warning">');
+        result.push('');
         result.push(...body);
+        result.push('');
         result.push("</div>");
         i = j;
         continue;
