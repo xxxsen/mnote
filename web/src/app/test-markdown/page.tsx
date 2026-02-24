@@ -11,6 +11,18 @@ const SAMPLE = `# Markdown Preview Test
 :::warning
 这里是被包裹的内容
 :::
+
+:::error
+**错误提示**: 这是一个错误信息
+:::
+
+:::info
+这是一条 **信息提示**，支持 [链接](https://example.com)
+:::
+
+:::tip
+这是一个 **小贴士** ✨
+:::
 `;
 
 export default function TestMarkdownPage() {

@@ -31,6 +31,53 @@ type Heading = {
 const tocTokenRegex = /^\[(toc|TOC)]$/;
 const allowedHtmlTags = new Set(["span", "u", "br", "details", "summary", "center", "font", "div"]);
 
+type AdmonitionType = "warning" | "error" | "info" | "tip";
+
+const ADMONITION_TYPE_ALIASES: Record<string, AdmonitionType> = {
+  warning: "warning",
+  error: "error",
+  danger: "error",
+  info: "info",
+  note: "info",
+  tip: "tip",
+  success: "tip",
+};
+
+export const ADMONITION_STYLES: Record<AdmonitionType, React.CSSProperties> = {
+  warning: {
+    borderLeft: "4px solid #f59e0b",
+    backgroundColor: "#fffbeb",
+    color: "#78350f",
+    padding: "0.8em 1em",
+    borderRadius: "0 var(--radius-md, 4px) var(--radius-md, 4px) 0",
+    marginBottom: "0.8em",
+  },
+  error: {
+    borderLeft: "4px solid #ef4444",
+    backgroundColor: "#fef2f2",
+    color: "#7f1d1d",
+    padding: "0.8em 1em",
+    borderRadius: "0 var(--radius-md, 4px) var(--radius-md, 4px) 0",
+    marginBottom: "0.8em",
+  },
+  info: {
+    borderLeft: "4px solid #3b82f6",
+    backgroundColor: "#eff6ff",
+    color: "#1e3a5f",
+    padding: "0.8em 1em",
+    borderRadius: "0 var(--radius-md, 4px) var(--radius-md, 4px) 0",
+    marginBottom: "0.8em",
+  },
+  tip: {
+    borderLeft: "4px solid #22c55e",
+    backgroundColor: "#f0fdf4",
+    color: "#14532d",
+    padding: "0.8em 1em",
+    borderRadius: "0 var(--radius-md, 4px) var(--radius-md, 4px) 0",
+    marginBottom: "0.8em",
+  },
+};
+
 export const FONT_SIZE_MAP: Record<string, string> = {
   "1": "0.625rem",
   "2": "0.8125rem",
@@ -98,22 +145,27 @@ export const convertAdmonitions = (content: string) => {
       continue;
     }
 
-    if (!inCodeBlock && /^:::\s*warning\s*$/i.test(trimmed)) {
-      const body: string[] = [];
-      let j = i + 1;
-      while (j < lines.length && lines[j].trim() !== ":::") {
-        body.push(lines[j]);
-        j += 1;
-      }
+    const admonMatch = !inCodeBlock && trimmed.match(/^:::\s*(\w+)\s*$/i);
+    if (admonMatch) {
+      const rawType = admonMatch[1].toLowerCase();
+      const admonType = ADMONITION_TYPE_ALIASES[rawType];
+      if (admonType) {
+        const body: string[] = [];
+        let j = i + 1;
+        while (j < lines.length && lines[j].trim() !== ":::") {
+          body.push(lines[j]);
+          j += 1;
+        }
 
-      if (j < lines.length && lines[j].trim() === ":::") {
-        result.push('<div class="md-alert md-alert-warning">');
-        result.push('');
-        result.push(...body);
-        result.push('');
-        result.push("</div>");
-        i = j;
-        continue;
+        if (j < lines.length && lines[j].trim() === ":::") {
+          result.push(`<div class="md-alert md-alert-${admonType}">`);
+          result.push('');
+          result.push(...body);
+          result.push('');
+          result.push("</div>");
+          i = j;
+          continue;
+        }
       }
     }
 
@@ -1060,18 +1112,15 @@ const MarkdownPreview = memo(
           );
         },
         div({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-          if (className?.split(/\s+/).includes("md-alert-warning")) {
+          const classes = className?.split(/\s+/) ?? [];
+          const admonType = (["warning", "error", "info", "tip"] as AdmonitionType[]).find(
+            (t) => classes.includes(`md-alert-${t}`)
+          );
+          if (admonType) {
             return (
               <div
-                className="md-alert md-alert-warning"
-                style={{
-                  borderLeft: "4px solid #f59e0b",
-                  backgroundColor: "#fffbeb",
-                  color: "#78350f",
-                  padding: "0.8em 1em",
-                  borderRadius: "0 var(--radius-md, 4px) var(--radius-md, 4px) 0",
-                  marginBottom: "0.8em",
-                }}
+                className={`md-alert md-alert-${admonType}`}
+                style={ADMONITION_STYLES[admonType]}
                 {...props}
               >
                 {children}

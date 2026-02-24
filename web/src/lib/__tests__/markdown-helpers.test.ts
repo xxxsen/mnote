@@ -85,4 +85,46 @@ describe("convertAdmonitions", () => {
         const result = convertAdmonitions(input);
         expect(result).toContain("md-alert-warning");
     });
+
+    it("converts :::error into md-alert-error", () => {
+        const input = ":::error\nerror content\n:::";
+        const result = convertAdmonitions(input);
+        expect(result).toContain("md-alert-error");
+        expect(result).toContain("error content");
+    });
+
+    it("converts :::danger as alias for error", () => {
+        const input = ":::danger\ndanger content\n:::";
+        const result = convertAdmonitions(input);
+        expect(result).toContain("md-alert-error");
+    });
+
+    it("converts :::info into md-alert-info", () => {
+        const input = ":::info\ninfo content\n:::";
+        const result = convertAdmonitions(input);
+        expect(result).toContain("md-alert-info");
+    });
+
+    it("converts :::note as alias for info", () => {
+        const input = ":::note\nnote content\n:::";
+        const result = convertAdmonitions(input);
+        expect(result).toContain("md-alert-info");
+    });
+
+    it("converts :::tip into md-alert-tip", () => {
+        const input = ":::tip\ntip content\n:::";
+        const result = convertAdmonitions(input);
+        expect(result).toContain("md-alert-tip");
+    });
+
+    it("converts :::success as alias for tip", () => {
+        const input = ":::success\nsuccess content\n:::";
+        const result = convertAdmonitions(input);
+        expect(result).toContain("md-alert-tip");
+    });
+
+    it("leaves unknown admonition types as-is", () => {
+        const input = ":::unknown\ncontent\n:::";
+        expect(convertAdmonitions(input)).toBe(input);
+    });
 });
