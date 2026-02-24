@@ -200,6 +200,19 @@ body {
   margin-bottom: 0;
 }
 
+.markdown-body .md-alert {
+  border-left: 4px solid #f59e0b;
+  background-color: #fffbeb;
+  color: #78350f;
+  padding: 0.8em 1em;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  margin-bottom: 0.8em;
+}
+
+.markdown-body .md-alert > *:last-child {
+  margin-bottom: 0;
+}
+
 .markdown-body center {
   display: block;
   text-align: center;
