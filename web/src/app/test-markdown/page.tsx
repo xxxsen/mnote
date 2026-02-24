@@ -35,12 +35,23 @@ for i = 1, 10 do
   print(string.format("factorial(%d) = %d", i, factorial(i)))
 end
 \`\`\`
+
+\`\`\`c [runnable]
+#include <stdio.h>
+int main() {
+    printf("Hello from C!\\n");
+    for (int i = 1; i <= 5; i++) {
+        printf("i = %d\\n", i);
+    }
+    return 0;
+}
+\`\`\`
 `;
 
 export default function TestMarkdownPage() {
-    return (
-        <main className="h-screen">
-            <MarkdownPreview content={SAMPLE} className="h-full" />
-        </main>
-    );
+  return (
+    <main className="h-screen">
+      <MarkdownPreview content={SAMPLE} className="h-full" />
+    </main>
+  );
 }

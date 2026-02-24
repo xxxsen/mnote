@@ -154,6 +154,31 @@ class SandboxRegistry {
         };
       `;
     }
+    if (language === "c") {
+      return `
+        self.importScripts('https://cdn.jsdelivr.net/npm/JSCPP@2.0.6/dist/JSCPP.es5.min.js');
+        self.onmessage = async (e) => {
+          if (e.data.type === 'run') {
+            try {
+              self.postMessage({ type: 'system', content: 'Loading JSCPP runtime...' });
+              const config = {
+                stdio: {
+                  write: (s) => {
+                    self.postMessage({ type: 'stdout', content: s.replace(/\\n$/, '') });
+                  }
+                }
+              };
+              self.postMessage({ type: 'system', content: 'Executing C...' });
+              JSCPP.run(e.data.code, '', config);
+              self.postMessage({ type: 'system', content: 'Process finished.' });
+              self.postMessage({ type: 'done' });
+            } catch (err) {
+              self.postMessage({ type: 'error', content: err.message || String(err) });
+            }
+          }
+        };
+      `;
+    }
     return "";
   }
 
