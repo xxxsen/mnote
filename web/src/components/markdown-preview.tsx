@@ -29,7 +29,116 @@ type Heading = {
 };
 
 const tocTokenRegex = /^\[(toc|TOC)]$/;
-const allowedHtmlTags = new Set(["span", "u", "br", "details", "summary", "center"]);
+const allowedHtmlTags = new Set(["span", "u", "br", "details", "summary", "center", "font", "div"]);
+
+const FONT_SIZE_MAP: Record<string, string> = {
+  "1": "0.625rem",
+  "2": "0.8125rem",
+  "3": "1rem",
+  "4": "1.125rem",
+  "5": "1.5rem",
+  "6": "2rem",
+  "7": "3rem",
+};
+
+const toSafeInlineStyle = (value: unknown): React.CSSProperties => {
+  if (!value) return {};
+
+  const applyStyle = (acc: React.CSSProperties, propName: string, propValue: unknown) => {
+    const prop = propName.trim().toLowerCase();
+    const nextValue = String(propValue ?? "").trim();
+    if (!nextValue) return;
+    if (prop === "color") acc.color = nextValue;
+    if (prop === "font-size" || prop === "fontsize") acc.fontSize = nextValue;
+  };
+
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>).reduce<React.CSSProperties>((acc, [k, v]) => {
+      applyStyle(acc, k, v);
+      return acc;
+    }, {});
+  }
+
+  if (typeof value !== "string") return {};
+
+  return value
+    .split(";")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .reduce<React.CSSProperties>((acc, declaration) => {
+      const [rawProp, rawVal] = declaration.split(":");
+      if (!rawProp || !rawVal) return acc;
+      applyStyle(acc, rawProp, rawVal);
+      return acc;
+    }, {});
+};
+
+const toFontSize = (value?: string | number) => {
+  if (value === undefined || value === null) return undefined;
+  const normalized = String(value).trim();
+  if (!normalized) return undefined;
+  return FONT_SIZE_MAP[normalized] ?? normalized;
+};
+
+const convertStyledSpans = (content: string) => {
+  return content.replace(/<span\s+style=(['"])([^'"]*)\1>([\s\S]*?)<\/span>/gi, (match, _quote, styleText, inner) => {
+    const inlineStyle = toSafeInlineStyle(styleText);
+    const color = typeof inlineStyle.color === "string" ? inlineStyle.color : undefined;
+    const fontSize =
+      typeof inlineStyle.fontSize === "string" || typeof inlineStyle.fontSize === "number"
+        ? String(inlineStyle.fontSize)
+        : undefined;
+
+    if (!color && !fontSize) return match;
+
+    const attrs = [
+      color ? `color="${color}"` : "",
+      fontSize ? `size="${fontSize}"` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    return `<font ${attrs}>${inner}</font>`;
+  });
+};
+
+const convertAdmonitions = (content: string) => {
+  const lines = content.split("\n");
+  const result: string[] = [];
+  let inCodeBlock = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("```")) {
+      inCodeBlock = !inCodeBlock;
+      result.push(line);
+      continue;
+    }
+
+    if (!inCodeBlock && /^:::\s*warning\s*$/i.test(trimmed)) {
+      const body: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() !== ":::") {
+        body.push(lines[j]);
+        j += 1;
+      }
+
+      if (j < lines.length && lines[j].trim() === ":::") {
+        result.push('<div class="md-alert md-alert-warning">');
+        result.push(...body);
+        result.push("</div>");
+        i = j;
+        continue;
+      }
+    }
+
+    result.push(line);
+  }
+
+  return result.join("\n");
+};
 
 const escapeUnsupportedHtml = (content: string) => {
   const lines = content.split("\n");
@@ -102,6 +211,10 @@ type MdastNode = {
   type: string;
   value?: string;
   children?: MdastNode[];
+};
+
+type InlineHtmlNode = {
+  properties?: Record<string, unknown>;
 };
 
 const remarkSoftBreaks = () => {
@@ -727,7 +840,7 @@ const MarkdownPreview = memo(
       .replace(/\\\((.*?)\\\)/g, '$$$1$$')
       .replace(/\\\[(.*?)\\\]/g, '$$$$$1$$$$');
     
-    const safeContent = escapeUnsupportedHtml(mathFixed);
+    const safeContent = escapeUnsupportedHtml(convertAdmonitions(convertStyledSpans(mathFixed)));
     return { processedContent: safeContent, tocMarkdown: toc };
   }, [content]);
 
@@ -938,6 +1051,44 @@ const MarkdownPreview = memo(
               </span>
             )}
           </span>
+        );
+      },
+      span({ node, style, children, ...props }: React.HTMLAttributes<HTMLSpanElement> & { node?: InlineHtmlNode }) {
+        const inlineStyle = toSafeInlineStyle(style ?? node?.properties?.style);
+        return (
+          <span {...props} style={inlineStyle}>
+            {children}
+          </span>
+        );
+      },
+      font({ node, color, size, style, children, ...props }: React.HTMLAttributes<HTMLElement> & { color?: string; size?: string; node?: HastNode }) {
+        const rawColor = color ?? String(node?.properties?.color ?? "");
+        const rawSize = (size ?? node?.properties?.size) as string | number | undefined;
+        const inlineStyle = {
+          ...toSafeInlineStyle(style ?? node?.properties?.style),
+          ...(rawColor ? { color: rawColor } : {}),
+          ...(rawSize ? { fontSize: toFontSize(rawSize) } : {}),
+        } satisfies React.CSSProperties;
+
+        return (
+          <span {...props} style={inlineStyle}>
+            {children}
+          </span>
+        );
+      },
+      div({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+        if (className?.split(/\s+/).includes("md-alert-warning")) {
+          return (
+            <div className="md-alert md-alert-warning" {...props}>
+              {children}
+            </div>
+          );
+        }
+
+        return (
+          <div className={className} {...props}>
+            {children}
+          </div>
         );
       },
     }),
