@@ -919,11 +919,11 @@ const WikilinkAnchor = ({ title, idHref }: { title: string, idHref?: string }) =
     <a
       href={idHref || `/docs?wikilink=${encodeURIComponent(title)}`}
       onClick={handleClick}
-      className="wikilink"
+      className="wikilink inline-flex items-center gap-1 leading-none align-middle"
       title={`Link to: ${title}`}
     >
-      <FileText className="wikilink-icon" />
-      {title}
+      <FileText className="wikilink-icon h-3 w-3 flex-shrink-0" />
+      <span className="truncate">{title}</span>
     </a>
   );
 };

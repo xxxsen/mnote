@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import MarkdownPreview from "@/components/markdown-preview";
-import { Tag, DocumentVersionSummary } from "@/types";
+import { Tag, DocumentVersionSummary, Document as MnoteDocument } from "@/types";
 import {
   Share2,
   Download,
@@ -257,8 +257,11 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const [versions, setVersions] = useState<DocumentVersionSummary[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [selectedTagIDs, setSelectedTagIDs] = useState<string[]>([]);
-  const [backlinks, setBacklinks] = useState<any[]>([]);
+  const [backlinks, setBacklinks] = useState<MnoteDocument[]>([]);
   const [backlinksLoading, setBacklinksLoading] = useState(false);
+
+  // Wikilink State Extension
+  const [wikilinkIndex, setWikilinkIndex] = useState(0);
 
   const { similarDocs, similarLoading, similarCollapsed, similarIconVisible, handleToggleSimilar, handleCollapseSimilar, handleCloseSimilar } = useSimilarDocs({
     docId: id,
@@ -286,6 +289,8 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const pasteHandlerRef = useRef<((event: ClipboardEvent) => void) | null>(null);
+  const editorKeydownHandlerRef = useRef<((event: KeyboardEvent) => void) | null>(null);
+  const wikilinkKeydownRef = useRef<(event: KeyboardEvent) => boolean>(() => false);
   const colorButtonRef = useRef<HTMLButtonElement | null>(null);
   const sizeButtonRef = useRef<HTMLButtonElement | null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -588,9 +593,9 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const loadBacklinks = useCallback(async () => {
     setBacklinksLoading(true);
     try {
-      const data = await apiFetch<any[]>(`/documents/${id}/backlinks`);
+      const data = await apiFetch<MnoteDocument[]>(`/documents/${id}/backlinks`);
       setBacklinks(data || []);
-    } catch (e) {
+    } catch {
       setBacklinks([]);
     } finally {
       setBacklinksLoading(false);
@@ -598,10 +603,8 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   }, [id, setBacklinks, setBacklinksLoading]);
 
   useEffect(() => {
-    if (activeTab === "backlinks") {
-      loadBacklinks();
-    }
-  }, [activeTab, loadBacklinks]);
+    void loadBacklinks();
+  }, [loadBacklinks]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -985,15 +988,23 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     return () => { if (wikilinkTimerRef.current) window.clearTimeout(wikilinkTimerRef.current); };
   }, [wikilinkMenu.open, wikilinkMenu.query]);
 
+  useEffect(() => {
+    setWikilinkIndex(0);
+  }, [wikilinkResults]);
+
   const handleWikilinkSelect = useCallback((docTitle: string, docId: string) => {
     const view = editorViewRef.current;
     if (!view) return;
     const cursorPos = view.state.selection.main.head;
     const from = wikilinkMenu.from;
-    // Replace from [[ to current cursor with [title](/docs/id)
+
+    // Check if the next characters are `]]` and remove them if present
+    const docString = view.state.doc.toString();
+    const hasSuffix = docString.slice(cursorPos, cursorPos + 2) === "]]";
+
     const insertText = `[${docTitle}](/docs/${docId})`;
     view.dispatch({
-      changes: { from, to: cursorPos, insert: insertText },
+      changes: { from, to: hasSuffix ? cursorPos + 2 : cursorPos, insert: insertText },
       selection: { anchor: from + insertText.length },
     });
     contentRef.current = view.state.doc.toString();
@@ -1004,6 +1015,39 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     setWikilinkMenu(prev => ({ ...prev, open: false }));
     view.focus();
   }, [wikilinkMenu.from, schedulePreviewUpdate]);
+
+  const handleWikilinkKeyDown = useCallback((e: React.KeyboardEvent | KeyboardEvent) => {
+    if (!wikilinkMenu.open || wikilinkResults.length === 0) return false;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setWikilinkIndex(prev => (prev < wikilinkResults.length - 1 ? prev + 1 : prev));
+      return true;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setWikilinkIndex(prev => (prev > 0 ? prev - 1 : prev));
+      return true;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const selected = wikilinkResults[wikilinkIndex];
+      if (selected) {
+        handleWikilinkSelect(selected.title, selected.id);
+      }
+      return true;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setWikilinkMenu(prev => ({ ...prev, open: false }));
+      return true;
+    }
+    return false;
+  }, [wikilinkMenu.open, wikilinkResults, wikilinkIndex, handleWikilinkSelect]);
+
+  useEffect(() => {
+    wikilinkKeydownRef.current = (event: KeyboardEvent) => handleWikilinkKeyDown(event);
+  }, [handleWikilinkKeyDown]);
 
   const handleColor = useCallback((color: string) => {
     setActivePopover(null);
@@ -1398,6 +1442,19 @@ here is the body of note.`}
                   };
                   pasteHandlerRef.current = handler;
                   view.dom.addEventListener("paste", handler);
+
+                  // Add keydown listener to view.dom in CAPTURE phase
+                  if (editorKeydownHandlerRef.current) {
+                    view.dom.removeEventListener("keydown", editorKeydownHandlerRef.current, true);
+                  }
+                  const keydownHandler = (e: KeyboardEvent) => {
+                    if (wikilinkKeydownRef.current(e)) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }
+                  };
+                  editorKeydownHandlerRef.current = keydownHandler;
+                  view.dom.addEventListener("keydown", keydownHandler, true);
                 }}
                 basicSetup={{
                   lineNumbers: true,
@@ -1447,11 +1504,11 @@ here is the body of note.`}
                     {wikilinkLoading ? (
                       <div className="px-2 py-2 text-xs text-muted-foreground italic">Searching...</div>
                     ) : wikilinkResults.length > 0 ? (
-                      wikilinkResults.map(doc => (
+                      wikilinkResults.map((doc, index) => (
                         <button
                           key={doc.id}
                           onClick={() => handleWikilinkSelect(doc.title, doc.id)}
-                          className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md hover:bg-accent hover:text-accent-foreground text-left transition-colors"
+                          className={`flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md hover:bg-accent hover:text-accent-foreground text-left transition-colors ${index === wikilinkIndex ? "bg-accent text-accent-foreground" : ""}`}
                         >
                           <FileText className="h-3.5 w-3.5 opacity-50 flex-shrink-0" />
                           <span className="font-medium truncate">{doc.title}</span>
@@ -1481,6 +1538,38 @@ here is the body of note.`}
                       className="markdown-body h-auto overflow-visible p-0 bg-transparent text-slate-800"
                       onTocLoaded={handleTocLoaded}
                     />
+
+                    {/* Backlinks Panel (Moved from Sidebar) */}
+                    <div className="mt-16 pt-8 border-t border-slate-200">
+                      <div className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-6 flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        Linked Mentions
+                      </div>
+
+                      {backlinksLoading ? (
+                        <div className="text-sm text-slate-400 animate-pulse">Loading links...</div>
+                      ) : backlinks.length === 0 ? (
+                        <div className="text-sm text-slate-400 italic">No notes link back to this document yet.</div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {backlinks.map((link) => (
+                            <button
+                              key={link.id}
+                              onClick={() => router.push(`/docs/${link.id}`)}
+                              className="group text-left p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 transition-all flex flex-col gap-2 relative overflow-hidden"
+                            >
+                              <div className="absolute top-0 left-0 w-1 h-full bg-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              <div className="font-bold text-sm text-slate-700 line-clamp-1 group-hover:text-indigo-600 transition-colors">
+                                {link.title || "Untitled"}
+                              </div>
+                              <div className="text-xs text-slate-400 font-mono">
+                                {formatDate(link.mtime || link.ctime)}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </article>
               </div>
@@ -1517,12 +1606,6 @@ here is the body of note.`}
                 onClick={() => { setActiveTab("history"); loadVersions(); }}
               >
                 History
-              </button>
-              <button
-                className={`flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider ${activeTab === "backlinks" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
-                onClick={() => { setActiveTab("backlinks"); loadBacklinks(); }}
-              >
-                Backlinks
               </button>
               <button
                 className={`flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider ${activeTab === "share" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
@@ -1648,34 +1731,6 @@ here is the body of note.`}
                 </div>
               )}
 
-              {activeTab === "backlinks" && (
-                <div className="space-y-4">
-                  <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">Linked Mentions</div>
-                  {backlinksLoading ? (
-                    <div className="text-sm text-muted-foreground animate-pulse">Loading links...</div>
-                  ) : backlinks.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No other notes link to this one yet.</div>
-                  ) : (
-                    backlinks.map((link) => (
-                      <div key={link.id} className="group border border-border bg-card rounded-xl p-3 hover:bg-muted/30 transition-colors">
-                        <div className="flex justify-between items-start mb-1">
-                          <button
-                            onClick={() => router.push(`/docs/${link.id}`)}
-                            className="font-bold text-sm text-left line-clamp-2 hover:text-primary transition-colors flex items-center gap-1.5"
-                          >
-                            <FileText className="h-3.5 w-3.5 opacity-60" />
-                            {link.title}
-                          </button>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {formatDate(link.mtime || link.ctime)}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-
               {activeTab === "share" && (
 
                 <div className="space-y-4">
@@ -1720,7 +1775,6 @@ here is the body of note.`}
                   </div>
                 </div>
               )}
-
             </div>
           </div>
         )}
@@ -1733,555 +1787,570 @@ here is the body of note.`}
         hasUnsavedChanges={hasUnsavedChanges}
       />
 
-      {similarIconVisible && (
-        <div className={`fixed bottom-12 right-6 z-[100] transition-all duration-300 ${similarCollapsed ? "w-10 h-10" : "w-72 max-h-[400px]"} flex flex-col bg-background/80 backdrop-blur-md border border-border shadow-2xl rounded-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4`}>
-          {similarCollapsed ? (
-            <button
-              onClick={handleToggleSimilar}
-              className="w-full h-full flex items-center justify-center text-primary hover:bg-muted/50 transition-colors relative"
-              title="Find similar notes"
-            >
-              <Sparkles className={`h-5 w-5 ${similarLoading ? "animate-pulse" : ""}`} />
-              {similarDocs.length > 0 && (
-                <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-[8px] font-bold rounded-full flex items-center justify-center border-2 border-background">
-                  {similarDocs.length}
-                </div>
-              )}
-            </button>
-          ) : (
-            <>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
-                <div className="flex items-center gap-2">
-                  <Sparkles className={`h-3.5 w-3.5 text-primary ${similarLoading ? "animate-spin" : ""}`} />
-                  <span className="text-xs font-bold uppercase tracking-wider">Similar Notes</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={handleCollapseSimilar}
-                    className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-                    title="Collapse"
-                  >
-                    <ChevronRight className="h-3.5 w-3.5 rotate-90" />
-                  </button>
-                  <button
-                    onClick={handleCloseSimilar}
-                    className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-                    title="Close"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-3 space-y-2 no-scrollbar">
-                {similarLoading && similarDocs.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
-                    <RefreshCw className="h-5 w-5 animate-spin opacity-50" />
-                    <span className="text-[10px] font-mono uppercase tracking-widest">Searching...</span>
+      {
+        similarIconVisible && (
+          <div className={`fixed bottom-12 right-6 z-[100] transition-all duration-300 ${similarCollapsed ? "w-10 h-10" : "w-72 max-h-[400px]"} flex flex-col bg-background/80 backdrop-blur-md border border-border shadow-2xl rounded-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4`}>
+            {similarCollapsed ? (
+              <button
+                onClick={handleToggleSimilar}
+                className="w-full h-full flex items-center justify-center text-primary hover:bg-muted/50 transition-colors relative"
+                title="Find similar notes"
+              >
+                <Sparkles className={`h-5 w-5 ${similarLoading ? "animate-pulse" : ""}`} />
+                {similarDocs.length > 0 && (
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-[8px] font-bold rounded-full flex items-center justify-center border-2 border-background">
+                    {similarDocs.length}
                   </div>
-                ) : similarDocs.length === 0 ? (
-                  <div className="text-center py-12 text-sm text-muted-foreground">
-                    No similar notes found.
+                )}
+              </button>
+            ) : (
+              <>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className={`h-3.5 w-3.5 text-primary ${similarLoading ? "animate-spin" : ""}`} />
+                    <span className="text-xs font-bold uppercase tracking-wider">Similar Notes</span>
                   </div>
-                ) : (
-                  similarDocs.map((doc) => (
-                    <div
-                      key={doc.id}
-                      onClick={() => handleOpenPreview(doc.id)}
-                      className="p-3 border border-border rounded-xl cursor-pointer hover:border-primary transition-all bg-background/50 hover:bg-background group"
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={handleCollapseSimilar}
+                      className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                      title="Collapse"
                     >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-tighter">
-                          {Math.round((doc.score || 0) * 100)}% Match
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              router.push(`/docs/${doc.id}`);
-                            }}
-                            className="p-1 hover:bg-muted rounded-md transition-colors"
-                            title="Open full page"
-                          >
-                            <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                          </button>
+                      <ChevronRight className="h-3.5 w-3.5 rotate-90" />
+                    </button>
+                    <button
+                      onClick={handleCloseSimilar}
+                      className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                      title="Close"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2 no-scrollbar">
+                  {similarLoading && similarDocs.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
+                      <RefreshCw className="h-5 w-5 animate-spin opacity-50" />
+                      <span className="text-[10px] font-mono uppercase tracking-widest">Searching...</span>
+                    </div>
+                  ) : similarDocs.length === 0 ? (
+                    <div className="text-center py-12 text-sm text-muted-foreground">
+                      No similar notes found.
+                    </div>
+                  ) : (
+                    similarDocs.map((doc) => (
+                      <div
+                        key={doc.id}
+                        onClick={() => handleOpenPreview(doc.id)}
+                        className="p-3 border border-border rounded-xl cursor-pointer hover:border-primary transition-all bg-background/50 hover:bg-background group"
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-tighter">
+                            {Math.round((doc.score || 0) * 100)}% Match
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/docs/${doc.id}`);
+                              }}
+                              className="p-1 hover:bg-muted rounded-md transition-colors"
+                              title="Open full page"
+                            >
+                              <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="font-bold text-xs leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+                          {doc.title || "Untitled"}
                         </div>
                       </div>
-                      <div className="font-bold text-xs leading-snug line-clamp-2 group-hover:text-primary transition-colors">
-                        {doc.title || "Untitled"}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-              <div className="px-3 py-2 border-t border-border bg-muted/10">
-                <p className="text-[9px] text-muted-foreground text-center italic">
-                  Based on your current title
-                </p>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {(previewDoc || previewLoading) && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-12">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setPreviewDoc(null)} />
-          <div className="relative w-full max-w-4xl h-[80vh] bg-background border border-border rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/10">
-              <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                  <Home className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold truncate max-w-[200px] md:max-w-md">
-                    {previewLoading ? "Loading..." : previewDoc?.title || "Untitled"}
-                  </h3>
-                  {!previewLoading && (
-                    <p className="text-[10px] text-muted-foreground font-mono">PREVIEW MODE</p>
+                    ))
                   )}
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {!previewLoading && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 rounded-lg text-xs"
-                    onClick={() => router.push(`/docs/${previewDoc?.id}`)}
+                <div className="px-3 py-2 border-t border-border bg-muted/10">
+                  <p className="text-[9px] text-muted-foreground text-center italic">
+                    Based on your current title
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        )
+      }
+
+      {
+        (previewDoc || previewLoading) && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-12">
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setPreviewDoc(null)} />
+            <div className="relative w-full max-w-4xl h-[80vh] bg-background border border-border rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/10">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                    <Home className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold truncate max-w-[200px] md:max-w-md">
+                      {previewLoading ? "Loading..." : previewDoc?.title || "Untitled"}
+                    </h3>
+                    {!previewLoading && (
+                      <p className="text-[10px] text-muted-foreground font-mono">PREVIEW MODE</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!previewLoading && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 rounded-lg text-xs"
+                      onClick={() => router.push(`/docs/${previewDoc?.id}`)}
+                    >
+                      Open Full Note
+                    </Button>
+                  )}
+                  <button
+                    onClick={() => setPreviewDoc(null)}
+                    className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors"
                   >
-                    Open Full Note
-                  </Button>
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 md:p-10 no-scrollbar bg-card/30">
+                {previewLoading ? (
+                  <div className="h-full flex flex-col items-center justify-center gap-4 text-muted-foreground">
+                    <RefreshCw className="h-8 w-8 animate-spin opacity-20" />
+                    <p className="text-xs font-mono tracking-widest uppercase">Fetching content</p>
+                  </div>
+                ) : (
+                  <MarkdownPreview content={previewDoc?.content || ""} className="max-w-none prose-lg" />
                 )}
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {
+        showPreviewModal && (
+          <div className="fixed inset-0 z-[190] flex items-center justify-center p-4 md:p-10">
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowPreviewModal(false)} />
+            <div className="relative w-full max-w-5xl h-[85vh] bg-background border border-border rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/10">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                    <Eye className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold truncate max-w-[200px] md:max-w-md">
+                      {title || "Untitled"}
+                    </h3>
+                    <p className="text-[10px] text-muted-foreground font-mono">PREVIEW MODE</p>
+                  </div>
+                </div>
                 <button
-                  onClick={() => setPreviewDoc(null)}
+                  onClick={() => setShowPreviewModal(false)}
                   className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors"
+                  title="Close"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6 md:p-10 no-scrollbar bg-card/30">
-              {previewLoading ? (
-                <div className="h-full flex flex-col items-center justify-center gap-4 text-muted-foreground">
-                  <RefreshCw className="h-8 w-8 animate-spin opacity-20" />
-                  <p className="text-xs font-mono tracking-widest uppercase">Fetching content</p>
-                </div>
-              ) : (
-                <MarkdownPreview content={previewDoc?.content || ""} className="max-w-none prose-lg" />
-              )}
+              <div className="flex-1 overflow-y-auto p-6 md:p-10 no-scrollbar bg-card/30">
+                <article className="w-full bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 relative overflow-visible">
+                  <div className="p-6 md:p-10 lg:p-12">
+                    <MarkdownPreview
+                      content={contentRef.current || previewContent}
+                      className="markdown-body h-auto overflow-visible p-0 bg-transparent text-slate-800"
+                      onTocLoaded={handleTocLoaded}
+                    />
+                  </div>
+                </article>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {showPreviewModal && (
-        <div className="fixed inset-0 z-[190] flex items-center justify-center p-4 md:p-10">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowPreviewModal(false)} />
-          <div className="relative w-full max-w-5xl h-[85vh] bg-background border border-border rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/10">
-              <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                  <Eye className="h-4 w-4" />
+      {
+        aiModalOpen && (
+          <div className="fixed inset-0 z-[170] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={aiLoading ? undefined : closeAiModal} />
+            <div className="relative w-full max-w-5xl bg-background border border-border rounded-2xl shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold">{aiTitle}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {aiLoading ? "Generating..." : "Review before applying"}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold truncate max-w-[200px] md:max-w-md">
-                    {title || "Untitled"}
-                  </h3>
-                  <p className="text-[10px] text-muted-foreground font-mono">PREVIEW MODE</p>
-                </div>
+                <button
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={closeAiModal}
+                  disabled={aiLoading}
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                onClick={() => setShowPreviewModal(false)}
-                className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors"
-                title="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6 md:p-10 no-scrollbar bg-card/30">
-              <article className="w-full bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 relative overflow-visible">
-                <div className="p-6 md:p-10 lg:p-12">
-                  <MarkdownPreview
-                    content={contentRef.current || previewContent}
-                    className="markdown-body h-auto overflow-visible p-0 bg-transparent text-slate-800"
-                    onTocLoaded={handleTocLoaded}
-                  />
-                </div>
-              </article>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {aiModalOpen && (
-        <div className="fixed inset-0 z-[170] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={aiLoading ? undefined : closeAiModal} />
-          <div className="relative w-full max-w-5xl bg-background border border-border rounded-2xl shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-                  <Sparkles className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="text-sm font-bold">{aiTitle}</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {aiLoading ? "Generating..." : "Review before applying"}
+              <div className="p-5 max-h-[65vh] overflow-y-auto">
+                {aiLoading && (
+                  <div className="flex items-center justify-center gap-3 text-sm text-muted-foreground py-12">
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Waiting for AI response...
                   </div>
-                </div>
-              </div>
-              <button
-                className="text-muted-foreground hover:text-foreground"
-                onClick={closeAiModal}
-                disabled={aiLoading}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+                )}
 
-            <div className="p-5 max-h-[65vh] overflow-y-auto">
-              {aiLoading && (
-                <div className="flex items-center justify-center gap-3 text-sm text-muted-foreground py-12">
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                  Waiting for AI response...
-                </div>
-              )}
-
-              {!aiLoading && aiError && (
-                <div className="bg-destructive/10 text-destructive text-sm px-3 py-2 rounded-lg">
-                  {aiError}
-                </div>
-              )}
-
-              {!aiLoading && !aiError && aiAction === "generate" && !aiResultText && (
-                <div className="space-y-3">
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                    Brief description
-                  </label>
-                  <textarea
-                    className="w-full min-h-[140px] rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-                    placeholder="Describe what you want to generate..."
-                    value={aiPrompt}
-                    onChange={(event) => setAiPrompt(event.target.value)}
-                  />
-                </div>
-              )}
-
-              {!aiLoading && !aiError && aiAction === "polish" && aiResultText && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4 text-xs font-mono">
-                    <div>
-                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Original</div>
-                      <div className="border border-border rounded-lg overflow-hidden">
-                        {aiDiffLines.map((line, index) => (
-                          <div
-                            key={`left-${index}`}
-                            className={`px-2 py-1 whitespace-pre-wrap ${line.type === "remove" ? "bg-rose-50 text-rose-700" : "bg-background"
-                              }`}
-                          >
-                            {line.left ?? " "}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Polished</div>
-                      <div className="border border-border rounded-lg overflow-hidden">
-                        {aiDiffLines.map((line, index) => (
-                          <div
-                            key={`right-${index}`}
-                            className={`px-2 py-1 whitespace-pre-wrap ${line.type === "add" ? "bg-emerald-50 text-emerald-700" : "bg-background"
-                              }`}
-                          >
-                            {line.right ?? " "}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                {!aiLoading && aiError && (
+                  <div className="bg-destructive/10 text-destructive text-sm px-3 py-2 rounded-lg">
+                    {aiError}
                   </div>
-                </div>
-              )}
+                )}
 
-              {!aiLoading && !aiError && aiAction === "generate" && aiResultText && (
-                <div className="border border-border rounded-xl p-4 bg-muted/20">
-                  <MarkdownPreview content={aiResultText} className="prose prose-slate max-w-none" />
-                </div>
-              )}
-
-              {!aiLoading && !aiError && aiAction === "summary" && aiResultText && (
-                <div className="border border-border rounded-xl p-4 bg-muted/20 text-sm leading-relaxed whitespace-pre-wrap">
-                  {aiResultText}
-                </div>
-              )}
-
-              {!aiLoading && !aiError && aiAction === "tags" && (
-                <div className="space-y-4">
-                  <div className="text-xs text-muted-foreground">
-                    Available slots: {aiAvailableSlots}
+                {!aiLoading && !aiError && aiAction === "generate" && !aiResultText && (
+                  <div className="space-y-3">
+                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                      Brief description
+                    </label>
+                    <textarea
+                      className="w-full min-h-[140px] rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                      placeholder="Describe what you want to generate..."
+                      value={aiPrompt}
+                      onChange={(event) => setAiPrompt(event.target.value)}
+                    />
                   </div>
-                  <div className="space-y-2">
-                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                      Current tags
-                    </div>
-                    {aiExistingTags.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">No tags on this note yet.</div>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {aiExistingTags.map((tag) => {
-                          const removed = aiRemovedTagIDs.includes(tag.id);
-                          return (
-                            <button
-                              key={tag.id}
-                              className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${removed
-                                ? "bg-rose-50 text-rose-700 border-rose-200"
-                                : "bg-black text-white border-black"
+                )}
+
+                {!aiLoading && !aiError && aiAction === "polish" && aiResultText && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 text-xs font-mono">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Original</div>
+                        <div className="border border-border rounded-lg overflow-hidden">
+                          {aiDiffLines.map((line, index) => (
+                            <div
+                              key={`left-${index}`}
+                              className={`px-2 py-1 whitespace-pre-wrap ${line.type === "remove" ? "bg-rose-50 text-rose-700" : "bg-background"
                                 }`}
-                              onClick={() => toggleExistingTag(tag.id)}
                             >
-                              #{tag.name}
-                            </button>
-                          );
-                        })}
+                              {line.left ?? " "}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                      AI suggested tags
+                      <div>
+                        <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Polished</div>
+                        <div className="border border-border rounded-lg overflow-hidden">
+                          {aiDiffLines.map((line, index) => (
+                            <div
+                              key={`right-${index}`}
+                              className={`px-2 py-1 whitespace-pre-wrap ${line.type === "add" ? "bg-emerald-50 text-emerald-700" : "bg-background"
+                                }`}
+                            >
+                              {line.right ?? " "}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                    {aiSuggestedTags.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">No valid tags returned.</div>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {aiSuggestedTags.map((tag) => {
-                          const checked = aiSelectedTags.includes(tag);
-                          return (
-                            <button
-                              key={tag}
-                              className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${checked ? "bg-black text-white border-black" : "bg-background border-border"
-                                } hover:bg-accent`}
-                              onClick={() => toggleAiTag(tag)}
-                            >
-                              #{tag}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
-                </div>
-              )}
-            </div>
+                )}
 
-            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border">
-              <Button variant="outline" onClick={closeAiModal} disabled={aiLoading}>
-                Cancel
-              </Button>
-              {aiAction === "generate" && !aiResultText && (
-                <Button onClick={handleAiGenerate} disabled={aiLoading}>
-                  Generate
-                </Button>
-              )}
-              {aiAction === "tags" && aiSuggestedTags.length > 0 && (
-                <Button
-                  onClick={() =>
-                    void handleApplyAiTags({
-                      findExistingTagByName,
-                      mergeTags,
-                      saveTagIDs,
-                      onError: (message) => toast({ description: message, variant: "error" }),
-                    })
-                  }
-                  disabled={aiLoading}
-                >
-                  Apply Tags
-                </Button>
-              )}
-              {aiAction === "summary" && aiResultText && (
-                <Button
-                  onClick={() =>
-                    void handleApplyAiSummary({
-                      onApplied: (summaryText) => {
-                        setSummary(summaryText);
-                        setLastSavedAt(Math.floor(Date.now() / 1000));
-                      },
-                      onError: (message) => toast({ description: message, variant: "error" }),
-                    })
-                  }
-                  disabled={aiLoading}
-                >
-                  Use Summary
-                </Button>
-              )}
-              {(aiAction === "polish" || aiAction === "generate") && aiResultText && (
-                <Button onClick={handleApplyAiText} disabled={aiLoading}>
-                  Use Result
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+                {!aiLoading && !aiError && aiAction === "generate" && aiResultText && (
+                  <div className="border border-border rounded-xl p-4 bg-muted/20">
+                    <MarkdownPreview content={aiResultText} className="prose prose-slate max-w-none" />
+                  </div>
+                )}
 
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
-          <div className="relative w-full max-w-sm bg-background border border-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 text-center">
-              <div className="w-12 h-12 bg-destructive/10 text-destructive rounded-full flex items-center justify-center mx-auto mb-4">
-                <AlertTriangle className="h-6 w-6" />
+                {!aiLoading && !aiError && aiAction === "summary" && aiResultText && (
+                  <div className="border border-border rounded-xl p-4 bg-muted/20 text-sm leading-relaxed whitespace-pre-wrap">
+                    {aiResultText}
+                  </div>
+                )}
+
+                {!aiLoading && !aiError && aiAction === "tags" && (
+                  <div className="space-y-4">
+                    <div className="text-xs text-muted-foreground">
+                      Available slots: {aiAvailableSlots}
+                    </div>
+                    <div className="space-y-2">
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                        Current tags
+                      </div>
+                      {aiExistingTags.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">No tags on this note yet.</div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {aiExistingTags.map((tag) => {
+                            const removed = aiRemovedTagIDs.includes(tag.id);
+                            return (
+                              <button
+                                key={tag.id}
+                                className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${removed
+                                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                                  : "bg-black text-white border-black"
+                                  }`}
+                                onClick={() => toggleExistingTag(tag.id)}
+                              >
+                                #{tag.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                        AI suggested tags
+                      </div>
+                      {aiSuggestedTags.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">No valid tags returned.</div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {aiSuggestedTags.map((tag) => {
+                            const checked = aiSelectedTags.includes(tag);
+                            return (
+                              <button
+                                key={tag}
+                                className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${checked ? "bg-black text-white border-black" : "bg-background border-border"
+                                  } hover:bg-accent`}
+                                onClick={() => toggleAiTag(tag)}
+                              >
+                                #{tag}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-              <h3 className="text-lg font-bold mb-2">Delete Note?</h3>
-              <p className="text-sm text-muted-foreground mb-6">
-                This action cannot be undone. All versions of <span className="font-mono font-bold text-foreground">&ldquo;{title || "Untitled"}&rdquo;</span> will be permanently removed.
-              </p>
-              <div className="flex gap-3">
-                <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setShowDeleteConfirm(false)}>
+
+              <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border">
+                <Button variant="outline" onClick={closeAiModal} disabled={aiLoading}>
                   Cancel
                 </Button>
-                <Button variant="destructive" className="flex-1 rounded-xl font-bold" onClick={handleDelete}>
-                  Delete
-                </Button>
+                {aiAction === "generate" && !aiResultText && (
+                  <Button onClick={handleAiGenerate} disabled={aiLoading}>
+                    Generate
+                  </Button>
+                )}
+                {aiAction === "tags" && aiSuggestedTags.length > 0 && (
+                  <Button
+                    onClick={() =>
+                      void handleApplyAiTags({
+                        findExistingTagByName,
+                        mergeTags,
+                        saveTagIDs,
+                        onError: (message) => toast({ description: message, variant: "error" }),
+                      })
+                    }
+                    disabled={aiLoading}
+                  >
+                    Apply Tags
+                  </Button>
+                )}
+                {aiAction === "summary" && aiResultText && (
+                  <Button
+                    onClick={() =>
+                      void handleApplyAiSummary({
+                        onApplied: (summaryText) => {
+                          setSummary(summaryText);
+                          setLastSavedAt(Math.floor(Date.now() / 1000));
+                        },
+                        onError: (message) => toast({ description: message, variant: "error" }),
+                      })
+                    }
+                    disabled={aiLoading}
+                  >
+                    Use Summary
+                  </Button>
+                )}
+                {(aiAction === "polish" || aiAction === "generate") && aiResultText && (
+                  <Button onClick={handleApplyAiText} disabled={aiLoading}>
+                    Use Result
+                  </Button>
+                )}
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {showQuickOpen && (
-        <div className="fixed inset-0 z-[150] flex items-start justify-center pt-[15vh] px-4">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={handleCloseQuickOpen} />
-          <div className="relative w-full max-w-lg bg-popover border border-border rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex items-center px-4 py-3 border-b border-border gap-3">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input
-                autoFocus
-                placeholder="Quick open note..."
-                className="bg-transparent border-none focus:ring-0 text-sm flex-1 outline-none"
-                value={quickOpenQuery}
-                onChange={(e) => setQuickOpenQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    handleCloseQuickOpen();
-                    return;
-                  }
-                  if (quickOpenDocs.length === 0) return;
-                  if (e.key === "ArrowDown") {
-                    e.preventDefault();
-                    setQuickOpenIndex((prev) => (prev + 1) % quickOpenDocs.length);
-                  } else if (e.key === "ArrowUp") {
-                    e.preventDefault();
-                    setQuickOpenIndex((prev) => (prev - 1 + quickOpenDocs.length) % quickOpenDocs.length);
-                  } else if (e.key === "Enter") {
-                    e.preventDefault();
-                    const doc = quickOpenDocs[quickOpenIndex];
-                    if (doc) handleQuickOpenSelect(doc);
-                  }
-                }}
-              />
-              <X className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground" onClick={handleCloseQuickOpen} />
-            </div>
-            <div className="max-h-[50vh] overflow-y-auto p-2">
-              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 py-2">
-                {showSearchResults ? "Search Results" : "Recent Updates"}
-              </div>
-              {quickOpenLoading && (
-                <div className="px-2 py-2 text-xs text-muted-foreground">Searching...</div>
-              )}
-              {quickOpenDocs.length === 0 ? (
-                <div className="px-2 py-4 text-sm text-muted-foreground italic">
-                  {showSearchResults ? "No matching notes found" : "No recent notes found"}
+      {
+        showDeleteConfirm && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
+            <div className="relative w-full max-w-sm bg-background border border-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="p-6 text-center">
+                <div className="w-12 h-12 bg-destructive/10 text-destructive rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertTriangle className="h-6 w-6" />
                 </div>
-              ) : (
-                <div className="space-y-0.5">
-                  {quickOpenDocs.map((doc, index) => {
-                    const isActive = index === quickOpenIndex;
-                    return (
-                      <button
-                        key={doc.id}
-                        onClick={() => handleQuickOpenSelect(doc)}
-                        onMouseEnter={() => setQuickOpenIndex(index)}
-                        className={`flex items-center w-full px-3 py-2 text-sm rounded-lg text-left transition-colors group ${isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"}`}
-                      >
-                        <div className="flex flex-col min-w-0">
-                          <span className="font-medium truncate">{doc.title || "Untitled"}</span>
-                          <span className={`text-[10px] truncate ${isActive ? "text-accent-foreground/70" : "text-muted-foreground"}`}>
-                            {formatDate(doc.mtime)}
-                          </span>
-                        </div>
-                        <ChevronRight className={`h-3.5 w-3.5 ml-auto transition-opacity ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} />
-                      </button>
-                    );
-                  })}
+                <h3 className="text-lg font-bold mb-2">Delete Note?</h3>
+                <p className="text-sm text-muted-foreground mb-6">
+                  This action cannot be undone. All versions of <span className="font-mono font-bold text-foreground">&ldquo;{title || "Untitled"}&rdquo;</span> will be permanently removed.
+                </p>
+                <div className="flex gap-3">
+                  <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setShowDeleteConfirm(false)}>
+                    Cancel
+                  </Button>
+                  <Button variant="destructive" className="flex-1 rounded-xl font-bold" onClick={handleDelete}>
+                    Delete
+                  </Button>
                 </div>
-              )}
-            </div>
-            <div className="p-3 bg-muted/30 border-t border-border flex justify-between items-center text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">
-              <span>Tip: Select to switch tab or open</span>
-              <div className="flex items-center gap-1">
-                <span className="border border-border bg-background px-1 rounded shadow-sm font-bold">ESC</span>
-                <span>to close</span>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {showFloatingToc && !showDetails && tocContent && (
-        <div className="fixed top-24 right-8 z-30 hidden w-72 rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md xl:block animate-in fade-in slide-in-from-right-4 duration-500">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">On this page</div>
-            <button
-              onClick={() => setTocCollapsed(!tocCollapsed)}
-              className="p-1 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all"
-            >
-              {tocCollapsed ? <Menu className="h-3 w-3" /> : <X className="h-3 w-3" />}
-            </button>
+      {
+        showQuickOpen && (
+          <div className="fixed inset-0 z-[150] flex items-start justify-center pt-[15vh] px-4">
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={handleCloseQuickOpen} />
+            <div className="relative w-full max-w-lg bg-popover border border-border rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="flex items-center px-4 py-3 border-b border-border gap-3">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <input
+                  autoFocus
+                  placeholder="Quick open note..."
+                  className="bg-transparent border-none focus:ring-0 text-sm flex-1 outline-none"
+                  value={quickOpenQuery}
+                  onChange={(e) => setQuickOpenQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      handleCloseQuickOpen();
+                      return;
+                    }
+                    if (quickOpenDocs.length === 0) return;
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setQuickOpenIndex((prev) => (prev + 1) % quickOpenDocs.length);
+                    } else if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setQuickOpenIndex((prev) => (prev - 1 + quickOpenDocs.length) % quickOpenDocs.length);
+                    } else if (e.key === "Enter") {
+                      e.preventDefault();
+                      const doc = quickOpenDocs[quickOpenIndex];
+                      if (doc) handleQuickOpenSelect(doc);
+                    }
+                  }}
+                />
+                <X className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground" onClick={handleCloseQuickOpen} />
+              </div>
+              <div className="max-h-[50vh] overflow-y-auto p-2">
+                <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 py-2">
+                  {showSearchResults ? "Search Results" : "Recent Updates"}
+                </div>
+                {quickOpenLoading && (
+                  <div className="px-2 py-2 text-xs text-muted-foreground">Searching...</div>
+                )}
+                {quickOpenDocs.length === 0 ? (
+                  <div className="px-2 py-4 text-sm text-muted-foreground italic">
+                    {showSearchResults ? "No matching notes found" : "No recent notes found"}
+                  </div>
+                ) : (
+                  <div className="space-y-0.5">
+                    {quickOpenDocs.map((doc, index) => {
+                      const isActive = index === quickOpenIndex;
+                      return (
+                        <button
+                          key={doc.id}
+                          onClick={() => handleQuickOpenSelect(doc)}
+                          onMouseEnter={() => setQuickOpenIndex(index)}
+                          className={`flex items-center w-full px-3 py-2 text-sm rounded-lg text-left transition-colors group ${isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"}`}
+                        >
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-medium truncate">{doc.title || "Untitled"}</span>
+                            <span className={`text-[10px] truncate ${isActive ? "text-accent-foreground/70" : "text-muted-foreground"}`}>
+                              {formatDate(doc.mtime)}
+                            </span>
+                          </div>
+                          <ChevronRight className={`h-3.5 w-3.5 ml-auto transition-opacity ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="p-3 bg-muted/30 border-t border-border flex justify-between items-center text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">
+                <span>Tip: Select to switch tab or open</span>
+                <div className="flex items-center gap-1">
+                  <span className="border border-border bg-background px-1 rounded shadow-sm font-bold">ESC</span>
+                  <span>to close</span>
+                </div>
+              </div>
+            </div>
           </div>
-          {!tocCollapsed && (
-            <div className="toc-wrapper text-sm max-h-[60vh] overflow-y-auto p-4 custom-scrollbar">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw]}
-                components={{
-                  a: (props) => {
-                    const href = props.href || "";
-                    return (
-                      <a
-                        {...props}
-                        className="text-slate-500 hover:text-indigo-600 transition-colors py-1 block no-underline"
-                        onClick={(event) => {
-                          props.onClick?.(event);
-                          if (!href.startsWith("#")) return;
-                          event.preventDefault();
-                          const rawHash = decodeURIComponent(href.slice(1));
-                          const normalizedHash = rawHash.normalize("NFKC");
-                          const targetCandidates = [rawHash, normalizedHash, slugify(rawHash), slugify(normalizedHash)];
-                          for (const candidate of targetCandidates) {
-                            const el = getElementById(candidate);
-                            if (el) {
-                              scrollToElement(el);
-                              requestAnimationFrame(() => {
-                                forcePreviewSyncRef.current = true;
-                                handlePreviewScroll();
-                              });
-                              break;
-                            }
-                          }
-                        }}
-                      />
-                    );
-                  },
-                }}
+        )
+      }
+
+      {
+        showFloatingToc && !showDetails && tocContent && (
+          <div className="fixed top-24 right-8 z-30 hidden w-72 rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md xl:block animate-in fade-in slide-in-from-right-4 duration-500">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">On this page</div>
+              <button
+                onClick={() => setTocCollapsed(!tocCollapsed)}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all"
               >
-                {tocContent}
-              </ReactMarkdown>
+                {tocCollapsed ? <Menu className="h-3 w-3" /> : <X className="h-3 w-3" />}
+              </button>
             </div>
-          )}
-        </div>
-      )}
+            {!tocCollapsed && (
+              <div className="toc-wrapper text-sm max-h-[60vh] overflow-y-auto p-4 custom-scrollbar">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeRaw]}
+                  components={{
+                    a: (props) => {
+                      const href = props.href || "";
+                      return (
+                        <a
+                          {...props}
+                          className="text-slate-500 hover:text-indigo-600 transition-colors py-1 block no-underline"
+                          onClick={(event) => {
+                            props.onClick?.(event);
+                            if (!href.startsWith("#")) return;
+                            event.preventDefault();
+                            const rawHash = decodeURIComponent(href.slice(1));
+                            const normalizedHash = rawHash.normalize("NFKC");
+                            const targetCandidates = [rawHash, normalizedHash, slugify(rawHash), slugify(normalizedHash)];
+                            for (const candidate of targetCandidates) {
+                              const el = getElementById(candidate);
+                              if (el) {
+                                scrollToElement(el);
+                                requestAnimationFrame(() => {
+                                  forcePreviewSyncRef.current = true;
+                                  handlePreviewScroll();
+                                });
+                                break;
+                              }
+                            }
+                          }}
+                        />
+                      );
+                    },
+                  }}
+                >
+                  {tocContent}
+                </ReactMarkdown>
+              </div>
+            )}
+          </div>
+        )
+      }
 
-      {activePopover === "color" &&
+      {
+        activePopover === "color" &&
         renderPopover(
           <div className="p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
@@ -2304,9 +2373,11 @@ here is the body of note.`}
               ))}
             </div>
           </div>
-        )}
+        )
+      }
 
-      {activePopover === "size" &&
+      {
+        activePopover === "size" &&
         renderPopover(
           <div className="p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
@@ -2328,9 +2399,11 @@ here is the body of note.`}
               ))}
             </div>
           </div>
-        )}
+        )
+      }
 
-      {activePopover === "emoji" &&
+      {
+        activePopover === "emoji" &&
         renderPopover(
           <div className="p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
@@ -2370,7 +2443,8 @@ here is the body of note.`}
               ))}
             </div>
           </div>
-        )}
-    </div>
+        )
+      }
+    </div >
   );
 }
