@@ -49,7 +49,8 @@ import {
   AlertTriangle,
   Copy,
   Check,
-  FileText
+  FileText,
+  Tags
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { MAX_TAGS } from "../constants";
@@ -242,7 +243,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   } = quickOpen;
   const documentActions = useDocumentActions(id);
   const tagActions = useTagActions(id);
-  const [tabs, setTabs] = useState<{ id: string; title: string }[]>([]);
 
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
@@ -525,17 +525,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
       }, 100);
     }
   }, [loading]);
-
-  useEffect(() => {
-    if (!id) return;
-    setTabs(prev => {
-      const exists = prev.find(t => t.id === id);
-      if (exists) {
-        return prev.map(t => t.id === id ? { ...t, title: title || t.title } : t);
-      }
-      return [...prev, { id, title: title || "Untitled" }];
-    });
-  }, [id, title]);
 
   useEditorLifecycle({
     id,
@@ -1352,38 +1341,41 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         <div className={`flex-1 flex flex-col md:flex-row h-full transition-all duration-300 min-w-0 ${showDetails ? "mr-80" : ""}`}>
 
           <div className="h-full border-r border-border overflow-hidden min-w-0 md:flex-[0_0_50%] w-full flex flex-col relative">
-            <div className="flex items-center bg-muted/30 border-b border-border shrink-0 px-1 pt-1 h-9">
-              <div className="flex-1 flex items-end h-full gap-0.5 overflow-x-auto no-scrollbar">
-                {tabs.map(tab => (
-                  <div
-                    key={tab.id}
-                    onClick={() => { if (tab.id !== id) router.push(`/docs/${tab.id}`); }}
-                    className={`group flex items-center gap-2 px-3 h-full text-xs font-bold uppercase tracking-wider rounded-t-md border-x border-t transition-all cursor-pointer select-none shrink-0 ${tab.id === id ? "bg-background border-border text-foreground translate-y-[1px] z-10" : "bg-transparent border-transparent text-muted-foreground hover:bg-muted/50"}`}
-                  >
-                    <span className="truncate max-w-none">{tab.title || "Untitled"}</span>
-                    {tabs.length > 1 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const nextTabs = tabs.filter(t => t.id !== tab.id);
-                          setTabs(nextTabs);
-                          if (tab.id === id && nextTabs.length > 0) router.push(`/docs/${nextTabs[0].id}`);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity p-0.5"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+            <div className="flex items-center bg-background border-b border-border shrink-0 px-3 h-8 gap-1.5 overflow-x-auto no-scrollbar">
+              {selectedTags.length > 0 ? (
+                <>
+                  {selectedTags.map((tag) => (
+                    <span
+                      key={tag.id}
+                      className="inline-flex items-center px-2.5 h-6 rounded-full border border-slate-200 bg-white text-[11px] font-medium text-slate-700 whitespace-nowrap"
+                      title={`#${tag.name}`}
+                    >
+                      {tag.name}
+                    </span>
+                  ))}
+                </>
+              ) : (
+                <span className="text-[11px] text-slate-400 whitespace-nowrap">No tags</span>
+              )}
+              <button
+                onClick={() => {
+                  setShowDetails(true);
+                  setActiveTab("tags");
+                }}
+                className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 transition-colors whitespace-nowrap"
+                title="Manage tags"
+              >
+                <Tags className="h-3.5 w-3.5" />
+                Add tag
+              </button>
+              <div className="flex-1" />
               <button
                 onClick={handleOpenQuickOpen}
-                className="px-2 h-7 mb-1 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 shrink-0 bg-background/50 rounded-md ml-1 border border-border shadow-sm"
+                className="hidden md:inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-700 transition-colors whitespace-nowrap"
                 title="Quick Open (Cmd+K)"
               >
                 <Command className="h-3 w-3" />
-                <span className="text-[9px] font-bold">OPEN</span>
+                Open
               </button>
             </div>
 
