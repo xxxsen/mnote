@@ -64,7 +64,6 @@ import { useShareLink } from "../hooks/useShareLink";
 import { usePreviewDoc } from "../hooks/usePreviewDoc";
 import { useAiAssistant } from "../hooks/useAiAssistant";
 import { useSimilarDocs } from "../hooks/useSimilarDocs";
-import { useTagInput } from "../hooks/useTagInput";
 import { useEditorLifecycle } from "../hooks/useEditorLifecycle";
 
 type InlineTagDropdownItem = {
@@ -912,20 +911,25 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     [selectedTagIDs, tagActions, toast]
   );
 
-  const {
-    findExistingTagByName,
-  } = useTagInput({
-    allTags,
-    selectedTagIDs,
-    maxTags: MAX_TAGS,
-    normalizeTagName,
-    isValidTagName,
-    mergeTags,
-    searchTags: tagActions.searchTags,
-    saveTagIDs,
-    notify: (message) => toast({ description: message }),
-    notifyError: (message) => toast({ description: message, variant: "error" }),
-  });
+  const findExistingTagByName = useCallback(
+    async (name: string) => {
+      const trimmed = normalizeTagName(name);
+      if (!trimmed) return null;
+      const cached = allTags.find((tag) => tag.name === trimmed);
+      if (cached) return cached;
+      try {
+        const res = await tagActions.searchTags(trimmed);
+        const exact = (res || []).find((tag) => tag.name === trimmed) || null;
+        if (exact) {
+          mergeTags([exact]);
+        }
+        return exact;
+      } catch {
+        return null;
+      }
+    },
+    [allTags, mergeTags, normalizeTagName, tagActions]
+  );
 
   const handleApplyAiText = useCallback(() => {
     if (!aiResultText) {
