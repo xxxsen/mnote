@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -389,6 +390,21 @@ type DocumentUpdateInput struct {
 	Summary *string
 }
 
+func extractLinkIDs(content string) []string {
+	// Match /docs/ID
+	// The ID is usually alphanumeric + dashes. We use a broad regex for the path segment.
+	var ids []string
+	matches := linkRegex.FindAllStringSubmatch(content, -1)
+	for _, m := range matches {
+		if len(m) > 1 && m[1] != "" {
+			ids = append(ids, m[1])
+		}
+	}
+	return ids
+}
+
+var linkRegex = regexp.MustCompile(`\/docs\/([a-zA-Z0-9_\-]+)`)
+
 func (s *DocumentService) Update(ctx context.Context, userID, docID string, input DocumentUpdateInput) error {
 	now := timeutil.NowUnix()
 	doc := &model.Document{
@@ -436,6 +452,13 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 			}
 		}
 	}
+
+	// Extract and update bidirectional links
+	linkIDs := extractLinkIDs(input.Content)
+	if err := s.docs.UpdateLinks(ctx, userID, docID, linkIDs, now); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -486,7 +509,22 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 			}
 		}
 	}
+
+	// Extract and update bidirectional links
+	linkIDs := extractLinkIDs(input.Content)
+	if err := s.docs.UpdateLinks(ctx, userID, doc.ID, linkIDs, now); err != nil {
+		return nil, err
+	}
+
 	return doc, nil
+}
+
+func (s *DocumentService) GetBacklinks(ctx context.Context, userID, docID string) ([]model.Document, error) {
+	docs, err := s.docs.GetBacklinks(ctx, userID, docID)
+	if err != nil {
+		return nil, err
+	}
+	return s.attachSummaries(ctx, userID, docs)
 }
 
 func (s *DocumentService) ProcessPendingSummaries(ctx context.Context, delaySeconds int64) error {

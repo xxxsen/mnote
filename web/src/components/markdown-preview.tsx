@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, forwardRef, memo, useEffect } from "react";
+import React, { useMemo, forwardRef, memo, useEffect, useCallback, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -12,6 +12,9 @@ import { Copy, Check, Maximize2, X, Bug } from "lucide-react";
 import Mermaid from "@/components/mermaid";
 import { CodeSandbox } from "@/components/code-sandbox";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/api";
+import { FileText } from "lucide-react";
 
 interface MarkdownPreviewProps {
   content: string;
@@ -29,7 +32,7 @@ type Heading = {
 };
 
 const tocTokenRegex = /^\[(toc|TOC)]$/;
-const allowedHtmlTags = new Set(["span", "u", "br", "details", "summary", "center", "font", "div"]);
+const allowedHtmlTags = new Set(["span", "u", "br", "details", "summary", "center", "font", "div", "a"]);
 
 type AdmonitionType = "warning" | "error" | "info" | "tip";
 
@@ -197,6 +200,27 @@ const escapeUnsupportedHtml = (content: string) => {
           return match;
         }
         return match.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      });
+    })
+    .join("\n");
+};
+
+export const convertWikilinks = (content: string) => {
+  const lines = content.split("\n");
+  let inCodeBlock = false;
+  return lines
+    .map((line) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("```")) {
+        inCodeBlock = !inCodeBlock;
+        return line;
+      }
+      if (inCodeBlock) return line;
+      // Convert legacy [[title]] to <a> with data-wikilink attribute
+      // (Standard [title](/docs/id) links will be handled directly in the a-tag renderer)
+      return line.replace(/\[\[([^\]]+)\]\]/g, (_, title) => {
+        const escaped = title.replace(/"/g, "&quot;");
+        return `<a href="/docs?wikilink=${encodeURIComponent(title)}" data-wikilink="${escaped}" class="wikilink">${escaped}</a>`;
       });
     })
     .join("\n");
@@ -855,6 +879,55 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
 
 MermaidBlock.displayName = "MermaidBlock";
 
+const WikilinkAnchor = ({ title, idHref }: { title: string, idHref?: string }) => {
+  const router = useRouter();
+  const [resolving, setResolving] = useState(false);
+
+  const handleClick = useCallback(
+    async (e: React.MouseEvent) => {
+      e.preventDefault();
+      // If we already have the explicit /docs/ID target, just navigate
+      if (idHref && idHref.startsWith("/docs/")) {
+        router.push(idHref);
+        return;
+      }
+
+      if (resolving) return;
+      setResolving(true);
+      try {
+        const docs = await apiFetch<{ id: string; title: string }[]>(
+          `/documents?q=${encodeURIComponent(title)}&limit=5`
+        );
+        const exact = docs?.find((d) => d.title === title);
+        if (exact) {
+          router.push(`/docs/${exact.id}`);
+        } else if (docs && docs.length > 0) {
+          router.push(`/docs/${docs[0].id}`);
+        } else {
+          router.push(`/docs?q=${encodeURIComponent(title)}`);
+        }
+      } catch {
+        router.push(`/docs?q=${encodeURIComponent(title)}`);
+      } finally {
+        setResolving(false);
+      }
+    },
+    [title, router, resolving, idHref]
+  );
+
+  return (
+    <a
+      href={idHref || `/docs?wikilink=${encodeURIComponent(title)}`}
+      onClick={handleClick}
+      className="wikilink inline-flex items-center gap-1 leading-none align-middle"
+      title={`Link to: ${title}`}
+    >
+      <FileText className="wikilink-icon h-3 w-3 flex-shrink-0" />
+      <span className="truncate">{title}</span>
+    </a>
+  );
+};
+
 const RUNNABLE_LANGS = ["go", "golang", "js", "javascript", "py", "python", "lua", "c"];
 
 const MarkdownPreview = memo(
@@ -877,7 +950,8 @@ const MarkdownPreview = memo(
         .replace(/\\\((.*?)\\\)/g, '$$$1$$')
         .replace(/\\\[(.*?)\\\]/g, '$$$$$1$$$$');
 
-      const safeContent = escapeUnsupportedHtml(convertAdmonitions(mathFixed));
+      const wikilinkProcessed = convertWikilinks(mathFixed);
+      const safeContent = escapeUnsupportedHtml(convertAdmonitions(wikilinkProcessed));
       return { processedContent: safeContent, tocMarkdown: toc };
     }, [content]);
 
@@ -1160,6 +1234,35 @@ const MarkdownPreview = memo(
             <div className={className} {...props}>
               {children}
             </div>
+          );
+        },
+        /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+        a(props: any) {
+          const { node, children, href, ...rest } = props;
+
+          // Legacy check for converted [[title]]
+          const wikilinkTitle = node?.properties?.dataWikilink;
+          if (wikilinkTitle) {
+            return <WikilinkAnchor title={wikilinkTitle} />;
+          }
+
+          // Modern check for markdown [Title](/docs/ID)
+          if (href && typeof href === "string" && href.startsWith("/docs/")) {
+            // Extract the text content from children
+            const childArray = React.Children.toArray(children);
+            const textContent = childArray.length > 0 && typeof childArray[0] === "string"
+              ? childArray[0]
+              : "Link"; // Fallback
+            return <WikilinkAnchor title={textContent as string} idHref={href} />;
+          }
+
+          // Note: internal links that aren't /docs/ (if any) could stay in current tab, 
+          // but we open most generic links in a new tab.
+          const isInternal = href && typeof href === "string" && href.startsWith("/");
+          return (
+            <a href={href} target={isInternal ? undefined : "_blank"} rel={isInternal ? undefined : "noopener noreferrer"} {...rest}>
+              {children}
+            </a>
           );
         },
       }),

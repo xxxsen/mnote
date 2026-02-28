@@ -377,3 +377,87 @@ func (r *DocumentRepo) Delete(ctx context.Context, userID, docID string, mtime i
 	}
 	return nil
 }
+
+func (r *DocumentRepo) UpdateLinks(ctx context.Context, userID, sourceID string, targetIDs []string, mtime int64) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Delete old links
+	delSQL, delArgs, err := builder.BuildDelete("document_links", map[string]interface{}{
+		"source_id": sourceID,
+		"user_id":   userID,
+	})
+	if err != nil {
+		return err
+	}
+	delSQL, delArgs = dbutil.Finalize(delSQL, delArgs)
+	if _, err := tx.ExecContext(ctx, delSQL, delArgs...); err != nil {
+		return err
+	}
+
+	// 2. Insert new links
+	if len(targetIDs) > 0 {
+		var inserts []map[string]interface{}
+		// unique targets
+		seen := make(map[string]bool)
+		for _, targetID := range targetIDs {
+			if seen[targetID] || targetID == sourceID {
+				continue
+			}
+			seen[targetID] = true
+			inserts = append(inserts, map[string]interface{}{
+				"source_id": sourceID,
+				"target_id": targetID,
+				"user_id":   userID,
+				"ctime":     mtime, // Use document mtime as link ctime
+			})
+		}
+
+		if len(inserts) > 0 {
+			insertSQL, insertArgs, err := builder.BuildInsert("document_links", inserts)
+			if err != nil {
+				return err
+			}
+			insertSQL, insertArgs = dbutil.Finalize(insertSQL, insertArgs)
+			if _, err := tx.ExecContext(ctx, insertSQL, insertArgs...); err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (r *DocumentRepo) GetBacklinks(ctx context.Context, userID, targetID string) ([]model.Document, error) {
+	// Find all normal state documents whose ID is in the subquery of document_links
+	where := map[string]interface{}{
+		"user_id":       userID,
+		"state":         DocumentStateNormal,
+		"_custom_links": builder.Custom("id IN (SELECT source_id FROM document_links WHERE target_id = ? AND user_id = ?)", targetID, userID),
+		"_orderby":      "mtime desc",
+	}
+
+	sqlStr, args, err := builder.BuildSelect("documents", where, []string{"id", "user_id", "title", "content", "state", "pinned", "starred", "ctime", "mtime"})
+	if err != nil {
+		return nil, err
+	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
+	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	docs := make([]model.Document, 0)
+	for rows.Next() {
+		var doc model.Document
+		if err := rows.Scan(&doc.ID, &doc.UserID, &doc.Title, &doc.Content, &doc.State, &doc.Pinned, &doc.Starred, &doc.Ctime, &doc.Mtime); err != nil {
+			return nil, err
+		}
+		docs = append(docs, doc)
+	}
+	return docs, rows.Err()
+}
