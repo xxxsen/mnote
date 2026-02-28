@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { Document, Tag } from "@/types";
-import { ChevronDown, ChevronRight, Copy, Download, FileArchive, LogOut, Pencil, Pin, Search, Settings, Share2, Star, Upload, X } from "lucide-react";
+import { Bookmark, ChevronDown, ChevronRight, Copy, Download, FileArchive, LogOut, Pencil, Pin, Plus, Search, Settings, Share2, Star, Upload, X } from "lucide-react";
 
 function TagEditor({
   doc,
@@ -321,6 +321,24 @@ type ImportReport = {
   failed_titles: string[];
 };
 
+type SavedView = {
+  id: string;
+  name: string;
+  search: string;
+  selectedTag: string;
+  showStarred: boolean;
+  showShared: boolean;
+};
+
+type SavedViewDTO = {
+  id: string;
+  name: string;
+  search: string;
+  tag_id: string;
+  show_starred: number;
+  show_shared: number;
+};
+
 
 const sortDocs = (docs: DocumentWithTags[]) => {
   return [...docs].sort((a, b) => {
@@ -364,6 +382,7 @@ export default function DocsPage() {
   const [hasMore, setHasMore] = useState(true);
   const [nextOffset, setNextOffset] = useState(0);
   const [search, setSearch] = useState(searchParams.get("q") || "");
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [aiSearchDocs, setAiSearchDocs] = useState<DocumentWithTags[]>([]);
   const [aiSearching, setAiSearching] = useState(false);
   const [selectedTag, setSelectedTag] = useState(searchParams.get("tag_id") || "");
@@ -434,6 +453,24 @@ export default function DocsPage() {
       setShowImportMenu(false);
     }
   }, [showUserMenu]);
+
+  const fetchSavedViews = useCallback(async () => {
+    try {
+      const res = await apiFetch<SavedViewDTO[]>("/saved-views");
+      const next = (res || []).map((item) => ({
+        id: item.id,
+        name: item.name,
+        search: item.search || "",
+        selectedTag: item.tag_id || "",
+        showStarred: item.show_starred === 1,
+        showShared: item.show_shared === 1,
+      }));
+      setSavedViews(next);
+    } catch (e) {
+      console.error(e);
+      setSavedViews([]);
+    }
+  }, []);
 
   const mergeTags = useCallback((items: Tag[]) => {
     if (!items.length) return;
@@ -671,7 +708,8 @@ export default function DocsPage() {
     fetchTags("");
     fetchSummary();
     fetchSharedSummary();
-  }, [fetchTags, fetchSummary, fetchSharedSummary]);
+    fetchSavedViews();
+  }, [fetchSavedViews, fetchTags, fetchSummary, fetchSharedSummary]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -853,6 +891,52 @@ export default function DocsPage() {
     removeAuthEmail();
     router.push("/login");
   };
+
+  const handleSaveCurrentView = useCallback(async () => {
+    const hasFilter = Boolean(search.trim() || selectedTag || showStarred || showShared);
+    if (!hasFilter) {
+      toast({ description: "Apply a filter before saving a view." });
+      return;
+    }
+    const defaultName = `View ${savedViews.length + 1}`;
+    const name = window.prompt("Saved view name", defaultName)?.trim();
+    if (!name) return;
+    try {
+      await apiFetch<SavedViewDTO>("/saved-views", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          search,
+          tag_id: selectedTag,
+          show_starred: showStarred,
+          show_shared: showShared,
+        }),
+      });
+      await fetchSavedViews();
+      toast({ description: "Saved view created." });
+    } catch (e) {
+      console.error(e);
+      toast({ description: "Failed to save view", variant: "error" });
+    }
+  }, [fetchSavedViews, savedViews.length, search, selectedTag, showShared, showStarred, toast]);
+
+  const applySavedView = useCallback((view: SavedView) => {
+    setSearch(view.search || "");
+    setSelectedTag(view.selectedTag || "");
+    setShowStarred(Boolean(view.showStarred));
+    setShowShared(Boolean(view.showShared));
+    setShowTagSelector(false);
+  }, []);
+
+  const removeSavedView = useCallback(async (viewID: string) => {
+    try {
+      await apiFetch(`/saved-views/${viewID}`, { method: "DELETE" });
+      await fetchSavedViews();
+    } catch (e) {
+      console.error(e);
+      toast({ description: "Failed to delete saved view", variant: "error" });
+    }
+  }, [fetchSavedViews, toast]);
 
   const formatRelativeTime = useCallback((timestamp?: number) => {
     if (!timestamp) return "";
@@ -1109,6 +1193,72 @@ export default function DocsPage() {
                     {sharedTotal}
                   </span>
                 </button>
+            </div>
+          </div>
+
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-bold uppercase text-muted-foreground">Saved Views</div>
+              <button
+                onClick={handleSaveCurrentView}
+                className="inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                title="Save current filters"
+              >
+                <Plus className="h-3 w-3" />
+              </button>
+            </div>
+            <div className="flex flex-col gap-1">
+              {savedViews.length === 0 ? (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground italic opacity-60">No saved views</div>
+              ) : (
+                savedViews.map((view) => {
+                  const isActive =
+                    view.search === search &&
+                    view.selectedTag === selectedTag &&
+                    view.showStarred === showStarred &&
+                    view.showShared === showShared;
+                  return (
+                    <button
+                      key={view.id}
+                      onClick={() => applySavedView(view)}
+                      className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
+                        isActive
+                          ? "bg-accent text-accent-foreground"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <Bookmark className={`h-3 w-3 shrink-0 ${isActive ? "fill-current" : ""}`} />
+                        <span className="truncate">{view.name}</span>
+                      </span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className={`rounded p-1 transition-colors ${
+                          isActive
+                            ? "text-accent-foreground/80 hover:text-accent-foreground"
+                            : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+                        }`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void removeSavedView(view.id);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void removeSavedView(view.id);
+                          }
+                        }}
+                        title="Delete saved view"
+                        aria-label="Delete saved view"
+                      >
+                        <X className="h-3 w-3" />
+                      </span>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </div>
 
