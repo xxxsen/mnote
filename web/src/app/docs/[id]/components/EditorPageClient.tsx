@@ -2230,20 +2230,6 @@ here is the body of note.`}
                             onBlur={(e) => handleShareExpireAtChange(e.target.value)}
                             className="h-8 w-full min-w-0 rounded-md border border-border bg-background px-2 text-xs"
                           />
-                          <button
-                            type="button"
-                            className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground disabled:opacity-40"
-                            title="Clear expire at"
-                            disabled={!shareExpiresAtInput}
-                            onClick={() => {
-                              if (!shareExpiresAtInput) return;
-                              setShareExpiresAtInput("");
-                              setShareExpiresAtUnix(0);
-                              void saveShareConfig({ expires_at: 0 });
-                            }}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
                         </div>
 
                         <div className="text-[11px] text-muted-foreground">Permission</div>
