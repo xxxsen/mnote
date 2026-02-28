@@ -178,7 +178,23 @@ export const convertAdmonitions = (content: string) => {
   return result.join("\n");
 };
 
-const escapeUnsupportedHtml = (content: string) => {
+export const escapeUnsupportedHtml = (content: string) => {
+  const decodeHtmlEntities = (value: string) =>
+    value
+      .replace(/&#x([0-9a-f]+);?/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+      .replace(/&#([0-9]+);?/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
+      .replace(/&colon;?/gi, ":")
+      .replace(/&newline;?/gi, "\n")
+      .replace(/&tab;?/gi, "\t");
+
+  const hasDangerousAttrs = (attrs: string) => {
+    const lowerAttrs = attrs.toLowerCase();
+    if (/\bon[a-z]+\s*=/.test(lowerAttrs)) return true;
+    // Decode entity-encoded protocols and normalize whitespace/control chars.
+    const normalized = decodeHtmlEntities(lowerAttrs).replace(/[\u0000-\u0020]+/g, "");
+    return /(javascript|vbscript|data)\s*:/.test(normalized);
+  };
+
   const lines = content.split("\n");
   let inCodeBlock = false;
   return lines
@@ -193,8 +209,7 @@ const escapeUnsupportedHtml = (content: string) => {
       return line.replace(/<(\/?)([a-zA-Z0-9-]+)([^>]*)>/g, (match, slash, tagName, attrs) => {
         const name = String(tagName).toLowerCase();
         if (allowedHtmlTags.has(name)) {
-          const lowerAttrs = attrs.toLowerCase();
-          if (/\bon[a-z]+\s*=/i.test(lowerAttrs) || lowerAttrs.includes("javascript:")) {
+          if (hasDangerousAttrs(attrs)) {
             return `<${slash}${name}>`;
           }
           return match;

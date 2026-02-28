@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toSafeInlineStyle, toFontSize, convertAdmonitions, FONT_SIZE_MAP } from "@/components/markdown-preview";
+import { toSafeInlineStyle, toFontSize, convertAdmonitions, escapeUnsupportedHtml, FONT_SIZE_MAP } from "@/components/markdown-preview";
 
 describe("toSafeInlineStyle", () => {
     it("parses color and font-size from a CSS string", () => {
@@ -126,5 +126,27 @@ describe("convertAdmonitions", () => {
     it("leaves unknown admonition types as-is", () => {
         const input = ":::unknown\ncontent\n:::";
         expect(convertAdmonitions(input)).toBe(input);
+    });
+});
+
+describe("escapeUnsupportedHtml", () => {
+    it("keeps safe anchor links", () => {
+        const input = `<a href="https://example.com">ok</a>`;
+        expect(escapeUnsupportedHtml(input)).toBe(input);
+    });
+
+    it("strips javascript protocol in href", () => {
+        const input = `<a href="javascript:alert('x')">bad</a>`;
+        expect(escapeUnsupportedHtml(input)).toBe("<a>bad</a>");
+    });
+
+    it("strips inline event handlers", () => {
+        const input = `<a href="https://example.com" onclick="alert('x')">bad</a>`;
+        expect(escapeUnsupportedHtml(input)).toBe("<a>bad</a>");
+    });
+
+    it("strips encoded javascript protocol variants", () => {
+        const input = `<a href="java&#x73;cript:alert('x')">bad</a>`;
+        expect(escapeUnsupportedHtml(input)).toBe("<a>bad</a>");
     });
 });
