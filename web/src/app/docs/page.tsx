@@ -1201,7 +1201,7 @@ export default function DocsPage() {
               <div className="text-xs font-bold uppercase text-muted-foreground">Saved Views</div>
               <button
                 onClick={handleSaveCurrentView}
-                className="inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="inline-flex h-5 w-5 items-center justify-center text-muted-foreground hover:text-foreground"
                 title="Save current filters"
               >
                 <Plus className="h-3 w-3" />
