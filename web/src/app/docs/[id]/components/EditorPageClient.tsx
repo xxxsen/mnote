@@ -299,7 +299,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   // TOC State
   const [tocContent, setTocContent] = useState("");
   const [tocCollapsed, setTocCollapsed] = useState(false);
-  const [floatingPanelTab, setFloatingPanelTab] = useState<"toc" | "mentions">("toc");
+  const [floatingPanelTab, setFloatingPanelTab] = useState<"toc" | "mentions" | "summary">("toc");
   const [floatingPanelTouched, setFloatingPanelTouched] = useState(false);
   const [activePopover, setActivePopover] = useState<"emoji" | "color" | "size" | null>(null);
   const [emojiTab, setEmojiTab] = useState(EMOJI_TABS[0].key);
@@ -1081,6 +1081,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   }, [tocContent, previewContent]);
 
   const hasMentionsPanel = backlinks.length > 0;
+  const hasSummaryPanel = summary.trim().length > 0;
 
   useEffect(() => {
     setFloatingPanelTab("toc");
@@ -1095,17 +1096,33 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     }
     if (hasMentionsPanel) {
       setFloatingPanelTab("mentions");
+      return;
     }
-  }, [hasTocPanel, hasMentionsPanel, floatingPanelTouched]);
+    if (hasSummaryPanel) {
+      setFloatingPanelTab("summary");
+    }
+  }, [hasTocPanel, hasMentionsPanel, hasSummaryPanel, floatingPanelTouched]);
 
   useEffect(() => {
     if (floatingPanelTab === "toc" && !hasTocPanel && hasMentionsPanel) {
       setFloatingPanelTab("mentions");
     }
+    if (floatingPanelTab === "toc" && !hasTocPanel && !hasMentionsPanel && hasSummaryPanel) {
+      setFloatingPanelTab("summary");
+    }
     if (floatingPanelTab === "mentions" && !hasMentionsPanel && hasTocPanel) {
       setFloatingPanelTab("toc");
     }
-  }, [floatingPanelTab, hasTocPanel, hasMentionsPanel]);
+    if (floatingPanelTab === "mentions" && !hasMentionsPanel && !hasTocPanel && hasSummaryPanel) {
+      setFloatingPanelTab("summary");
+    }
+    if (floatingPanelTab === "summary" && !hasSummaryPanel && hasTocPanel) {
+      setFloatingPanelTab("toc");
+    }
+    if (floatingPanelTab === "summary" && !hasSummaryPanel && !hasTocPanel && hasMentionsPanel) {
+      setFloatingPanelTab("mentions");
+    }
+  }, [floatingPanelTab, hasTocPanel, hasMentionsPanel, hasSummaryPanel]);
 
   const handleSave = useCallback(async () => {
     const latestContent = contentRef.current;
@@ -2238,7 +2255,7 @@ here is the body of note.`}
       }
 
       {
-        !showDetails && (hasTocPanel || hasMentionsPanel) && (
+        !showDetails && (hasTocPanel || hasMentionsPanel || hasSummaryPanel) && (
           <div className="fixed top-24 right-8 z-30 hidden w-72 rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md xl:block animate-in fade-in slide-in-from-right-4 duration-500">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60">
               <div className="flex items-center gap-1">
@@ -2266,6 +2283,19 @@ here is the body of note.`}
                       : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
                   >
                     Mentions
+                  </button>
+                )}
+                {hasSummaryPanel && (
+                  <button
+                    onClick={() => {
+                      setFloatingPanelTab("summary");
+                      setFloatingPanelTouched(true);
+                    }}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors ${floatingPanelTab === "summary"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
+                  >
+                    Summary
                   </button>
                 )}
               </div>
@@ -2321,7 +2351,7 @@ here is the body of note.`}
                   ) : (
                     <div className="text-xs text-slate-400 italic">No TOC available for this note.</div>
                   )
-                ) : (
+                ) : floatingPanelTab === "mentions" ? (
                   backlinks.length === 0 ? (
                     <div className="text-xs text-slate-400 italic">No notes link back to this document yet.</div>
                   ) : (
@@ -2342,6 +2372,13 @@ here is the body of note.`}
                       ))}
                     </div>
                   )
+                ) : (
+                  <div className="space-y-2">
+                    <div className="text-xs font-bold uppercase tracking-widest text-slate-500">AI Summary</div>
+                    <div className="text-xs leading-relaxed whitespace-pre-wrap text-slate-700">
+                      {summary}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
