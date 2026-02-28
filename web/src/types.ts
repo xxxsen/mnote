@@ -43,6 +43,9 @@ export interface Share {
   document_id: string;
   token: string;
   state: number;
+  expires_at: number;
+  permission: number;
+  allow_download: number;
   ctime: number;
   mtime: number;
 }
@@ -51,4 +54,34 @@ export interface PublicShareDetail {
   document: Document;
   author: string;
   tags: Tag[];
+  permission: number;
+  allow_download: number;
+  expires_at: number;
+}
+
+export interface Template {
+  id: string;
+  user_id?: string;
+  name: string;
+  description: string;
+  content: string;
+  category: string;
+  variables: string[];
+  default_tag_ids: string[];
+  built_in: number;
+  ctime: number;
+  mtime: number;
+}
+
+export interface Asset {
+  id: string;
+  user_id: string;
+  file_key: string;
+  url: string;
+  name: string;
+  content_type: string;
+  size: number;
+  ctime: number;
+  mtime: number;
+  ref_count: number;
 }

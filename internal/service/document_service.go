@@ -12,6 +12,7 @@ import (
 
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
+	"github.com/xxxsen/mnote/internal/pkg/password"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
 	"github.com/xxxsen/mnote/internal/repo"
 )
@@ -25,6 +26,7 @@ type DocumentService struct {
 	tagRepo        *repo.TagRepo
 	userRepo       *repo.UserRepo
 	ai             *AIService
+	assets         *AssetService
 	versionMaxKeep int
 }
 
@@ -32,6 +34,10 @@ const minSummaryChars = 100
 
 func NewDocumentService(docs *repo.DocumentRepo, summaries *repo.DocumentSummaryRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo, tagRepo *repo.TagRepo, userRepo *repo.UserRepo, ai *AIService, versionMaxKeep int) *DocumentService {
 	return &DocumentService{docs: docs, summaries: summaries, versions: versions, tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo, ai: ai, versionMaxKeep: versionMaxKeep}
+}
+
+func (s *DocumentService) SetAssetService(assets *AssetService) {
+	s.assets = assets
 }
 
 type DocumentSummary struct {
@@ -42,9 +48,12 @@ type DocumentSummary struct {
 }
 
 type PublicShareDetail struct {
-	Document *model.Document `json:"document"`
-	Author   string          `json:"author"`
-	Tags     []model.Tag     `json:"tags"`
+	Document      *model.Document `json:"document"`
+	Author        string          `json:"author"`
+	Tags          []model.Tag     `json:"tags"`
+	Permission    int             `json:"permission"`
+	AllowDownload int             `json:"allow_download"`
+	ExpiresAt     int64           `json:"expires_at"`
 }
 
 func (s *DocumentService) Search(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error) {
@@ -174,12 +183,15 @@ func (s *DocumentService) ListSharedDocuments(ctx context.Context, userID string
 	results := make([]SharedDocumentSummary, 0, len(items))
 	for _, item := range items {
 		results = append(results, SharedDocumentSummary{
-			ID:      item.ID,
-			Title:   item.Title,
-			Summary: item.Summary,
-			Mtime:   item.Mtime,
-			Token:   item.Token,
-			TagIDs:  tagIDsByDoc[item.ID],
+			ID:            item.ID,
+			Title:         item.Title,
+			Summary:       item.Summary,
+			Mtime:         item.Mtime,
+			Token:         item.Token,
+			TagIDs:        tagIDsByDoc[item.ID],
+			ExpiresAt:     item.ExpiresAt,
+			Permission:    item.Permission,
+			AllowDownload: item.AllowDownload,
 		})
 	}
 	return results, nil
@@ -268,6 +280,11 @@ func (s *DocumentService) Delete(ctx context.Context, userID, docID string) erro
 	if err := s.tags.DeleteByDoc(ctx, userID, docID); err != nil {
 		return err
 	}
+	if s.assets != nil {
+		if err := s.assets.RemoveDocumentReferences(ctx, userID, docID); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -301,18 +318,62 @@ func (s *DocumentService) CreateShare(ctx context.Context, userID, docID string)
 		return nil, err
 	}
 	share := &model.Share{
-		ID:         newID(),
-		UserID:     userID,
-		DocumentID: docID,
-		Token:      newToken(),
-		State:      repo.ShareStateActive,
-		Ctime:      now,
-		Mtime:      now,
+		ID:            newID(),
+		UserID:        userID,
+		DocumentID:    docID,
+		Token:         newToken(),
+		State:         repo.ShareStateActive,
+		ExpiresAt:     0,
+		Permission:    repo.SharePermissionView,
+		AllowDownload: 1,
+		Ctime:         now,
+		Mtime:         now,
 	}
 	if err := s.shares.Create(ctx, share); err != nil {
 		return nil, err
 	}
 	return share, nil
+}
+
+type ShareConfigInput struct {
+	ExpiresAt     int64
+	Password      string
+	ClearPassword bool
+	Permission    int
+	AllowDownload bool
+}
+
+func (s *DocumentService) UpdateShareConfig(ctx context.Context, userID, docID string, input ShareConfigInput) (*model.Share, error) {
+	share, err := s.GetActiveShare(ctx, userID, docID)
+	if err != nil {
+		return nil, err
+	}
+	if input.Permission != repo.SharePermissionView && input.Permission != repo.SharePermissionComment {
+		return nil, appErr.ErrInvalid
+	}
+	if input.ExpiresAt < 0 {
+		return nil, appErr.ErrInvalid
+	}
+	passwordHash := share.PasswordHash
+	if strings.TrimSpace(input.Password) != "" {
+		hashed, err := password.Hash(strings.TrimSpace(input.Password))
+		if err != nil {
+			return nil, err
+		}
+		passwordHash = hashed
+	}
+	if input.ClearPassword {
+		passwordHash = ""
+	}
+	allowDownload := 0
+	if input.AllowDownload {
+		allowDownload = 1
+	}
+	now := timeutil.NowUnix()
+	if err := s.shares.UpdateConfigByDocument(ctx, userID, docID, input.ExpiresAt, passwordHash, input.Permission, allowDownload, now); err != nil {
+		return nil, err
+	}
+	return s.GetActiveShare(ctx, userID, docID)
 }
 
 func (s *DocumentService) RevokeShare(ctx context.Context, userID, docID string) error {
@@ -336,13 +397,25 @@ func (s *DocumentService) GetActiveShare(ctx context.Context, userID, docID stri
 	return share, nil
 }
 
-func (s *DocumentService) GetShareByToken(ctx context.Context, token string) (*PublicShareDetail, error) {
+func (s *DocumentService) GetShareByToken(ctx context.Context, token, sharePassword string) (*PublicShareDetail, error) {
 	share, err := s.shares.GetByToken(ctx, token)
 	if err != nil {
 		return nil, err
 	}
 	if share.State != repo.ShareStateActive {
 		return nil, appErr.ErrNotFound
+	}
+	now := timeutil.NowUnix()
+	if share.ExpiresAt > 0 && share.ExpiresAt < now {
+		return nil, appErr.ErrNotFound
+	}
+	if share.PasswordHash != "" {
+		if strings.TrimSpace(sharePassword) == "" {
+			return nil, appErr.ErrForbidden
+		}
+		if err := password.Compare(share.PasswordHash, sharePassword); err != nil {
+			return nil, appErr.ErrForbidden
+		}
 	}
 	doc, err := s.docs.GetByID(ctx, share.UserID, share.DocumentID)
 	if err != nil {
@@ -361,19 +434,25 @@ func (s *DocumentService) GetShareByToken(ctx context.Context, token string) (*P
 		return nil, err
 	}
 	return &PublicShareDetail{
-		Document: doc,
-		Author:   user.Email,
-		Tags:     tags,
+		Document:      doc,
+		Author:        user.Email,
+		Tags:          tags,
+		Permission:    share.Permission,
+		AllowDownload: share.AllowDownload,
+		ExpiresAt:     share.ExpiresAt,
 	}, nil
 }
 
 type SharedDocumentSummary struct {
-	ID      string   `json:"id"`
-	Title   string   `json:"title"`
-	Summary string   `json:"summary"`
-	Mtime   int64    `json:"mtime"`
-	Token   string   `json:"token"`
-	TagIDs  []string `json:"tag_ids"`
+	ID            string   `json:"id"`
+	Title         string   `json:"title"`
+	Summary       string   `json:"summary"`
+	Mtime         int64    `json:"mtime"`
+	Token         string   `json:"token"`
+	TagIDs        []string `json:"tag_ids"`
+	ExpiresAt     int64    `json:"expires_at"`
+	Permission    int      `json:"permission"`
+	AllowDownload int      `json:"allow_download"`
 }
 
 type DocumentCreateInput struct {
@@ -458,6 +537,11 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 	if err := s.docs.UpdateLinks(ctx, userID, docID, linkIDs, now); err != nil {
 		return err
 	}
+	if s.assets != nil {
+		if err := s.assets.SyncDocumentReferences(ctx, userID, docID, input.Content); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -514,6 +598,11 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 	linkIDs := extractLinkIDs(input.Content)
 	if err := s.docs.UpdateLinks(ctx, userID, doc.ID, linkIDs, now); err != nil {
 		return nil, err
+	}
+	if s.assets != nil {
+		if err := s.assets.SyncDocumentReferences(ctx, userID, doc.ID, input.Content); err != nil {
+			return nil, err
+		}
 	}
 
 	return doc, nil

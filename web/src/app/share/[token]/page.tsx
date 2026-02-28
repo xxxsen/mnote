@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef, memo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ApiError } from "@/lib/api";
 import MarkdownPreview from "@/components/markdown-preview";
 import { PublicShareDetail } from "@/types";
 import { formatDate, generatePixelAvatar } from "@/lib/utils";
@@ -45,6 +45,10 @@ export default function SharePage() {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showMobileToc, setShowMobileToc] = useState(false);
+  const [sharePasswordInput, setSharePasswordInput] = useState("");
+  const [accessPassword, setAccessPassword] = useState("");
+  const [passwordRequired, setPasswordRequired] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
   
   const previewRef = useRef<HTMLDivElement>(null);
   const doc = detail?.document;
@@ -115,17 +119,29 @@ export default function SharePage() {
   useEffect(() => {
     const fetchDoc = async () => {
       try {
-        const d = await apiFetch<PublicShareDetail>(`/public/share/${token}`, { requireAuth: false });
+        const params = new URLSearchParams();
+        if (accessPassword.trim()) {
+          params.set("password", accessPassword.trim());
+        }
+        const query = params.toString();
+        const d = await apiFetch<PublicShareDetail>(`/public/share/${token}${query ? `?${query}` : ""}`, { requireAuth: false });
         setDetail(d);
+        setPasswordRequired(false);
+        setPasswordError("");
       } catch (err) {
-        console.error(err);
-        setError(true);
+        if (err instanceof ApiError && err.code === 10000002) {
+          setPasswordRequired(true);
+          setPasswordError(accessPassword ? "Invalid password." : "");
+        } else {
+          console.error(err);
+          setError(true);
+        }
       } finally {
         setLoading(false);
       }
     };
     fetchDoc();
-  }, [token]);
+  }, [accessPassword, token]);
 
   useEffect(() => {
     if (!doc) return;
@@ -180,7 +196,7 @@ export default function SharePage() {
   };
 
   const handleExport = () => {
-    if (!doc) return;
+    if (!doc || detail?.allow_download === 0) return;
     const blob = new Blob([doc.content], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -299,6 +315,33 @@ export default function SharePage() {
   }, [hasTocToken]);
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
+  if (passwordRequired) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center px-4 py-16">
+        <div className="w-full max-w-sm bg-white border border-slate-200/70 rounded-2xl shadow-xl p-6 space-y-4">
+          <h1 className="text-lg font-bold text-slate-900">Protected Share</h1>
+          <p className="text-sm text-slate-500">This note is password protected.</p>
+          <input
+            type="password"
+            value={sharePasswordInput}
+            onChange={(e) => setSharePasswordInput(e.target.value)}
+            className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm"
+            placeholder="Enter password"
+          />
+          {passwordError && <div className="text-xs text-red-500">{passwordError}</div>}
+          <Button
+            className="w-full"
+            onClick={() => {
+              setLoading(true);
+              setAccessPassword(sharePasswordInput.trim());
+            }}
+          >
+            Continue
+          </Button>
+        </div>
+      </div>
+    );
+  }
   if (error || !doc || !detail) {
     return (
       <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center px-4 py-16">
@@ -369,7 +412,8 @@ export default function SharePage() {
           variant="outline"
           className="rounded-full shadow-lg bg-background/80 backdrop-blur-sm border-border hover:bg-background"
           onClick={handleExport}
-          title="Export Markdown"
+          title={detail?.allow_download === 0 ? "Download disabled by owner" : "Export Markdown"}
+          disabled={detail?.allow_download === 0}
         >
           <Download className="h-4 w-4" />
         </Button>
@@ -415,6 +459,14 @@ export default function SharePage() {
                 <User className="h-4 w-4 opacity-70" />
                 <span>{readingTime} min read</span>
               </div>
+              <div className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+                {detail.permission === 2 ? "Comment enabled" : "View only"}
+              </div>
+              {detail.expires_at > 0 && (
+                <div className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                  Expires {formatDate(detail.expires_at)}
+                </div>
+              )}
             </div>
           </div>
 

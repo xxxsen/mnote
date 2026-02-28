@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { Document, Tag } from "@/types";
-import { Bookmark, ChevronDown, ChevronRight, Copy, Download, FileArchive, LogOut, Pencil, Pin, Plus, Search, Settings, Share2, Star, Upload, X } from "lucide-react";
+import { Bookmark, ChevronDown, ChevronRight, Copy, Download, FileArchive, Images, LogOut, Pencil, Pin, Plus, Search, Settings, Share2, Star, Upload, X } from "lucide-react";
 
 function TagEditor({
   doc,
@@ -392,6 +392,7 @@ export default function DocsPage() {
   const [avatarUrl, setAvatarUrl] = useState<string>("");
   const [userEmail, setUserEmail] = useState<string>("");
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [showImportMenu, setShowImportMenu] = useState(false);
   const [showTagSelector, setShowTagSelector] = useState(false);
   const [activeTagIndex, setActiveTagIndex] = useState(0);
@@ -437,6 +438,7 @@ export default function DocsPage() {
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowUserMenu(false);
+        setShowCreateMenu(false);
       }
       if (tagSelectorRef.current && !tagSelectorRef.current.contains(event.target as Node)) {
         setShowTagSelector(false);
@@ -451,6 +453,12 @@ export default function DocsPage() {
   useEffect(() => {
     if (!showUserMenu) {
       setShowImportMenu(false);
+    }
+  }, [showUserMenu]);
+
+  useEffect(() => {
+    if (showUserMenu) {
+      setShowCreateMenu(false);
     }
   }, [showUserMenu]);
 
@@ -1494,11 +1502,45 @@ export default function DocsPage() {
               )}
            </div>
             <div className="flex items-center gap-3 relative" ref={menuRef}>
-              <Button onClick={handleCreate} size="sm" className="rounded-xl bg-[#6366f1] hover:bg-[#4f46e5] text-white border-none font-bold tracking-wide">
-                + NEW
+              <Button
+                onClick={() => router.push("/assets")}
+                variant="outline"
+                size="sm"
+                className="rounded-xl text-xs font-semibold"
+              >
+                <Images className="mr-1.5 h-3.5 w-3.5" />
+                Assets
               </Button>
+              <div className="relative flex items-center">
+                <Button onClick={handleCreate} size="sm" className="rounded-r-none rounded-l-xl bg-[#6366f1] hover:bg-[#4f46e5] text-white border-none font-bold tracking-wide">
+                  + NEW
+                </Button>
+                <Button
+                  onClick={() => setShowCreateMenu((prev) => !prev)}
+                  size="sm"
+                  className="rounded-l-none rounded-r-xl bg-[#6366f1] hover:bg-[#4f46e5] text-white border-none px-2"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+                {showCreateMenu && (
+                  <div className="absolute right-0 top-full mt-2 w-44 rounded-xl border border-border bg-popover p-1 shadow-md z-[100] animate-in fade-in zoom-in-95 duration-200">
+                    <button
+                      onClick={() => {
+                        setShowCreateMenu(false);
+                        router.push("/templates");
+                      }}
+                      className="relative flex w-full cursor-default select-none items-center justify-center text-center rounded-lg px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                    >
+                      TEMPLATE
+                    </button>
+                  </div>
+                )}
+              </div>
               <button 
-                onClick={() => setShowUserMenu(!showUserMenu)}
+                onClick={() => {
+                  setShowCreateMenu(false);
+                  setShowUserMenu(!showUserMenu);
+                }}
                 className="w-8 h-8 rounded-full overflow-hidden border border-border hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                 title={userEmail || "User menu"}
               >

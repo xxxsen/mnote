@@ -53,15 +53,21 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
 	savedViewRepo := repo.NewSavedViewRepo(db)
+	templateRepo := repo.NewTemplateRepo(db)
+	assetRepo := repo.NewAssetRepo(db)
+	documentAssetRepo := repo.NewDocumentAssetRepo(db)
 
 	jwtSecret := []byte("test-secret")
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, noopSender{})
 	authService := service.NewAuthService(userRepo, verifyService, jwtSecret, time.Hour, true)
 	oauthService := service.NewOAuthService(userRepo, oauthRepo, jwtSecret, time.Hour, map[string]oauth.Provider{})
 	documentService := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
+	assetService := service.NewAssetService(assetRepo, documentAssetRepo)
+	documentService.SetAssetService(assetService)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, summaryRepo, versionRepo, tagRepo, docTagRepo)
 	savedViewService := service.NewSavedViewService(savedViewRepo)
+	templateService := service.NewTemplateService(templateRepo, documentService, tagRepo)
 
 	tmpDir, err := os.MkdirTemp("", "mnote-upload-*")
 	require.NoError(t, err)
@@ -85,6 +91,8 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 		Export:     handler.NewExportHandler(exportService),
 		Files:      handler.NewFileHandler(store, 20*1024*1024),
 		SavedViews: handler.NewSavedViewHandler(savedViewService),
+		Templates:  handler.NewTemplateHandler(templateService),
+		Assets:     handler.NewAssetHandler(assetService),
 		JWTSecret:  jwtSecret,
 	}
 

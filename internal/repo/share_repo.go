@@ -14,6 +14,9 @@ import (
 const (
 	ShareStateActive  = 1
 	ShareStateRevoked = 2
+
+	SharePermissionView    = 1
+	SharePermissionComment = 2
 )
 
 type ShareRepo struct {
@@ -26,13 +29,17 @@ func NewShareRepo(db *sql.DB) *ShareRepo {
 
 func (r *ShareRepo) Create(ctx context.Context, share *model.Share) error {
 	data := map[string]interface{}{
-		"id":          share.ID,
-		"user_id":     share.UserID,
-		"document_id": share.DocumentID,
-		"token":       share.Token,
-		"state":       share.State,
-		"ctime":       share.Ctime,
-		"mtime":       share.Mtime,
+		"id":             share.ID,
+		"user_id":        share.UserID,
+		"document_id":    share.DocumentID,
+		"token":          share.Token,
+		"state":          share.State,
+		"expires_at":     share.ExpiresAt,
+		"password_hash":  share.PasswordHash,
+		"permission":     share.Permission,
+		"allow_download": share.AllowDownload,
+		"ctime":          share.Ctime,
+		"mtime":          share.Mtime,
 	}
 	sqlStr, args, err := builder.BuildInsert("shares", []map[string]interface{}{data})
 	if err != nil {
@@ -45,6 +52,34 @@ func (r *ShareRepo) Create(ctx context.Context, share *model.Share) error {
 			return appErr.ErrConflict
 		}
 		return err
+	}
+	return nil
+}
+
+func (r *ShareRepo) UpdateConfigByDocument(ctx context.Context, userID, docID string, expiresAt int64, passwordHash string, permission int, allowDownload int, mtime int64) error {
+	where := map[string]interface{}{"user_id": userID, "document_id": docID, "state": ShareStateActive}
+	update := map[string]interface{}{
+		"expires_at":     expiresAt,
+		"password_hash":  passwordHash,
+		"permission":     permission,
+		"allow_download": allowDownload,
+		"mtime":          mtime,
+	}
+	sqlStr, args, err := builder.BuildUpdate("shares", where, update)
+	if err != nil {
+		return err
+	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
+	res, err := r.db.ExecContext(ctx, sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return appErr.ErrNotFound
 	}
 	return nil
 }
@@ -63,7 +98,7 @@ func (r *ShareRepo) RevokeByDocument(ctx context.Context, userID, docID string, 
 
 func (r *ShareRepo) GetByToken(ctx context.Context, token string) (*model.Share, error) {
 	where := map[string]interface{}{"token": token}
-	sqlStr, args, err := builder.BuildSelect("shares", where, []string{"id", "user_id", "document_id", "token", "state", "ctime", "mtime"})
+	sqlStr, args, err := builder.BuildSelect("shares", where, []string{"id", "user_id", "document_id", "token", "state", "expires_at", "password_hash", "permission", "allow_download", "ctime", "mtime"})
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +112,7 @@ func (r *ShareRepo) GetByToken(ctx context.Context, token string) (*model.Share,
 		return nil, appErr.ErrNotFound
 	}
 	var share model.Share
-	if err := rows.Scan(&share.ID, &share.UserID, &share.DocumentID, &share.Token, &share.State, &share.Ctime, &share.Mtime); err != nil {
+	if err := rows.Scan(&share.ID, &share.UserID, &share.DocumentID, &share.Token, &share.State, &share.ExpiresAt, &share.PasswordHash, &share.Permission, &share.AllowDownload, &share.Ctime, &share.Mtime); err != nil {
 		return nil, err
 	}
 	return &share, nil
@@ -89,7 +124,7 @@ func (r *ShareRepo) GetActiveByDocument(ctx context.Context, userID, docID strin
 		"document_id": docID,
 		"state":       ShareStateActive,
 	}
-	sqlStr, args, err := builder.BuildSelect("shares", where, []string{"id", "user_id", "document_id", "token", "state", "ctime", "mtime"})
+	sqlStr, args, err := builder.BuildSelect("shares", where, []string{"id", "user_id", "document_id", "token", "state", "expires_at", "password_hash", "permission", "allow_download", "ctime", "mtime"})
 	if err != nil {
 		return nil, err
 	}
@@ -103,23 +138,26 @@ func (r *ShareRepo) GetActiveByDocument(ctx context.Context, userID, docID strin
 		return nil, appErr.ErrNotFound
 	}
 	var share model.Share
-	if err := rows.Scan(&share.ID, &share.UserID, &share.DocumentID, &share.Token, &share.State, &share.Ctime, &share.Mtime); err != nil {
+	if err := rows.Scan(&share.ID, &share.UserID, &share.DocumentID, &share.Token, &share.State, &share.ExpiresAt, &share.PasswordHash, &share.Permission, &share.AllowDownload, &share.Ctime, &share.Mtime); err != nil {
 		return nil, err
 	}
 	return &share, nil
 }
 
 type SharedDocument struct {
-	ID      string
-	Title   string
-	Summary string
-	Mtime   int64
-	Token   string
+	ID            string
+	Title         string
+	Summary       string
+	Mtime         int64
+	Token         string
+	ExpiresAt     int64
+	Permission    int
+	AllowDownload int
 }
 
 func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID string, query string) ([]SharedDocument, error) {
 	sqlStr := `
-		SELECT d.id, d.title, COALESCE(ds.summary, '') AS summary, d.mtime, s.token
+		SELECT d.id, d.title, COALESCE(ds.summary, '') AS summary, d.mtime, s.token, s.expires_at, s.permission, s.allow_download
 		FROM shares s
 		JOIN documents d ON d.id = s.document_id AND d.user_id = s.user_id
 		LEFT JOIN document_summaries ds ON ds.document_id = d.id AND ds.user_id = d.user_id
@@ -142,7 +180,7 @@ func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID string, quer
 	items := make([]SharedDocument, 0)
 	for rows.Next() {
 		var item SharedDocument
-		if err := rows.Scan(&item.ID, &item.Title, &item.Summary, &item.Mtime, &item.Token); err != nil {
+		if err := rows.Scan(&item.ID, &item.Title, &item.Summary, &item.Mtime, &item.Token, &item.ExpiresAt, &item.Permission, &item.AllowDownload); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

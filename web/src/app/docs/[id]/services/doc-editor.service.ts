@@ -30,6 +30,16 @@ export const docEditorService = {
     return apiFetch<{ share: Share | null }>(`/documents/${docId}/share`);
   },
 
+  updateShareConfig(
+    docId: string,
+    payload: { expires_at: number; password?: string; clear_password?: boolean; permission: "view" | "comment"; allow_download: boolean }
+  ): Promise<Share> {
+    return apiFetch<Share>(`/documents/${docId}/share`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
   revokeShare(docId: string): Promise<void> {
     return apiFetch(`/documents/${docId}/share`, { method: "DELETE" });
   },

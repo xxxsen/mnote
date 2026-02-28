@@ -14,11 +14,13 @@ import (
 	"github.com/xxxsen/mnote/internal/middleware"
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
+	"github.com/xxxsen/mnote/internal/service"
 )
 
 type FileHandler struct {
 	store         filestore.Store
 	maxUploadSize int64
+	assets        *service.AssetService
 }
 
 type UploadResponse struct {
@@ -29,6 +31,10 @@ type UploadResponse struct {
 
 func NewFileHandler(store filestore.Store, maxUploadSize int64) *FileHandler {
 	return &FileHandler{store: store, maxUploadSize: maxUploadSize}
+}
+
+func (h *FileHandler) SetAssetService(assets *service.AssetService) {
+	h.assets = assets
 }
 
 func (h *FileHandler) Upload(c *gin.Context) {
@@ -75,6 +81,9 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	fileURL := key
 	if !strings.HasPrefix(fileURL, "http://") && !strings.HasPrefix(fileURL, "https://") {
 		fileURL = "/api/v1/files/" + key
+	}
+	if h.assets != nil && userID != "" {
+		_ = h.assets.RecordUpload(c.Request.Context(), userID, key, fileURL, file.Filename, contentType, file.Size)
 	}
 	response.Success(c, UploadResponse{
 		URL:         fileURL,

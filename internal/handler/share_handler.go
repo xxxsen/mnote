@@ -1,9 +1,13 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 
+	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
+	"github.com/xxxsen/mnote/internal/repo"
 	"github.com/xxxsen/mnote/internal/service"
 )
 
@@ -15,8 +19,50 @@ func NewShareHandler(documents *service.DocumentService) *ShareHandler {
 	return &ShareHandler{documents: documents}
 }
 
+type updateShareConfigRequest struct {
+	ExpiresAt     int64  `json:"expires_at"`
+	Password      string `json:"password"`
+	ClearPassword bool   `json:"clear_password"`
+	Permission    string `json:"permission"`
+	AllowDownload *bool  `json:"allow_download"`
+}
+
 func (h *ShareHandler) Create(c *gin.Context) {
 	share, err := h.documents.CreateShare(c.Request.Context(), getUserID(c), c.Param("id"))
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, share)
+}
+
+func (h *ShareHandler) UpdateConfig(c *gin.Context) {
+	var req updateShareConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, errcode.ErrInvalid, "invalid request")
+		return
+	}
+	permission := repo.SharePermissionView
+	switch strings.TrimSpace(strings.ToLower(req.Permission)) {
+	case "", "view":
+		permission = repo.SharePermissionView
+	case "comment":
+		permission = repo.SharePermissionComment
+	default:
+		response.Error(c, errcode.ErrInvalid, "invalid permission")
+		return
+	}
+	allowDownload := true
+	if req.AllowDownload != nil {
+		allowDownload = *req.AllowDownload
+	}
+	share, err := h.documents.UpdateShareConfig(c.Request.Context(), getUserID(c), c.Param("id"), service.ShareConfigInput{
+		ExpiresAt:     req.ExpiresAt,
+		Password:      req.Password,
+		ClearPassword: req.ClearPassword,
+		Permission:    permission,
+		AllowDownload: allowDownload,
+	})
 	if err != nil {
 		handleError(c, err)
 		return
@@ -42,7 +88,7 @@ func (h *ShareHandler) GetActive(c *gin.Context) {
 }
 
 func (h *ShareHandler) PublicGet(c *gin.Context) {
-	detail, err := h.documents.GetShareByToken(c.Request.Context(), c.Param("token"))
+	detail, err := h.documents.GetShareByToken(c.Request.Context(), c.Param("token"), c.Query("password"))
 	if err != nil {
 		handleError(c, err)
 		return

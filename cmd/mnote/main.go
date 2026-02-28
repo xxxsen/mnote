@@ -134,6 +134,9 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	importJobRepo := repo.NewImportJobRepo(db)
 	importJobNoteRepo := repo.NewImportJobNoteRepo(db)
 	savedViewRepo := repo.NewSavedViewRepo(db)
+	templateRepo := repo.NewTemplateRepo(db)
+	assetRepo := repo.NewAssetRepo(db)
+	documentAssetRepo := repo.NewDocumentAssetRepo(db)
 
 	mailSender := service.NewEmailSender(cfg.Mail)
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, mailSender)
@@ -279,11 +282,14 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 
 	aiService := service.NewAIService(aiManager, embeddingRepo)
 	documentService := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, aiService, cfg.VersionMaxKeep)
+	assetService := service.NewAssetService(assetRepo, documentAssetRepo)
+	documentService.SetAssetService(assetService)
 
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, summaryRepo, versionRepo, tagRepo, docTagRepo)
 	importService := service.NewImportService(documentService, tagService, importJobRepo, importJobNoteRepo)
 	savedViewService := service.NewSavedViewService(savedViewRepo)
+	templateService := service.NewTemplateService(templateRepo, documentService, tagRepo)
 
 	authHandler := handler.NewAuthHandler(authService)
 	oauthHandler := handler.NewOAuthHandler(oauthService)
@@ -295,11 +301,14 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	aiHandler := handler.NewAIHandler(aiService, documentService, tagService)
 	importHandler := handler.NewImportHandler(importService, cfg.MaxUploadSize)
 	savedViewHandler := handler.NewSavedViewHandler(savedViewService)
+	templateHandler := handler.NewTemplateHandler(templateService)
+	assetHandler := handler.NewAssetHandler(assetService)
 	store, err := filestore.New(cfg.FileStore)
 	if err != nil {
 		return fmt.Errorf("init file store: %w", err)
 	}
 	fileHandler := handler.NewFileHandler(store, cfg.MaxUploadSize)
+	fileHandler.SetAssetService(assetService)
 
 	deps := handler.RouterDeps{
 		Auth:       authHandler,
@@ -314,6 +323,8 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		SavedViews: savedViewHandler,
 		AI:         aiHandler,
 		Import:     importHandler,
+		Templates:  templateHandler,
+		Assets:     assetHandler,
 		JWTSecret:  []byte(cfg.JWTSecret),
 	}
 
