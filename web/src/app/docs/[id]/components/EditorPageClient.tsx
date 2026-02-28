@@ -251,14 +251,13 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [activeTab, setActiveTab] = useState<"tags" | "summary" | "history" | "share" | "backlinks">("tags");
+  const [activeTab, setActiveTab] = useState<"tags" | "summary" | "history" | "share">("tags");
   const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(loadThemePreference);
 
   const [versions, setVersions] = useState<DocumentVersionSummary[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [selectedTagIDs, setSelectedTagIDs] = useState<string[]>([]);
   const [backlinks, setBacklinks] = useState<MnoteDocument[]>([]);
-  const [backlinksLoading, setBacklinksLoading] = useState(false);
 
   // Wikilink State Extension
   const [wikilinkIndex, setWikilinkIndex] = useState(0);
@@ -299,8 +298,9 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
 
   // TOC State
   const [tocContent, setTocContent] = useState("");
-  const [showFloatingToc, setShowFloatingToc] = useState(false);
   const [tocCollapsed, setTocCollapsed] = useState(false);
+  const [floatingPanelTab, setFloatingPanelTab] = useState<"toc" | "mentions">("toc");
+  const [floatingPanelTouched, setFloatingPanelTouched] = useState(false);
   const [activePopover, setActivePopover] = useState<"emoji" | "color" | "size" | null>(null);
   const [emojiTab, setEmojiTab] = useState(EMOJI_TABS[0].key);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
@@ -591,16 +591,14 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   }, [startTransition]);
 
   const loadBacklinks = useCallback(async () => {
-    setBacklinksLoading(true);
+    setBacklinks([]);
     try {
       const data = await apiFetch<MnoteDocument[]>(`/documents/${id}/backlinks`);
       setBacklinks(data || []);
     } catch {
       setBacklinks([]);
-    } finally {
-      setBacklinksLoading(false);
     }
-  }, [id, setBacklinks, setBacklinksLoading]);
+  }, [id, setBacklinks]);
 
   useEffect(() => {
     void loadBacklinks();
@@ -1077,59 +1075,37 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     }
   }, [id, starred]);
 
-  // TOC Visibility Effect
-  useEffect(() => {
+  const hasTocPanel = useMemo(() => {
     const hasToken = /\[(toc|TOC)]/.test(previewContent);
-    if (!tocContent || !hasToken) {
-      setShowFloatingToc(false);
+    return Boolean(tocContent && hasToken);
+  }, [tocContent, previewContent]);
+
+  const hasMentionsPanel = backlinks.length > 0;
+
+  useEffect(() => {
+    setFloatingPanelTab("toc");
+    setFloatingPanelTouched(false);
+  }, [id]);
+
+  useEffect(() => {
+    if (floatingPanelTouched) return;
+    if (hasTocPanel) {
+      setFloatingPanelTab("toc");
       return;
     }
+    if (hasMentionsPanel) {
+      setFloatingPanelTab("mentions");
+    }
+  }, [hasTocPanel, hasMentionsPanel, floatingPanelTouched]);
 
-    const container = previewRef.current;
-    if (!container) return;
-
-    let timer: number | null = null;
-    let ticking = false;
-
-    const updateVisibility = () => {
-      ticking = false;
-      const tocEl = container.querySelector(".toc-wrapper") as HTMLElement | null;
-      if (!tocEl) {
-        setShowFloatingToc(true);
-        return;
-      }
-      const isScrollable = container.scrollHeight > container.clientHeight + 1;
-      if (isScrollable) {
-        const top = tocEl.offsetTop;
-        const bottom = top + tocEl.offsetHeight;
-        const viewTop = container.scrollTop;
-        const viewBottom = viewTop + container.clientHeight;
-        const inView = bottom > viewTop && top < viewBottom;
-        setShowFloatingToc(!inView);
-        return;
-      }
-      const rect = tocEl.getBoundingClientRect();
-      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-      const inView = rect.bottom > 0 && rect.top < viewportHeight;
-      setShowFloatingToc(!inView);
-    };
-
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      window.requestAnimationFrame(updateVisibility);
-    };
-
-    timer = window.setTimeout(updateVisibility, 120);
-    container.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-
-    return () => {
-      container.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-      if (timer) window.clearTimeout(timer);
-    };
-  }, [tocContent, previewContent]);
+  useEffect(() => {
+    if (floatingPanelTab === "toc" && !hasTocPanel && hasMentionsPanel) {
+      setFloatingPanelTab("mentions");
+    }
+    if (floatingPanelTab === "mentions" && !hasMentionsPanel && hasTocPanel) {
+      setFloatingPanelTab("toc");
+    }
+  }, [floatingPanelTab, hasTocPanel, hasMentionsPanel]);
 
   const handleSave = useCallback(async () => {
     const latestContent = contentRef.current;
@@ -1538,38 +1514,6 @@ here is the body of note.`}
                       className="markdown-body h-auto overflow-visible p-0 bg-transparent text-slate-800"
                       onTocLoaded={handleTocLoaded}
                     />
-
-                    {/* Backlinks Panel (Moved from Sidebar) */}
-                    <div className="mt-16 pt-8 border-t border-slate-200">
-                      <div className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-6 flex items-center gap-2">
-                        <FileText className="h-4 w-4" />
-                        Linked Mentions
-                      </div>
-
-                      {backlinksLoading ? (
-                        <div className="text-sm text-slate-400 animate-pulse">Loading links...</div>
-                      ) : backlinks.length === 0 ? (
-                        <div className="text-sm text-slate-400 italic">No notes link back to this document yet.</div>
-                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {backlinks.map((link) => (
-                            <button
-                              key={link.id}
-                              onClick={() => router.push(`/docs/${link.id}`)}
-                              className="group text-left p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 transition-all flex flex-col gap-2 relative overflow-hidden"
-                            >
-                              <div className="absolute top-0 left-0 w-1 h-full bg-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                              <div className="font-bold text-sm text-slate-700 line-clamp-1 group-hover:text-indigo-600 transition-colors">
-                                {link.title || "Untitled"}
-                              </div>
-                              <div className="text-xs text-slate-400 font-mono">
-                                {formatDate(link.mtime || link.ctime)}
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
                   </div>
                 </article>
               </div>
@@ -2294,10 +2238,37 @@ here is the body of note.`}
       }
 
       {
-        showFloatingToc && !showDetails && tocContent && (
+        !showDetails && (hasTocPanel || hasMentionsPanel) && (
           <div className="fixed top-24 right-8 z-30 hidden w-72 rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md xl:block animate-in fade-in slide-in-from-right-4 duration-500">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">On this page</div>
+              <div className="flex items-center gap-1">
+                {hasTocPanel && (
+                  <button
+                    onClick={() => {
+                      setFloatingPanelTab("toc");
+                      setFloatingPanelTouched(true);
+                    }}
+                    className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest transition-colors ${floatingPanelTab === "toc"
+                      ? "bg-slate-900 text-white rounded-md"
+                      : "text-slate-500 hover:text-slate-900"}`}
+                  >
+                    TOC
+                  </button>
+                )}
+                {hasMentionsPanel && (
+                  <button
+                    onClick={() => {
+                      setFloatingPanelTab("mentions");
+                      setFloatingPanelTouched(true);
+                    }}
+                    className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest transition-colors ${floatingPanelTab === "mentions"
+                      ? "bg-slate-900 text-white rounded-md"
+                      : "text-slate-500 hover:text-slate-900"}`}
+                  >
+                    Mentions
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => setTocCollapsed(!tocCollapsed)}
                 className="p-1 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all"
@@ -2306,43 +2277,72 @@ here is the body of note.`}
               </button>
             </div>
             {!tocCollapsed && (
-              <div className="toc-wrapper text-sm max-h-[60vh] overflow-y-auto p-4 custom-scrollbar">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeRaw]}
-                  components={{
-                    a: (props) => {
-                      const href = props.href || "";
-                      return (
-                        <a
-                          {...props}
-                          className="text-slate-500 hover:text-indigo-600 transition-colors py-1 block no-underline"
-                          onClick={(event) => {
-                            props.onClick?.(event);
-                            if (!href.startsWith("#")) return;
-                            event.preventDefault();
-                            const rawHash = decodeURIComponent(href.slice(1));
-                            const normalizedHash = rawHash.normalize("NFKC");
-                            const targetCandidates = [rawHash, normalizedHash, slugify(rawHash), slugify(normalizedHash)];
-                            for (const candidate of targetCandidates) {
-                              const el = getElementById(candidate);
-                              if (el) {
-                                scrollToElement(el);
-                                requestAnimationFrame(() => {
-                                  forcePreviewSyncRef.current = true;
-                                  handlePreviewScroll();
-                                });
-                                break;
-                              }
-                            }
-                          }}
-                        />
-                      );
-                    },
-                  }}
-                >
-                  {tocContent}
-                </ReactMarkdown>
+              <div className="text-sm max-h-[60vh] overflow-y-auto p-4 custom-scrollbar">
+                {floatingPanelTab === "toc" ? (
+                  hasTocPanel ? (
+                    <div className="toc-wrapper">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeRaw]}
+                        components={{
+                          a: (props) => {
+                            const href = props.href || "";
+                            return (
+                              <a
+                                {...props}
+                                className="text-slate-500 hover:text-indigo-600 transition-colors py-1 block no-underline"
+                                onClick={(event) => {
+                                  props.onClick?.(event);
+                                  if (!href.startsWith("#")) return;
+                                  event.preventDefault();
+                                  const rawHash = decodeURIComponent(href.slice(1));
+                                  const normalizedHash = rawHash.normalize("NFKC");
+                                  const targetCandidates = [rawHash, normalizedHash, slugify(rawHash), slugify(normalizedHash)];
+                                  for (const candidate of targetCandidates) {
+                                    const el = getElementById(candidate);
+                                    if (el) {
+                                      scrollToElement(el);
+                                      requestAnimationFrame(() => {
+                                        forcePreviewSyncRef.current = true;
+                                        handlePreviewScroll();
+                                      });
+                                      break;
+                                    }
+                                  }
+                                }}
+                              />
+                            );
+                          },
+                        }}
+                      >
+                        {tocContent}
+                      </ReactMarkdown>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-400 italic">No TOC available for this note.</div>
+                  )
+                ) : (
+                  backlinks.length === 0 ? (
+                    <div className="text-xs text-slate-400 italic">No notes link back to this document yet.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {backlinks.map((link) => (
+                        <button
+                          key={link.id}
+                          onClick={() => router.push(`/docs/${link.id}`)}
+                          className="group w-full text-left p-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 transition-colors"
+                        >
+                          <div className="font-bold text-xs text-slate-700 line-clamp-1 group-hover:text-indigo-600 transition-colors">
+                            {link.title || "Untitled"}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono mt-1">
+                            {formatDate(link.mtime || link.ctime)}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )
+                )}
               </div>
             )}
           </div>
