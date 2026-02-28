@@ -323,7 +323,11 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
 
   // TOC State
   const [tocContent, setTocContent] = useState("");
-  const [tocCollapsed, setTocCollapsed] = useState(false);
+  const [tocCollapsed, setTocCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const raw = window.localStorage.getItem(FLOATING_PANEL_COLLAPSED_KEY);
+    return raw === "1" || raw === "true";
+  });
   const [floatingPanelTab, setFloatingPanelTab] = useState<"toc" | "mentions" | "graph" | "summary">("toc");
   const [floatingPanelTouched, setFloatingPanelTouched] = useState(false);
   const [activePopover, setActivePopover] = useState<"emoji" | "color" | "size" | null>(null);
@@ -1275,16 +1279,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
 
     return { nodes, edges, positionByID };
   }, [backlinks, id, outboundLinks, title]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(FLOATING_PANEL_COLLAPSED_KEY);
-    if (raw === "1") {
-      setTocCollapsed(true);
-    } else if (raw === "0") {
-      setTocCollapsed(false);
-    }
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
