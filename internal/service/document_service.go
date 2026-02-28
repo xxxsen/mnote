@@ -463,8 +463,17 @@ type ShareCommentWithReplies struct {
 	Replies []model.ShareComment `json:"replies"`
 }
 
-func (s *DocumentService) ListShareCommentsByToken(ctx context.Context, token, sharePassword string, limit, offset int) ([]ShareCommentWithReplies, error) {
+type ShareCommentListResult struct {
+	Items []ShareCommentWithReplies `json:"items"`
+	Total int                       `json:"total"`
+}
+
+func (s *DocumentService) ListShareCommentsByToken(ctx context.Context, token, sharePassword string, limit, offset int) (*ShareCommentListResult, error) {
 	share, err := s.resolveAccessibleShareByToken(ctx, token, sharePassword)
+	if err != nil {
+		return nil, err
+	}
+	total, err := s.shares.CountRootCommentsByShare(ctx, share.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -473,7 +482,10 @@ func (s *DocumentService) ListShareCommentsByToken(ctx context.Context, token, s
 		return nil, err
 	}
 	if len(roots) == 0 {
-		return []ShareCommentWithReplies{}, nil
+		return &ShareCommentListResult{
+			Items: []ShareCommentWithReplies{},
+			Total: total,
+		}, nil
 	}
 
 	var rootIDs []string
@@ -496,7 +508,10 @@ func (s *DocumentService) ListShareCommentsByToken(ctx context.Context, token, s
 		result = append(result, node)
 	}
 
-	return result, nil
+	return &ShareCommentListResult{
+		Items: result,
+		Total: total,
+	}, nil
 }
 
 func (s *DocumentService) ListShareCommentRepliesByToken(ctx context.Context, token, sharePassword string, rootID string, limit, offset int) ([]model.ShareComment, error) {

@@ -117,8 +117,9 @@ func TestDocumentServiceShareComments(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Alice", created.Author)
 
-	items, err := docs.ListShareCommentsByToken(context.Background(), share.Token, "", 20, 0)
+	result, err := docs.ListShareCommentsByToken(context.Background(), share.Token, "", 20, 0)
 	require.NoError(t, err)
-	require.Len(t, items, 1)
-	require.Equal(t, "first comment", items[0].Content)
+	require.Equal(t, 1, result.Total)
+	require.Len(t, result.Items, 1)
+	require.Equal(t, "first comment", result.Items[0].Content)
 }

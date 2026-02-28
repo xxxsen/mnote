@@ -67,6 +67,11 @@ export interface ShareComment {
   mtime: number;
 }
 
+export interface ShareCommentsPage {
+  items: ShareComment[];
+  total: number;
+}
+
 export interface PublicShareDetail {
   document: Document;
   author: string;

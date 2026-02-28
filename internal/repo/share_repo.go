@@ -381,6 +381,18 @@ func (r *ShareRepo) CountRepliesByRootIDs(ctx context.Context, shareID string, r
 	return counts, nil
 }
 
+func (r *ShareRepo) CountRootCommentsByShare(ctx context.Context, shareID string) (int, error) {
+	query := `SELECT COUNT(*) FROM share_comments WHERE share_id = ? AND state = ? AND root_id = ?`
+	args := []interface{}{shareID, ShareCommentStateNormal, ""}
+	query, args = dbutil.Finalize(query, args)
+	row := r.db.QueryRowContext(ctx, query, args...)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 func (r *ShareRepo) ListRepliesByRootID(ctx context.Context, shareID, rootID string, limit, offset int) ([]model.ShareComment, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50

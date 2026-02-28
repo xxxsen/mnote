@@ -6,7 +6,7 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import { apiFetch, ApiError } from "@/lib/api";
 import MarkdownPreview from "@/components/markdown-preview";
-import { PublicShareDetail, ShareComment } from "@/types";
+import { PublicShareDetail, ShareComment, ShareCommentsPage } from "@/types";
 import { formatDate, generatePixelAvatar } from "@/lib/utils";
 import { Clock, User, Tag as TagIcon, ArrowUp, Link2, Download, Menu, X, ChevronRight, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -327,12 +327,15 @@ export default function SharePage() {
   const [passwordRequired, setPasswordRequired] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const [comments, setComments] = useState<ShareComment[]>([]);
+  const [commentsTotal, setCommentsTotal] = useState(0);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [annotationContent, setAnnotationContent] = useState("");
   const [annotationSubmitting, setAnnotationSubmitting] = useState(false);
   const [replyingTo, setReplyingTo] = useState<{ id: string; author: string } | null>(null);
   const [inlineReplyContent, setInlineReplyContent] = useState("");
   const [commentsHasMore, setCommentsHasMore] = useState(true);
+  const [commentsAppending, setCommentsAppending] = useState(false);
+  const [loadedCommentsCount, setLoadedCommentsCount] = useState(0);
   const previewRef = useRef<HTMLDivElement>(null);
   const doc = detail?.document;
   const hasTocToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
@@ -408,12 +411,31 @@ export default function SharePage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  const mergeCommentsByID = useCallback((base: ShareComment[], incoming: ShareComment[]) => {
+    if (!incoming.length) return base;
+    const seen = new Set(base.map((item) => item.id));
+    const merged = [...base];
+    for (const item of incoming) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      merged.push(item);
+    }
+    return merged;
+  }, []);
+
   const fetchComments = useCallback(async (isBackground = false, isAppend = false) => {
     if (!detail) {
-      if (!isAppend) setComments([]);
+      if (!isAppend) {
+        setComments([]);
+        setCommentsTotal(0);
+        setLoadedCommentsCount(0);
+      }
       return;
     }
-    if (!isBackground) {
+    if (isAppend) {
+      if (commentsAppending) return;
+      setCommentsAppending(true);
+    } else if (!isBackground) {
       setCommentsLoading(true);
     }
     try {
@@ -422,29 +444,38 @@ export default function SharePage() {
         qs.set("password", accessPassword.trim());
       }
       qs.set("limit", "10");
-      qs.set("offset", isAppend ? comments.length.toString() : "0");
+      qs.set("offset", isAppend ? loadedCommentsCount.toString() : "0");
 
       const query = qs.toString();
-      const items = await apiFetch<ShareComment[]>(`/public/share/${token}/comments${query ? `?${query}` : ""}`, { requireAuth: false });
-
-      if (!items || items.length < 10) {
-        setCommentsHasMore(false);
-      } else {
-        setCommentsHasMore(true);
-      }
+      const page = await apiFetch<ShareCommentsPage>(`/public/share/${token}/comments${query ? `?${query}` : ""}`, { requireAuth: false });
+      const items = page?.items || [];
+      const total = typeof page?.total === "number" ? page.total : items.length;
 
       if (isAppend) {
-        setComments(prev => [...prev, ...(items || [])]);
+        setComments(prev => mergeCommentsByID(prev, items || []));
+        const nextLoaded = loadedCommentsCount + items.length;
+        setLoadedCommentsCount(nextLoaded);
+        setCommentsHasMore(nextLoaded < total);
       } else {
         setComments(items || []);
+        setLoadedCommentsCount(items.length);
+        setCommentsHasMore(items.length < total);
       }
+      setCommentsTotal(total);
     } catch (err) {
       console.error(err);
-      if (!isAppend) setComments([]);
+      if (!isAppend) {
+        setComments([]);
+        setCommentsTotal(0);
+      }
     } finally {
-      if (!isBackground) setCommentsLoading(false);
+      if (isAppend) {
+        setCommentsAppending(false);
+      } else if (!isBackground) {
+        setCommentsLoading(false);
+      }
     }
-  }, [accessPassword, detail, token, comments.length]);
+  }, [accessPassword, detail, token, loadedCommentsCount, commentsAppending, mergeCommentsByID]);
 
   useEffect(() => {
     void fetchComments(false, false);
@@ -452,23 +483,23 @@ export default function SharePage() {
   }, [detail, accessPassword, token]); // Re-fetch on auth/detail change, ignore comments.length to avoid loops
 
   const handleLoadMoreComments = useCallback(() => {
-    if (!commentsLoading && commentsHasMore) {
+    if (!commentsLoading && !commentsAppending && commentsHasMore) {
       void fetchComments(true, true);
     }
-  }, [commentsLoading, commentsHasMore, fetchComments]);
+  }, [commentsLoading, commentsAppending, commentsHasMore, fetchComments]);
 
   // Add a generic scroll listener to load more comments if we reach the bottom of the page
   useEffect(() => {
     const handleBottomScroll = () => {
       if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500) { // 500px threshold
-        if (!commentsLoading && commentsHasMore && comments.length > 0) {
+        if (!commentsLoading && !commentsAppending && commentsHasMore && comments.length > 0) {
           handleLoadMoreComments();
         }
       }
     };
     window.addEventListener("scroll", handleBottomScroll);
     return () => window.removeEventListener("scroll", handleBottomScroll);
-  }, [commentsLoading, commentsHasMore, comments.length, handleLoadMoreComments]);
+  }, [commentsLoading, commentsAppending, commentsHasMore, comments.length, handleLoadMoreComments]);
 
   const handleSubmitComment = async () => {
     if (!detail || !canAnnotate || annotationSubmitting) return;
@@ -489,6 +520,8 @@ export default function SharePage() {
         }),
       });
       setComments((prev) => [created, ...prev]);
+      setCommentsTotal((prev) => prev + 1);
+      setLoadedCommentsCount((prev) => prev + 1);
       setAnnotationContent("");
       setToast("Comment added.");
       setTimeout(() => setToast(null), 2500);
@@ -894,7 +927,7 @@ export default function SharePage() {
 
         {/* Comments Section */}
         <div className="w-full mt-12 bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 p-6 md:p-12 lg:p-16">
-          <h2 className="text-2xl font-bold text-slate-800 mb-8">Comments ({comments.length})</h2>
+          <h2 className="text-2xl font-bold text-slate-800 mb-8">Comments ({commentsTotal})</h2>
 
           {canAnnotate && (
             <div className="mb-10 bg-slate-50 rounded-xl p-4 border border-slate-200">

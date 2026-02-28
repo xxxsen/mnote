@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -13,11 +16,43 @@ import (
 )
 
 type ShareHandler struct {
-	documents *service.DocumentService
+	documents      *service.DocumentService
+	commentLimiter *shareCommentRateLimiter
 }
 
 func NewShareHandler(documents *service.DocumentService) *ShareHandler {
-	return &ShareHandler{documents: documents}
+	return &ShareHandler{
+		documents:      documents,
+		commentLimiter: newShareCommentRateLimiter(10 * time.Second),
+	}
+}
+
+type shareCommentRateLimiter struct {
+	mu     sync.Mutex
+	window time.Duration
+	last   map[string]time.Time
+}
+
+func newShareCommentRateLimiter(window time.Duration) *shareCommentRateLimiter {
+	return &shareCommentRateLimiter{
+		window: window,
+		last:   make(map[string]time.Time),
+	}
+}
+
+func (l *shareCommentRateLimiter) allow(actorID, kind string) bool {
+	if l == nil || l.window <= 0 {
+		return true
+	}
+	key := actorID + "|" + kind
+	now := time.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if last, exists := l.last[key]; exists && now.Sub(last) < l.window {
+		return false
+	}
+	l.last[key] = now
+	return true
 }
 
 type updateShareConfigRequest struct {
@@ -117,12 +152,12 @@ func (h *ShareHandler) PublicListComments(c *gin.Context) {
 			offset = parsed
 		}
 	}
-	items, err := h.documents.ListShareCommentsByToken(c.Request.Context(), c.Param("token"), c.Query("password"), limit, offset)
+	result, err := h.documents.ListShareCommentsByToken(c.Request.Context(), c.Param("token"), c.Query("password"), limit, offset)
 	if err != nil {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, items)
+	response.Success(c, result)
 }
 
 func (h *ShareHandler) PublicListReplies(c *gin.Context) {
@@ -153,6 +188,20 @@ func (h *ShareHandler) CreateComment(c *gin.Context) {
 				author = email
 			}
 		}
+	}
+	actorID := c.ClientIP()
+	if uidValue, exists := c.Get("user_id"); exists {
+		if uid, ok := uidValue.(string); ok && strings.TrimSpace(uid) != "" {
+			actorID = uid
+		}
+	}
+	kind := "comment"
+	if strings.TrimSpace(req.ReplyToID) != "" {
+		kind = "reply"
+	}
+	if !h.commentLimiter.allow(actorID, kind) {
+		response.Error(c, errcode.ErrTooMany, http.StatusText(http.StatusTooManyRequests))
+		return
 	}
 	item, err := h.documents.CreateShareCommentByToken(c.Request.Context(), service.CreateShareCommentInput{
 		Token:     c.Param("token"),
