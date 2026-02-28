@@ -353,3 +353,70 @@ func (h *DocumentHandler) Summary(c *gin.Context) {
 		"starred_total": result.StarredTotal,
 	})
 }
+
+func (h *DocumentHandler) Backlinks(c *gin.Context) {
+	docs, err := h.documents.GetBacklinks(c.Request.Context(), getUserID(c), c.Param("id"))
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	docIDs := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		docIDs = append(docIDs, doc.ID)
+	}
+
+	tagIDsByDoc, err := h.documents.ListTagIDsByDocIDs(c.Request.Context(), getUserID(c), docIDs)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	var allTagIDs []string
+	seenTags := make(map[string]bool)
+	for _, tagIDs := range tagIDsByDoc {
+		for _, tid := range tagIDs {
+			if !seenTags[tid] {
+				seenTags[tid] = true
+				allTagIDs = append(allTagIDs, tid)
+			}
+		}
+	}
+
+	tags, err := h.documents.ListTagsByIDs(c.Request.Context(), getUserID(c), allTagIDs)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	tagMap := make(map[string]model.Tag)
+	for _, t := range tags {
+		tagMap[t.ID] = t
+	}
+
+	items := make([]documentListItem, 0, len(docs))
+	for _, doc := range docs {
+		docTagIDs := tagIDsByDoc[doc.ID]
+		docTags := make([]model.Tag, 0, len(docTagIDs))
+		for _, tid := range docTagIDs {
+			if t, ok := tagMap[tid]; ok {
+				docTags = append(docTags, t)
+			}
+		}
+		items = append(items, documentListItem{
+			ID:      doc.ID,
+			UserID:  doc.UserID,
+			Title:   doc.Title,
+			Content: doc.Content,
+			Summary: doc.Summary,
+			State:   doc.State,
+			Pinned:  doc.Pinned,
+			Starred: doc.Starred,
+			Ctime:   doc.Ctime,
+			Mtime:   doc.Mtime,
+			Tags:    docTags,
+			TagIDs:  docTagIDs,
+		})
+	}
+
+	response.Success(c, items)
+}

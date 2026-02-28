@@ -48,7 +48,8 @@ import {
   Command,
   AlertTriangle,
   Copy,
-  Check
+  Check,
+  FileText
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { MAX_TAGS } from "../constants";
@@ -250,18 +251,24 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [activeTab, setActiveTab] = useState<"tags" | "summary" | "history" | "share">("tags");
+  const [activeTab, setActiveTab] = useState<"tags" | "summary" | "history" | "share" | "backlinks">("tags");
   const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(loadThemePreference);
-  
+
   const [versions, setVersions] = useState<DocumentVersionSummary[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [selectedTagIDs, setSelectedTagIDs] = useState<string[]>([]);
+  const [backlinks, setBacklinks] = useState<any[]>([]);
+  const [backlinksLoading, setBacklinksLoading] = useState(false);
 
   const { similarDocs, similarLoading, similarCollapsed, similarIconVisible, handleToggleSimilar, handleCollapseSimilar, handleCloseSimilar } = useSimilarDocs({
     docId: id,
     title,
   });
   const [slashMenu, setSlashMenu] = useState<{ open: boolean; x: number; y: number; filter: string }>({ open: false, x: 0, y: 0, filter: "" });
+  const [wikilinkMenu, setWikilinkMenu] = useState<{ open: boolean; x: number; y: number; query: string; from: number }>({ open: false, x: 0, y: 0, query: "", from: 0 });
+  const [wikilinkResults, setWikilinkResults] = useState<{ id: string; title: string }[]>([]);
+  const [wikilinkLoading, setWikilinkLoading] = useState(false);
+  const wikilinkTimerRef = useRef<number | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
 
@@ -299,7 +306,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     () => EMOJI_TABS.find((tab) => tab.key === emojiTab) || EMOJI_TABS[0],
     [emojiTab]
   );
-  
+
   const handleTocLoaded = useCallback((toc: string) => {
     setTocContent(toc);
   }, []);
@@ -414,13 +421,13 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const scrollToElement = useCallback((el: HTMLElement) => {
     const container = previewRef.current;
     if (!container) return;
-    
+
     const isScrollable = container.scrollHeight > container.clientHeight + 1;
     if (!isScrollable) {
-       // If preview not scrollable (rare in split mode but possible), maybe just scroll container
-       return;
+      // If preview not scrollable (rare in split mode but possible), maybe just scroll container
+      return;
     }
-    
+
     const containerTop = container.getBoundingClientRect().top;
     const targetTop = el.getBoundingClientRect().top;
     const offset = targetTop - containerTop + container.scrollTop;
@@ -432,16 +439,16 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
-      
+
       // Check for # Heading
       const h1Match = line.match(/^#\s+(.+)$/);
       if (h1Match) return h1Match[1].trim();
-      
+
       // Check for Title \n ===
       if (i + 1 < lines.length && /^=+$/.test(lines[i + 1].trim())) {
         return line;
       }
-      
+
       // Use first non-empty line as title fallback
       return line.length > 50 ? line.slice(0, 50) + "..." : line;
     }
@@ -477,11 +484,11 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
 
     const percentage = scrollInfo.scrollTop / maxScroll;
     const targetTop = percentage * (preview.scrollHeight - preview.clientHeight);
-    
+
     if (Math.abs(preview.scrollTop - targetTop) > 5) {
       scrollingSource.current = "editor";
       preview.scrollTop = targetTop;
-      
+
       if (scrollSyncTimerRef.current) window.clearTimeout(scrollSyncTimerRef.current);
       scrollSyncTimerRef.current = window.setTimeout(() => {
         scrollingSource.current = null;
@@ -517,11 +524,11 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   useEffect(() => {
     if (!id) return;
     setTabs(prev => {
-       const exists = prev.find(t => t.id === id);
-       if (exists) {
-          return prev.map(t => t.id === id ? { ...t, title: title || t.title } : t);
-       }
-       return [...prev, { id, title: title || "Untitled" }];
+      const exists = prev.find(t => t.id === id);
+      if (exists) {
+        return prev.map(t => t.id === id ? { ...t, title: title || t.title } : t);
+      }
+      return [...prev, { id, title: title || "Untitled" }];
     });
   }, [id, title]);
 
@@ -578,6 +585,24 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     });
   }, [startTransition]);
 
+  const loadBacklinks = useCallback(async () => {
+    setBacklinksLoading(true);
+    try {
+      const data = await apiFetch<any[]>(`/documents/${id}/backlinks`);
+      setBacklinks(data || []);
+    } catch (e) {
+      setBacklinks([]);
+    } finally {
+      setBacklinksLoading(false);
+    }
+  }, [id, setBacklinks, setBacklinksLoading]);
+
+  useEffect(() => {
+    if (activeTab === "backlinks") {
+      loadBacklinks();
+    }
+  }, [activeTab, loadBacklinks]);
+
   useEffect(() => {
     if (typeof document === "undefined") return;
     document.title = title ? `${title} - Micro Note` : "micro note";
@@ -591,8 +616,8 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         activePopover === "color"
           ? colorButtonRef.current
           : activePopover === "size"
-          ? sizeButtonRef.current
-          : emojiButtonRef.current;
+            ? sizeButtonRef.current
+            : emojiButtonRef.current;
       if (!ref) return;
       const rect = ref.getBoundingClientRect();
       setPopoverAnchor({ top: rect.bottom + 8, left: rect.left });
@@ -807,7 +832,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         }
 
         let markdown = `[FILE:${name}](${result.url})`;
-        
+
         if (contentType.startsWith("image/")) {
           markdown = `![PIC:${name}](${result.url})`;
         } else if (contentType.startsWith("video/")) {
@@ -815,7 +840,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         } else if (contentType.startsWith("audio/")) {
           markdown = `![AUDIO:${name}](${result.url})`;
         }
-        
+
         replacePlaceholder(placeholder, markdown);
       } catch (err) {
         console.error(err);
@@ -878,7 +903,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         toast({ description: err instanceof Error ? err : "Failed to save tags", variant: "error" });
         setSelectedTagIDs(previous);
       }
-  },
+    },
     [selectedTagIDs, tagActions, toast]
   );
 
@@ -919,22 +944,66 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const handleSlashAction = useCallback((action: (ctx: SlashActionContext) => void) => {
     const view = editorViewRef.current;
     if (!view) return;
-    
+
     const { from } = view.state.selection.main;
     const line = view.state.doc.lineAt(from);
     const lineText = line.text;
     const relativePos = from - line.from;
     const lastSlashIndex = lineText.lastIndexOf("/", relativePos - 1);
-    
+
     if (lastSlashIndex !== -1) {
-       view.dispatch({
-          changes: { from: line.from + lastSlashIndex, to: from, insert: "" }
-       });
+      view.dispatch({
+        changes: { from: line.from + lastSlashIndex, to: from, insert: "" }
+      });
     }
-    
+
     action({ handleFormat, handleInsertTable, insertTextAtCursor });
     setSlashMenu(prev => ({ ...prev, open: false }));
   }, [handleFormat, handleInsertTable, insertTextAtCursor]);
+
+  // Wikilink search effect
+  useEffect(() => {
+    if (!wikilinkMenu.open) {
+      setWikilinkResults([]);
+      return;
+    }
+    if (wikilinkTimerRef.current) window.clearTimeout(wikilinkTimerRef.current);
+    wikilinkTimerRef.current = window.setTimeout(async () => {
+      setWikilinkLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (wikilinkMenu.query) params.set("q", wikilinkMenu.query);
+        params.set("limit", "8");
+        const docs = await apiFetch<{ id: string; title: string }[]>(`/documents?${params.toString()}`);
+        setWikilinkResults(docs || []);
+      } catch {
+        setWikilinkResults([]);
+      } finally {
+        setWikilinkLoading(false);
+      }
+    }, 200);
+    return () => { if (wikilinkTimerRef.current) window.clearTimeout(wikilinkTimerRef.current); };
+  }, [wikilinkMenu.open, wikilinkMenu.query]);
+
+  const handleWikilinkSelect = useCallback((docTitle: string, docId: string) => {
+    const view = editorViewRef.current;
+    if (!view) return;
+    const cursorPos = view.state.selection.main.head;
+    const from = wikilinkMenu.from;
+    // Replace from [[ to current cursor with [title](/docs/id)
+    const insertText = `[${docTitle}](/docs/${docId})`;
+    view.dispatch({
+      changes: { from, to: cursorPos, insert: insertText },
+      selection: { anchor: from + insertText.length },
+    });
+    contentRef.current = view.state.doc.toString();
+    setContent(contentRef.current);
+    setPreviewContent(contentRef.current);
+    setHasUnsavedChanges(contentRef.current !== lastSavedContentRef.current);
+    schedulePreviewUpdate();
+    setWikilinkMenu(prev => ({ ...prev, open: false }));
+    view.focus();
+  }, [wikilinkMenu.from, schedulePreviewUpdate]);
 
   const handleColor = useCallback((color: string) => {
     setActivePopover(null);
@@ -1127,7 +1196,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   }, []);
 
   const editorExtensions = useMemo(() => [
-    markdown({ 
+    markdown({
       codeLanguages: (info) => {
         const languageName = info.includes(':') ? info.split(':')[0] : info;
         return LanguageDescription.matchLanguageName(languages, languageName);
@@ -1141,7 +1210,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
           ]
         }
       ]
-    }), 
+    }),
     themeCompartment.of(getThemeById(currentThemeId).extension),
     EditorView.lineWrapping,
     keymap.of([indentWithTab]),
@@ -1172,6 +1241,24 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
               }
             }
           }
+          // Check for [[ wikilink trigger
+          const textBefore = lineText.slice(0, relativePos);
+          const wikilinkMatch = textBefore.match(/\[\[([^\]\[]*)$/);
+          if (wikilinkMatch) {
+            const query = wikilinkMatch[1];
+            const wlFrom = line.from + wikilinkMatch.index!;
+            const coords = update.view.coordsAtPos(pos);
+            if (coords) {
+              startTransition(() => {
+                setWikilinkMenu({ open: true, x: coords.left, y: coords.bottom + 5, query, from: wlFrom });
+              });
+            }
+          } else {
+            startTransition(() => {
+              setWikilinkMenu(prev => prev.open ? { ...prev, open: false } : prev);
+            });
+          }
+
           startTransition(() => {
             setSlashMenu(prev => prev.open ? { ...prev, open: false } : prev);
           });
@@ -1210,7 +1297,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         #mermaid-error-box, .mermaid-error-overlay, [id^="mermaid-error"] { display: none !important; }
         .mermaid-container > svg[id^="mermaid-"] { max-width: 100%; height: auto; }
       `}</style>
-      <EditorHeader 
+      <EditorHeader
         router={router}
         title={title}
         handleSave={handleSave}
@@ -1226,357 +1313,420 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
 
       <div className="flex-1 flex overflow-hidden min-w-0 relative pb-8">
         <div className={`flex-1 flex flex-col md:flex-row h-full transition-all duration-300 min-w-0 ${showDetails ? "mr-80" : ""}`}>
-          
-               <div className="h-full border-r border-border overflow-hidden min-w-0 md:flex-[0_0_50%] w-full flex flex-col relative">
-                 <div className="flex items-center bg-muted/30 border-b border-border shrink-0 px-1 pt-1 h-9">
-                    <div className="flex-1 flex items-end h-full gap-0.5 overflow-x-auto no-scrollbar">
-                       {tabs.map(tab => (
-                          <div 
-                             key={tab.id}
-                             onClick={() => { if (tab.id !== id) router.push(`/docs/${tab.id}`); }}
-                             className={`group flex items-center gap-2 px-3 h-full text-xs font-bold uppercase tracking-wider rounded-t-md border-x border-t transition-all cursor-pointer select-none shrink-0 ${tab.id === id ? "bg-background border-border text-foreground translate-y-[1px] z-10" : "bg-transparent border-transparent text-muted-foreground hover:bg-muted/50"}`}
-                          >
-                             <span className="truncate max-w-none">{tab.title || "Untitled"}</span>
-                             {tabs.length > 1 && (
-                                <button 
-                                   onClick={(e) => {
-                                      e.stopPropagation();
-                                      const nextTabs = tabs.filter(t => t.id !== tab.id);
-                                      setTabs(nextTabs);
-                                      if (tab.id === id && nextTabs.length > 0) router.push(`/docs/${nextTabs[0].id}`);
-                                   }}
-                                   className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity p-0.5"
-                                >
-                                   <X className="h-3 w-3" />
-                                </button>
-                             )}
-                          </div>
-                       ))}
-                    </div>
-                    <button 
-                       onClick={handleOpenQuickOpen}
-                       className="px-2 h-7 mb-1 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 shrink-0 bg-background/50 rounded-md ml-1 border border-border shadow-sm"
-                       title="Quick Open (Cmd+K)"
-                    >
-                       <Command className="h-3 w-3" />
-                       <span className="text-[9px] font-bold">OPEN</span>
-                    </button>
-                 </div>
-                 
-                  <EditorToolbar 
-                     handleUndo={handleUndo}
-                     handleRedo={handleRedo}
-                     handleFormat={handleFormat}
-                     handleInsertTable={handleInsertTable}
-                      handleAiPolish={() => void handleAiPolish(contentRef.current)}
-                     handleAiGenerateOpen={handleAiGenerateOpen}
-                      handleAiTags={() => void handleAiTags(contentRef.current)}
-                     handlePreviewOpen={() => setShowPreviewModal(true)}
-                     aiBusy={aiLoading}
-                     activePopover={activePopover}
-                     setActivePopover={setActivePopover}
-                     colorButtonRef={colorButtonRef}
-                     sizeButtonRef={sizeButtonRef}
-                     emojiButtonRef={emojiButtonRef}
-                     currentTheme={currentThemeId}
-                     onThemeChange={handleThemeChange}
-                  />
 
-                 <div className="flex-1 overflow-hidden min-h-0">
+          <div className="h-full border-r border-border overflow-hidden min-w-0 md:flex-[0_0_50%] w-full flex flex-col relative">
+            <div className="flex items-center bg-muted/30 border-b border-border shrink-0 px-1 pt-1 h-9">
+              <div className="flex-1 flex items-end h-full gap-0.5 overflow-x-auto no-scrollbar">
+                {tabs.map(tab => (
+                  <div
+                    key={tab.id}
+                    onClick={() => { if (tab.id !== id) router.push(`/docs/${tab.id}`); }}
+                    className={`group flex items-center gap-2 px-3 h-full text-xs font-bold uppercase tracking-wider rounded-t-md border-x border-t transition-all cursor-pointer select-none shrink-0 ${tab.id === id ? "bg-background border-border text-foreground translate-y-[1px] z-10" : "bg-transparent border-transparent text-muted-foreground hover:bg-muted/50"}`}
+                  >
+                    <span className="truncate max-w-none">{tab.title || "Untitled"}</span>
+                    {tabs.length > 1 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const nextTabs = tabs.filter(t => t.id !== tab.id);
+                          setTabs(nextTabs);
+                          if (tab.id === id && nextTabs.length > 0) router.push(`/docs/${nextTabs[0].id}`);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={handleOpenQuickOpen}
+                className="px-2 h-7 mb-1 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 shrink-0 bg-background/50 rounded-md ml-1 border border-border shadow-sm"
+                title="Quick Open (Cmd+K)"
+              >
+                <Command className="h-3 w-3" />
+                <span className="text-[9px] font-bold">OPEN</span>
+              </button>
+            </div>
 
-                       <CodeMirror
-                         value={content}
-                         height="100%"
-                         theme="none"
-                         extensions={editorExtensions}
-                          placeholder={`start by entering a title here
+            <EditorToolbar
+              handleUndo={handleUndo}
+              handleRedo={handleRedo}
+              handleFormat={handleFormat}
+              handleInsertTable={handleInsertTable}
+              handleAiPolish={() => void handleAiPolish(contentRef.current)}
+              handleAiGenerateOpen={handleAiGenerateOpen}
+              handleAiTags={() => void handleAiTags(contentRef.current)}
+              handlePreviewOpen={() => setShowPreviewModal(true)}
+              aiBusy={aiLoading}
+              activePopover={activePopover}
+              setActivePopover={setActivePopover}
+              colorButtonRef={colorButtonRef}
+              sizeButtonRef={sizeButtonRef}
+              emojiButtonRef={emojiButtonRef}
+              currentTheme={currentThemeId}
+              onThemeChange={handleThemeChange}
+            />
+
+            <div className="flex-1 overflow-hidden min-h-0">
+
+              <CodeMirror
+                value={content}
+                height="100%"
+                theme="none"
+                extensions={editorExtensions}
+                placeholder={`start by entering a title here
 ===
 
 here is the body of note.`}
-                         onChange={(val) => {
-                           contentRef.current = val;
-                           setContent(val);
-                           schedulePreviewUpdate();
-                         }}
+                onChange={(val) => {
+                  contentRef.current = val;
+                  setContent(val);
+                  schedulePreviewUpdate();
+                }}
 
-                    className={`h-full w-full min-w-0 text-base`}
-                    onCreateEditor={(view) => {
-                      editorViewRef.current = view;
-                      view.scrollDOM.addEventListener("scroll", handleEditorScroll);
-                      if (pasteHandlerRef.current) {
-                        view.dom.removeEventListener("paste", pasteHandlerRef.current);
-                      }
-                      const handler = (event: ClipboardEvent) => {
-                        void handlePaste(event);
-                      };
-                      pasteHandlerRef.current = handler;
-                      view.dom.addEventListener("paste", handler);
-                    }}
-                    basicSetup={{
-                      lineNumbers: true,
-                      foldGutter: true,
-                      highlightActiveLine: false,
-                    }}
-                  />
+                className={`h-full w-full min-w-0 text-base`}
+                onCreateEditor={(view) => {
+                  editorViewRef.current = view;
+                  view.scrollDOM.addEventListener("scroll", handleEditorScroll);
+                  if (pasteHandlerRef.current) {
+                    view.dom.removeEventListener("paste", pasteHandlerRef.current);
+                  }
+                  const handler = (event: ClipboardEvent) => {
+                    void handlePaste(event);
+                  };
+                  pasteHandlerRef.current = handler;
+                  view.dom.addEventListener("paste", handler);
+                }}
+                basicSetup={{
+                  lineNumbers: true,
+                  foldGutter: true,
+                  highlightActiveLine: false,
+                }}
+              />
 
-                  
-                 {slashMenu.open && (
 
-                    <div 
-                      className="fixed z-[60] bg-popover border border-border rounded-lg shadow-2xl p-1 w-48 animate-in fade-in zoom-in-95 duration-200"
-                      style={{ left: slashMenu.x, top: slashMenu.y }}
-                    >
-                       <div className="text-[10px] font-bold text-muted-foreground px-2 py-1 uppercase tracking-widest border-b border-border mb-1">Commands</div>
-                       <div className="max-h-64 overflow-y-auto no-scrollbar">
-                          {SLASH_COMMANDS
-                            .filter(cmd => cmd.label.toLowerCase().includes(slashMenu.filter.toLowerCase()))
-                            .map(cmd => (
-                             <button
-                                key={cmd.id}
-                                onClick={() => handleSlashAction(cmd.action)}
-                                className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md hover:bg-accent hover:text-accent-foreground text-left transition-colors"
-                             >
-                                <span className="opacity-70">{cmd.icon}</span>
-                                <span className="font-medium">{cmd.label}</span>
-                             </button>
-                          ))}
-                          {SLASH_COMMANDS.filter(cmd => cmd.label.toLowerCase().includes(slashMenu.filter.toLowerCase())).length === 0 && (
-                             <div className="px-2 py-2 text-xs text-muted-foreground italic">No commands found</div>
-                          )}
-                       </div>
-                    </div>
-                 )}
+              {slashMenu.open && (
 
-              </div>
-             </div>
-
-                <div 
-                  className="h-full bg-[#f8fafc] overflow-auto custom-scrollbar min-w-0 md:flex-[0_0_50%] w-full hidden md:block border-l border-border selection:bg-indigo-100"
-                  ref={previewRef}
-                  onScroll={handlePreviewScroll}
+                <div
+                  className="fixed z-[60] bg-popover border border-border rounded-lg shadow-2xl p-1 w-48 animate-in fade-in zoom-in-95 duration-200"
+                  style={{ left: slashMenu.x, top: slashMenu.y }}
                 >
-                    <div className="min-h-full p-4 md:p-8 lg:p-12">
-                      <div className="max-w-4xl mx-auto">
-                        <article className="w-full bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 relative overflow-visible">
-                          <div className="p-6 md:p-10 lg:p-12">
-                            <MarkdownPreview 
-                               content={previewContent} 
-                               className="markdown-body h-auto overflow-visible p-0 bg-transparent text-slate-800" 
-                               onTocLoaded={handleTocLoaded}
-                            />
-                          </div>
-                        </article>
-                      </div>
-                    </div>
+                  <div className="text-[10px] font-bold text-muted-foreground px-2 py-1 uppercase tracking-widest border-b border-border mb-1">Commands</div>
+                  <div className="max-h-64 overflow-y-auto no-scrollbar">
+                    {SLASH_COMMANDS
+                      .filter(cmd => cmd.label.toLowerCase().includes(slashMenu.filter.toLowerCase()))
+                      .map(cmd => (
+                        <button
+                          key={cmd.id}
+                          onClick={() => handleSlashAction(cmd.action)}
+                          className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md hover:bg-accent hover:text-accent-foreground text-left transition-colors"
+                        >
+                          <span className="opacity-70">{cmd.icon}</span>
+                          <span className="font-medium">{cmd.label}</span>
+                        </button>
+                      ))}
+                    {SLASH_COMMANDS.filter(cmd => cmd.label.toLowerCase().includes(slashMenu.filter.toLowerCase())).length === 0 && (
+                      <div className="px-2 py-2 text-xs text-muted-foreground italic">No commands found</div>
+                    )}
+                  </div>
                 </div>
+              )}
+
+              {/* Wikilink autocomplete menu */}
+              {wikilinkMenu.open && (
+                <div
+                  className="fixed z-[60] bg-popover border border-border rounded-lg shadow-2xl p-1 w-56 animate-in fade-in zoom-in-95 duration-200"
+                  style={{ left: wikilinkMenu.x, top: wikilinkMenu.y }}
+                >
+                  <div className="text-[10px] font-bold text-muted-foreground px-2 py-1 uppercase tracking-widest border-b border-border mb-1 flex items-center gap-1">
+                    <FileText className="h-3 w-3" /> Link to Note
+                  </div>
+                  <div className="max-h-64 overflow-y-auto no-scrollbar">
+                    {wikilinkLoading ? (
+                      <div className="px-2 py-2 text-xs text-muted-foreground italic">Searching...</div>
+                    ) : wikilinkResults.length > 0 ? (
+                      wikilinkResults.map(doc => (
+                        <button
+                          key={doc.id}
+                          onClick={() => handleWikilinkSelect(doc.title, doc.id)}
+                          className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md hover:bg-accent hover:text-accent-foreground text-left transition-colors"
+                        >
+                          <FileText className="h-3.5 w-3.5 opacity-50 flex-shrink-0" />
+                          <span className="font-medium truncate">{doc.title}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-2 py-2 text-xs text-muted-foreground italic">No documents found</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+
+          <div
+            className="h-full bg-[#f8fafc] overflow-auto custom-scrollbar min-w-0 md:flex-[0_0_50%] w-full hidden md:block border-l border-border selection:bg-indigo-100"
+            ref={previewRef}
+            onScroll={handlePreviewScroll}
+          >
+            <div className="min-h-full p-4 md:p-8 lg:p-12">
+              <div className="max-w-4xl mx-auto">
+                <article className="w-full bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 relative overflow-visible">
+                  <div className="p-6 md:p-10 lg:p-12">
+                    <MarkdownPreview
+                      content={previewContent}
+                      className="markdown-body h-auto overflow-visible p-0 bg-transparent text-slate-800"
+                      onTocLoaded={handleTocLoaded}
+                    />
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
 
 
         </div>
 
-         {showDetails && (
-            <div className="w-80 border-l border-border bg-background flex flex-col absolute right-0 top-0 bottom-0 z-[100] shadow-xl">
-              <div className="flex items-center justify-between p-3 border-b border-border">
-                 <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground px-1">Details</span>
-                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowDetails(false)}>
-                    <X className="h-4 w-4" />
-                 </Button>
-              </div>
-              <div className="flex items-center border-b border-border bg-muted/20">
+        {showDetails && (
+          <div className="w-80 border-l border-border bg-background flex flex-col absolute right-0 top-0 bottom-0 z-[100] shadow-xl">
+            <div className="flex items-center justify-between p-3 border-b border-border">
+              <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground px-1">Details</span>
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowDetails(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex items-center border-b border-border bg-muted/20">
 
-                <button 
-                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "tags" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
-                  onClick={() => setActiveTab("tags")}
-                >
-                  Tags
-                </button>
-                <button 
-                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "summary" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
-                  onClick={() => setActiveTab("summary")}
-                >
-                  Summary
-                </button>
-                <button 
-                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "history" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
-                  onClick={() => { setActiveTab("history"); loadVersions(); }}
-                >
-                  History
-                </button>
-                 <button 
-                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "share" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
-                  onClick={() => { setActiveTab("share"); loadShare(); }}
-                >
-                  Share
-                </button>
+              <button
+                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "tags" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
+                onClick={() => setActiveTab("tags")}
+              >
+                Tags
+              </button>
+              <button
+                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "summary" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
+                onClick={() => setActiveTab("summary")}
+              >
+                Summary
+              </button>
+              <button
+                className={`flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider ${activeTab === "history" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
+                onClick={() => { setActiveTab("history"); loadVersions(); }}
+              >
+                History
+              </button>
+              <button
+                className={`flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider ${activeTab === "backlinks" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
+                onClick={() => { setActiveTab("backlinks"); loadBacklinks(); }}
+              >
+                Backlinks
+              </button>
+              <button
+                className={`flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider ${activeTab === "share" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
+                onClick={() => { setActiveTab("share"); loadShare(); }}
+              >
+                Share
+              </button>
 
-             </div>
+            </div>
 
-             <div className="flex-1 overflow-y-auto p-4">
-               {activeTab === "tags" && (
-                  <div className="space-y-4">
-                    <div className="flex gap-2">
-                        <Input 
-                          placeholder="Search tag..." 
-                          value={tagQuery} 
-                          maxLength={16}
-                          onChange={handleTagInputChange}
-                          onCompositionStart={handleTagCompositionStart}
-                          onCompositionEnd={handleTagCompositionEnd}
-                           onKeyDown={handleTagInputKeyDown}
-                        />
-                    </div>
-                    {trimmedTagQuery && (
-                      <div className="border border-border rounded-xl overflow-hidden bg-background">
-                        {tagSearchLoading ? (
-                          <div className="px-3 py-2 text-xs text-muted-foreground">Searching...</div>
-                        ) : tagDropdownItems.length > 0 ? (
-                          <>
-                            {tagDropdownItems.map((item, index) => (
-                              <button
-                                key={item.key}
-                                className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 ${index === tagDropdownIndex ? "bg-muted/40" : ""}`}
-                                onClick={() => handleTagDropdownSelect(item)}
-                              >
-                                {item.type === "create"
-                                  ? `Create #${trimmedTagQuery}`
-                                  : item.type === "use"
+            <div className="flex-1 overflow-y-auto p-4">
+              {activeTab === "tags" && (
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Search tag..."
+                      value={tagQuery}
+                      maxLength={16}
+                      onChange={handleTagInputChange}
+                      onCompositionStart={handleTagCompositionStart}
+                      onCompositionEnd={handleTagCompositionEnd}
+                      onKeyDown={handleTagInputKeyDown}
+                    />
+                  </div>
+                  {trimmedTagQuery && (
+                    <div className="border border-border rounded-xl overflow-hidden bg-background">
+                      {tagSearchLoading ? (
+                        <div className="px-3 py-2 text-xs text-muted-foreground">Searching...</div>
+                      ) : tagDropdownItems.length > 0 ? (
+                        <>
+                          {tagDropdownItems.map((item, index) => (
+                            <button
+                              key={item.key}
+                              className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 ${index === tagDropdownIndex ? "bg-muted/40" : ""}`}
+                              onClick={() => handleTagDropdownSelect(item)}
+                            >
+                              {item.type === "create"
+                                ? `Create #${trimmedTagQuery}`
+                                : item.type === "use"
                                   ? `Use existing #${trimmedTagQuery}`
                                   : `#${item.tag?.name || ""}`}
-                              </button>
-                            ))}
-                          </>
-                        ) : (
-                          <div className="px-3 py-2 text-xs text-muted-foreground">No matching tags</div>
-                        )}
-                      </div>
-                    )}
-                     <div className="flex flex-wrap gap-2">
-                      {selectedTags.length === 0 ? (
-                         <div className="text-sm text-muted-foreground">No tags yet</div>
-                       ) : (
-                         selectedTags.map((tag) => (
-                           <div
-                             key={tag.id}
-                             className={`inline-flex items-center gap-1 px-2 py-1 text-sm border rounded-full transition-colors cursor-pointer select-none ${
-                               selectedTagIDs.includes(tag.id)
-                                 ? "bg-primary text-primary-foreground border-primary"
-                                 : "bg-secondary text-secondary-foreground border-input hover:bg-muted"
-                             }`}
-                             onClick={() => toggleTag(tag.id)}
-                           >
-                             <span>
-                               #{tag.name}
-                             </span>
-                           </div>
-                         ))
-                       )}
-                     </div>
-                    
-                    <div className="pt-4 mt-4 border-t border-border">
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="w-full text-xs rounded-xl" 
-                          onClick={() => router.push(`/tags?return=${encodeURIComponent(`/docs/${id}`)}`)}
-                        >
-                          Manage Tags
-                        </Button>
+                            </button>
+                          ))}
+                        </>
+                      ) : (
+                        <div className="px-3 py-2 text-xs text-muted-foreground">No matching tags</div>
+                      )}
                     </div>
-                  </div>
-                )}
-
-                {activeTab === "summary" && (
-                  <div className="space-y-4">
-                    <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">AI Summary</div>
-                    {summary ? (
-                      <div className="text-sm leading-relaxed whitespace-pre-wrap border border-border rounded-xl p-3 bg-muted/20">
-                        {summary}
-                      </div>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {selectedTags.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">No tags yet</div>
                     ) : (
-                      <div className="text-sm text-muted-foreground">No summary yet</div>
+                      selectedTags.map((tag) => (
+                        <div
+                          key={tag.id}
+                          className={`inline-flex items-center gap-1 px-2 py-1 text-sm border rounded-full transition-colors cursor-pointer select-none ${selectedTagIDs.includes(tag.id)
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-secondary text-secondary-foreground border-input hover:bg-muted"
+                            }`}
+                          onClick={() => toggleTag(tag.id)}
+                        >
+                          <span>
+                            #{tag.name}
+                          </span>
+                        </div>
+                      ))
                     )}
+                  </div>
+
+                  <div className="pt-4 mt-4 border-t border-border">
                     <Button
                       variant="outline"
                       size="sm"
                       className="w-full text-xs rounded-xl"
-                      onClick={() => void handleAiSummary(contentRef.current)}
-                      disabled={aiLoading}
+                      onClick={() => router.push(`/tags?return=${encodeURIComponent(`/docs/${id}`)}`)}
                     >
-                      Generate Summary
+                      Manage Tags
                     </Button>
                   </div>
-                )}
+                </div>
+              )}
 
-                {activeTab === "history" && (
-                  <div className="space-y-4">
-                   {versions.length === 0 ? (
-                     <div className="text-sm text-muted-foreground">No history available</div>
-                   ) : (
-                     versions.map((v) => (
-                       <div key={v.version} className="border border-border p-3 text-sm">
-                         <div className="font-mono text-xs text-muted-foreground mb-1">
-                           v{v.version} • {formatDate(v.ctime)}
-                         </div>
-                         <div className="font-bold mb-2 truncate">{v.title}</div>
-                         <Button variant="outline" size="sm" className="w-full h-7" onClick={() => handleRevert(v)}>
-                           Revert
-                         </Button>
-                       </div>
-                     ))
-                   )}
-                 </div>
-               )}
-
-                 {activeTab === "share" && (
-
-                   <div className="space-y-4">
-                     {activeShare ? (
-                       <Button variant="outline" className="w-full text-xs font-bold" onClick={handleRevokeShare}>
-                         <X className="mr-2 h-3.5 w-3.5" />
-                         Revoke Share Link
-                       </Button>
-                     ) : (
-                       <Button onClick={handleShare} className="w-full text-xs font-bold">
-                         <Share2 className="mr-2 h-3.5 w-3.5" />
-                         Generate Share Link
-                       </Button>
-                     )}
-                     {shareUrl && (
-                       <div 
-                         onClick={handleCopyLink}
-                         className="group p-3 bg-muted border border-border rounded-lg break-all text-[10px] font-mono cursor-pointer hover:bg-accent transition-colors relative"
-                       >
-                         <div className="mb-1 text-muted-foreground uppercase tracking-tighter flex items-center justify-between">
-                            <span>Share Link</span>
-                            <Copy className="h-3 w-3 opacity-50 group-hover:opacity-100" />
-                         </div>
-                         <div className="text-foreground leading-relaxed select-all">{shareUrl}</div>
-                         <div className={`absolute inset-0 flex items-center justify-center bg-accent/90 transition-opacity rounded-lg ${copied ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-                            <div className="flex items-center gap-2">
-                               <Check className="h-3.5 w-3.5 text-primary" />
-                               <span className="text-[10px] font-bold">COPIED TO CLIPBOARD</span>
-                            </div>
-                         </div>
-                       </div>
-                     )}
-                    <div className="pt-4 border-t border-border mt-4">
-                      <Button variant="outline" className="w-full mb-2 text-xs font-bold" onClick={handleExport}>
-                        <Download className="mr-2 h-3.5 w-3.5" />
-                        Export Markdown
-                      </Button>
-                      <Button variant="destructive" className="w-full text-xs font-bold" onClick={() => setShowDeleteConfirm(true)}>
-                        <Trash2 className="mr-2 h-3.5 w-3.5" />
-                        Delete Note
-                      </Button>
+              {activeTab === "summary" && (
+                <div className="space-y-4">
+                  <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">AI Summary</div>
+                  {summary ? (
+                    <div className="text-sm leading-relaxed whitespace-pre-wrap border border-border rounded-xl p-3 bg-muted/20">
+                      {summary}
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="text-sm text-muted-foreground">No summary yet</div>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs rounded-xl"
+                    onClick={() => void handleAiSummary(contentRef.current)}
+                    disabled={aiLoading}
+                  >
+                    Generate Summary
+                  </Button>
+                </div>
+              )}
 
-             </div>
-           </div>
+              {activeTab === "history" && (
+                <div className="space-y-4">
+                  {versions.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No history available</div>
+                  ) : (
+                    versions.map((v) => (
+                      <div key={v.version} className="border border-border p-3 text-sm">
+                        <div className="font-mono text-xs text-muted-foreground mb-1">
+                          v{v.version} • {formatDate(v.ctime)}
+                        </div>
+                        <div className="font-bold mb-2 truncate">{v.title}</div>
+                        <Button variant="outline" size="sm" className="w-full h-7" onClick={() => handleRevert(v)}>
+                          Revert
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {activeTab === "backlinks" && (
+                <div className="space-y-4">
+                  <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">Linked Mentions</div>
+                  {backlinksLoading ? (
+                    <div className="text-sm text-muted-foreground animate-pulse">Loading links...</div>
+                  ) : backlinks.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No other notes link to this one yet.</div>
+                  ) : (
+                    backlinks.map((link) => (
+                      <div key={link.id} className="group border border-border bg-card rounded-xl p-3 hover:bg-muted/30 transition-colors">
+                        <div className="flex justify-between items-start mb-1">
+                          <button
+                            onClick={() => router.push(`/docs/${link.id}`)}
+                            className="font-bold text-sm text-left line-clamp-2 hover:text-primary transition-colors flex items-center gap-1.5"
+                          >
+                            <FileText className="h-3.5 w-3.5 opacity-60" />
+                            {link.title}
+                          </button>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {formatDate(link.mtime || link.ctime)}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {activeTab === "share" && (
+
+                <div className="space-y-4">
+                  {activeShare ? (
+                    <Button variant="outline" className="w-full text-xs font-bold" onClick={handleRevokeShare}>
+                      <X className="mr-2 h-3.5 w-3.5" />
+                      Revoke Share Link
+                    </Button>
+                  ) : (
+                    <Button onClick={handleShare} className="w-full text-xs font-bold">
+                      <Share2 className="mr-2 h-3.5 w-3.5" />
+                      Generate Share Link
+                    </Button>
+                  )}
+                  {shareUrl && (
+                    <div
+                      onClick={handleCopyLink}
+                      className="group p-3 bg-muted border border-border rounded-lg break-all text-[10px] font-mono cursor-pointer hover:bg-accent transition-colors relative"
+                    >
+                      <div className="mb-1 text-muted-foreground uppercase tracking-tighter flex items-center justify-between">
+                        <span>Share Link</span>
+                        <Copy className="h-3 w-3 opacity-50 group-hover:opacity-100" />
+                      </div>
+                      <div className="text-foreground leading-relaxed select-all">{shareUrl}</div>
+                      <div className={`absolute inset-0 flex items-center justify-center bg-accent/90 transition-opacity rounded-lg ${copied ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+                        <div className="flex items-center gap-2">
+                          <Check className="h-3.5 w-3.5 text-primary" />
+                          <span className="text-[10px] font-bold">COPIED TO CLIPBOARD</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="pt-4 border-t border-border mt-4">
+                    <Button variant="outline" className="w-full mb-2 text-xs font-bold" onClick={handleExport}>
+                      <Download className="mr-2 h-3.5 w-3.5" />
+                      Export Markdown
+                    </Button>
+                    <Button variant="destructive" className="w-full text-xs font-bold" onClick={() => setShowDeleteConfirm(true)}>
+                      <Trash2 className="mr-2 h-3.5 w-3.5" />
+                      Delete Note
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
         )}
       </div>
 
-      <EditorFooter 
+      <EditorFooter
         cursorPos={cursorPos}
         wordCount={wordCount}
         charCount={charCount}
@@ -1586,7 +1736,7 @@ here is the body of note.`}
       {similarIconVisible && (
         <div className={`fixed bottom-12 right-6 z-[100] transition-all duration-300 ${similarCollapsed ? "w-10 h-10" : "w-72 max-h-[400px]"} flex flex-col bg-background/80 backdrop-blur-md border border-border shadow-2xl rounded-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4`}>
           {similarCollapsed ? (
-            <button 
+            <button
               onClick={handleToggleSimilar}
               className="w-full h-full flex items-center justify-center text-primary hover:bg-muted/50 transition-colors relative"
               title="Find similar notes"
@@ -1606,14 +1756,14 @@ here is the body of note.`}
                   <span className="text-xs font-bold uppercase tracking-wider">Similar Notes</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button 
+                  <button
                     onClick={handleCollapseSimilar}
                     className="p-1 text-muted-foreground hover:text-foreground transition-colors"
                     title="Collapse"
                   >
                     <ChevronRight className="h-3.5 w-3.5 rotate-90" />
                   </button>
-                  <button 
+                  <button
                     onClick={handleCloseSimilar}
                     className="p-1 text-muted-foreground hover:text-foreground transition-colors"
                     title="Close"
@@ -1634,8 +1784,8 @@ here is the body of note.`}
                   </div>
                 ) : (
                   similarDocs.map((doc) => (
-                    <div 
-                      key={doc.id} 
+                    <div
+                      key={doc.id}
                       onClick={() => handleOpenPreview(doc.id)}
                       className="p-3 border border-border rounded-xl cursor-pointer hover:border-primary transition-all bg-background/50 hover:bg-background group"
                     >
@@ -1644,7 +1794,7 @@ here is the body of note.`}
                           {Math.round((doc.score || 0) * 100)}% Match
                         </span>
                         <div className="flex items-center gap-1">
-                          <button 
+                          <button
                             onClick={(e) => {
                               e.stopPropagation();
                               router.push(`/docs/${doc.id}`);
@@ -1652,7 +1802,7 @@ here is the body of note.`}
                             className="p-1 hover:bg-muted rounded-md transition-colors"
                             title="Open full page"
                           >
-                             <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                            <ChevronRight className="h-3 w-3 text-muted-foreground" />
                           </button>
                         </div>
                       </div>
@@ -1679,30 +1829,30 @@ here is the body of note.`}
           <div className="relative w-full max-w-4xl h-[80vh] bg-background border border-border rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/10">
               <div className="flex items-center gap-3">
-                 <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                    <Home className="h-5 w-5" />
-                 </div>
-                 <div>
-                    <h3 className="text-sm font-bold truncate max-w-[200px] md:max-w-md">
-                      {previewLoading ? "Loading..." : previewDoc?.title || "Untitled"}
-                    </h3>
-                    {!previewLoading && (
-                      <p className="text-[10px] text-muted-foreground font-mono">PREVIEW MODE</p>
-                    )}
-                 </div>
+                <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                  <Home className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold truncate max-w-[200px] md:max-w-md">
+                    {previewLoading ? "Loading..." : previewDoc?.title || "Untitled"}
+                  </h3>
+                  {!previewLoading && (
+                    <p className="text-[10px] text-muted-foreground font-mono">PREVIEW MODE</p>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 {!previewLoading && (
-                   <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     className="h-8 rounded-lg text-xs"
                     onClick={() => router.push(`/docs/${previewDoc?.id}`)}
                   >
                     Open Full Note
                   </Button>
                 )}
-                <button 
+                <button
                   onClick={() => setPreviewDoc(null)}
                   className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors"
                 >
@@ -1710,7 +1860,7 @@ here is the body of note.`}
                 </button>
               </div>
             </div>
-            
+
             <div className="flex-1 overflow-y-auto p-6 md:p-10 no-scrollbar bg-card/30">
               {previewLoading ? (
                 <div className="h-full flex flex-col items-center justify-center gap-4 text-muted-foreground">
@@ -1826,9 +1976,8 @@ here is the body of note.`}
                         {aiDiffLines.map((line, index) => (
                           <div
                             key={`left-${index}`}
-                            className={`px-2 py-1 whitespace-pre-wrap ${
-                              line.type === "remove" ? "bg-rose-50 text-rose-700" : "bg-background"
-                            }`}
+                            className={`px-2 py-1 whitespace-pre-wrap ${line.type === "remove" ? "bg-rose-50 text-rose-700" : "bg-background"
+                              }`}
                           >
                             {line.left ?? " "}
                           </div>
@@ -1841,9 +1990,8 @@ here is the body of note.`}
                         {aiDiffLines.map((line, index) => (
                           <div
                             key={`right-${index}`}
-                            className={`px-2 py-1 whitespace-pre-wrap ${
-                              line.type === "add" ? "bg-emerald-50 text-emerald-700" : "bg-background"
-                            }`}
+                            className={`px-2 py-1 whitespace-pre-wrap ${line.type === "add" ? "bg-emerald-50 text-emerald-700" : "bg-background"
+                              }`}
                           >
                             {line.right ?? " "}
                           </div>
@@ -1884,11 +2032,10 @@ here is the body of note.`}
                           return (
                             <button
                               key={tag.id}
-                              className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
-                                removed
-                                  ? "bg-rose-50 text-rose-700 border-rose-200"
-                                  : "bg-black text-white border-black"
-                              }`}
+                              className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${removed
+                                ? "bg-rose-50 text-rose-700 border-rose-200"
+                                : "bg-black text-white border-black"
+                                }`}
                               onClick={() => toggleExistingTag(tag.id)}
                             >
                               #{tag.name}
@@ -1911,9 +2058,8 @@ here is the body of note.`}
                           return (
                             <button
                               key={tag}
-                              className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
-                                checked ? "bg-black text-white border-black" : "bg-background border-border"
-                              } hover:bg-accent`}
+                              className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${checked ? "bg-black text-white border-black" : "bg-background border-border"
+                                } hover:bg-accent`}
                               onClick={() => toggleAiTag(tag)}
                             >
                               #{tag}
@@ -1978,107 +2124,107 @@ here is the body of note.`}
       )}
 
       {showDeleteConfirm && (
-         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
-            <div className="relative w-full max-w-sm bg-background border border-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-               <div className="p-6 text-center">
-                  <div className="w-12 h-12 bg-destructive/10 text-destructive rounded-full flex items-center justify-center mx-auto mb-4">
-                     <AlertTriangle className="h-6 w-6" />
-                  </div>
-                  <h3 className="text-lg font-bold mb-2">Delete Note?</h3>
-                  <p className="text-sm text-muted-foreground mb-6">
-                     This action cannot be undone. All versions of <span className="font-mono font-bold text-foreground">&ldquo;{title || "Untitled"}&rdquo;</span> will be permanently removed.
-                  </p>
-                  <div className="flex gap-3">
-                     <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setShowDeleteConfirm(false)}>
-                        Cancel
-                     </Button>
-                     <Button variant="destructive" className="flex-1 rounded-xl font-bold" onClick={handleDelete}>
-                        Delete
-                     </Button>
-                  </div>
-               </div>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
+          <div className="relative w-full max-w-sm bg-background border border-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center">
+              <div className="w-12 h-12 bg-destructive/10 text-destructive rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <h3 className="text-lg font-bold mb-2">Delete Note?</h3>
+              <p className="text-sm text-muted-foreground mb-6">
+                This action cannot be undone. All versions of <span className="font-mono font-bold text-foreground">&ldquo;{title || "Untitled"}&rdquo;</span> will be permanently removed.
+              </p>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setShowDeleteConfirm(false)}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" className="flex-1 rounded-xl font-bold" onClick={handleDelete}>
+                  Delete
+                </Button>
+              </div>
             </div>
-         </div>
+          </div>
+        </div>
       )}
 
       {showQuickOpen && (
-         <div className="fixed inset-0 z-[150] flex items-start justify-center pt-[15vh] px-4">
-            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={handleCloseQuickOpen} />
-            <div className="relative w-full max-w-lg bg-popover border border-border rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-               <div className="flex items-center px-4 py-3 border-b border-border gap-3">
-                  <Search className="h-4 w-4 text-muted-foreground" />
-                   <input 
-                      autoFocus
-                      placeholder="Quick open note..."
-                      className="bg-transparent border-none focus:ring-0 text-sm flex-1 outline-none"
-                      value={quickOpenQuery}
-                      onChange={(e) => setQuickOpenQuery(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") {
-                          handleCloseQuickOpen();
-                          return;
-                        }
-                        if (quickOpenDocs.length === 0) return;
-                        if (e.key === "ArrowDown") {
-                          e.preventDefault();
-                          setQuickOpenIndex((prev) => (prev + 1) % quickOpenDocs.length);
-                        } else if (e.key === "ArrowUp") {
-                          e.preventDefault();
-                          setQuickOpenIndex((prev) => (prev - 1 + quickOpenDocs.length) % quickOpenDocs.length);
-                        } else if (e.key === "Enter") {
-                          e.preventDefault();
-                          const doc = quickOpenDocs[quickOpenIndex];
-                          if (doc) handleQuickOpenSelect(doc);
-                        }
-                      }}
-                   />
-                  <X className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground" onClick={handleCloseQuickOpen} />
-               </div>
-                      <div className="max-h-[50vh] overflow-y-auto p-2">
-                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 py-2">
-                    {showSearchResults ? "Search Results" : "Recent Updates"}
-                  </div>
-                  {quickOpenLoading && (
-                    <div className="px-2 py-2 text-xs text-muted-foreground">Searching...</div>
-                  )}
-                  {quickOpenDocs.length === 0 ? (
-                    <div className="px-2 py-4 text-sm text-muted-foreground italic">
-                      {showSearchResults ? "No matching notes found" : "No recent notes found"}
-                    </div>
-                  ) : (
-                    <div className="space-y-0.5">
-                      {quickOpenDocs.map((doc, index) => {
-                        const isActive = index === quickOpenIndex;
-                        return (
-                          <button
-                            key={doc.id}
-                            onClick={() => handleQuickOpenSelect(doc)}
-                            onMouseEnter={() => setQuickOpenIndex(index)}
-                            className={`flex items-center w-full px-3 py-2 text-sm rounded-lg text-left transition-colors group ${isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"}`}
-                          >
-                            <div className="flex flex-col min-w-0">
-                              <span className="font-medium truncate">{doc.title || "Untitled"}</span>
-                              <span className={`text-[10px] truncate ${isActive ? "text-accent-foreground/70" : "text-muted-foreground"}`}>
-                                {formatDate(doc.mtime)}
-                              </span>
-                            </div>
-                            <ChevronRight className={`h-3.5 w-3.5 ml-auto transition-opacity ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-               </div>
-               <div className="p-3 bg-muted/30 border-t border-border flex justify-between items-center text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">
-                  <span>Tip: Select to switch tab or open</span>
-                  <div className="flex items-center gap-1">
-                     <span className="border border-border bg-background px-1 rounded shadow-sm font-bold">ESC</span>
-                     <span>to close</span>
-                  </div>
-               </div>
+        <div className="fixed inset-0 z-[150] flex items-start justify-center pt-[15vh] px-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={handleCloseQuickOpen} />
+          <div className="relative w-full max-w-lg bg-popover border border-border rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center px-4 py-3 border-b border-border gap-3">
+              <Search className="h-4 w-4 text-muted-foreground" />
+              <input
+                autoFocus
+                placeholder="Quick open note..."
+                className="bg-transparent border-none focus:ring-0 text-sm flex-1 outline-none"
+                value={quickOpenQuery}
+                onChange={(e) => setQuickOpenQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    handleCloseQuickOpen();
+                    return;
+                  }
+                  if (quickOpenDocs.length === 0) return;
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setQuickOpenIndex((prev) => (prev + 1) % quickOpenDocs.length);
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setQuickOpenIndex((prev) => (prev - 1 + quickOpenDocs.length) % quickOpenDocs.length);
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    const doc = quickOpenDocs[quickOpenIndex];
+                    if (doc) handleQuickOpenSelect(doc);
+                  }
+                }}
+              />
+              <X className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground" onClick={handleCloseQuickOpen} />
             </div>
-         </div>
+            <div className="max-h-[50vh] overflow-y-auto p-2">
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 py-2">
+                {showSearchResults ? "Search Results" : "Recent Updates"}
+              </div>
+              {quickOpenLoading && (
+                <div className="px-2 py-2 text-xs text-muted-foreground">Searching...</div>
+              )}
+              {quickOpenDocs.length === 0 ? (
+                <div className="px-2 py-4 text-sm text-muted-foreground italic">
+                  {showSearchResults ? "No matching notes found" : "No recent notes found"}
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {quickOpenDocs.map((doc, index) => {
+                    const isActive = index === quickOpenIndex;
+                    return (
+                      <button
+                        key={doc.id}
+                        onClick={() => handleQuickOpenSelect(doc)}
+                        onMouseEnter={() => setQuickOpenIndex(index)}
+                        className={`flex items-center w-full px-3 py-2 text-sm rounded-lg text-left transition-colors group ${isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"}`}
+                      >
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-medium truncate">{doc.title || "Untitled"}</span>
+                          <span className={`text-[10px] truncate ${isActive ? "text-accent-foreground/70" : "text-muted-foreground"}`}>
+                            {formatDate(doc.mtime)}
+                          </span>
+                        </div>
+                        <ChevronRight className={`h-3.5 w-3.5 ml-auto transition-opacity ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="p-3 bg-muted/30 border-t border-border flex justify-between items-center text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">
+              <span>Tip: Select to switch tab or open</span>
+              <div className="flex items-center gap-1">
+                <span className="border border-border bg-background px-1 rounded shadow-sm font-bold">ESC</span>
+                <span>to close</span>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {showFloatingToc && !showDetails && tocContent && (
@@ -2200,11 +2346,10 @@ here is the body of note.`}
                   onClick={() => setEmojiTab(tab.key)}
                   title={tab.label}
                   aria-label={tab.label}
-                  className={`h-8 w-8 flex items-center justify-center rounded-full border transition-colors ${
-                    tab.key === activeEmojiTab.key
-                      ? "border-primary text-primary bg-primary/10"
-                      : "border-border text-muted-foreground hover:text-foreground"
-                  }`}
+                  className={`h-8 w-8 flex items-center justify-center rounded-full border transition-colors ${tab.key === activeEmojiTab.key
+                    ? "border-primary text-primary bg-primary/10"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                    }`}
                 >
                   <span className="text-sm">{tab.icon}</span>
                 </button>
