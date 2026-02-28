@@ -501,9 +501,16 @@ func (s *DocumentService) ListShareCommentsByToken(ctx context.Context, token, s
 	var result []ShareCommentWithReplies
 	for _, r := range roots {
 		r.ReplyCount = counts[r.ID]
+		previewReplies, err := s.shares.ListRepliesByRootID(ctx, share.ID, r.ID, 5, 0)
+		if err != nil {
+			return nil, err
+		}
+		if previewReplies == nil {
+			previewReplies = []model.ShareComment{}
+		}
 		node := ShareCommentWithReplies{
 			ShareComment: r,
-			Replies:      []model.ShareComment{}, // Do not lazy load by default
+			Replies:      previewReplies,
 		}
 		result = append(result, node)
 	}

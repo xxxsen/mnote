@@ -43,6 +43,7 @@ function CommentItem({
   setReplyingTo,
   inlineReplyContent,
   setInlineReplyContent,
+  onToast,
 }: {
   comment: ShareComment;
   token: string;
@@ -52,6 +53,7 @@ function CommentItem({
   setReplyingTo: (user: { id: string; author: string } | null) => void;
   inlineReplyContent: string;
   setInlineReplyContent: (val: string) => void;
+  onToast: (message: string, durationMs?: number) => void;
 }) {
   const mergeRepliesByID = useCallback((base: ShareComment[], incoming: ShareComment[]) => {
     if (!incoming.length) return base;
@@ -69,7 +71,7 @@ function CommentItem({
   const [repliesLoading, setRepliesLoading] = useState(false);
   const [hasMoreReplies, setHasMoreReplies] = useState(false);
   const [inlineReplySubmitting, setInlineReplySubmitting] = useState(false);
-  const [repliesExpanded, setRepliesExpanded] = useState(false);
+  const [repliesExpanded, setRepliesExpanded] = useState((comment.replies?.length || 0) > 0);
   const [loadedRepliesCount, setLoadedRepliesCount] = useState(comment.replies?.length || 0);
   const [replyCount, setReplyCount] = useState<number>(typeof comment.reply_count === "number" ? comment.reply_count : replies.length);
 
@@ -78,6 +80,9 @@ function CommentItem({
     if (comment.replies && replies.length === 0) {
       setReplies(comment.replies);
       setLoadedRepliesCount(comment.replies.length);
+      if (comment.replies.length > 0) {
+        setRepliesExpanded(true);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [comment.replies]);
@@ -88,16 +93,10 @@ function CommentItem({
     }
   }, [comment.reply_count, replyCount]);
 
-  // Calculate if there are more replies to load based on initial count, but let fetchReplies manage it once expanded
+  // Keep "load more" state in sync with known total count.
   useEffect(() => {
-    if (!repliesExpanded) {
-      if (replyCount > replies.length) {
-        setHasMoreReplies(true);
-      } else {
-        setHasMoreReplies(false);
-      }
-    }
-  }, [replyCount, replies.length, repliesExpanded]);
+    setHasMoreReplies(replyCount > replies.length);
+  }, [replyCount, replies.length]);
 
   const fetchReplies = async (offset = 0) => {
     setRepliesLoading(true);
@@ -109,11 +108,6 @@ function CommentItem({
       } else {
         setReplies(prev => mergeRepliesByID(prev, res || []));
         setLoadedRepliesCount((prev) => prev + (res || []).length);
-      }
-      if (!res || res.length < 10) {
-        setHasMoreReplies(false);
-      } else {
-        setHasMoreReplies(true);
       }
       setRepliesExpanded(true);
     } catch (err) {
@@ -150,11 +144,12 @@ function CommentItem({
       // Try to insert it into our local list optimistically
       setReplies(prev => mergeRepliesByID(prev, [created]));
       setReplyCount((prev) => prev + 1);
+      setRepliesExpanded(true);
       setInlineReplyContent("");
       setReplyingTo(null);
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : "Failed to add reply");
+      onToast(err instanceof Error ? err.message : "Failed to add reply", 3000);
     } finally {
       setInlineReplySubmitting(false);
     }
@@ -340,6 +335,10 @@ export default function SharePage() {
   const doc = detail?.document;
   const hasTocToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
   const canAnnotate = detail?.permission === 2;
+  const showToast = useCallback((message: string, durationMs = 2500) => {
+    setToast(message);
+    window.setTimeout(() => setToast(null), durationMs);
+  }, []);
 
   const estimateReadingTime = (content: string) => {
     const wordsPerMinute = 200;
@@ -505,8 +504,7 @@ export default function SharePage() {
     if (!detail || !canAnnotate || annotationSubmitting) return;
     const content = annotationContent.trim();
     if (!content) {
-      setToast("Please enter comment content.");
-      setTimeout(() => setToast(null), 2500);
+      showToast("Please enter comment content.");
       return;
     }
     setAnnotationSubmitting(true);
@@ -523,13 +521,11 @@ export default function SharePage() {
       setCommentsTotal((prev) => prev + 1);
       setLoadedCommentsCount((prev) => prev + 1);
       setAnnotationContent("");
-      setToast("Comment added.");
-      setTimeout(() => setToast(null), 2500);
+      showToast("Comment added.");
       void fetchComments(true); // silent background refresh
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to add comment";
-      setToast(msg);
-      setTimeout(() => setToast(null), 3000);
+      showToast(msg, 3000);
     } finally {
       setAnnotationSubmitting(false);
     }
@@ -966,6 +962,7 @@ export default function SharePage() {
                   setReplyingTo={setReplyingTo}
                   inlineReplyContent={inlineReplyContent}
                   setInlineReplyContent={setInlineReplyContent}
+                  onToast={showToast}
                 />
               ))
             )}
