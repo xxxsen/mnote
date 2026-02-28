@@ -915,8 +915,21 @@ const MarkdownPreview = memo(
             const isToc = className.includes("language-toc");
             const isMermaid = className.includes("language-mermaid");
 
-            const runnableLangs = ["go", "golang", "js", "javascript", "py", "python", "c"];
-            const isRunnableLang = runnableLangs.some(lang => className.includes(`language-${lang}`));
+            const runnableLangs = ["go", "golang", "js", "javascript", "py", "python", "lua", "c"];
+            // Extract effective language from className, handling "language-363:367:path/to/file.go" patterns
+            const langInfoMatch = /language-(\S*)/.exec(className);
+            let effectiveLang = langInfoMatch ? langInfoMatch[1] : "";
+            if (effectiveLang.includes(":")) {
+              const lParts = effectiveLang.split(":");
+              const numEnd = lParts.findIndex(p => !/^\d+$/.test(p));
+              if (numEnd > 0) {
+                const extM = lParts.slice(numEnd).join(":").match(/\.(\w+)$/);
+                effectiveLang = extM ? extM[1] : lParts[numEnd];
+              } else {
+                effectiveLang = lParts[0];
+              }
+            }
+            const isRunnableLang = runnableLangs.includes(effectiveLang);
             const isRunnable = (metastring && metastring.includes("[runnable]")) || className.includes("[runnable]");
             const isFenced = className.startsWith("language-");
 
