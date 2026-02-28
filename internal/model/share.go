@@ -7,6 +7,8 @@ type Share struct {
 	Token         string `json:"token"`
 	State         int    `json:"state"`
 	ExpiresAt     int64  `json:"expires_at"`
+	Password      string `json:"password,omitempty"`
+	HasPassword   bool   `json:"has_password"`
 	PasswordHash  string `json:"-"`
 	Permission    int    `json:"permission"`
 	AllowDownload int    `json:"allow_download"`

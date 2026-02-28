@@ -356,11 +356,7 @@ func (s *DocumentService) UpdateShareConfig(ctx context.Context, userID, docID s
 	}
 	passwordHash := share.PasswordHash
 	if strings.TrimSpace(input.Password) != "" {
-		hashed, err := password.Hash(strings.TrimSpace(input.Password))
-		if err != nil {
-			return nil, err
-		}
-		passwordHash = hashed
+		passwordHash = strings.TrimSpace(input.Password)
 	}
 	if input.ClearPassword {
 		passwordHash = ""
@@ -413,8 +409,11 @@ func (s *DocumentService) GetShareByToken(ctx context.Context, token, sharePassw
 		if strings.TrimSpace(sharePassword) == "" {
 			return nil, appErr.ErrForbidden
 		}
-		if err := password.Compare(share.PasswordHash, sharePassword); err != nil {
-			return nil, appErr.ErrForbidden
+		trimmed := strings.TrimSpace(sharePassword)
+		if share.PasswordHash != trimmed {
+			if err := password.Compare(share.PasswordHash, trimmed); err != nil {
+				return nil, appErr.ErrForbidden
+			}
 		}
 	}
 	doc, err := s.docs.GetByID(ctx, share.UserID, share.DocumentID)

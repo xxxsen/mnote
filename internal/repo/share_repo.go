@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"github.com/didi/gendry/builder"
 
@@ -115,6 +116,8 @@ func (r *ShareRepo) GetByToken(ctx context.Context, token string) (*model.Share,
 	if err := rows.Scan(&share.ID, &share.UserID, &share.DocumentID, &share.Token, &share.State, &share.ExpiresAt, &share.PasswordHash, &share.Permission, &share.AllowDownload, &share.Ctime, &share.Mtime); err != nil {
 		return nil, err
 	}
+	share.Password = share.PasswordHash
+	share.HasPassword = strings.TrimSpace(share.PasswordHash) != ""
 	return &share, nil
 }
 
@@ -141,6 +144,8 @@ func (r *ShareRepo) GetActiveByDocument(ctx context.Context, userID, docID strin
 	if err := rows.Scan(&share.ID, &share.UserID, &share.DocumentID, &share.Token, &share.State, &share.ExpiresAt, &share.PasswordHash, &share.Permission, &share.AllowDownload, &share.Ctime, &share.Mtime); err != nil {
 		return nil, err
 	}
+	share.Password = share.PasswordHash
+	share.HasPassword = strings.TrimSpace(share.PasswordHash) != ""
 	return &share, nil
 }
 

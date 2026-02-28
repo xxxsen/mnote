@@ -44,6 +44,8 @@ export interface Share {
   token: string;
   state: number;
   expires_at: number;
+  password?: string;
+  has_password?: boolean;
   permission: number;
   allow_download: number;
   ctime: number;
