@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, memo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
-import { apiFetch, ApiError } from "@/lib/api";
+import { apiFetch, ApiError, getAuthToken } from "@/lib/api";
 import MarkdownPreview from "@/components/markdown-preview";
 import { PublicShareDetail, ShareComment, ShareCommentsPage } from "@/types";
 import { formatDate, generatePixelAvatar } from "@/lib/utils";
@@ -33,6 +33,22 @@ const SharedContent = memo(({ previewRef, content, handleTocLoaded }: SharedCont
 
 SharedContent.displayName = "SharedContent";
 
+const GUEST_ANON_ID_KEY = "mnote_share_guest_id";
+
+const generateGuestAnonID = () => Math.random().toString(36).slice(2, 6).toUpperCase();
+
+const isGuestAuthor = (author: string | undefined) => {
+  const value = (author || "Guest").trim();
+  return value === "Guest" || value.startsWith("Guest #");
+};
+
+const guestFingerprint = (author: string | undefined) => {
+  const value = (author || "").trim();
+  const match = value.match(/^Guest\s*#([A-Za-z0-9]{4})$/);
+  if (!match) return "";
+  return match[1].toUpperCase();
+};
+
 // --- Start of CommentItem component ---
 function CommentItem({
   comment,
@@ -44,6 +60,7 @@ function CommentItem({
   inlineReplyContent,
   setInlineReplyContent,
   onToast,
+  guestAuthor,
 }: {
   comment: ShareComment;
   token: string;
@@ -54,6 +71,7 @@ function CommentItem({
   inlineReplyContent: string;
   setInlineReplyContent: (val: string) => void;
   onToast: (message: string, durationMs?: number) => void;
+  guestAuthor: string;
 }) {
   const mergeRepliesByID = useCallback((base: ShareComment[], incoming: ShareComment[]) => {
     if (!incoming.length) return base;
@@ -137,6 +155,7 @@ function CommentItem({
         requireAuth: false,
         body: JSON.stringify({
           password: accessPassword.trim() || undefined,
+          author: guestAuthor || undefined,
           content,
           reply_to_id: replyingToId,
         }),
@@ -164,7 +183,12 @@ function CommentItem({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-baseline mb-1">
-            <div className="font-semibold text-sm text-slate-900 truncate mr-2">{comment.author || "Guest"}</div>
+            <div className="font-semibold text-sm text-slate-900 truncate mr-2">
+              {comment.author || "Guest"}
+              {isGuestAuthor(comment.author) && guestFingerprint(comment.author) && (
+                <span className="ml-2 text-[10px] font-mono text-slate-400 align-middle">ID:{guestFingerprint(comment.author)}</span>
+              )}
+            </div>
             <div className="flex items-center gap-3">
               <div className="text-xs text-slate-400 whitespace-nowrap">{formatDate(comment.ctime)}</div>
               {canAnnotate && (
@@ -234,6 +258,9 @@ function CommentItem({
                   <div className="flex justify-between items-baseline mb-1">
                     <div className="font-semibold text-xs text-slate-900 truncate mr-2">
                       {reply.author || "Guest"}
+                      {isGuestAuthor(reply.author) && guestFingerprint(reply.author) && (
+                        <span className="ml-2 text-[9px] font-mono text-slate-400 align-middle">ID:{guestFingerprint(reply.author)}</span>
+                      )}
                       {reply.reply_to_id !== comment.id && reply.reply_to_id && (
                         <span className="text-slate-400 font-normal ml-1">
                           <span className="inline-block mx-1">▸</span>
@@ -331,6 +358,7 @@ export default function SharePage() {
   const [commentsHasMore, setCommentsHasMore] = useState(true);
   const [commentsAppending, setCommentsAppending] = useState(false);
   const [loadedCommentsCount, setLoadedCommentsCount] = useState(0);
+  const [guestAuthor, setGuestAuthor] = useState("");
   const previewRef = useRef<HTMLDivElement>(null);
   const doc = detail?.document;
   const hasTocToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
@@ -338,6 +366,25 @@ export default function SharePage() {
   const showToast = useCallback((message: string, durationMs = 2500) => {
     setToast(message);
     window.setTimeout(() => setToast(null), durationMs);
+  }, []);
+
+  useEffect(() => {
+    const token = getAuthToken();
+    if (token) {
+      setGuestAuthor("");
+      return;
+    }
+    let anonID = "";
+    try {
+      anonID = localStorage.getItem(GUEST_ANON_ID_KEY) || "";
+      if (!/^[A-Z0-9]{4}$/.test(anonID)) {
+        anonID = generateGuestAnonID();
+        localStorage.setItem(GUEST_ANON_ID_KEY, anonID);
+      }
+    } catch {
+      anonID = generateGuestAnonID();
+    }
+    setGuestAuthor(`Guest #${anonID}`);
   }, []);
 
   const estimateReadingTime = (content: string) => {
@@ -514,6 +561,7 @@ export default function SharePage() {
         requireAuth: false,
         body: JSON.stringify({
           password: accessPassword.trim() || undefined,
+          author: guestAuthor || undefined,
           content,
         }),
       });
@@ -963,6 +1011,7 @@ export default function SharePage() {
                   inlineReplyContent={inlineReplyContent}
                   setInlineReplyContent={setInlineReplyContent}
                   onToast={showToast}
+                  guestAuthor={guestAuthor}
                 />
               ))
             )}
