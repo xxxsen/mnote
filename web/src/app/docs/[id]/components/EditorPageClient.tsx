@@ -19,7 +19,6 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { apiFetch, uploadFile } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import MarkdownPreview from "@/components/markdown-preview";
 import { Tag, DocumentVersionSummary, Document as MnoteDocument } from "@/types";
@@ -258,7 +257,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [activeTab, setActiveTab] = useState<"tags" | "summary" | "history" | "share">("tags");
+  const [activeTab, setActiveTab] = useState<"summary" | "history" | "share">("summary");
   const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(loadThemePreference);
 
   const [versions, setVersions] = useState<DocumentVersionSummary[]>([]);
@@ -914,17 +913,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   );
 
   const {
-    tagQuery,
-    tagSearchLoading,
-    tagDropdownIndex,
-    trimmedTagQuery,
-    tagDropdownItems,
     findExistingTagByName,
-    handleTagInputChange,
-    handleTagCompositionStart,
-    handleTagCompositionEnd,
-    handleTagInputKeyDown,
-    handleTagDropdownSelect,
   } = useTagInput({
     allTags,
     selectedTagIDs,
@@ -1843,13 +1832,6 @@ here is the body of note.`}
               </Button>
             </div>
             <div className="flex items-center border-b border-border bg-muted/20">
-
-              <button
-                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "tags" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
-                onClick={() => setActiveTab("tags")}
-              >
-                Tags
-              </button>
               <button
                 className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "summary" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
                 onClick={() => setActiveTab("summary")}
@@ -1872,78 +1854,6 @@ here is the body of note.`}
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
-              {activeTab === "tags" && (
-                <div className="space-y-4">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Search tag..."
-                      value={tagQuery}
-                      maxLength={16}
-                      onChange={handleTagInputChange}
-                      onCompositionStart={handleTagCompositionStart}
-                      onCompositionEnd={handleTagCompositionEnd}
-                      onKeyDown={handleTagInputKeyDown}
-                    />
-                  </div>
-                  {trimmedTagQuery && (
-                    <div className="border border-border rounded-xl overflow-hidden bg-background">
-                      {tagSearchLoading ? (
-                        <div className="px-3 py-2 text-xs text-muted-foreground">Searching...</div>
-                      ) : tagDropdownItems.length > 0 ? (
-                        <>
-                          {tagDropdownItems.map((item, index) => (
-                            <button
-                              key={item.key}
-                              className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 ${index === tagDropdownIndex ? "bg-muted/40" : ""}`}
-                              onClick={() => handleTagDropdownSelect(item)}
-                            >
-                              {item.type === "create"
-                                ? `Create #${trimmedTagQuery}`
-                                : item.type === "use"
-                                  ? `Use existing #${trimmedTagQuery}`
-                                  : `#${item.tag?.name || ""}`}
-                            </button>
-                          ))}
-                        </>
-                      ) : (
-                        <div className="px-3 py-2 text-xs text-muted-foreground">No matching tags</div>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap gap-2">
-                    {selectedTags.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">No tags yet</div>
-                    ) : (
-                      selectedTags.map((tag) => (
-                        <div
-                          key={tag.id}
-                          className={`inline-flex items-center gap-1 px-2 py-1 text-sm border rounded-full transition-colors cursor-pointer select-none ${selectedTagIDs.includes(tag.id)
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-secondary text-secondary-foreground border-input hover:bg-muted"
-                            }`}
-                          onClick={() => toggleTag(tag.id)}
-                        >
-                          <span>
-                            #{tag.name}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="pt-4 mt-4 border-t border-border">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full text-xs rounded-xl"
-                      onClick={() => router.push(`/tags?return=${encodeURIComponent(`/docs/${id}`)}`)}
-                    >
-                      Manage Tags
-                    </Button>
-                  </div>
-                </div>
-              )}
-
               {activeTab === "summary" && (
                 <div className="space-y-4">
                   <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">AI Summary</div>
