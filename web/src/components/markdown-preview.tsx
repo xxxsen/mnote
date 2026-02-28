@@ -960,8 +960,22 @@ const MarkdownPreview = memo(
 
             if (language.includes(":")) {
               const parts = language.split(":");
-              language = parts[0];
-              fileName = parts[1];
+              // Detect patterns like "363:367:path/to/file.go" or "363:path/to/file.go"
+              // where leading parts are line numbers (all digits)
+              const numericPrefixEnd = parts.findIndex(p => !/^\d+$/.test(p));
+              if (numericPrefixEnd > 0) {
+                // Everything from the first non-numeric part onward is the file path
+                const filePath = parts.slice(numericPrefixEnd).join(":");
+                const lineRange = parts.slice(0, numericPrefixEnd).join(":");
+                fileName = `${filePath}:${lineRange}`;
+                // Infer language from file extension
+                const extMatch = filePath.match(/\.(\w+)$/);
+                language = extMatch ? extMatch[1] : "text";
+              } else {
+                // Normal "language:fileName" format
+                language = parts[0];
+                fileName = parts.slice(1).join(":");
+              }
             }
 
             const meta = metastring || "";
