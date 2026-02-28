@@ -855,6 +855,8 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
 
 MermaidBlock.displayName = "MermaidBlock";
 
+const RUNNABLE_LANGS = ["go", "golang", "js", "javascript", "py", "python", "lua", "c"];
+
 const MarkdownPreview = memo(
   forwardRef<HTMLDivElement, MarkdownPreviewProps>(function MarkdownPreview(
     { content, className, showTocAside = false, tocClassName, onScroll, onTocLoaded },
@@ -915,7 +917,7 @@ const MarkdownPreview = memo(
             const isToc = className.includes("language-toc");
             const isMermaid = className.includes("language-mermaid");
 
-            const runnableLangs = ["go", "golang", "js", "javascript", "py", "python", "lua", "c"];
+
             // Extract effective language from className, handling "language-363:367:path/to/file.go" patterns
             const langInfoMatch = /language-(\S*)/.exec(className);
             let effectiveLang = langInfoMatch ? langInfoMatch[1] : "";
@@ -929,7 +931,7 @@ const MarkdownPreview = memo(
                 effectiveLang = lParts[0];
               }
             }
-            const isRunnableLang = runnableLangs.includes(effectiveLang);
+            const isRunnableLang = RUNNABLE_LANGS.includes(effectiveLang);
             const isRunnable = (metastring && metastring.includes("[runnable]")) || className.includes("[runnable]");
             const isFenced = className.startsWith("language-");
 
@@ -1004,8 +1006,7 @@ const MarkdownPreview = memo(
               fileName = meta;
             }
 
-            const runnableLangs = ["go", "golang", "js", "javascript", "py", "python", "lua", "c"];
-            if (isRunnable && runnableLangs.includes(language)) {
+            if (isRunnable && RUNNABLE_LANGS.includes(language)) {
               return <CodeSandbox code={rawCode} language={language} fileName={fileName} />;
             }
 
