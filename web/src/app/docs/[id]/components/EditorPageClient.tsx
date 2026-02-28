@@ -19,7 +19,6 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { apiFetch, uploadFile } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import MarkdownPreview from "@/components/markdown-preview";
 import { Tag, DocumentVersionSummary, Document as MnoteDocument } from "@/types";
@@ -49,7 +48,8 @@ import {
   AlertTriangle,
   Copy,
   Check,
-  FileText
+  FileText,
+  Tags
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { MAX_TAGS } from "../constants";
@@ -64,8 +64,14 @@ import { useShareLink } from "../hooks/useShareLink";
 import { usePreviewDoc } from "../hooks/usePreviewDoc";
 import { useAiAssistant } from "../hooks/useAiAssistant";
 import { useSimilarDocs } from "../hooks/useSimilarDocs";
-import { useTagInput } from "../hooks/useTagInput";
 import { useEditorLifecycle } from "../hooks/useEditorLifecycle";
+
+type InlineTagDropdownItem = {
+  key: string;
+  type: "use" | "create" | "suggestion";
+  tag?: Tag;
+  name?: string;
+};
 
 const EMOJI_TABS = [
   {
@@ -242,7 +248,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   } = quickOpen;
   const documentActions = useDocumentActions(id);
   const tagActions = useTagActions(id);
-  const [tabs, setTabs] = useState<{ id: string; title: string }[]>([]);
 
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
@@ -251,7 +256,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [activeTab, setActiveTab] = useState<"tags" | "summary" | "history" | "share">("tags");
+  const [activeTab, setActiveTab] = useState<"summary" | "history" | "share">("summary");
   const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(loadThemePreference);
 
   const [versions, setVersions] = useState<DocumentVersionSummary[]>([]);
@@ -299,13 +304,22 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   // TOC State
   const [tocContent, setTocContent] = useState("");
   const [tocCollapsed, setTocCollapsed] = useState(false);
-  const [floatingPanelTab, setFloatingPanelTab] = useState<"toc" | "mentions">("toc");
+  const [floatingPanelTab, setFloatingPanelTab] = useState<"toc" | "mentions" | "summary">("toc");
   const [floatingPanelTouched, setFloatingPanelTouched] = useState(false);
   const [activePopover, setActivePopover] = useState<"emoji" | "color" | "size" | null>(null);
   const [emojiTab, setEmojiTab] = useState(EMOJI_TABS[0].key);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
+  const [inlineTagMode, setInlineTagMode] = useState(false);
+  const [inlineTagValue, setInlineTagValue] = useState("");
+  const [inlineTagResults, setInlineTagResults] = useState<Tag[]>([]);
+  const [inlineTagLoading, setInlineTagLoading] = useState(false);
+  const [inlineTagIndex, setInlineTagIndex] = useState(0);
+  const inlineTagInputRef = useRef<HTMLInputElement | null>(null);
+  const inlineTagComposeRef = useRef(false);
+  const inlineTagSearchTimerRef = useRef<number | null>(null);
+  const [inlineTagMenuPos, setInlineTagMenuPos] = useState<{ left: number; top: number; width: number } | null>(null);
 
   const activeEmojiTab = useMemo(
     () => EMOJI_TABS.find((tab) => tab.key === emojiTab) || EMOJI_TABS[0],
@@ -525,17 +539,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
       }, 100);
     }
   }, [loading]);
-
-  useEffect(() => {
-    if (!id) return;
-    setTabs(prev => {
-      const exists = prev.find(t => t.id === id);
-      if (exists) {
-        return prev.map(t => t.id === id ? { ...t, title: title || t.title } : t);
-      }
-      return [...prev, { id, title: title || "Untitled" }];
-    });
-  }, [id, title]);
 
   useEditorLifecycle({
     id,
@@ -908,30 +911,25 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     [selectedTagIDs, tagActions, toast]
   );
 
-  const {
-    tagQuery,
-    tagSearchLoading,
-    tagDropdownIndex,
-    trimmedTagQuery,
-    tagDropdownItems,
-    findExistingTagByName,
-    handleTagInputChange,
-    handleTagCompositionStart,
-    handleTagCompositionEnd,
-    handleTagInputKeyDown,
-    handleTagDropdownSelect,
-  } = useTagInput({
-    allTags,
-    selectedTagIDs,
-    maxTags: MAX_TAGS,
-    normalizeTagName,
-    isValidTagName,
-    mergeTags,
-    searchTags: tagActions.searchTags,
-    saveTagIDs,
-    notify: (message) => toast({ description: message }),
-    notifyError: (message) => toast({ description: message, variant: "error" }),
-  });
+  const findExistingTagByName = useCallback(
+    async (name: string) => {
+      const trimmed = normalizeTagName(name);
+      if (!trimmed) return null;
+      const cached = allTags.find((tag) => tag.name === trimmed);
+      if (cached) return cached;
+      try {
+        const res = await tagActions.searchTags(trimmed);
+        const exact = (res || []).find((tag) => tag.name === trimmed) || null;
+        if (exact) {
+          mergeTags([exact]);
+        }
+        return exact;
+      } catch {
+        return null;
+      }
+    },
+    [allTags, mergeTags, normalizeTagName, tagActions]
+  );
 
   const handleApplyAiText = useCallback(() => {
     if (!aiResultText) {
@@ -1081,10 +1079,15 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   }, [tocContent, previewContent]);
 
   const hasMentionsPanel = backlinks.length > 0;
+  const hasSummaryPanel = summary.trim().length > 0;
 
   useEffect(() => {
     setFloatingPanelTab("toc");
     setFloatingPanelTouched(false);
+    setInlineTagMode(false);
+    setInlineTagValue("");
+    setInlineTagResults([]);
+    setInlineTagIndex(0);
   }, [id]);
 
   useEffect(() => {
@@ -1095,17 +1098,33 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     }
     if (hasMentionsPanel) {
       setFloatingPanelTab("mentions");
+      return;
     }
-  }, [hasTocPanel, hasMentionsPanel, floatingPanelTouched]);
+    if (hasSummaryPanel) {
+      setFloatingPanelTab("summary");
+    }
+  }, [hasTocPanel, hasMentionsPanel, hasSummaryPanel, floatingPanelTouched]);
 
   useEffect(() => {
     if (floatingPanelTab === "toc" && !hasTocPanel && hasMentionsPanel) {
       setFloatingPanelTab("mentions");
     }
+    if (floatingPanelTab === "toc" && !hasTocPanel && !hasMentionsPanel && hasSummaryPanel) {
+      setFloatingPanelTab("summary");
+    }
     if (floatingPanelTab === "mentions" && !hasMentionsPanel && hasTocPanel) {
       setFloatingPanelTab("toc");
     }
-  }, [floatingPanelTab, hasTocPanel, hasMentionsPanel]);
+    if (floatingPanelTab === "mentions" && !hasMentionsPanel && !hasTocPanel && hasSummaryPanel) {
+      setFloatingPanelTab("summary");
+    }
+    if (floatingPanelTab === "summary" && !hasSummaryPanel && hasTocPanel) {
+      setFloatingPanelTab("toc");
+    }
+    if (floatingPanelTab === "summary" && !hasSummaryPanel && !hasTocPanel && hasMentionsPanel) {
+      setFloatingPanelTab("mentions");
+    }
+  }, [floatingPanelTab, hasTocPanel, hasMentionsPanel, hasSummaryPanel]);
 
   const handleSave = useCallback(async () => {
     const latestContent = contentRef.current;
@@ -1178,6 +1197,183 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     }
     void saveTagIDs([...selectedTagIDs, tagID]);
   };
+
+  useEffect(() => {
+    if (!inlineTagMode) return;
+    inlineTagInputRef.current?.focus();
+  }, [inlineTagMode]);
+
+  useEffect(() => {
+    if (!inlineTagMode) {
+      setInlineTagMenuPos(null);
+      return;
+    }
+    const updateMenuPosition = () => {
+      const input = inlineTagInputRef.current;
+      if (!input) {
+        setInlineTagMenuPos(null);
+        return;
+      }
+      const rect = input.getBoundingClientRect();
+      setInlineTagMenuPos({
+        left: rect.left,
+        top: rect.bottom + 4,
+        width: Math.max(rect.width, 192),
+      });
+    };
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [inlineTagMode, inlineTagValue]);
+
+  const inlineTagTrimmed = useMemo(
+    () => normalizeTagName(inlineTagValue),
+    [inlineTagValue, normalizeTagName]
+  );
+
+  const inlineTagSuggestions = useMemo(
+    () => inlineTagResults.filter((tag) => !selectedTagIDs.includes(tag.id)),
+    [inlineTagResults, selectedTagIDs]
+  );
+
+  const inlineTagExact = useMemo(
+    () =>
+      inlineTagSuggestions.find((tag) => tag.name === inlineTagTrimmed) ||
+      allTags.find((tag) => tag.name === inlineTagTrimmed) ||
+      null,
+    [allTags, inlineTagSuggestions, inlineTagTrimmed]
+  );
+
+  const inlineTagDropdownItems = useMemo(() => {
+    if (!inlineTagTrimmed || inlineTagLoading) return [] as InlineTagDropdownItem[];
+    const items: InlineTagDropdownItem[] = [];
+    if (inlineTagExact) {
+      items.push({ key: `use-${inlineTagExact.id}`, type: "use", tag: inlineTagExact });
+    } else if (isValidTagName(inlineTagTrimmed)) {
+      items.push({ key: `create-${inlineTagTrimmed}`, type: "create", name: inlineTagTrimmed });
+    }
+    inlineTagSuggestions.forEach((tag) => {
+      if (inlineTagExact && tag.id === inlineTagExact.id) return;
+      items.push({ key: `suggestion-${tag.id}`, type: "suggestion", tag });
+    });
+    return items.slice(0, 8);
+  }, [inlineTagTrimmed, inlineTagLoading, inlineTagExact, isValidTagName, inlineTagSuggestions]);
+
+  useEffect(() => {
+    if (!inlineTagMode) {
+      setInlineTagResults([]);
+      setInlineTagLoading(false);
+      setInlineTagIndex(0);
+      return;
+    }
+    if (inlineTagSearchTimerRef.current) {
+      window.clearTimeout(inlineTagSearchTimerRef.current);
+    }
+    if (!inlineTagTrimmed) {
+      setInlineTagResults([]);
+      setInlineTagLoading(false);
+      setInlineTagIndex(0);
+      return;
+    }
+    inlineTagSearchTimerRef.current = window.setTimeout(async () => {
+      setInlineTagLoading(true);
+      try {
+        const res = await tagActions.searchTags(inlineTagTrimmed);
+        const next = res || [];
+        setInlineTagResults(next);
+        mergeTags(next);
+      } catch {
+        setInlineTagResults([]);
+      } finally {
+        setInlineTagLoading(false);
+      }
+    }, 180);
+
+    return () => {
+      if (inlineTagSearchTimerRef.current) {
+        window.clearTimeout(inlineTagSearchTimerRef.current);
+      }
+    };
+  }, [inlineTagMode, inlineTagTrimmed, tagActions, mergeTags]);
+
+  useEffect(() => {
+    setInlineTagIndex(0);
+  }, [inlineTagDropdownItems]);
+
+  const handleInlineAddTag = useCallback(async (name?: string) => {
+    const trimmed = normalizeTagName(name ?? inlineTagValue);
+    if (!trimmed) {
+      setInlineTagMode(false);
+      setInlineTagValue("");
+      return;
+    }
+    if (!isValidTagName(trimmed)) {
+      toast({ description: "Tags must be letters, numbers, or Chinese characters, and at most 16 characters." });
+      return;
+    }
+    if (selectedTagIDs.length >= MAX_TAGS) {
+      toast({ description: `You can only select up to ${MAX_TAGS} tags.` });
+      return;
+    }
+
+    try {
+      let existing = allTags.find((tag) => tag.name === trimmed) || null;
+      if (!existing) {
+        existing = await findExistingTagByName(trimmed);
+      }
+
+      if (existing) {
+        if (!selectedTagIDs.includes(existing.id)) {
+          await saveTagIDs([...selectedTagIDs, existing.id]);
+        }
+      } else {
+        const created = await apiFetch<Tag>("/tags", {
+          method: "POST",
+          body: JSON.stringify({ name: trimmed }),
+        });
+        mergeTags([created]);
+        await saveTagIDs([...selectedTagIDs, created.id]);
+      }
+
+      setInlineTagValue("");
+      setInlineTagMode(false);
+    } catch (err) {
+      toast({ description: err instanceof Error ? err.message : "Failed to add tag", variant: "error" });
+    }
+  }, [
+    allTags,
+    findExistingTagByName,
+    inlineTagValue,
+    isValidTagName,
+    mergeTags,
+    normalizeTagName,
+    saveTagIDs,
+    selectedTagIDs,
+    toast,
+  ]);
+
+  const handleInlineTagSelect = useCallback(async (item: InlineTagDropdownItem) => {
+    if (item.tag) {
+      if (!selectedTagIDs.includes(item.tag.id)) {
+        if (selectedTagIDs.length >= MAX_TAGS) {
+          toast({ description: `You can only select up to ${MAX_TAGS} tags.` });
+          return;
+        }
+        await saveTagIDs([...selectedTagIDs, item.tag.id]);
+      }
+      setInlineTagMode(false);
+      setInlineTagValue("");
+      return;
+    }
+    if (item.type === "create" && item.name) {
+      await handleInlineAddTag(item.name);
+    }
+  }, [handleInlineAddTag, saveTagIDs, selectedTagIDs, toast]);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
@@ -1335,40 +1531,148 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         <div className={`flex-1 flex flex-col md:flex-row h-full transition-all duration-300 min-w-0 ${showDetails ? "mr-80" : ""}`}>
 
           <div className="h-full border-r border-border overflow-hidden min-w-0 md:flex-[0_0_50%] w-full flex flex-col relative">
-            <div className="flex items-center bg-muted/30 border-b border-border shrink-0 px-1 pt-1 h-9">
-              <div className="flex-1 flex items-end h-full gap-0.5 overflow-x-auto no-scrollbar">
-                {tabs.map(tab => (
-                  <div
-                    key={tab.id}
-                    onClick={() => { if (tab.id !== id) router.push(`/docs/${tab.id}`); }}
-                    className={`group flex items-center gap-2 px-3 h-full text-xs font-bold uppercase tracking-wider rounded-t-md border-x border-t transition-all cursor-pointer select-none shrink-0 ${tab.id === id ? "bg-background border-border text-foreground translate-y-[1px] z-10" : "bg-transparent border-transparent text-muted-foreground hover:bg-muted/50"}`}
-                  >
-                    <span className="truncate max-w-none">{tab.title || "Untitled"}</span>
-                    {tabs.length > 1 && (
+            <div className="relative z-20 flex items-center bg-background border-b border-border shrink-0 px-3 h-8 gap-1.5 overflow-x-auto overflow-y-visible no-scrollbar">
+              {selectedTags.length > 0 ? (
+                <>
+                  {selectedTags.map((tag) => (
+                    <span
+                      key={tag.id}
+                      className="group relative inline-flex items-center px-2.5 h-6 rounded-full border border-slate-200 bg-white text-[11px] font-medium text-slate-700 whitespace-nowrap"
+                      title={`#${tag.name}`}
+                    >
+                      {tag.name}
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const nextTabs = tabs.filter(t => t.id !== tab.id);
-                          setTabs(nextTabs);
-                          if (tab.id === id && nextTabs.length > 0) router.push(`/docs/${nextTabs[0].id}`);
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          toggleTag(tag.id);
                         }}
-                        className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity p-0.5"
+                        className="hidden group-hover:flex absolute -top-1 -right-1 h-3.5 w-3.5 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-400 hover:text-slate-700"
+                        aria-label={`Remove ${tag.name}`}
+                        title="Remove tag"
                       >
-                        <X className="h-3 w-3" />
+                        <X className="h-2.5 w-2.5" />
                       </button>
-                    )}
+                    </span>
+                  ))}
+                </>
+              ) : null}
+              {selectedTags.length < MAX_TAGS && (
+                inlineTagMode ? (
+                  <div>
+                    <input
+                      ref={inlineTagInputRef}
+                      value={inlineTagValue}
+                      onChange={(event) => {
+                        const raw = event.target.value;
+                        if (inlineTagComposeRef.current) {
+                          setInlineTagValue(raw);
+                          return;
+                        }
+                        setInlineTagValue(raw.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "").slice(0, 16));
+                      }}
+                      onCompositionStart={() => {
+                        inlineTagComposeRef.current = true;
+                      }}
+                      onCompositionEnd={(event) => {
+                        inlineTagComposeRef.current = false;
+                        const raw = event.currentTarget.value;
+                        setInlineTagValue(raw.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "").slice(0, 16));
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          if (inlineTagDropdownItems.length === 0) return;
+                          setInlineTagIndex((prev) => (prev + 1) % inlineTagDropdownItems.length);
+                          return;
+                        }
+                        if (event.key === "ArrowUp") {
+                          event.preventDefault();
+                          if (inlineTagDropdownItems.length === 0) return;
+                          setInlineTagIndex((prev) => (prev - 1 + inlineTagDropdownItems.length) % inlineTagDropdownItems.length);
+                          return;
+                        }
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          if (inlineTagDropdownItems.length > 0) {
+                            void handleInlineTagSelect(inlineTagDropdownItems[inlineTagIndex]);
+                            return;
+                          }
+                          void handleInlineAddTag();
+                          return;
+                        }
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          setInlineTagMode(false);
+                          setInlineTagValue("");
+                        }
+                      }}
+                      onBlur={() => {
+                        window.setTimeout(() => {
+                          setInlineTagMode(false);
+                          setInlineTagValue("");
+                        }, 120);
+                      }}
+                      placeholder="Tag name"
+                      maxLength={16}
+                      className="h-6 w-28 rounded-full border border-slate-300 bg-white px-2 text-[11px] outline-none focus:border-slate-500"
+                    />
                   </div>
-                ))}
-              </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setInlineTagMode(true);
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 transition-colors whitespace-nowrap"
+                    title="Add tag"
+                  >
+                    <Tags className="h-3.5 w-3.5" />
+                    Add tag
+                  </button>
+                )
+              )}
+              <div className="flex-1" />
               <button
                 onClick={handleOpenQuickOpen}
-                className="px-2 h-7 mb-1 text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 shrink-0 bg-background/50 rounded-md ml-1 border border-border shadow-sm"
+                className="hidden md:inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-700 transition-colors whitespace-nowrap"
                 title="Quick Open (Cmd+K)"
               >
                 <Command className="h-3 w-3" />
-                <span className="text-[9px] font-bold">OPEN</span>
+                Open
               </button>
             </div>
+
+            {typeof window !== "undefined" &&
+              inlineTagMode &&
+              inlineTagMenuPos &&
+              (inlineTagLoading || inlineTagDropdownItems.length > 0) &&
+              createPortal(
+                <div
+                  className="fixed z-[300] rounded-md border border-border bg-white shadow-lg p-1"
+                  style={{ left: inlineTagMenuPos.left, top: inlineTagMenuPos.top, width: inlineTagMenuPos.width }}
+                >
+                  {inlineTagLoading ? (
+                    <div className="px-2 py-1.5 text-[11px] text-slate-400">Searching...</div>
+                  ) : (
+                    inlineTagDropdownItems.map((item, index) => (
+                      <button
+                        key={item.key}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          void handleInlineTagSelect(item);
+                        }}
+                        className={`w-full text-left px-2 py-1.5 text-[11px] rounded ${index === inlineTagIndex ? "bg-muted text-foreground" : "hover:bg-muted/60 text-slate-700"}`}
+                      >
+                        {item.type === "create"
+                          ? `Create #${item.name || ""}`
+                          : `#${item.tag?.name || ""}`}
+                      </button>
+                    ))
+                  )}
+                </div>,
+                document.body
+              )}
 
             <EditorToolbar
               handleUndo={handleUndo}
@@ -1532,13 +1836,6 @@ here is the body of note.`}
               </Button>
             </div>
             <div className="flex items-center border-b border-border bg-muted/20">
-
-              <button
-                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "tags" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
-                onClick={() => setActiveTab("tags")}
-              >
-                Tags
-              </button>
               <button
                 className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "summary" ? "border-b-2 border-foreground" : "text-muted-foreground"}`}
                 onClick={() => setActiveTab("summary")}
@@ -1561,78 +1858,6 @@ here is the body of note.`}
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
-              {activeTab === "tags" && (
-                <div className="space-y-4">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Search tag..."
-                      value={tagQuery}
-                      maxLength={16}
-                      onChange={handleTagInputChange}
-                      onCompositionStart={handleTagCompositionStart}
-                      onCompositionEnd={handleTagCompositionEnd}
-                      onKeyDown={handleTagInputKeyDown}
-                    />
-                  </div>
-                  {trimmedTagQuery && (
-                    <div className="border border-border rounded-xl overflow-hidden bg-background">
-                      {tagSearchLoading ? (
-                        <div className="px-3 py-2 text-xs text-muted-foreground">Searching...</div>
-                      ) : tagDropdownItems.length > 0 ? (
-                        <>
-                          {tagDropdownItems.map((item, index) => (
-                            <button
-                              key={item.key}
-                              className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 ${index === tagDropdownIndex ? "bg-muted/40" : ""}`}
-                              onClick={() => handleTagDropdownSelect(item)}
-                            >
-                              {item.type === "create"
-                                ? `Create #${trimmedTagQuery}`
-                                : item.type === "use"
-                                  ? `Use existing #${trimmedTagQuery}`
-                                  : `#${item.tag?.name || ""}`}
-                            </button>
-                          ))}
-                        </>
-                      ) : (
-                        <div className="px-3 py-2 text-xs text-muted-foreground">No matching tags</div>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap gap-2">
-                    {selectedTags.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">No tags yet</div>
-                    ) : (
-                      selectedTags.map((tag) => (
-                        <div
-                          key={tag.id}
-                          className={`inline-flex items-center gap-1 px-2 py-1 text-sm border rounded-full transition-colors cursor-pointer select-none ${selectedTagIDs.includes(tag.id)
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-secondary text-secondary-foreground border-input hover:bg-muted"
-                            }`}
-                          onClick={() => toggleTag(tag.id)}
-                        >
-                          <span>
-                            #{tag.name}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="pt-4 mt-4 border-t border-border">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full text-xs rounded-xl"
-                      onClick={() => router.push(`/tags?return=${encodeURIComponent(`/docs/${id}`)}`)}
-                    >
-                      Manage Tags
-                    </Button>
-                  </div>
-                </div>
-              )}
-
               {activeTab === "summary" && (
                 <div className="space-y-4">
                   <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">AI Summary</div>
@@ -2238,7 +2463,7 @@ here is the body of note.`}
       }
 
       {
-        !showDetails && (hasTocPanel || hasMentionsPanel) && (
+        !showDetails && (hasTocPanel || hasMentionsPanel || hasSummaryPanel) && (
           <div className="fixed top-24 right-8 z-30 hidden w-72 rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md xl:block animate-in fade-in slide-in-from-right-4 duration-500">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60">
               <div className="flex items-center gap-1">
@@ -2266,6 +2491,19 @@ here is the body of note.`}
                       : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
                   >
                     Mentions
+                  </button>
+                )}
+                {hasSummaryPanel && (
+                  <button
+                    onClick={() => {
+                      setFloatingPanelTab("summary");
+                      setFloatingPanelTouched(true);
+                    }}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors ${floatingPanelTab === "summary"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
+                  >
+                    Summary
                   </button>
                 )}
               </div>
@@ -2321,7 +2559,7 @@ here is the body of note.`}
                   ) : (
                     <div className="text-xs text-slate-400 italic">No TOC available for this note.</div>
                   )
-                ) : (
+                ) : floatingPanelTab === "mentions" ? (
                   backlinks.length === 0 ? (
                     <div className="text-xs text-slate-400 italic">No notes link back to this document yet.</div>
                   ) : (
@@ -2342,6 +2580,13 @@ here is the body of note.`}
                       ))}
                     </div>
                   )
+                ) : (
+                  <div className="space-y-2">
+                    <div className="text-xs font-bold uppercase tracking-widest text-slate-500">AI Summary</div>
+                    <div className="text-xs leading-relaxed whitespace-pre-wrap text-slate-700">
+                      {summary}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
