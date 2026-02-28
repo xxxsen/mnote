@@ -1885,15 +1885,21 @@ here is the body of note.`}
                   {versions.length === 0 ? (
                     <div className="text-sm text-muted-foreground">No history available</div>
                   ) : (
-                    versions.map((v) => (
+                    versions.map((v, index) => (
                       <div key={v.version} className="border border-border p-3 text-sm">
                         <div className="font-mono text-xs text-muted-foreground mb-1">
                           v{v.version} • {formatDate(v.ctime)}
                         </div>
                         <div className="font-bold mb-2 truncate">{v.title}</div>
-                        <Button variant="outline" size="sm" className="w-full h-7" onClick={() => handleRevert(v)}>
-                          Revert
-                        </Button>
+                        {index === 0 ? (
+                          <Button variant="outline" size="sm" className="w-full h-7 text-xs font-semibold tracking-wide" disabled>
+                            CURRENT
+                          </Button>
+                        ) : (
+                          <Button variant="outline" size="sm" className="w-full h-7" onClick={() => handleRevert(v)}>
+                            Revert
+                          </Button>
+                        )}
                       </div>
                     ))
                   )}
