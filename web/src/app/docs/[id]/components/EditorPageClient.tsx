@@ -1354,20 +1354,20 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
                     </span>
                   ))}
                 </>
-              ) : (
-                <span className="text-[11px] text-slate-400 whitespace-nowrap">No tags</span>
+              ) : null}
+              {selectedTags.length < MAX_TAGS && (
+                <button
+                  onClick={() => {
+                    setShowDetails(true);
+                    setActiveTab("tags");
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 transition-colors whitespace-nowrap"
+                  title="Manage tags"
+                >
+                  <Tags className="h-3.5 w-3.5" />
+                  Add tag
+                </button>
               )}
-              <button
-                onClick={() => {
-                  setShowDetails(true);
-                  setActiveTab("tags");
-                }}
-                className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 transition-colors whitespace-nowrap"
-                title="Manage tags"
-              >
-                <Tags className="h-3.5 w-3.5" />
-                Add tag
-              </button>
               <div className="flex-1" />
               <button
                 onClick={handleOpenQuickOpen}
