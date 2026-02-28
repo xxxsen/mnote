@@ -270,7 +270,8 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const [popoverAnchor, setPopoverAnchor] = useState<{ top: number; left: number } | null>(null);
 
   const [previewContent, setPreviewContent] = useState(content);
-  const previewTimerRef = useRef<number | null>(null);
+  const previewUpdateTimerRef = useRef<number | null>(null);
+  const scrollSyncTimerRef = useRef<number | null>(null);
   const [, startTransition] = useTransition();
   const contentRef = useRef<string>("");
   const lastSavedContentRef = useRef<string>("");
@@ -481,8 +482,8 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
       scrollingSource.current = "editor";
       preview.scrollTop = targetTop;
       
-      if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current);
-      previewTimerRef.current = window.setTimeout(() => {
+      if (scrollSyncTimerRef.current) window.clearTimeout(scrollSyncTimerRef.current);
+      scrollSyncTimerRef.current = window.setTimeout(() => {
         scrollingSource.current = null;
       }, 100);
     }
@@ -505,8 +506,8 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
       scrollingSource.current = "preview";
       scrollInfo.scrollTop = targetTop;
 
-      if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current);
-      previewTimerRef.current = window.setTimeout(() => {
+      if (scrollSyncTimerRef.current) window.clearTimeout(scrollSyncTimerRef.current);
+      scrollSyncTimerRef.current = window.setTimeout(() => {
         scrollingSource.current = null;
         forcePreviewSyncRef.current = false;
       }, 100);
@@ -632,10 +633,10 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   };
 
   const schedulePreviewUpdate = useCallback(() => {
-    if (previewTimerRef.current) {
-      window.clearTimeout(previewTimerRef.current);
+    if (previewUpdateTimerRef.current) {
+      window.clearTimeout(previewUpdateTimerRef.current);
     }
-    previewTimerRef.current = window.setTimeout(() => {
+    previewUpdateTimerRef.current = window.setTimeout(() => {
       const text = contentRef.current || "";
       const charCnt = text.length;
       const words = text.trim().split(/\s+/).filter(w => w.length > 0);
@@ -1116,8 +1117,11 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
 
   useEffect(() => {
     return () => {
-      if (previewTimerRef.current) {
-        window.clearTimeout(previewTimerRef.current);
+      if (previewUpdateTimerRef.current) {
+        window.clearTimeout(previewUpdateTimerRef.current);
+      }
+      if (scrollSyncTimerRef.current) {
+        window.clearTimeout(scrollSyncTimerRef.current);
       }
     };
   }, []);
