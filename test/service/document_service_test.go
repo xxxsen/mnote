@@ -75,3 +75,50 @@ func TestDocumentServiceShareState(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, repo.ShareStateRevoked, fetched.State)
 }
+
+func TestDocumentServiceShareComments(t *testing.T) {
+	db, cleanup := testutil.OpenTestDB(t)
+	defer cleanup()
+
+	docRepo := repo.NewDocumentRepo(db)
+	summaryRepo := repo.NewDocumentSummaryRepo(db)
+	versionRepo := repo.NewVersionRepo(db)
+	docTagRepo := repo.NewDocumentTagRepo(db)
+	shareRepo := repo.NewShareRepo(db)
+	tagRepo := repo.NewTagRepo(db)
+	userRepo := repo.NewUserRepo(db)
+
+	docs := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
+
+	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})
+	require.NoError(t, err)
+
+	share, err := docs.CreateShare(context.Background(), "user-1", doc.ID)
+	require.NoError(t, err)
+
+	_, err = docs.CreateShareCommentByToken(context.Background(), service.CreateShareCommentInput{
+		Token:   share.Token,
+		Author:  "Alice",
+		Content: "first comment",
+	})
+	require.Error(t, err)
+
+	_, err = docs.UpdateShareConfig(context.Background(), "user-1", doc.ID, service.ShareConfigInput{
+		Permission:    repo.SharePermissionComment,
+		AllowDownload: true,
+	})
+	require.NoError(t, err)
+
+	created, err := docs.CreateShareCommentByToken(context.Background(), service.CreateShareCommentInput{
+		Token:   share.Token,
+		Author:  "Alice",
+		Content: "first comment",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Alice", created.Author)
+
+	items, err := docs.ListShareCommentsByToken(context.Background(), share.Token, "", 20, 0)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, "first comment", items[0].Content)
+}

@@ -6,10 +6,11 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import { apiFetch, ApiError } from "@/lib/api";
 import MarkdownPreview from "@/components/markdown-preview";
-import { PublicShareDetail } from "@/types";
+import { PublicShareDetail, ShareComment } from "@/types";
 import { formatDate, generatePixelAvatar } from "@/lib/utils";
-import { Clock, User, Tag as TagIcon, ArrowUp, Link2, Download, Menu, X, ChevronRight } from "lucide-react";
+import { Clock, User, Tag as TagIcon, ArrowUp, Link2, Download, Menu, X, ChevronRight, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
 
 interface SharedContentProps {
   previewRef: React.RefObject<HTMLDivElement | null>;
@@ -49,10 +50,15 @@ export default function SharePage() {
   const [accessPassword, setAccessPassword] = useState("");
   const [passwordRequired, setPasswordRequired] = useState(false);
   const [passwordError, setPasswordError] = useState("");
-  
+  const [comments, setComments] = useState<ShareComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [annotationContent, setAnnotationContent] = useState("");
+  const [annotationSubmitting, setAnnotationSubmitting] = useState(false);
+
   const previewRef = useRef<HTMLDivElement>(null);
   const doc = detail?.document;
   const hasTocToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
+  const canAnnotate = detail?.permission === 2;
 
   const estimateReadingTime = (content: string) => {
     const wordsPerMinute = 200;
@@ -116,6 +122,64 @@ export default function SharePage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  const fetchComments = useCallback(async () => {
+    if (!detail) {
+      setComments([]);
+      return;
+    }
+    setCommentsLoading(true);
+    try {
+      const qs = new URLSearchParams();
+      if (accessPassword.trim()) {
+        qs.set("password", accessPassword.trim());
+      }
+      const query = qs.toString();
+      const items = await apiFetch<ShareComment[]>(`/public/share/${token}/comments${query ? `?${query}` : ""}`, { requireAuth: false });
+      setComments(items || []);
+    } catch (err) {
+      console.error(err);
+      setComments([]);
+    } finally {
+      setCommentsLoading(false);
+    }
+  }, [accessPassword, detail, token]);
+
+  useEffect(() => {
+    void fetchComments();
+  }, [fetchComments]);
+
+  const handleSubmitComment = async () => {
+    if (!detail || !canAnnotate || annotationSubmitting) return;
+    const content = annotationContent.trim();
+    if (!content) {
+      setToast("Please enter comment content.");
+      setTimeout(() => setToast(null), 2500);
+      return;
+    }
+    setAnnotationSubmitting(true);
+    try {
+      const created = await apiFetch<ShareComment>(`/public/share/${token}/comments`, {
+        method: "POST",
+        requireAuth: false,
+        body: JSON.stringify({
+          password: accessPassword.trim() || undefined,
+          content,
+        }),
+      });
+      setComments((prev) => [created, ...prev]);
+      setAnnotationContent("");
+      setToast("Comment added.");
+      setTimeout(() => setToast(null), 2500);
+      void fetchComments(); // refresh comments
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to add comment";
+      setToast(msg);
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setAnnotationSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     const fetchDoc = async () => {
       try {
@@ -146,16 +210,16 @@ export default function SharePage() {
   useEffect(() => {
     if (!doc) return;
     const extractTitle = (value: string) => {
-       const lines = value.split("\n");
-       for (let i = 0; i < lines.length; i++) {
-         const line = lines[i].trim();
-         if (!line) continue;
-         const h1Match = line.match(/^#\s+(.+)$/);
-         if (h1Match) return h1Match[1].trim();
-         if (i + 1 < lines.length && /^=+$/.test(lines[i + 1].trim())) return line;
-         return line.length > 50 ? line.slice(0, 50) + "..." : line;
-       }
-       return "";
+      const lines = value.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const h1Match = line.match(/^#\s+(.+)$/);
+        if (h1Match) return h1Match[1].trim();
+        if (i + 1 < lines.length && /^=+$/.test(lines[i + 1].trim())) return line;
+        return line.length > 50 ? line.slice(0, 50) + "..." : line;
+      }
+      return "";
     };
     const derivedTitle = extractTitle(doc.content) || doc.title || "MNOTE";
     if (typeof document !== "undefined") {
@@ -372,7 +436,7 @@ export default function SharePage() {
   return (
     <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center selection:bg-indigo-100">
       <div className="fixed top-0 left-0 w-full h-1 z-50 bg-transparent">
-        <div 
+        <div
           className="h-full bg-indigo-500 transition-all duration-150 ease-out"
           style={{ width: `${scrollProgress}%` }}
         />
@@ -427,7 +491,7 @@ export default function SharePage() {
             <ChevronRight className="h-3 w-3" />
             <span className="text-muted-foreground">{doc.id.slice(0, 8)}</span>
           </div>
-          
+
           <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-8 leading-tight">
             {doc.title}
           </h1>
@@ -436,11 +500,11 @@ export default function SharePage() {
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full border border-slate-200 overflow-hidden shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img 
-                  src={generatePixelAvatar(detail.author)} 
-                  alt="Author" 
+                <img
+                  src={generatePixelAvatar(detail.author)}
+                  alt="Author"
                   className="w-full h-full object-cover"
-                  style={{ imageRendering: "pixelated" }} 
+                  style={{ imageRendering: "pixelated" }}
                 />
               </div>
               <div className="flex flex-col min-w-0">
@@ -475,7 +539,7 @@ export default function SharePage() {
               <TagIcon className="h-4 w-4 opacity-70 shrink-0" />
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
                 {detail.tags.map(tag => (
-                  <span 
+                  <span
                     key={tag.id}
                     className="inline-flex h-6 items-center px-2.5 rounded-full text-xs leading-none font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 whitespace-nowrap"
                   >
@@ -497,33 +561,84 @@ export default function SharePage() {
         )}
 
         {/* Content Container */}
-        <SharedContent 
+        <SharedContent
           previewRef={previewRef}
           content={doc.content}
           handleTocLoaded={handleTocLoaded}
         />
 
-        <footer className="w-full mt-16 pt-12 border-t border-slate-200 flex flex-col items-center gap-6 px-4">
-           <Link href="/" className="flex items-center gap-3 grayscale opacity-60 hover:grayscale-0 hover:opacity-100 transition-all cursor-pointer">
-              <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white font-bold text-xl shadow-lg">M</div>
-              <div className="flex flex-col">
-                <span className="font-bold text-slate-900 leading-none">Micro Note</span>
-                <span className="text-[10px] text-slate-500 font-mono tracking-wider">PERSONAL KNOWLEDGE BASE</span>
-              </div>
-           </Link>
-           
-           <p className="text-slate-400 text-xs font-medium tracking-wide uppercase">
-             Published with Micro Note &bull; {new Date().getFullYear()}
-           </p>
+        {/* Comments Section */}
+        <div className="w-full mt-12 bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 p-6 md:p-12 lg:p-16">
+          <h2 className="text-2xl font-bold text-slate-800 mb-8">Comments ({comments.length})</h2>
 
-           <Link href="/">
-             <Button 
-               variant="outline" 
-               className="rounded-full px-6 border-slate-200 hover:bg-slate-50 transition-colors"
-             >
-               Create your own note
-             </Button>
-           </Link>
+          {canAnnotate && (
+            <div className="mb-10 bg-slate-50 rounded-xl p-4 border border-slate-200">
+              <textarea
+                value={annotationContent}
+                onChange={(e) => setAnnotationContent(e.target.value.slice(0, 2000))}
+                placeholder="Leave a comment..."
+                className="w-full bg-white rounded-md border border-slate-300 px-4 py-3 text-sm min-h-[120px] resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              />
+              <div className="mt-3 flex items-center justify-between">
+                <div className="text-xs text-slate-400">{annotationContent.length}/2000</div>
+                <Button onClick={() => void handleSubmitComment()} disabled={annotationSubmitting || !annotationContent.trim()} className="h-10 px-6">
+                  <Send className="mr-2 h-4 w-4" />
+                  {annotationSubmitting ? "Posting..." : "Post Comment"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-6">
+            {commentsLoading ? (
+              <div className="text-center py-8 text-slate-500 text-sm">Loading comments...</div>
+            ) : comments.length === 0 ? (
+              <div className="text-center py-12 text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                No comments yet. {canAnnotate && "Be the first to share your thoughts!"}
+              </div>
+            ) : (
+              comments.map((comment) => (
+                <div key={comment.id} className="flex gap-4 p-4 rounded-xl border border-slate-100 bg-white hover:bg-slate-50 transition-colors">
+                  <div className="w-10 h-10 rounded-full border border-slate-200 flex-shrink-0 overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={generatePixelAvatar(comment.author || "Guest")} alt={comment.author || "Guest"} className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-baseline mb-1">
+                      <div className="font-semibold text-sm text-slate-900 truncate mr-2">{comment.author || "Guest"}</div>
+                      <div className="text-xs text-slate-400 whitespace-nowrap">{formatDate(comment.ctime)}</div>
+                    </div>
+                    <div className="text-sm text-slate-700 whitespace-pre-wrap break-words leading-relaxed">
+                      {comment.content}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <footer className="w-full mt-16 pt-12 border-t border-slate-200 flex flex-col items-center gap-6 px-4">
+          <Link href="/" className="flex items-center gap-3 grayscale opacity-60 hover:grayscale-0 hover:opacity-100 transition-all cursor-pointer">
+            <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white font-bold text-xl shadow-lg">M</div>
+            <div className="flex flex-col">
+              <span className="font-bold text-slate-900 leading-none">Micro Note</span>
+              <span className="text-[10px] text-slate-500 font-mono tracking-wider">PERSONAL KNOWLEDGE BASE</span>
+            </div>
+          </Link>
+
+          <p className="text-slate-400 text-xs font-medium tracking-wide uppercase">
+            Published with Micro Note &bull; {new Date().getFullYear()}
+          </p>
+
+          <Link href="/">
+            <Button
+              variant="outline"
+              className="rounded-full px-6 border-slate-200 hover:bg-slate-50 transition-colors"
+            >
+              Create your own note
+            </Button>
+          </Link>
         </footer>
       </div>
 
@@ -535,6 +650,8 @@ export default function SharePage() {
           </div>
         </div>
       )}
+
+
 
       {showFloatingToc && tocContent && (
         <div className="fixed top-24 right-8 z-30 hidden w-72 rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md xl:block animate-in fade-in slide-in-from-right-4 duration-500">
@@ -552,30 +669,30 @@ export default function SharePage() {
               <ReactMarkdown
                 components={{
                   a: (props) => {
-                  const href = props.href || "";
-                  return (
-                    <a
-                      {...props}
-                      className="text-slate-500 hover:text-indigo-600 transition-colors py-1 block no-underline"
-                      onClick={(event) => {
-                        props.onClick?.(event);
-                        if (!href.startsWith("#")) return;
-                        event.preventDefault();
-                        const rawHash = decodeURIComponent(href.slice(1));
-                        const normalizedHash = rawHash.normalize("NFKC");
-                        const targetCandidates = [rawHash, normalizedHash, slugify(rawHash), slugify(normalizedHash)];
-                        for (const candidate of targetCandidates) {
-                          const el = getElementById(candidate);
-                          if (el) {
-                            scrollToElement(el);
-                            break;
+                    const href = props.href || "";
+                    return (
+                      <a
+                        {...props}
+                        className="text-slate-500 hover:text-indigo-600 transition-colors py-1 block no-underline"
+                        onClick={(event) => {
+                          props.onClick?.(event);
+                          if (!href.startsWith("#")) return;
+                          event.preventDefault();
+                          const rawHash = decodeURIComponent(href.slice(1));
+                          const normalizedHash = rawHash.normalize("NFKC");
+                          const targetCandidates = [rawHash, normalizedHash, slugify(rawHash), slugify(normalizedHash)];
+                          for (const candidate of targetCandidates) {
+                            const el = getElementById(candidate);
+                            if (el) {
+                              scrollToElement(el);
+                              break;
+                            }
                           }
-                        }
-                      }}
-                    />
-                  );
-                },
-              }}
+                        }}
+                      />
+                    );
+                  },
+                }}
               >
                 {tocContent}
               </ReactMarkdown>

@@ -18,6 +18,8 @@ const (
 
 	SharePermissionView    = 1
 	SharePermissionComment = 2
+
+	ShareCommentStateNormal = 1
 )
 
 type ShareRepo struct {
@@ -186,6 +188,71 @@ func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID string, quer
 	for rows.Next() {
 		var item SharedDocument
 		if err := rows.Scan(&item.ID, &item.Title, &item.Summary, &item.Mtime, &item.Token, &item.ExpiresAt, &item.Permission, &item.AllowDownload); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *ShareRepo) CreateComment(ctx context.Context, comment *model.ShareComment) error {
+	data := map[string]interface{}{
+		"id":          comment.ID,
+		"share_id":    comment.ShareID,
+		"document_id": comment.DocumentID,
+		"author":      comment.Author,
+		"content":     comment.Content,
+		"state":       comment.State,
+		"ctime":       comment.Ctime,
+		"mtime":       comment.Mtime,
+	}
+	sqlStr, args, err := builder.BuildInsert("share_comments", []map[string]interface{}{data})
+	if err != nil {
+		return err
+	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
+	_, err = r.db.ExecContext(ctx, sqlStr, args...)
+	return err
+}
+
+func (r *ShareRepo) ListCommentsByShare(ctx context.Context, shareID string, limit, offset int) ([]model.ShareComment, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	where := map[string]interface{}{
+		"share_id": shareID,
+		"state":    ShareCommentStateNormal,
+		"_orderby": "ctime desc",
+		"_limit":   []uint{uint(offset), uint(limit)},
+	}
+	sqlStr, args, err := builder.BuildSelect("share_comments", where, []string{
+		"id", "share_id", "document_id", "author", "content", "state", "ctime", "mtime",
+	})
+	if err != nil {
+		return nil, err
+	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
+	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.ShareComment, 0)
+	for rows.Next() {
+		var item model.ShareComment
+		if err := rows.Scan(
+			&item.ID,
+			&item.ShareID,
+			&item.DocumentID,
+			&item.Author,
+			&item.Content,
+			&item.State,
+			&item.Ctime,
+			&item.Mtime,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

@@ -343,6 +343,13 @@ type ShareConfigInput struct {
 	AllowDownload bool
 }
 
+type CreateShareCommentInput struct {
+	Token    string
+	Password string
+	Author   string
+	Content  string
+}
+
 func (s *DocumentService) UpdateShareConfig(ctx context.Context, userID, docID string, input ShareConfigInput) (*model.Share, error) {
 	share, err := s.GetActiveShare(ctx, userID, docID)
 	if err != nil {
@@ -393,7 +400,7 @@ func (s *DocumentService) GetActiveShare(ctx context.Context, userID, docID stri
 	return share, nil
 }
 
-func (s *DocumentService) GetShareByToken(ctx context.Context, token, sharePassword string) (*PublicShareDetail, error) {
+func (s *DocumentService) resolveAccessibleShareByToken(ctx context.Context, token, sharePassword string) (*model.Share, error) {
 	share, err := s.shares.GetByToken(ctx, token)
 	if err != nil {
 		return nil, err
@@ -415,6 +422,14 @@ func (s *DocumentService) GetShareByToken(ctx context.Context, token, sharePassw
 				return nil, appErr.ErrForbidden
 			}
 		}
+	}
+	return share, nil
+}
+
+func (s *DocumentService) GetShareByToken(ctx context.Context, token, sharePassword string) (*PublicShareDetail, error) {
+	share, err := s.resolveAccessibleShareByToken(ctx, token, sharePassword)
+	if err != nil {
+		return nil, err
 	}
 	doc, err := s.docs.GetByID(ctx, share.UserID, share.DocumentID)
 	if err != nil {
@@ -440,6 +455,50 @@ func (s *DocumentService) GetShareByToken(ctx context.Context, token, sharePassw
 		AllowDownload: share.AllowDownload,
 		ExpiresAt:     share.ExpiresAt,
 	}, nil
+}
+
+func (s *DocumentService) ListShareCommentsByToken(ctx context.Context, token, sharePassword string, limit, offset int) ([]model.ShareComment, error) {
+	share, err := s.resolveAccessibleShareByToken(ctx, token, sharePassword)
+	if err != nil {
+		return nil, err
+	}
+	return s.shares.ListCommentsByShare(ctx, share.ID, limit, offset)
+}
+
+func (s *DocumentService) CreateShareCommentByToken(ctx context.Context, input CreateShareCommentInput) (*model.ShareComment, error) {
+	share, err := s.resolveAccessibleShareByToken(ctx, input.Token, input.Password)
+	if err != nil {
+		return nil, err
+	}
+	if share.Permission != repo.SharePermissionComment {
+		return nil, appErr.ErrForbidden
+	}
+	content := strings.TrimSpace(input.Content)
+	if content == "" || utf8.RuneCountInString(content) > 2000 {
+		return nil, appErr.ErrInvalid
+	}
+	author := strings.TrimSpace(input.Author)
+	if author == "" {
+		author = "Guest"
+	}
+	if utf8.RuneCountInString(author) > 40 {
+		author = string([]rune(author)[:40])
+	}
+	now := timeutil.NowUnix()
+	comment := &model.ShareComment{
+		ID:         newID(),
+		ShareID:    share.ID,
+		DocumentID: share.DocumentID,
+		Author:     author,
+		Content:    content,
+		State:      repo.ShareCommentStateNormal,
+		Ctime:      now,
+		Mtime:      now,
+	}
+	if err := s.shares.CreateComment(ctx, comment); err != nil {
+		return nil, err
+	}
+	return comment, nil
 }
 
 type SharedDocumentSummary struct {

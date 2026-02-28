@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,12 @@ type updateShareConfigRequest struct {
 	ClearPassword bool   `json:"clear_password"`
 	Permission    string `json:"permission"`
 	AllowDownload *bool  `json:"allow_download"`
+}
+
+type createShareCommentRequest struct {
+	Password string `json:"password"`
+	Author   string `json:"author"`
+	Content  string `json:"content"`
 }
 
 func (h *ShareHandler) Create(c *gin.Context) {
@@ -94,6 +101,54 @@ func (h *ShareHandler) PublicGet(c *gin.Context) {
 		return
 	}
 	response.Success(c, detail)
+}
+
+func (h *ShareHandler) PublicListComments(c *gin.Context) {
+	limit := 50
+	offset := 0
+	if value := c.Query("limit"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			limit = parsed
+		}
+	}
+	if value := c.Query("offset"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			offset = parsed
+		}
+	}
+	items, err := h.documents.ListShareCommentsByToken(c.Request.Context(), c.Param("token"), c.Query("password"), limit, offset)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
+func (h *ShareHandler) CreateComment(c *gin.Context) {
+	var req createShareCommentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, errcode.ErrInvalid, "invalid request")
+		return
+	}
+	author := req.Author
+	if strings.TrimSpace(author) == "" {
+		if emailValue, exists := c.Get("user_email"); exists {
+			if email, ok := emailValue.(string); ok && strings.TrimSpace(email) != "" {
+				author = email
+			}
+		}
+	}
+	item, err := h.documents.CreateShareCommentByToken(c.Request.Context(), service.CreateShareCommentInput{
+		Token:    c.Param("token"),
+		Password: req.Password,
+		Author:   author,
+		Content:  req.Content,
+	})
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, item)
 }
 
 func (h *ShareHandler) List(c *gin.Context) {

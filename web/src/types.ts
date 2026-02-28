@@ -52,6 +52,21 @@ export interface Share {
   mtime: number;
 }
 
+export interface ShareComment {
+  id: string;
+  share_id: string;
+  document_id: string;
+  user_id: string;
+  author: string;
+  quote: string;
+  start_offset: number;
+  end_offset: number;
+  content: string;
+  state: number;
+  ctime: number;
+  mtime: number;
+}
+
 export interface PublicShareDetail {
   document: Document;
   author: string;
