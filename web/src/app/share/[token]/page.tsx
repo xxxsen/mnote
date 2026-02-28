@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback, FormEvent, Fragment, memo } from "react";
+import React, { useState, useEffect, useRef, useCallback, memo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -43,7 +43,6 @@ function CommentItem({
   setReplyingTo,
   inlineReplyContent,
   setInlineReplyContent,
-  onRefresh,
 }: {
   comment: ShareComment;
   token: string;
@@ -53,29 +52,52 @@ function CommentItem({
   setReplyingTo: (user: { id: string; author: string } | null) => void;
   inlineReplyContent: string;
   setInlineReplyContent: (val: string) => void;
-  onRefresh: (isBackground?: boolean) => void;
 }) {
+  const mergeRepliesByID = useCallback((base: ShareComment[], incoming: ShareComment[]) => {
+    if (!incoming.length) return base;
+    const seen = new Set(base.map((item) => item.id));
+    const merged = [...base];
+    for (const item of incoming) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      merged.push(item);
+    }
+    return merged;
+  }, []);
+
   const [replies, setReplies] = useState<ShareComment[]>(comment.replies || []);
   const [repliesLoading, setRepliesLoading] = useState(false);
   const [hasMoreReplies, setHasMoreReplies] = useState(false);
   const [inlineReplySubmitting, setInlineReplySubmitting] = useState(false);
   const [repliesExpanded, setRepliesExpanded] = useState(false);
+  const [loadedRepliesCount, setLoadedRepliesCount] = useState(comment.replies?.length || 0);
+  const [replyCount, setReplyCount] = useState<number>(typeof comment.reply_count === "number" ? comment.reply_count : replies.length);
 
-  // Sync initial replies if they come from parent
+  // Sync initial replies if they come from parent, but don't overwrite if we've locally loaded/expanded
   useEffect(() => {
-    if (comment.replies) {
+    if (comment.replies && replies.length === 0) {
       setReplies(comment.replies);
+      setLoadedRepliesCount(comment.replies.length);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [comment.replies]);
 
-  // If there are known replies (from reply_count), but we haven't loaded them yet, hasMoreReplies might be true depending on loaded vs total
   useEffect(() => {
-    if (comment.reply_count && comment.reply_count > replies.length) {
-      setHasMoreReplies(true);
-    } else {
-      setHasMoreReplies(false);
+    if (typeof comment.reply_count === "number" && comment.reply_count > replyCount) {
+      setReplyCount(comment.reply_count);
     }
-  }, [comment.reply_count, replies.length]);
+  }, [comment.reply_count, replyCount]);
+
+  // Calculate if there are more replies to load based on initial count, but let fetchReplies manage it once expanded
+  useEffect(() => {
+    if (!repliesExpanded) {
+      if (replyCount > replies.length) {
+        setHasMoreReplies(true);
+      } else {
+        setHasMoreReplies(false);
+      }
+    }
+  }, [replyCount, replies.length, repliesExpanded]);
 
   const fetchReplies = async (offset = 0) => {
     setRepliesLoading(true);
@@ -83,8 +105,10 @@ function CommentItem({
       const res = await apiFetch<ShareComment[]>(`/public/share/${token}/comments/${comment.id}/replies?limit=10&offset=${offset}${accessPassword.trim() ? `&password=${accessPassword.trim()}` : ''}`, { requireAuth: false });
       if (offset === 0) {
         setReplies(res || []);
+        setLoadedRepliesCount((res || []).length);
       } else {
-        setReplies(prev => [...prev, ...(res || [])]);
+        setReplies(prev => mergeRepliesByID(prev, res || []));
+        setLoadedRepliesCount((prev) => prev + (res || []).length);
       }
       if (!res || res.length < 10) {
         setHasMoreReplies(false);
@@ -124,11 +148,10 @@ function CommentItem({
         }),
       });
       // Try to insert it into our local list optimistically
-      setReplies(prev => [...prev, created]);
+      setReplies(prev => mergeRepliesByID(prev, [created]));
+      setReplyCount((prev) => prev + 1);
       setInlineReplyContent("");
       setReplyingTo(null);
-      // We also trigger a background refresh of the root comments just in case
-      onRefresh(true);
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : "Failed to add reply");
@@ -191,14 +214,14 @@ function CommentItem({
       )}
 
       {/* Replies Section */}
-      {typeof comment.reply_count === 'number' && comment.reply_count > 0 && !repliesExpanded && (
+      {replyCount > 0 && !repliesExpanded && (
         <div className="mt-1 ml-14">
           <button
             onClick={handleExpandReplies}
             className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1"
           >
             <span className="inline-block transform rotate-90 scale-y-125 text-[10px] text-indigo-400">▸</span>
-            View {comment.reply_count} {comment.reply_count === 1 ? 'reply' : 'replies'}
+            View {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
           </button>
         </div>
       )}
@@ -273,7 +296,7 @@ function CommentItem({
 
           {hasMoreReplies && !repliesLoading && (
             <button
-              onClick={() => void fetchReplies(replies.length)}
+              onClick={() => void fetchReplies(loadedRepliesCount)}
               className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors ml-4 mt-2"
             >
               Load more replies...
@@ -428,11 +451,11 @@ export default function SharePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail, accessPassword, token]); // Re-fetch on auth/detail change, ignore comments.length to avoid loops
 
-  const handleLoadMoreComments = () => {
+  const handleLoadMoreComments = useCallback(() => {
     if (!commentsLoading && commentsHasMore) {
       void fetchComments(true, true);
     }
-  };
+  }, [commentsLoading, commentsHasMore, fetchComments]);
 
   // Add a generic scroll listener to load more comments if we reach the bottom of the page
   useEffect(() => {
@@ -445,7 +468,7 @@ export default function SharePage() {
     };
     window.addEventListener("scroll", handleBottomScroll);
     return () => window.removeEventListener("scroll", handleBottomScroll);
-  }, [commentsLoading, commentsHasMore, comments.length]);
+  }, [commentsLoading, commentsHasMore, comments.length, handleLoadMoreComments]);
 
   const handleSubmitComment = async () => {
     if (!detail || !canAnnotate || annotationSubmitting) return;
@@ -910,7 +933,6 @@ export default function SharePage() {
                   setReplyingTo={setReplyingTo}
                   inlineReplyContent={inlineReplyContent}
                   setInlineReplyContent={setInlineReplyContent}
-                  onRefresh={(bg) => fetchComments(bg, false)}
                 />
               ))
             )}
