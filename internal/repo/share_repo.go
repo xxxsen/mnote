@@ -200,6 +200,8 @@ func (r *ShareRepo) CreateComment(ctx context.Context, comment *model.ShareComme
 		"id":          comment.ID,
 		"share_id":    comment.ShareID,
 		"document_id": comment.DocumentID,
+		"root_id":     comment.RootID,
+		"reply_to_id": comment.ReplyToID,
 		"author":      comment.Author,
 		"content":     comment.Content,
 		"state":       comment.State,
@@ -225,11 +227,12 @@ func (r *ShareRepo) ListCommentsByShare(ctx context.Context, shareID string, lim
 	where := map[string]interface{}{
 		"share_id": shareID,
 		"state":    ShareCommentStateNormal,
+		"root_id":  "",
 		"_orderby": "ctime desc",
 		"_limit":   []uint{uint(offset), uint(limit)},
 	}
 	sqlStr, args, err := builder.BuildSelect("share_comments", where, []string{
-		"id", "share_id", "document_id", "author", "content", "state", "ctime", "mtime",
+		"id", "share_id", "document_id", "root_id", "reply_to_id", "author", "content", "state", "ctime", "mtime",
 	})
 	if err != nil {
 		return nil, err
@@ -247,6 +250,172 @@ func (r *ShareRepo) ListCommentsByShare(ctx context.Context, shareID string, lim
 			&item.ID,
 			&item.ShareID,
 			&item.DocumentID,
+			&item.RootID,
+			&item.ReplyToID,
+			&item.Author,
+			&item.Content,
+			&item.State,
+			&item.Ctime,
+			&item.Mtime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *ShareRepo) GetCommentByID(ctx context.Context, commentID string) (*model.ShareComment, error) {
+	where := map[string]interface{}{
+		"id":    commentID,
+		"state": ShareCommentStateNormal,
+	}
+	sqlStr, args, err := builder.BuildSelect("share_comments", where, []string{
+		"id", "share_id", "document_id", "root_id", "reply_to_id", "author", "content", "state", "ctime", "mtime",
+	})
+	if err != nil {
+		return nil, err
+	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
+	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, appErr.ErrNotFound
+	}
+	var item model.ShareComment
+	if err := rows.Scan(
+		&item.ID,
+		&item.ShareID,
+		&item.DocumentID,
+		&item.RootID,
+		&item.ReplyToID,
+		&item.Author,
+		&item.Content,
+		&item.State,
+		&item.Ctime,
+		&item.Mtime,
+	); err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *ShareRepo) ListRepliesByRootIDs(ctx context.Context, shareID string, rootIDs []string) ([]model.ShareComment, error) {
+	if len(rootIDs) == 0 {
+		return []model.ShareComment{}, nil
+	}
+	where := map[string]interface{}{
+		"share_id":   shareID,
+		"state":      ShareCommentStateNormal,
+		"root_id in": rootIDs,
+		"_orderby":   "ctime asc", // Replies are usually oldest first
+	}
+	sqlStr, args, err := builder.BuildSelect("share_comments", where, []string{
+		"id", "share_id", "document_id", "root_id", "reply_to_id", "author", "content", "state", "ctime", "mtime",
+	})
+	if err != nil {
+		return nil, err
+	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
+	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.ShareComment, 0)
+	for rows.Next() {
+		var item model.ShareComment
+		if err := rows.Scan(
+			&item.ID,
+			&item.ShareID,
+			&item.DocumentID,
+			&item.RootID,
+			&item.ReplyToID,
+			&item.Author,
+			&item.Content,
+			&item.State,
+			&item.Ctime,
+			&item.Mtime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *ShareRepo) CountRepliesByRootIDs(ctx context.Context, shareID string, rootIDs []string) (map[string]int, error) {
+	if len(rootIDs) == 0 {
+		return map[string]int{}, nil
+	}
+	query := `SELECT root_id, COUNT(*) FROM share_comments WHERE share_id = ? AND state = ? AND root_id IN (`
+	args := []interface{}{shareID, ShareCommentStateNormal}
+	for i, id := range rootIDs {
+		if i > 0 {
+			query += ","
+		}
+		query += "?"
+		args = append(args, id)
+	}
+	query += ") GROUP BY root_id"
+
+	query, args = dbutil.Finalize(query, args)
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var rootID string
+		var count int
+		if err := rows.Scan(&rootID, &count); err != nil {
+			return nil, err
+		}
+		counts[rootID] = count
+	}
+	return counts, nil
+}
+
+func (r *ShareRepo) ListRepliesByRootID(ctx context.Context, shareID, rootID string, limit, offset int) ([]model.ShareComment, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	where := map[string]interface{}{
+		"share_id": shareID,
+		"root_id":  rootID,
+		"state":    ShareCommentStateNormal,
+		"_orderby": "ctime asc",
+		"_limit":   []uint{uint(offset), uint(limit)},
+	}
+	sqlStr, args, err := builder.BuildSelect("share_comments", where, []string{
+		"id", "share_id", "document_id", "root_id", "reply_to_id", "author", "content", "state", "ctime", "mtime",
+	})
+	if err != nil {
+		return nil, err
+	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
+	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.ShareComment, 0)
+	for rows.Next() {
+		var item model.ShareComment
+		if err := rows.Scan(
+			&item.ID,
+			&item.ShareID,
+			&item.DocumentID,
+			&item.RootID,
+			&item.ReplyToID,
 			&item.Author,
 			&item.Content,
 			&item.State,

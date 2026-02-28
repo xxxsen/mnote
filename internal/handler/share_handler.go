@@ -29,9 +29,10 @@ type updateShareConfigRequest struct {
 }
 
 type createShareCommentRequest struct {
-	Password string `json:"password"`
-	Author   string `json:"author"`
-	Content  string `json:"content"`
+	Password  string `json:"password"`
+	Author    string `json:"author"`
+	ReplyToID string `json:"reply_to_id"`
+	Content   string `json:"content"`
 }
 
 func (h *ShareHandler) Create(c *gin.Context) {
@@ -124,6 +125,21 @@ func (h *ShareHandler) PublicListComments(c *gin.Context) {
 	response.Success(c, items)
 }
 
+func (h *ShareHandler) PublicListReplies(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	if limit <= 0 {
+		limit = 10
+	}
+	offset, _ := strconv.Atoi(c.Query("offset"))
+
+	items, err := h.documents.ListShareCommentRepliesByToken(c.Request.Context(), c.Param("token"), c.Query("password"), c.Param("comment_id"), limit, offset)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
 func (h *ShareHandler) CreateComment(c *gin.Context) {
 	var req createShareCommentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -139,10 +155,11 @@ func (h *ShareHandler) CreateComment(c *gin.Context) {
 		}
 	}
 	item, err := h.documents.CreateShareCommentByToken(c.Request.Context(), service.CreateShareCommentInput{
-		Token:    c.Param("token"),
-		Password: req.Password,
-		Author:   author,
-		Content:  req.Content,
+		Token:     c.Param("token"),
+		Password:  req.Password,
+		Author:    author,
+		ReplyToID: req.ReplyToID,
+		Content:   req.Content,
 	})
 	if err != nil {
 		handleError(c, err)

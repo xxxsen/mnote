@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, memo } from "react";
+import React, { useState, useEffect, useRef, useCallback, FormEvent, Fragment, memo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
@@ -33,6 +33,259 @@ const SharedContent = memo(({ previewRef, content, handleTocLoaded }: SharedCont
 
 SharedContent.displayName = "SharedContent";
 
+// --- Start of CommentItem component ---
+function CommentItem({
+  comment,
+  token,
+  accessPassword,
+  canAnnotate,
+  replyingToId,
+  setReplyingTo,
+  inlineReplyContent,
+  setInlineReplyContent,
+  onRefresh,
+}: {
+  comment: ShareComment;
+  token: string;
+  accessPassword: string;
+  canAnnotate: boolean;
+  replyingToId: string | null;
+  setReplyingTo: (user: { id: string; author: string } | null) => void;
+  inlineReplyContent: string;
+  setInlineReplyContent: (val: string) => void;
+  onRefresh: (isBackground?: boolean) => void;
+}) {
+  const [replies, setReplies] = useState<ShareComment[]>(comment.replies || []);
+  const [repliesLoading, setRepliesLoading] = useState(false);
+  const [hasMoreReplies, setHasMoreReplies] = useState(false);
+  const [inlineReplySubmitting, setInlineReplySubmitting] = useState(false);
+  const [repliesExpanded, setRepliesExpanded] = useState(false);
+
+  // Sync initial replies if they come from parent
+  useEffect(() => {
+    if (comment.replies) {
+      setReplies(comment.replies);
+    }
+  }, [comment.replies]);
+
+  // If there are known replies (from reply_count), but we haven't loaded them yet, hasMoreReplies might be true depending on loaded vs total
+  useEffect(() => {
+    if (comment.reply_count && comment.reply_count > replies.length) {
+      setHasMoreReplies(true);
+    } else {
+      setHasMoreReplies(false);
+    }
+  }, [comment.reply_count, replies.length]);
+
+  const fetchReplies = async (offset = 0) => {
+    setRepliesLoading(true);
+    try {
+      const res = await apiFetch<ShareComment[]>(`/public/share/${token}/comments/${comment.id}/replies?limit=10&offset=${offset}${accessPassword.trim() ? `&password=${accessPassword.trim()}` : ''}`, { requireAuth: false });
+      if (offset === 0) {
+        setReplies(res || []);
+      } else {
+        setReplies(prev => [...prev, ...(res || [])]);
+      }
+      if (!res || res.length < 10) {
+        setHasMoreReplies(false);
+      } else {
+        setHasMoreReplies(true);
+      }
+      setRepliesExpanded(true);
+    } catch (err) {
+      console.error("Failed to load replies:", err);
+    } finally {
+      setRepliesLoading(false);
+    }
+  };
+
+  const handleExpandReplies = () => {
+    if (!repliesExpanded && replies.length === 0) {
+      void fetchReplies(0);
+    } else {
+      setRepliesExpanded(true);
+    }
+  };
+
+  const handleSubmitInlineReply = async () => {
+    if (!canAnnotate || inlineReplySubmitting || !replyingToId) return;
+    const content = inlineReplyContent.trim();
+    if (!content) return;
+
+    setInlineReplySubmitting(true);
+    try {
+      const created = await apiFetch<ShareComment>(`/public/share/${token}/comments`, {
+        method: "POST",
+        requireAuth: false,
+        body: JSON.stringify({
+          password: accessPassword.trim() || undefined,
+          content,
+          reply_to_id: replyingToId,
+        }),
+      });
+      // Try to insert it into our local list optimistically
+      setReplies(prev => [...prev, created]);
+      setInlineReplyContent("");
+      setReplyingTo(null);
+      // We also trigger a background refresh of the root comments just in case
+      onRefresh(true);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Failed to add reply");
+    } finally {
+      setInlineReplySubmitting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 p-4 rounded-xl border border-slate-200/60 bg-white shadow-sm hover:border-slate-300 hover:shadow-md transition-all duration-200">
+      <div className="flex gap-4">
+        <div className="w-10 h-10 rounded-full border border-slate-200 flex-shrink-0 overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={generatePixelAvatar(comment.author || "Guest")} alt={comment.author || "Guest"} className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex justify-between items-baseline mb-1">
+            <div className="font-semibold text-sm text-slate-900 truncate mr-2">{comment.author || "Guest"}</div>
+            <div className="flex items-center gap-3">
+              <div className="text-xs text-slate-400 whitespace-nowrap">{formatDate(comment.ctime)}</div>
+              {canAnnotate && (
+                <button
+                  onClick={() => {
+                    setReplyingTo(replyingToId === comment.id ? null : { id: comment.id, author: comment.author || "Guest" })
+                    setInlineReplyContent("")
+                  }}
+                  className="text-xs font-medium text-slate-400 hover:text-indigo-600 transition-colors"
+                >
+                  {replyingToId === comment.id ? 'Cancel' : 'REPLY'}
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="text-sm text-slate-700 whitespace-pre-wrap break-words leading-relaxed mb-2">
+            {comment.content}
+          </div>
+        </div>
+      </div>
+
+      {/* Inline Reply Form for Root Comment */}
+      {replyingToId === comment.id && (
+        <div className="mt-2 ml-14 bg-slate-50 rounded-xl p-3 border border-slate-200">
+          <textarea
+            value={inlineReplyContent}
+            onChange={(e) => setInlineReplyContent(e.target.value.slice(0, 2000))}
+            placeholder={`Reply to ${comment.author || "Guest"}...`}
+            className="w-full bg-white rounded-md border border-slate-300 px-3 py-2 text-sm min-h-[80px] resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+          />
+          <div className="mt-2 flex items-center justify-between">
+            <div className="text-xs text-slate-400">{inlineReplyContent.length}/2000</div>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setReplyingTo(null)} className="h-8 text-xs">Cancel</Button>
+              <Button onClick={() => void handleSubmitInlineReply()} disabled={inlineReplySubmitting || !inlineReplyContent.trim()} className="h-8 px-4 text-xs">
+                <Send className="mr-2 h-3 w-3" />
+                {inlineReplySubmitting ? "Posting..." : "REPLY"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Replies Section */}
+      {typeof comment.reply_count === 'number' && comment.reply_count > 0 && !repliesExpanded && (
+        <div className="mt-1 ml-14">
+          <button
+            onClick={handleExpandReplies}
+            className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1"
+          >
+            <span className="inline-block transform rotate-90 scale-y-125 text-[10px] text-indigo-400">▸</span>
+            View {comment.reply_count} {comment.reply_count === 1 ? 'reply' : 'replies'}
+          </button>
+        </div>
+      )}
+
+      {repliesExpanded && (
+        <div className="mt-2 ml-4 pl-4 border-l-2 border-slate-100 space-y-4">
+          {replies.map((reply) => (
+            <div key={reply.id} className="flex flex-col gap-2">
+              <div className="flex gap-3 mt-2">
+                <div className="w-8 h-8 rounded-full border border-slate-200 flex-shrink-0 overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={generatePixelAvatar(reply.author || "Guest")} alt={reply.author || "Guest"} className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
+                </div>
+                <div className="flex-1 min-w-0 bg-slate-50/80 p-3 rounded-xl border border-slate-200/60 hover:border-slate-300 transition-colors">
+                  <div className="flex justify-between items-baseline mb-1">
+                    <div className="font-semibold text-xs text-slate-900 truncate mr-2">
+                      {reply.author || "Guest"}
+                      {reply.reply_to_id !== comment.id && reply.reply_to_id && (
+                        <span className="text-slate-400 font-normal ml-1">
+                          <span className="inline-block mx-1">▸</span>
+                          {/* Try to resolve sub-reply target locally */}
+                          {replies.find(r => r.id === reply.reply_to_id)?.author || "Someone"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-[10px] text-slate-400 whitespace-nowrap">{formatDate(reply.ctime)}</div>
+                      {canAnnotate && (
+                        <button
+                          onClick={() => {
+                            setReplyingTo(replyingToId === reply.id ? null : { id: reply.id, author: reply.author || "Guest" })
+                            setInlineReplyContent("")
+                          }}
+                          className="text-[10px] font-medium text-slate-400 hover:text-indigo-600 transition-colors"
+                        >
+                          {replyingToId === reply.id ? 'Cancel' : 'REPLY'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-xs text-slate-700 whitespace-pre-wrap break-words leading-relaxed mb-2">
+                    {reply.content}
+                  </div>
+                </div>
+              </div>
+
+              {/* Inline Reply Form for Sub-Reply */}
+              {replyingToId === reply.id && (
+                <div className="mt-1 ml-11 bg-white rounded-xl p-3 border border-slate-200 shadow-sm">
+                  <textarea
+                    value={inlineReplyContent}
+                    onChange={(e) => setInlineReplyContent(e.target.value.slice(0, 2000))}
+                    placeholder={`Reply to ${reply.author || "Guest"}...`}
+                    className="w-full bg-slate-50 rounded-md border border-slate-300 px-3 py-2 text-xs min-h-[80px] resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  />
+                  <div className="mt-2 flex items-center justify-between">
+                    <div className="text-[10px] text-slate-400">{inlineReplyContent.length}/2000</div>
+                    <div className="flex gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => setReplyingTo(null)} className="h-7 text-[10px]">Cancel</Button>
+                      <Button onClick={() => void handleSubmitInlineReply()} disabled={inlineReplySubmitting || !inlineReplyContent.trim()} className="h-7 px-3 text-[10px]">
+                        <Send className="mr-1 h-2.5 w-2.5" />
+                        {inlineReplySubmitting ? "Posting..." : "REPLY"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {repliesLoading && <div className="text-xs text-slate-400 mt-2 ml-4">Loading replies...</div>}
+
+          {hasMoreReplies && !repliesLoading && (
+            <button
+              onClick={() => void fetchReplies(replies.length)}
+              className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors ml-4 mt-2"
+            >
+              Load more replies...
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+// --- End of CommentItem component ---
+
 export default function SharePage() {
   const params = useParams();
   const token = params.token as string;
@@ -54,7 +307,9 @@ export default function SharePage() {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [annotationContent, setAnnotationContent] = useState("");
   const [annotationSubmitting, setAnnotationSubmitting] = useState(false);
-
+  const [replyingTo, setReplyingTo] = useState<{ id: string; author: string } | null>(null);
+  const [inlineReplyContent, setInlineReplyContent] = useState("");
+  const [commentsHasMore, setCommentsHasMore] = useState(true);
   const previewRef = useRef<HTMLDivElement>(null);
   const doc = detail?.document;
   const hasTocToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
@@ -122,31 +377,75 @@ export default function SharePage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const fetchComments = useCallback(async () => {
+  useEffect(() => {
+    const handleScroll = () => {
+      // Intentionally empty, could be removed or kept for navbar styling if needed later
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const fetchComments = useCallback(async (isBackground = false, isAppend = false) => {
     if (!detail) {
-      setComments([]);
+      if (!isAppend) setComments([]);
       return;
     }
-    setCommentsLoading(true);
+    if (!isBackground) {
+      setCommentsLoading(true);
+    }
     try {
       const qs = new URLSearchParams();
       if (accessPassword.trim()) {
         qs.set("password", accessPassword.trim());
       }
+      qs.set("limit", "10");
+      qs.set("offset", isAppend ? comments.length.toString() : "0");
+
       const query = qs.toString();
       const items = await apiFetch<ShareComment[]>(`/public/share/${token}/comments${query ? `?${query}` : ""}`, { requireAuth: false });
-      setComments(items || []);
+
+      if (!items || items.length < 10) {
+        setCommentsHasMore(false);
+      } else {
+        setCommentsHasMore(true);
+      }
+
+      if (isAppend) {
+        setComments(prev => [...prev, ...(items || [])]);
+      } else {
+        setComments(items || []);
+      }
     } catch (err) {
       console.error(err);
-      setComments([]);
+      if (!isAppend) setComments([]);
     } finally {
-      setCommentsLoading(false);
+      if (!isBackground) setCommentsLoading(false);
     }
-  }, [accessPassword, detail, token]);
+  }, [accessPassword, detail, token, comments.length]);
 
   useEffect(() => {
-    void fetchComments();
-  }, [fetchComments]);
+    void fetchComments(false, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail, accessPassword, token]); // Re-fetch on auth/detail change, ignore comments.length to avoid loops
+
+  const handleLoadMoreComments = () => {
+    if (!commentsLoading && commentsHasMore) {
+      void fetchComments(true, true);
+    }
+  };
+
+  // Add a generic scroll listener to load more comments if we reach the bottom of the page
+  useEffect(() => {
+    const handleBottomScroll = () => {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500) { // 500px threshold
+        if (!commentsLoading && commentsHasMore && comments.length > 0) {
+          handleLoadMoreComments();
+        }
+      }
+    };
+    window.addEventListener("scroll", handleBottomScroll);
+    return () => window.removeEventListener("scroll", handleBottomScroll);
+  }, [commentsLoading, commentsHasMore, comments.length]);
 
   const handleSubmitComment = async () => {
     if (!detail || !canAnnotate || annotationSubmitting) return;
@@ -170,7 +469,7 @@ export default function SharePage() {
       setAnnotationContent("");
       setToast("Comment added.");
       setTimeout(() => setToast(null), 2500);
-      void fetchComments(); // refresh comments
+      void fetchComments(true); // silent background refresh
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to add comment";
       setToast(msg);
@@ -179,6 +478,9 @@ export default function SharePage() {
       setAnnotationSubmitting(false);
     }
   };
+
+  // Replaced inline reply function with the one local to `CommentItem`.
+  // Removed `handleSubmitInlineReply` from this level to avoid duplicating state handling for sub-lists.
 
   useEffect(() => {
     const fetchDoc = async () => {
@@ -583,7 +885,7 @@ export default function SharePage() {
                 <div className="text-xs text-slate-400">{annotationContent.length}/2000</div>
                 <Button onClick={() => void handleSubmitComment()} disabled={annotationSubmitting || !annotationContent.trim()} className="h-10 px-6">
                   <Send className="mr-2 h-4 w-4" />
-                  {annotationSubmitting ? "Posting..." : "Post Comment"}
+                  {annotationSubmitting ? "Posting..." : "Comment"}
                 </Button>
               </div>
             </div>
@@ -598,23 +900,32 @@ export default function SharePage() {
               </div>
             ) : (
               comments.map((comment) => (
-                <div key={comment.id} className="flex gap-4 p-4 rounded-xl border border-slate-100 bg-white hover:bg-slate-50 transition-colors">
-                  <div className="w-10 h-10 rounded-full border border-slate-200 flex-shrink-0 overflow-hidden">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={generatePixelAvatar(comment.author || "Guest")} alt={comment.author || "Guest"} className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-baseline mb-1">
-                      <div className="font-semibold text-sm text-slate-900 truncate mr-2">{comment.author || "Guest"}</div>
-                      <div className="text-xs text-slate-400 whitespace-nowrap">{formatDate(comment.ctime)}</div>
-                    </div>
-                    <div className="text-sm text-slate-700 whitespace-pre-wrap break-words leading-relaxed">
-                      {comment.content}
-                    </div>
-                  </div>
-                </div>
+                <CommentItem
+                  key={comment.id}
+                  comment={comment}
+                  token={token}
+                  accessPassword={accessPassword}
+                  canAnnotate={canAnnotate}
+                  replyingToId={replyingTo?.id || null}
+                  setReplyingTo={setReplyingTo}
+                  inlineReplyContent={inlineReplyContent}
+                  setInlineReplyContent={setInlineReplyContent}
+                  onRefresh={(bg) => fetchComments(bg, false)}
+                />
               ))
             )}
+
+            {!commentsLoading && commentsHasMore && comments.length > 0 && (
+              <div className="text-center pt-4">
+                <Button variant="ghost" onClick={handleLoadMoreComments} className="text-slate-500 hover:text-slate-700">
+                  Load more comments
+                </Button>
+              </div>
+            )}
+            {commentsLoading && comments.length > 0 && (
+              <div className="text-center py-4 text-slate-500 text-sm">Loading more...</div>
+            )}
+
           </div>
         </div>
 

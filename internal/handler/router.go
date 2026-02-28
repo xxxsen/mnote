@@ -101,6 +101,7 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 
 	api.GET("/public/share/:token", deps.Shares.PublicGet)
 	api.GET("/public/share/:token/comments", deps.Shares.PublicListComments)
-	api.POST("/public/share/:token/comments", deps.Shares.CreateComment)
+	api.GET("/public/share/:token/comments/:comment_id/replies", deps.Shares.PublicListReplies)
+	api.POST("/public/share/:token/comments", middleware.OptionalJWTAuth(deps.JWTSecret), deps.Shares.CreateComment)
 	api.GET("/files/:key", deps.Files.Get)
 }

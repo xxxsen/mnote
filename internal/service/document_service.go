@@ -344,10 +344,11 @@ type ShareConfigInput struct {
 }
 
 type CreateShareCommentInput struct {
-	Token    string
-	Password string
-	Author   string
-	Content  string
+	Token     string
+	Password  string
+	Author    string
+	ReplyToID string
+	Content   string
 }
 
 func (s *DocumentService) UpdateShareConfig(ctx context.Context, userID, docID string, input ShareConfigInput) (*model.Share, error) {
@@ -457,12 +458,70 @@ func (s *DocumentService) GetShareByToken(ctx context.Context, token, sharePassw
 	}, nil
 }
 
-func (s *DocumentService) ListShareCommentsByToken(ctx context.Context, token, sharePassword string, limit, offset int) ([]model.ShareComment, error) {
+type ShareCommentWithReplies struct {
+	model.ShareComment
+	Replies []model.ShareComment `json:"replies"`
+}
+
+func (s *DocumentService) ListShareCommentsByToken(ctx context.Context, token, sharePassword string, limit, offset int) ([]ShareCommentWithReplies, error) {
 	share, err := s.resolveAccessibleShareByToken(ctx, token, sharePassword)
 	if err != nil {
 		return nil, err
 	}
-	return s.shares.ListCommentsByShare(ctx, share.ID, limit, offset)
+	roots, err := s.shares.ListCommentsByShare(ctx, share.ID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	if len(roots) == 0 {
+		return []ShareCommentWithReplies{}, nil
+	}
+
+	var rootIDs []string
+	for _, r := range roots {
+		rootIDs = append(rootIDs, r.ID)
+	}
+
+	counts, err := s.shares.CountRepliesByRootIDs(ctx, share.ID, rootIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []ShareCommentWithReplies
+	for _, r := range roots {
+		r.ReplyCount = counts[r.ID]
+		node := ShareCommentWithReplies{
+			ShareComment: r,
+			Replies:      []model.ShareComment{}, // Do not lazy load by default
+		}
+		result = append(result, node)
+	}
+
+	return result, nil
+}
+
+func (s *DocumentService) ListShareCommentRepliesByToken(ctx context.Context, token, sharePassword string, rootID string, limit, offset int) ([]model.ShareComment, error) {
+	share, err := s.resolveAccessibleShareByToken(ctx, token, sharePassword)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify the root comment exists and belongs to this share
+	root, err := s.shares.GetCommentByID(ctx, rootID)
+	if err != nil {
+		return nil, err
+	}
+	if root.ShareID != share.ID {
+		return nil, appErr.ErrNotFound
+	}
+
+	replies, err := s.shares.ListRepliesByRootID(ctx, share.ID, rootID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	if replies == nil {
+		return []model.ShareComment{}, nil
+	}
+	return replies, nil
 }
 
 func (s *DocumentService) CreateShareCommentByToken(ctx context.Context, input CreateShareCommentInput) (*model.ShareComment, error) {
@@ -484,11 +543,29 @@ func (s *DocumentService) CreateShareCommentByToken(ctx context.Context, input C
 	if utf8.RuneCountInString(author) > 40 {
 		author = string([]rune(author)[:40])
 	}
+
+	rootID := ""
+	replyToID := strings.TrimSpace(input.ReplyToID)
+	if replyToID != "" {
+		target, err := s.shares.GetCommentByID(ctx, replyToID)
+		if err == nil && target.ShareID == share.ID {
+			if target.RootID == "" {
+				rootID = target.ID
+			} else {
+				rootID = target.RootID
+			}
+		} else {
+			replyToID = ""
+		}
+	}
+
 	now := timeutil.NowUnix()
 	comment := &model.ShareComment{
 		ID:         newID(),
 		ShareID:    share.ID,
 		DocumentID: share.DocumentID,
+		RootID:     rootID,
+		ReplyToID:  replyToID,
 		Author:     author,
 		Content:    content,
 		State:      repo.ShareCommentStateNormal,

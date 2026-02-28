@@ -56,12 +56,12 @@ export interface ShareComment {
   id: string;
   share_id: string;
   document_id: string;
-  user_id: string;
+  root_id: string;
+  reply_to_id: string;
   author: string;
-  quote: string;
-  start_offset: number;
-  end_offset: number;
   content: string;
+  replies?: ShareComment[];
+  reply_count?: number;
   state: number;
   ctime: number;
   mtime: number;
