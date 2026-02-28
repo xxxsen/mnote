@@ -2248,9 +2248,9 @@ here is the body of note.`}
                       setFloatingPanelTab("toc");
                       setFloatingPanelTouched(true);
                     }}
-                    className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest transition-colors ${floatingPanelTab === "toc"
-                      ? "bg-slate-900 text-white rounded-md"
-                      : "text-slate-500 hover:text-slate-900"}`}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors ${floatingPanelTab === "toc"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
                   >
                     TOC
                   </button>
@@ -2261,9 +2261,9 @@ here is the body of note.`}
                       setFloatingPanelTab("mentions");
                       setFloatingPanelTouched(true);
                     }}
-                    className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest transition-colors ${floatingPanelTab === "mentions"
-                      ? "bg-slate-900 text-white rounded-md"
-                      : "text-slate-500 hover:text-slate-900"}`}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors ${floatingPanelTab === "mentions"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
                   >
                     Mentions
                   </button>
