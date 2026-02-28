@@ -23,6 +23,7 @@ export type SlashCommand = {
   id: string;
   label: string;
   icon: ReactNode;
+  keywords?: string[];
   action: (ctx: SlashActionContext) => void;
 };
 

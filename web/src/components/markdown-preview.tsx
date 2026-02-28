@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useMemo, forwardRef, memo, useEffect, useCallback, useState } from "react";
+import React, { useMemo, forwardRef, memo, useEffect, useCallback, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -23,6 +24,7 @@ interface MarkdownPreviewProps {
   tocClassName?: string;
   onScroll?: React.UIEventHandler<HTMLDivElement>;
   onTocLoaded?: (toc: string) => void;
+  enableMentionHoverPreview?: boolean;
 }
 
 type Heading = {
@@ -894,7 +896,17 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
 
 MermaidBlock.displayName = "MermaidBlock";
 
-const WikilinkAnchor = ({ title, idHref }: { title: string, idHref?: string }) => {
+const WikilinkAnchor = ({
+  title,
+  idHref,
+  onPreviewEnter,
+  onPreviewLeave,
+}: {
+  title: string;
+  idHref?: string;
+  onPreviewEnter?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  onPreviewLeave?: () => void;
+}) => {
   const router = useRouter();
   const [resolving, setResolving] = useState(false);
 
@@ -934,6 +946,8 @@ const WikilinkAnchor = ({ title, idHref }: { title: string, idHref?: string }) =
     <a
       href={idHref || `/docs?wikilink=${encodeURIComponent(title)}`}
       onClick={handleClick}
+      onMouseEnter={onPreviewEnter}
+      onMouseLeave={onPreviewLeave}
       className="wikilink inline-flex items-center gap-1 leading-none align-middle"
       title={`Link to: ${title}`}
     >
@@ -947,9 +961,123 @@ const RUNNABLE_LANGS = ["go", "golang", "js", "javascript", "py", "python", "lua
 
 const MarkdownPreview = memo(
   forwardRef<HTMLDivElement, MarkdownPreviewProps>(function MarkdownPreview(
-    { content, className, showTocAside = false, tocClassName, onScroll, onTocLoaded },
+    { content, className, showTocAside = false, tocClassName, onScroll, onTocLoaded, enableMentionHoverPreview = false },
     ref
   ) {
+    const hoverTimerRef = useRef<number | null>(null);
+    const hoverRequestRef = useRef(0);
+    const previewCacheRef = useRef<Record<string, { title: string; content: string }>>({});
+    const [hoverPreview, setHoverPreview] = useState<{
+      open: boolean;
+      x: number;
+      y: number;
+      loading: boolean;
+      title: string;
+      content: string;
+    }>({ open: false, x: 0, y: 0, loading: false, title: "", content: "" });
+
+    const closeHoverPreview = useCallback(() => {
+      if (hoverTimerRef.current) {
+        window.clearTimeout(hoverTimerRef.current);
+        hoverTimerRef.current = null;
+      }
+      setHoverPreview((prev) => ({ ...prev, open: false, loading: false }));
+    }, []);
+
+    const openHoverPreview = useCallback(
+      (event: React.MouseEvent<HTMLAnchorElement>, linkTitle: string, linkHref?: string) => {
+        if (!enableMentionHoverPreview) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const top = Math.min(window.innerHeight - 220, Math.max(12, rect.bottom + 8));
+        const left = Math.min(window.innerWidth - 360, Math.max(12, rect.left));
+        const cacheKey = linkHref ? `id:${linkHref}` : `title:${linkTitle}`;
+        const cached = previewCacheRef.current[cacheKey];
+        if (hoverTimerRef.current) {
+          window.clearTimeout(hoverTimerRef.current);
+          hoverTimerRef.current = null;
+        }
+        if (cached) {
+          setHoverPreview({
+            open: true,
+            x: left,
+            y: top,
+            loading: false,
+            title: cached.title,
+            content: cached.content,
+          });
+          return;
+        }
+        setHoverPreview({
+          open: true,
+          x: left,
+          y: top,
+          loading: true,
+          title: linkTitle || "Loading...",
+          content: "",
+        });
+        hoverTimerRef.current = window.setTimeout(async () => {
+          const requestID = hoverRequestRef.current + 1;
+          hoverRequestRef.current = requestID;
+          try {
+            let targetID = "";
+            if (linkHref?.startsWith("/docs/")) {
+              targetID = linkHref.replace(/^\/docs\//, "").split(/[?#]/)[0] || "";
+            }
+            if (!targetID && linkTitle) {
+              const docs = await apiFetch<{ id: string; title: string }[]>(
+                `/documents?q=${encodeURIComponent(linkTitle)}&limit=5`
+              );
+              const exact = docs?.find((doc) => doc.title === linkTitle);
+              targetID = exact?.id || docs?.[0]?.id || "";
+            }
+            if (!targetID) {
+              if (hoverRequestRef.current === requestID) {
+                setHoverPreview((prev) => ({
+                  ...prev,
+                  loading: false,
+                  content: "No preview available",
+                }));
+              }
+              return;
+            }
+            const detail = await apiFetch<{ document: { title: string; content: string; summary?: string } }>(`/documents/${targetID}`);
+            const summary = (detail?.document?.summary || "").trim();
+            const source = summary || (detail?.document?.content || "");
+            const normalized = source.replace(/[#>*_`[\]\-]/g, " ").replace(/\s+/g, " ").trim();
+            const snippet = normalized.length > 180 ? `${normalized.slice(0, 180)}...` : normalized;
+            const next = {
+              title: detail?.document?.title || linkTitle || "Untitled",
+              content: snippet || "Empty note",
+            };
+            previewCacheRef.current[cacheKey] = next;
+            if (hoverRequestRef.current === requestID) {
+              setHoverPreview({
+                open: true,
+                x: left,
+                y: top,
+                loading: false,
+                title: next.title,
+                content: next.content,
+              });
+            }
+          } catch {
+            if (hoverRequestRef.current === requestID) {
+              setHoverPreview((prev) => ({ ...prev, loading: false, content: "Failed to load preview" }));
+            }
+          }
+        }, 140);
+      },
+      [enableMentionHoverPreview]
+    );
+
+    useEffect(() => {
+      return () => {
+        if (hoverTimerRef.current) {
+          window.clearTimeout(hoverTimerRef.current);
+        }
+      };
+    }, []);
+
     const { processedContent, tocMarkdown } = useMemo(() => {
       const headings = extractHeadings(content);
       const slugger = createSlugger();
@@ -1258,7 +1386,13 @@ const MarkdownPreview = memo(
           // Legacy check for converted [[title]]
           const wikilinkTitle = node?.properties?.dataWikilink;
           if (wikilinkTitle) {
-            return <WikilinkAnchor title={wikilinkTitle} />;
+            return (
+              <WikilinkAnchor
+                title={wikilinkTitle}
+                onPreviewEnter={(event) => openHoverPreview(event, wikilinkTitle)}
+                onPreviewLeave={closeHoverPreview}
+              />
+            );
           }
 
           // Modern check for markdown [Title](/docs/ID)
@@ -1268,7 +1402,14 @@ const MarkdownPreview = memo(
             const textContent = childArray.length > 0 && typeof childArray[0] === "string"
               ? childArray[0]
               : "Link"; // Fallback
-            return <WikilinkAnchor title={textContent as string} idHref={href} />;
+            return (
+              <WikilinkAnchor
+                title={textContent as string}
+                idHref={href}
+                onPreviewEnter={(event) => openHoverPreview(event, textContent as string, href)}
+                onPreviewLeave={closeHoverPreview}
+              />
+            );
           }
 
           // Note: internal links that aren't /docs/ (if any) could stay in current tab, 
@@ -1281,7 +1422,7 @@ const MarkdownPreview = memo(
           );
         },
       }),
-      []
+      [closeHoverPreview, openHoverPreview]
     );
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1317,6 +1458,21 @@ const MarkdownPreview = memo(
             </div>
           </aside>
         )}
+        {enableMentionHoverPreview &&
+          hoverPreview.open &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div
+              className="fixed z-[320] w-80 max-w-[calc(100vw-24px)] rounded-xl border border-slate-200 bg-white/95 p-3 shadow-2xl backdrop-blur-md pointer-events-none"
+              style={{ left: hoverPreview.x, top: hoverPreview.y }}
+            >
+              <div className="text-[11px] font-semibold text-slate-900 truncate">{hoverPreview.title || "Untitled"}</div>
+              <div className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                {hoverPreview.loading ? "Loading preview..." : hoverPreview.content}
+              </div>
+            </div>,
+            document.body
+          )}
       </div>
     );
   })

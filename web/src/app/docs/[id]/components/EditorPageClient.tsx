@@ -34,9 +34,11 @@ import {
   Italic,
   Heading1,
   Heading2,
+  Heading3,
   List,
   ListOrdered,
   ListTodo,
+  ListChecks,
   Quote,
   FileCode,
   Table as TableIcon,
@@ -49,7 +51,13 @@ import {
   Copy,
   Check,
   FileText,
-  Tags
+  Tags,
+  Minus,
+  Link2,
+  ImageIcon,
+  CalendarDays,
+  Clock3,
+  Network
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { MAX_TAGS } from "../constants";
@@ -72,6 +80,8 @@ type InlineTagDropdownItem = {
   tag?: Tag;
   name?: string;
 };
+
+const FLOATING_PANEL_COLLAPSED_KEY = "mnote:floating-panel-collapsed";
 
 const EMOJI_TABS = [
   {
@@ -186,17 +196,24 @@ const SIZES = [
 ];
 
 const SLASH_COMMANDS: SlashCommand[] = [
-  { id: "h1", label: "Heading 1", icon: <Heading1 className="h-4 w-4" />, action: (s) => s.handleFormat("line", "# ") },
-  { id: "h2", label: "Heading 2", icon: <Heading2 className="h-4 w-4" />, action: (s) => s.handleFormat("line", "## ") },
-  { id: "bold", label: "Bold", icon: <Bold className="h-4 w-4" />, action: (s) => s.handleFormat("wrap", "**", "**") },
-  { id: "italic", label: "Italic", icon: <Italic className="h-4 w-4" />, action: (s) => s.handleFormat("wrap", "*", "*") },
-  { id: "list", label: "Bullet List", icon: <List className="h-4 w-4" />, action: (s) => s.handleFormat("line", "- ") },
-  { id: "numlist", label: "Numbered List", icon: <ListOrdered className="h-4 w-4" />, action: (s) => s.handleFormat("line", "1. ") },
-  { id: "todo", label: "Todo List", icon: <ListTodo className="h-4 w-4" />, action: (s) => s.handleFormat("line", "- [ ] ") },
-  { id: "code", label: "Code Block", icon: <FileCode className="h-4 w-4" />, action: (s) => s.handleFormat("wrap", "```\n", "\n```") },
-  { id: "table", label: "Table", icon: <TableIcon className="h-4 w-4" />, action: (s) => s.handleInsertTable() },
-  { id: "quote", label: "Quote", icon: <Quote className="h-4 w-4" />, action: (s) => s.handleFormat("line", "> ") },
-  { id: "divider", label: "Divider", icon: <div className="h-0.5 w-4 bg-muted-foreground opacity-50" />, action: (s) => s.insertTextAtCursor("\n---\n") },
+  { id: "h1", label: "Heading 1", keywords: ["title", "#"], icon: <Heading1 className="h-4 w-4" />, action: (s) => s.handleFormat("line", "# ") },
+  { id: "h2", label: "Heading 2", keywords: ["subtitle", "##"], icon: <Heading2 className="h-4 w-4" />, action: (s) => s.handleFormat("line", "## ") },
+  { id: "h3", label: "Heading 3", keywords: ["section", "###"], icon: <Heading3 className="h-4 w-4" />, action: (s) => s.handleFormat("line", "### ") },
+  { id: "bold", label: "Bold", keywords: ["strong"], icon: <Bold className="h-4 w-4" />, action: (s) => s.handleFormat("wrap", "**", "**") },
+  { id: "italic", label: "Italic", keywords: ["emphasis"], icon: <Italic className="h-4 w-4" />, action: (s) => s.handleFormat("wrap", "*", "*") },
+  { id: "list", label: "Bullet List", keywords: ["unordered"], icon: <List className="h-4 w-4" />, action: (s) => s.handleFormat("line", "- ") },
+  { id: "numlist", label: "Numbered List", keywords: ["ordered"], icon: <ListOrdered className="h-4 w-4" />, action: (s) => s.handleFormat("line", "1. ") },
+  { id: "todo", label: "Todo List", keywords: ["task", "checkbox"], icon: <ListTodo className="h-4 w-4" />, action: (s) => s.handleFormat("line", "- [ ] ") },
+  { id: "done", label: "Done List", keywords: ["task done", "check"], icon: <ListChecks className="h-4 w-4" />, action: (s) => s.handleFormat("line", "- [x] ") },
+  { id: "quote", label: "Quote", keywords: ["blockquote"], icon: <Quote className="h-4 w-4" />, action: (s) => s.handleFormat("line", "> ") },
+  { id: "code", label: "Code Block", keywords: ["snippet"], icon: <FileCode className="h-4 w-4" />, action: (s) => s.handleFormat("wrap", "```\n", "\n```") },
+  { id: "table", label: "Table", keywords: ["grid"], icon: <TableIcon className="h-4 w-4" />, action: (s) => s.handleInsertTable() },
+  { id: "link", label: "Link", keywords: ["url"], icon: <Link2 className="h-4 w-4" />, action: (s) => s.insertTextAtCursor("[title](https://)") },
+  { id: "image", label: "Image", keywords: ["media"], icon: <ImageIcon className="h-4 w-4" />, action: (s) => s.insertTextAtCursor("![alt](https://)") },
+  { id: "callout", label: "Callout", keywords: ["note", "tip", "warning"], icon: <ListChecks className="h-4 w-4" />, action: (s) => s.insertTextAtCursor(":::info\nNote\n:::\n") },
+  { id: "date", label: "Current Date", keywords: ["today", "time"], icon: <CalendarDays className="h-4 w-4" />, action: (s) => s.insertTextAtCursor(new Date().toISOString().slice(0, 10)) },
+  { id: "time", label: "Current Time", keywords: ["clock"], icon: <Clock3 className="h-4 w-4" />, action: (s) => s.insertTextAtCursor(new Date().toLocaleTimeString("en-US", { hour12: false })) },
+  { id: "divider", label: "Divider", keywords: ["hr", "line"], icon: <Minus className="h-4 w-4" />, action: (s) => s.insertTextAtCursor("\n---\n") },
 ];
 
 // Theme compartment for dynamic theme switching
@@ -263,6 +280,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [selectedTagIDs, setSelectedTagIDs] = useState<string[]>([]);
   const [backlinks, setBacklinks] = useState<MnoteDocument[]>([]);
+  const [outboundLinks, setOutboundLinks] = useState<MnoteDocument[]>([]);
 
   // Wikilink State Extension
   const [wikilinkIndex, setWikilinkIndex] = useState(0);
@@ -272,6 +290,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     title,
   });
   const [slashMenu, setSlashMenu] = useState<{ open: boolean; x: number; y: number; filter: string }>({ open: false, x: 0, y: 0, filter: "" });
+  const [slashIndex, setSlashIndex] = useState(0);
   const [wikilinkMenu, setWikilinkMenu] = useState<{ open: boolean; x: number; y: number; query: string; from: number }>({ open: false, x: 0, y: 0, query: "", from: 0 });
   const [wikilinkResults, setWikilinkResults] = useState<{ id: string; title: string }[]>([]);
   const [wikilinkLoading, setWikilinkLoading] = useState(false);
@@ -295,6 +314,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const pasteHandlerRef = useRef<((event: ClipboardEvent) => void) | null>(null);
   const editorKeydownHandlerRef = useRef<((event: KeyboardEvent) => void) | null>(null);
   const wikilinkKeydownRef = useRef<(event: KeyboardEvent) => boolean>(() => false);
+  const slashKeydownRef = useRef<(event: KeyboardEvent) => boolean>(() => false);
   const colorButtonRef = useRef<HTMLButtonElement | null>(null);
   const sizeButtonRef = useRef<HTMLButtonElement | null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -304,7 +324,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   // TOC State
   const [tocContent, setTocContent] = useState("");
   const [tocCollapsed, setTocCollapsed] = useState(false);
-  const [floatingPanelTab, setFloatingPanelTab] = useState<"toc" | "mentions" | "summary">("toc");
+  const [floatingPanelTab, setFloatingPanelTab] = useState<"toc" | "mentions" | "graph" | "summary">("toc");
   const [floatingPanelTouched, setFloatingPanelTouched] = useState(false);
   const [activePopover, setActivePopover] = useState<"emoji" | "color" | "size" | null>(null);
   const [emojiTab, setEmojiTab] = useState(EMOJI_TABS[0].key);
@@ -491,6 +511,22 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     return out;
   }, []);
 
+  const extractLinkedDocIDs = useCallback((value: string) => {
+    const ids: string[] = [];
+    const seen = new Set<string>();
+    const regex = /\/docs\/([a-zA-Z0-9_-]+)/g;
+    let match: RegExpExecArray | null = regex.exec(value);
+    while (match) {
+      const targetID = match[1];
+      if (targetID && targetID !== id && !seen.has(targetID)) {
+        seen.add(targetID);
+        ids.push(targetID);
+      }
+      match = regex.exec(value);
+    }
+    return ids;
+  }, [id]);
+
   const handleEditorScroll = useCallback(() => {
     if (scrollingSource.current === "preview" || loading) return;
     const view = editorViewRef.current;
@@ -603,9 +639,39 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     }
   }, [id, setBacklinks]);
 
+  const loadOutboundLinks = useCallback(async (value: string) => {
+    const linkIDs = extractLinkedDocIDs(value);
+    if (linkIDs.length === 0) {
+      setOutboundLinks([]);
+      return;
+    }
+    try {
+      const settled = await Promise.all(
+        linkIDs.slice(0, 24).map(async (docID) => {
+          try {
+            const detail = await apiFetch<{ document: MnoteDocument }>(`/documents/${docID}`);
+            return detail?.document || null;
+          } catch {
+            return null;
+          }
+        })
+      );
+      setOutboundLinks(settled.filter(Boolean) as MnoteDocument[]);
+    } catch {
+      setOutboundLinks([]);
+    }
+  }, [extractLinkedDocIDs]);
+
   useEffect(() => {
     void loadBacklinks();
   }, [loadBacklinks]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadOutboundLinks(previewContent);
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [loadOutboundLinks, previewContent]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -748,7 +814,27 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
             changes.push({ from: line.from, to: line.from, insert: prefix });
           }
         }
-        view.dispatch({ changes });
+        let singleCursorAnchor: number | null = null;
+        if (from === to && startLine.number === endLine.number) {
+          const line = startLine;
+          if (allHavePrefix) {
+            if (line.text.startsWith(prefix)) {
+              const removable = Math.min(prefix.length, Math.max(0, from - line.from));
+              singleCursorAnchor = from - removable;
+            } else {
+              singleCursorAnchor = from;
+            }
+          } else if (!line.text.startsWith(prefix)) {
+            singleCursorAnchor = from + prefix.length;
+          } else {
+            singleCursorAnchor = from;
+          }
+        }
+        view.dispatch(
+          singleCursorAnchor === null
+            ? { changes }
+            : { changes, selection: { anchor: singleCursorAnchor } }
+        );
       } else {
         const extendedFrom = from - prefix.length;
         const extendedTo = to + suffix.length;
@@ -940,6 +1026,20 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     closeAiModal();
   }, [aiResultText, applyContent, closeAiModal]);
 
+  const filteredSlashCommands = useMemo(() => {
+    const query = slashMenu.filter.trim().toLowerCase();
+    if (!query) return SLASH_COMMANDS;
+    return SLASH_COMMANDS.filter((cmd) => {
+      if (cmd.label.toLowerCase().includes(query)) return true;
+      if (cmd.id.toLowerCase().includes(query)) return true;
+      return (cmd.keywords || []).some((kw) => kw.toLowerCase().includes(query));
+    });
+  }, [slashMenu.filter]);
+
+  useEffect(() => {
+    setSlashIndex(0);
+  }, [slashMenu.open, slashMenu.filter]);
+
   const handleSlashAction = useCallback((action: (ctx: SlashActionContext) => void) => {
     const view = editorViewRef.current;
     if (!view) return;
@@ -957,8 +1057,40 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     }
 
     action({ handleFormat, handleInsertTable, insertTextAtCursor });
+    setSlashIndex(0);
     setSlashMenu(prev => ({ ...prev, open: false }));
   }, [handleFormat, handleInsertTable, insertTextAtCursor]);
+
+  const handleSlashKeyDown = useCallback((e: React.KeyboardEvent | KeyboardEvent) => {
+    if (!slashMenu.open) return false;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (filteredSlashCommands.length === 0) return true;
+      setSlashIndex((prev) => (prev + 1) % filteredSlashCommands.length);
+      return true;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (filteredSlashCommands.length === 0) return true;
+      setSlashIndex((prev) => (prev - 1 + filteredSlashCommands.length) % filteredSlashCommands.length);
+      return true;
+    }
+    if (e.key === "Enter") {
+      if (filteredSlashCommands.length === 0) return false;
+      e.preventDefault();
+      const selected = filteredSlashCommands[slashIndex] || filteredSlashCommands[0];
+      if (selected) {
+        handleSlashAction(selected.action);
+      }
+      return true;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setSlashMenu((prev) => ({ ...prev, open: false }));
+      return true;
+    }
+    return false;
+  }, [filteredSlashCommands, handleSlashAction, slashIndex, slashMenu.open]);
 
   // Wikilink search effect
   useEffect(() => {
@@ -1045,6 +1177,10 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     wikilinkKeydownRef.current = (event: KeyboardEvent) => handleWikilinkKeyDown(event);
   }, [handleWikilinkKeyDown]);
 
+  useEffect(() => {
+    slashKeydownRef.current = (event: KeyboardEvent) => handleSlashKeyDown(event);
+  }, [handleSlashKeyDown]);
+
   const handleColor = useCallback((color: string) => {
     setActivePopover(null);
     if (!color) return;
@@ -1079,11 +1215,86 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   }, [tocContent, previewContent]);
 
   const hasMentionsPanel = backlinks.length > 0;
+  const hasGraphPanel = backlinks.length > 0 || outboundLinks.length > 0;
   const hasSummaryPanel = summary.trim().length > 0;
+  const availableFloatingTabs = useMemo(() => {
+    const tabs: Array<"toc" | "mentions" | "graph" | "summary"> = [];
+    if (hasTocPanel) tabs.push("toc");
+    if (hasMentionsPanel) tabs.push("mentions");
+    if (hasGraphPanel) tabs.push("graph");
+    if (hasSummaryPanel) tabs.push("summary");
+    return tabs;
+  }, [hasGraphPanel, hasMentionsPanel, hasSummaryPanel, hasTocPanel]);
+
+  const linkGraph = useMemo(() => {
+    const incomingMap = new Map(backlinks.map((doc) => [doc.id, doc]));
+    const outgoingMap = new Map(outboundLinks.map((doc) => [doc.id, doc]));
+    const bothIDs = Array.from(incomingMap.keys()).filter((docID) => outgoingMap.has(docID));
+    const incomingOnly = Array.from(incomingMap.values()).filter((doc) => !outgoingMap.has(doc.id));
+    const outgoingOnly = Array.from(outgoingMap.values()).filter((doc) => !incomingMap.has(doc.id));
+
+    const nodes: Array<{ id: string; title: string; x: number; y: number; kind: "current" | "incoming" | "outgoing" | "both" }> = [
+      { id, title: title || "Untitled", x: 50, y: 50, kind: "current" },
+    ];
+    const edges: Array<{ from: string; to: string }> = [];
+    const positionByID: Record<string, { x: number; y: number }> = { [id]: { x: 50, y: 50 } };
+
+    const spread = (
+      docs: MnoteDocument[],
+      x: number,
+      kind: "incoming" | "outgoing"
+    ) => {
+      if (docs.length === 0) return;
+      const yMin = 16;
+      const yMax = 84;
+      const step = docs.length === 1 ? 0 : (yMax - yMin) / (docs.length - 1);
+      docs.forEach((doc, index) => {
+        const y = docs.length === 1 ? 50 : yMin + step * index;
+        nodes.push({ id: doc.id, title: doc.title || "Untitled", x, y, kind });
+        positionByID[doc.id] = { x, y };
+      });
+    };
+
+    spread(incomingOnly, 24, "incoming");
+    spread(outgoingOnly, 76, "outgoing");
+    bothIDs.forEach((docID, index) => {
+      const doc = incomingMap.get(docID) || outgoingMap.get(docID);
+      if (!doc) return;
+      const side = index % 2 === 0 ? 40 : 60;
+      const y = Math.min(84, 20 + Math.floor(index / 2) * 14);
+      nodes.push({ id: doc.id, title: doc.title || "Untitled", x: side, y, kind: "both" });
+      positionByID[doc.id] = { x: side, y };
+    });
+
+    incomingOnly.forEach((doc) => edges.push({ from: doc.id, to: id }));
+    outgoingOnly.forEach((doc) => edges.push({ from: id, to: doc.id }));
+    bothIDs.forEach((docID) => {
+      edges.push({ from: docID, to: id });
+      edges.push({ from: id, to: docID });
+    });
+
+    return { nodes, edges, positionByID };
+  }, [backlinks, id, outboundLinks, title]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem(FLOATING_PANEL_COLLAPSED_KEY);
+    if (raw === "1") {
+      setTocCollapsed(true);
+    } else if (raw === "0") {
+      setTocCollapsed(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(FLOATING_PANEL_COLLAPSED_KEY, tocCollapsed ? "1" : "0");
+  }, [tocCollapsed]);
 
   useEffect(() => {
     setFloatingPanelTab("toc");
     setFloatingPanelTouched(false);
+    setOutboundLinks([]);
     setInlineTagMode(false);
     setInlineTagValue("");
     setInlineTagResults([]);
@@ -1091,40 +1302,17 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   }, [id]);
 
   useEffect(() => {
+    if (availableFloatingTabs.length === 0) return;
     if (floatingPanelTouched) return;
-    if (hasTocPanel) {
-      setFloatingPanelTab("toc");
-      return;
-    }
-    if (hasMentionsPanel) {
-      setFloatingPanelTab("mentions");
-      return;
-    }
-    if (hasSummaryPanel) {
-      setFloatingPanelTab("summary");
-    }
-  }, [hasTocPanel, hasMentionsPanel, hasSummaryPanel, floatingPanelTouched]);
+    setFloatingPanelTab(availableFloatingTabs[0]);
+  }, [availableFloatingTabs, floatingPanelTouched]);
 
   useEffect(() => {
-    if (floatingPanelTab === "toc" && !hasTocPanel && hasMentionsPanel) {
-      setFloatingPanelTab("mentions");
+    if (availableFloatingTabs.length === 0) return;
+    if (!availableFloatingTabs.includes(floatingPanelTab)) {
+      setFloatingPanelTab(availableFloatingTabs[0]);
     }
-    if (floatingPanelTab === "toc" && !hasTocPanel && !hasMentionsPanel && hasSummaryPanel) {
-      setFloatingPanelTab("summary");
-    }
-    if (floatingPanelTab === "mentions" && !hasMentionsPanel && hasTocPanel) {
-      setFloatingPanelTab("toc");
-    }
-    if (floatingPanelTab === "mentions" && !hasMentionsPanel && !hasTocPanel && hasSummaryPanel) {
-      setFloatingPanelTab("summary");
-    }
-    if (floatingPanelTab === "summary" && !hasSummaryPanel && hasTocPanel) {
-      setFloatingPanelTab("toc");
-    }
-    if (floatingPanelTab === "summary" && !hasSummaryPanel && !hasTocPanel && hasMentionsPanel) {
-      setFloatingPanelTab("mentions");
-    }
-  }, [floatingPanelTab, hasTocPanel, hasMentionsPanel, hasSummaryPanel]);
+  }, [availableFloatingTabs, floatingPanelTab]);
 
   const handleSave = useCallback(async () => {
     const latestContent = contentRef.current;
@@ -1728,6 +1916,11 @@ here is the body of note.`}
                     view.dom.removeEventListener("keydown", editorKeydownHandlerRef.current, true);
                   }
                   const keydownHandler = (e: KeyboardEvent) => {
+                    if (slashKeydownRef.current(e)) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      return;
+                    }
                     if (wikilinkKeydownRef.current(e)) {
                       e.preventDefault();
                       e.stopPropagation();
@@ -1752,19 +1945,22 @@ here is the body of note.`}
                 >
                   <div className="text-[10px] font-bold text-muted-foreground px-2 py-1 uppercase tracking-widest border-b border-border mb-1">Commands</div>
                   <div className="max-h-64 overflow-y-auto no-scrollbar">
-                    {SLASH_COMMANDS
-                      .filter(cmd => cmd.label.toLowerCase().includes(slashMenu.filter.toLowerCase()))
-                      .map(cmd => (
+                    {filteredSlashCommands.map((cmd, index) => (
                         <button
                           key={cmd.id}
                           onClick={() => handleSlashAction(cmd.action)}
-                          className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md hover:bg-accent hover:text-accent-foreground text-left transition-colors"
+                          onMouseEnter={() => setSlashIndex(index)}
+                          className={`flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md text-left transition-colors ${
+                            index === slashIndex
+                              ? "bg-accent text-accent-foreground"
+                              : "hover:bg-accent hover:text-accent-foreground"
+                          }`}
                         >
                           <span className="opacity-70">{cmd.icon}</span>
                           <span className="font-medium">{cmd.label}</span>
                         </button>
                       ))}
-                    {SLASH_COMMANDS.filter(cmd => cmd.label.toLowerCase().includes(slashMenu.filter.toLowerCase())).length === 0 && (
+                    {filteredSlashCommands.length === 0 && (
                       <div className="px-2 py-2 text-xs text-muted-foreground italic">No commands found</div>
                     )}
                   </div>
@@ -1817,6 +2013,7 @@ here is the body of note.`}
                       content={previewContent}
                       className="markdown-body h-auto overflow-visible p-0 bg-transparent text-slate-800"
                       onTocLoaded={handleTocLoaded}
+                      enableMentionHoverPreview
                     />
                   </div>
                 </article>
@@ -2100,7 +2297,7 @@ here is the body of note.`}
                     <p className="text-xs font-mono tracking-widest uppercase">Fetching content</p>
                   </div>
                 ) : (
-                  <MarkdownPreview content={previewDoc?.content || ""} className="max-w-none prose-lg" />
+                  <MarkdownPreview content={previewDoc?.content || ""} className="max-w-none prose-lg" enableMentionHoverPreview />
                 )}
               </div>
             </div>
@@ -2140,6 +2337,7 @@ here is the body of note.`}
                       content={contentRef.current || previewContent}
                       className="markdown-body h-auto overflow-visible p-0 bg-transparent text-slate-800"
                       onTocLoaded={handleTocLoaded}
+                      enableMentionHoverPreview
                     />
                   </div>
                 </article>
@@ -2240,7 +2438,7 @@ here is the body of note.`}
 
                 {!aiLoading && !aiError && aiAction === "generate" && aiResultText && (
                   <div className="border border-border rounded-xl p-4 bg-muted/20">
-                    <MarkdownPreview content={aiResultText} className="prose prose-slate max-w-none" />
+                    <MarkdownPreview content={aiResultText} className="prose prose-slate max-w-none" enableMentionHoverPreview />
                   </div>
                 )}
 
@@ -2469,17 +2667,18 @@ here is the body of note.`}
       }
 
       {
-        !showDetails && (hasTocPanel || hasMentionsPanel || hasSummaryPanel) && (
+        !showDetails && (hasTocPanel || hasMentionsPanel || hasGraphPanel || hasSummaryPanel) && (
           <div className="fixed top-24 right-8 z-30 hidden w-72 rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md xl:block animate-in fade-in slide-in-from-right-4 duration-500">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60">
-              <div className="flex items-center gap-1">
+              <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                <div className="flex items-center gap-1 pr-2">
                 {hasTocPanel && (
                   <button
                     onClick={() => {
                       setFloatingPanelTab("toc");
                       setFloatingPanelTouched(true);
                     }}
-                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors ${floatingPanelTab === "toc"
+                    className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "toc"
                       ? "bg-slate-900 text-white"
                       : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
                   >
@@ -2492,11 +2691,24 @@ here is the body of note.`}
                       setFloatingPanelTab("mentions");
                       setFloatingPanelTouched(true);
                     }}
-                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors ${floatingPanelTab === "mentions"
+                    className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "mentions"
                       ? "bg-slate-900 text-white"
                       : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
                   >
                     Mentions
+                  </button>
+                )}
+                {hasGraphPanel && (
+                  <button
+                    onClick={() => {
+                      setFloatingPanelTab("graph");
+                      setFloatingPanelTouched(true);
+                    }}
+                    className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "graph"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
+                  >
+                    Graph
                   </button>
                 )}
                 {hasSummaryPanel && (
@@ -2505,17 +2717,18 @@ here is the body of note.`}
                       setFloatingPanelTab("summary");
                       setFloatingPanelTouched(true);
                     }}
-                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors ${floatingPanelTab === "summary"
+                    className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "summary"
                       ? "bg-slate-900 text-white"
                       : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
                   >
                     Summary
                   </button>
                 )}
+                </div>
               </div>
               <button
                 onClick={() => setTocCollapsed(!tocCollapsed)}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all"
+                className="shrink-0 p-1 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all"
               >
                 {tocCollapsed ? <Menu className="h-3 w-3" /> : <X className="h-3 w-3" />}
               </button>
@@ -2586,6 +2799,60 @@ here is the body of note.`}
                       ))}
                     </div>
                   )
+                ) : floatingPanelTab === "graph" ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                      <Network className="h-3 w-3" />
+                      Link Graph
+                    </div>
+                    <div className="relative h-60 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80">
+                      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        {linkGraph.edges.map((edge, index) => {
+                          const from = linkGraph.positionByID[edge.from];
+                          const to = linkGraph.positionByID[edge.to];
+                          if (!from || !to) return null;
+                          return (
+                            <line
+                              key={`${edge.from}-${edge.to}-${index}`}
+                              x1={from.x}
+                              y1={from.y}
+                              x2={to.x}
+                              y2={to.y}
+                              stroke="rgba(100,116,139,0.45)"
+                              strokeWidth="0.7"
+                            />
+                          );
+                        })}
+                      </svg>
+                      {linkGraph.nodes.map((node) => (
+                        <button
+                          key={node.id}
+                          disabled={node.kind === "current"}
+                          onClick={() => {
+                            if (node.kind !== "current") {
+                              router.push(`/docs/${node.id}`);
+                            }
+                          }}
+                          className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-lg border px-2 py-1 text-[10px] font-medium shadow-sm max-w-[84px] truncate ${node.kind === "current"
+                            ? "border-indigo-500 bg-indigo-600 text-white"
+                            : node.kind === "incoming"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300"
+                              : node.kind === "outgoing"
+                                ? "border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300"
+                                : "border-sky-200 bg-sky-50 text-sky-700 hover:border-sky-300"
+                            }`}
+                          style={{ left: `${node.x}%`, top: `${node.y}%` }}
+                          title={node.title}
+                        >
+                          {node.title}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-500">
+                      <span>Inbound: {backlinks.length}</span>
+                      <span>Outbound: {outboundLinks.length}</span>
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-2">
                     <div className="text-xs font-bold uppercase tracking-widest text-slate-500">AI Summary</div>

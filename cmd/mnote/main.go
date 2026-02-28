@@ -133,6 +133,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	embeddingCacheRepo := repo.NewEmbeddingCacheRepo(db)
 	importJobRepo := repo.NewImportJobRepo(db)
 	importJobNoteRepo := repo.NewImportJobNoteRepo(db)
+	savedViewRepo := repo.NewSavedViewRepo(db)
 
 	mailSender := service.NewEmailSender(cfg.Mail)
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, mailSender)
@@ -282,6 +283,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, summaryRepo, versionRepo, tagRepo, docTagRepo)
 	importService := service.NewImportService(documentService, tagService, importJobRepo, importJobNoteRepo)
+	savedViewService := service.NewSavedViewService(savedViewRepo)
 
 	authHandler := handler.NewAuthHandler(authService)
 	oauthHandler := handler.NewOAuthHandler(oauthService)
@@ -292,6 +294,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	exportHandler := handler.NewExportHandler(exportService)
 	aiHandler := handler.NewAIHandler(aiService, documentService, tagService)
 	importHandler := handler.NewImportHandler(importService, cfg.MaxUploadSize)
+	savedViewHandler := handler.NewSavedViewHandler(savedViewService)
 	store, err := filestore.New(cfg.FileStore)
 	if err != nil {
 		return fmt.Errorf("init file store: %w", err)
@@ -308,6 +311,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		Tags:       tagHandler,
 		Export:     exportHandler,
 		Files:      fileHandler,
+		SavedViews: savedViewHandler,
 		AI:         aiHandler,
 		Import:     importHandler,
 		JWTSecret:  []byte(cfg.JWTSecret),

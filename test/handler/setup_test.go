@@ -52,6 +52,7 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	tagRepo := repo.NewTagRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
+	savedViewRepo := repo.NewSavedViewRepo(db)
 
 	jwtSecret := []byte("test-secret")
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, noopSender{})
@@ -60,6 +61,7 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	documentService := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, summaryRepo, versionRepo, tagRepo, docTagRepo)
+	savedViewService := service.NewSavedViewService(savedViewRepo)
 
 	tmpDir, err := os.MkdirTemp("", "mnote-upload-*")
 	require.NoError(t, err)
@@ -82,6 +84,7 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 		Tags:       handler.NewTagHandler(tagService),
 		Export:     handler.NewExportHandler(exportService),
 		Files:      handler.NewFileHandler(store, 20*1024*1024),
+		SavedViews: handler.NewSavedViewHandler(savedViewService),
 		JWTSecret:  jwtSecret,
 	}
 
