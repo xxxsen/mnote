@@ -377,7 +377,7 @@ export default function SharePage() {
 
       <div className="w-full max-w-4xl px-4 md:px-0 py-12 md:py-20 flex flex-col items-center">
         {/* Article Header */}
-        <header className="w-full mb-12 flex flex-col px-4 md:px-0">
+        <header className="w-full mb-3 flex flex-col px-4 md:px-0">
           <div className="flex items-center gap-2 text-indigo-600 font-mono text-xs mb-4 font-bold uppercase tracking-wider">
             <span>Public Note</span>
             <ChevronRight className="h-3 w-3" />
@@ -419,13 +419,13 @@ export default function SharePage() {
           </div>
 
           {detail.tags && detail.tags.length > 0 && (
-            <div className="flex items-center gap-2 mt-6">
+            <div className="mt-3 flex h-8 items-center gap-2">
               <TagIcon className="h-4 w-4 opacity-70 shrink-0" />
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
                 {detail.tags.map(tag => (
                   <span 
                     key={tag.id}
-                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100"
+                    className="inline-flex h-6 items-center px-2.5 rounded-full text-xs leading-none font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 whitespace-nowrap"
                   >
                     #{tag.name}
                   </span>
