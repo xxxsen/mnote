@@ -855,6 +855,8 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
 
 MermaidBlock.displayName = "MermaidBlock";
 
+const RUNNABLE_LANGS = ["go", "golang", "js", "javascript", "py", "python", "lua", "c"];
+
 const MarkdownPreview = memo(
   forwardRef<HTMLDivElement, MarkdownPreviewProps>(function MarkdownPreview(
     { content, className, showTocAside = false, tocClassName, onScroll, onTocLoaded },
@@ -915,8 +917,21 @@ const MarkdownPreview = memo(
             const isToc = className.includes("language-toc");
             const isMermaid = className.includes("language-mermaid");
 
-            const runnableLangs = ["go", "golang", "js", "javascript", "py", "python", "c"];
-            const isRunnableLang = runnableLangs.some(lang => className.includes(`language-${lang}`));
+
+            // Extract effective language from className, handling "language-363:367:path/to/file.go" patterns
+            const langInfoMatch = /language-(\S*)/.exec(className);
+            let effectiveLang = langInfoMatch ? langInfoMatch[1] : "";
+            if (effectiveLang.includes(":")) {
+              const lParts = effectiveLang.split(":");
+              const numEnd = lParts.findIndex(p => !/^\d+$/.test(p));
+              if (numEnd > 0) {
+                const extM = lParts.slice(numEnd).join(":").match(/\.(\w+)$/);
+                effectiveLang = extM ? extM[1] : lParts[numEnd];
+              } else {
+                effectiveLang = lParts[0];
+              }
+            }
+            const isRunnableLang = RUNNABLE_LANGS.includes(effectiveLang);
             const isRunnable = (metastring && metastring.includes("[runnable]")) || className.includes("[runnable]");
             const isFenced = className.startsWith("language-");
 
@@ -960,8 +975,22 @@ const MarkdownPreview = memo(
 
             if (language.includes(":")) {
               const parts = language.split(":");
-              language = parts[0];
-              fileName = parts[1];
+              // Detect patterns like "363:367:path/to/file.go" or "363:path/to/file.go"
+              // where leading parts are line numbers (all digits)
+              const numericPrefixEnd = parts.findIndex(p => !/^\d+$/.test(p));
+              if (numericPrefixEnd > 0) {
+                // Everything from the first non-numeric part onward is the file path
+                const filePath = parts.slice(numericPrefixEnd).join(":");
+                const lineRange = parts.slice(0, numericPrefixEnd).join(":");
+                fileName = `${filePath}:${lineRange}`;
+                // Infer language from file extension
+                const extMatch = filePath.match(/\.(\w+)$/);
+                language = extMatch ? extMatch[1] : "text";
+              } else {
+                // Normal "language:fileName" format
+                language = parts[0];
+                fileName = parts.slice(1).join(":");
+              }
             }
 
             const meta = metastring || "";
@@ -977,8 +1006,7 @@ const MarkdownPreview = memo(
               fileName = meta;
             }
 
-            const runnableLangs = ["go", "golang", "js", "javascript", "py", "python", "lua", "c"];
-            if (isRunnable && runnableLangs.includes(language)) {
+            if (isRunnable && RUNNABLE_LANGS.includes(language)) {
               return <CodeSandbox code={rawCode} language={language} fileName={fileName} />;
             }
 
