@@ -8,7 +8,7 @@ import { apiFetch, ApiError, getAuthToken } from "@/lib/api";
 import MarkdownPreview from "@/components/markdown-preview";
 import { PublicShareDetail, ShareComment, ShareCommentsPage } from "@/types";
 import { formatDate, generatePixelAvatar } from "@/lib/utils";
-import { Clock, User, Tag as TagIcon, ArrowUp, Link2, Download, Menu, X, ChevronRight, Send } from "lucide-react";
+import { Clock, User, Tag as TagIcon, ArrowUp, Link2, Download, Menu, X, ChevronRight, Send, Eye, PencilLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 
@@ -363,6 +363,8 @@ export default function SharePage() {
   const doc = detail?.document;
   const hasTocToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
   const canAnnotate = detail?.permission === 2;
+  const permissionLabel = canAnnotate ? "Annotate" : "Read";
+  const permissionHint = canAnnotate ? "Can comment on this share" : "Read access only";
   const showToast = useCallback((message: string, durationMs = 2500) => {
     setToast(message);
     window.setTimeout(() => setToast(null), durationMs);
@@ -925,8 +927,17 @@ export default function SharePage() {
                 <User className="h-4 w-4 opacity-70" />
                 <span>{readingTime} min read</span>
               </div>
-              <div className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600">
-                {detail.permission === 2 ? "Comment enabled" : "View only"}
+              <div
+                className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border whitespace-nowrap ${
+                  canAnnotate
+                    ? "bg-cyan-50 text-cyan-700 border-cyan-200"
+                    : "bg-slate-100 text-slate-600 border-slate-200"
+                }`}
+                title={permissionHint}
+                aria-label={permissionHint}
+              >
+                {canAnnotate ? <PencilLine className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                <span>{permissionLabel}</span>
               </div>
               {detail.expires_at > 0 && (
                 <div className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">
