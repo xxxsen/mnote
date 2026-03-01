@@ -140,14 +140,18 @@ func (r *TemplateRepo) ListByUser(ctx context.Context, userID string) ([]model.T
 	return items, rows.Err()
 }
 
-func (r *TemplateRepo) ListMetaByUser(ctx context.Context, userID string) ([]model.TemplateMeta, error) {
+func (r *TemplateRepo) ListMetaByUser(ctx context.Context, userID string, limit, offset int) ([]model.TemplateMeta, error) {
 	sqlStr := `
 		SELECT id, user_id, name, description, default_tag_ids_json, ctime, mtime
 		FROM templates
 		WHERE user_id = ?
-		ORDER BY mtime DESC
 	`
 	args := []interface{}{userID}
+	sqlStr += ` ORDER BY mtime DESC`
+	if limit > 0 {
+		sqlStr += ` LIMIT ? OFFSET ?`
+		args = append(args, limit, offset)
+	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
@@ -163,6 +167,16 @@ func (r *TemplateRepo) ListMetaByUser(ctx context.Context, userID string) ([]mod
 		items = append(items, *tpl)
 	}
 	return items, rows.Err()
+}
+
+func (r *TemplateRepo) CountByUser(ctx context.Context, userID string) (int, error) {
+	query, args := dbutil.Finalize("SELECT COUNT(*) FROM templates WHERE user_id = ?", []interface{}{userID})
+	row := r.db.QueryRowContext(ctx, query, args...)
+	count := 0
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 type templateScanner interface {

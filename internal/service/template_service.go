@@ -38,6 +38,11 @@ type CreateDocumentFromTemplateInput struct {
 	Variables  map[string]string
 }
 
+type TemplateMetaListResult struct {
+	Items []model.TemplateMeta `json:"items"`
+	Total int                  `json:"total"`
+}
+
 func NewTemplateService(templates *repo.TemplateRepo, documents *DocumentService, tags *repo.TagRepo) *TemplateService {
 	return &TemplateService{templates: templates, documents: documents, tags: tags}
 }
@@ -46,8 +51,28 @@ func (s *TemplateService) List(ctx context.Context, userID string) ([]model.Temp
 	return s.templates.ListByUser(ctx, userID)
 }
 
-func (s *TemplateService) ListMeta(ctx context.Context, userID string) ([]model.TemplateMeta, error) {
-	return s.templates.ListMetaByUser(ctx, userID)
+func (s *TemplateService) ListMeta(ctx context.Context, userID string, limit, offset int) (*TemplateMetaListResult, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	total, err := s.templates.CountByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.templates.ListMetaByUser(ctx, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return &TemplateMetaListResult{
+		Items: items,
+		Total: total,
+	}, nil
 }
 
 func (s *TemplateService) Get(ctx context.Context, userID, templateID string) (*model.Template, error) {

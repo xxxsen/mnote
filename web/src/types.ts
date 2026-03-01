@@ -104,6 +104,11 @@ export interface TemplateMeta {
   mtime: number;
 }
 
+export interface TemplateMetaPage {
+  items: TemplateMeta[];
+  total: number;
+}
+
 export interface Asset {
   id: string;
   user_id: string;

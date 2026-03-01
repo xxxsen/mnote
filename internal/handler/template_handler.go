@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
@@ -39,7 +41,25 @@ func (h *TemplateHandler) List(c *gin.Context) {
 }
 
 func (h *TemplateHandler) ListMeta(c *gin.Context) {
-	items, err := h.templates.ListMeta(c.Request.Context(), getUserID(c))
+	limit := 20
+	if raw := c.Query("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			response.Error(c, errcode.ErrInvalid, "invalid limit")
+			return
+		}
+		limit = parsed
+	}
+	offset := 0
+	if raw := c.Query("offset"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			response.Error(c, errcode.ErrInvalid, "invalid offset")
+			return
+		}
+		offset = parsed
+	}
+	items, err := h.templates.ListMeta(c.Request.Context(), getUserID(c), limit, offset)
 	if err != nil {
 		handleError(c, err)
 		return

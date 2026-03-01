@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type UIEvent } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import type { Template, TemplateMeta, Document, Tag } from "@/types";
+import type { Template, TemplateMeta, TemplateMetaPage, Document, Tag } from "@/types";
 import { ChevronLeft, Copy, Plus, Save, Search, Tags, X } from "lucide-react";
 
 type TemplateDraft = {
@@ -22,10 +22,15 @@ const emptyDraft: TemplateDraft = {
 };
 
 const VARIABLE_REGEX = /\{\{\s*([a-zA-Z0-9_:\-]+)\s*\}\}/g;
+const TEMPLATE_META_PAGE_LIMIT = 20;
 const MAX_TAGS = 7;
 const TAG_NAME_REGEX = /^[\p{Script=Han}A-Za-z0-9]{1,16}$/u;
 const normalizeTemplatePlaceholders = (content: string) =>
   content.replace(VARIABLE_REGEX, (_raw, key: string) => `{{${String(key || "").trim().toUpperCase()}}}`);
+const formatTemplateMtime = (mtime: number) => {
+  if (!mtime) return "Unknown";
+  return new Date(mtime * 1000).toLocaleString();
+};
 
 const resolveSystemVariableClient = (key: string) => {
   const now = new Date();
@@ -48,7 +53,9 @@ export default function TemplatesPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [templates, setTemplates] = useState<TemplateMeta[]>([]);
+  const [templatesTotal, setTemplatesTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selectedID, setSelectedID] = useState<string>("");
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [draft, setDraft] = useState<TemplateDraft>(emptyDraft);
@@ -104,28 +111,70 @@ export default function TemplatesPage() {
     );
   }, [draft.description, draft.name, normalizedDraftContent, selectedTagIDs, selectedTemplate]);
 
-  const loadTemplates = useCallback(async () => {
-    setLoading(true);
+  const loadTemplates = useCallback(async (offset: number, reset = false) => {
+    if (reset) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
     try {
-      const items = await apiFetch<TemplateMeta[]>("/templates/meta");
-      const next = items || [];
-      setTemplates(next);
-      setSelectedID((prev) => {
-        if (next.length === 0) return "";
-        if (!prev) return next[0].id;
-        if (next.find((item) => item.id === prev)) return prev;
-        return next[0].id;
-      });
+      const params = new URLSearchParams();
+      params.set("limit", String(TEMPLATE_META_PAGE_LIMIT));
+      params.set("offset", String(offset));
+      const page = await apiFetch<TemplateMetaPage>(`/templates/meta?${params.toString()}`);
+      const next = page?.items || [];
+      setTemplatesTotal(page?.total || 0);
+
+      if (reset) {
+        setTemplates(next);
+        setSelectedID((prev) => {
+          if (next.length === 0) return "";
+          if (!prev) return next[0].id;
+          if (next.find((item) => item.id === prev)) return prev;
+          return next[0].id;
+        });
+        return;
+      }
+
+      if (next.length > 0) {
+        setTemplates((prev) => {
+          const existing = new Set(prev.map((item) => item.id));
+          const merged = [...prev];
+          next.forEach((item) => {
+            if (!existing.has(item.id)) {
+              merged.push(item);
+            }
+          });
+          return merged;
+        });
+      }
     } catch (err) {
       toast({ description: err instanceof Error ? err.message : "Failed to load templates", variant: "error" });
     } finally {
-      setLoading(false);
+      if (reset) {
+        setLoading(false);
+      } else {
+        setLoadingMore(false);
+      }
     }
   }, [toast]);
 
   useEffect(() => {
-    void loadTemplates();
+    void loadTemplates(0, true);
   }, [loadTemplates]);
+
+  const handleTemplateListScroll = useCallback(
+    (e: UIEvent<HTMLDivElement>) => {
+      if (loading || loadingMore) return;
+      if (templates.length >= templatesTotal) return;
+      const el = e.currentTarget;
+      const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 48;
+      if (nearBottom) {
+        void loadTemplates(templates.length, false);
+      }
+    },
+    [loadTemplates, loading, loadingMore, templates.length, templatesTotal]
+  );
 
   useEffect(() => {
     const loadSelectedTemplate = async () => {
@@ -195,7 +244,7 @@ export default function TemplatesPage() {
           default_tag_ids: [],
         }),
       });
-      await loadTemplates();
+      await loadTemplates(0, true);
       setSelectedID(item.id);
     } catch (err) {
       toast({ description: err instanceof Error ? err.message : "Failed to create template", variant: "error" });
@@ -218,8 +267,20 @@ export default function TemplatesPage() {
       if (normalizedContent !== draft.content) {
         setDraft((prev) => ({ ...prev, content: normalizedContent }));
       }
+      setSelectedTemplate((prev) =>
+        prev
+          ? {
+              ...prev,
+              name: draft.name,
+              description: draft.description,
+              content: normalizedContent,
+              default_tag_ids: [...selectedTagIDs],
+              mtime: Math.floor(Date.now() / 1000),
+            }
+          : prev
+      );
       toast({ description: "Template saved." });
-      await loadTemplates();
+      await loadTemplates(0, true);
       setSelectedID(selectedTemplate.id);
       return true;
     } catch (err) {
@@ -289,7 +350,7 @@ export default function TemplatesPage() {
     try {
       await apiFetch(`/templates/${templateID}`, { method: "DELETE" });
       toast({ description: "Template deleted." });
-      await loadTemplates();
+      await loadTemplates(0, true);
       if (selectedID === templateID) {
         setSelectedID("");
       }
@@ -364,11 +425,12 @@ export default function TemplatesPage() {
 
       <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-[320px_1fr] gap-4">
         <div className="border border-border rounded-xl p-4 bg-card h-[75vh] max-h-[calc(100vh-10rem)] overflow-hidden flex flex-col">
-          <div className="relative p-1 mb-2 border-b border-border">
+          <div className="mb-2 px-1 text-xs text-muted-foreground">Template List ({templatesTotal})</div>
+          <div className="relative mb-2 pb-2 pr-2 border-b border-border">
               <Search className="h-3.5 w-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
               <Input className="pl-8 h-8" placeholder="Search template title..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          <div className="flex-1 min-h-0 overflow-y-auto pr-2" style={{ scrollbarGutter: "stable" }}>
+          <div className="flex-1 min-h-0 overflow-y-auto pr-2" style={{ scrollbarGutter: "stable" }} onScroll={handleTemplateListScroll}>
             {loading ? (
               <div className="text-sm text-muted-foreground p-3">Loading...</div>
             ) : filteredTemplates.length === 0 ? (
@@ -392,6 +454,7 @@ export default function TemplatesPage() {
                     <div className="min-w-0 text-left">
                       <div className="text-sm font-semibold truncate">{item.name}</div>
                       <div className="text-xs text-muted-foreground truncate">{item.description || "No description"}</div>
+                      <div className="text-[11px] text-muted-foreground truncate">Last saved: {formatTemplateMtime(item.mtime)}</div>
                     </div>
                     {item.id === selectedID && (
                       <Button
@@ -411,6 +474,7 @@ export default function TemplatesPage() {
                 </div>
               ))
             )}
+            {!loading && loadingMore && <div className="text-xs text-muted-foreground p-2">Loading more...</div>}
           </div>
           <div className="pt-2 mt-auto border-t border-border">
             <Button onClick={() => void createTemplate()} className="w-full">
