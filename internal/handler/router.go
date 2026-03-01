@@ -91,6 +91,8 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.POST("/import/notes/:job_id/confirm", deps.Import.NotesConfirm)
 	authGroup.GET("/import/notes/:job_id/status", deps.Import.NotesStatus)
 	authGroup.GET("/templates", deps.Templates.List)
+	authGroup.GET("/templates/meta", deps.Templates.ListMeta)
+	authGroup.GET("/templates/:id", deps.Templates.Get)
 	authGroup.POST("/templates", deps.Templates.Create)
 	authGroup.PUT("/templates/:id", deps.Templates.Update)
 	authGroup.DELETE("/templates/:id", deps.Templates.Delete)

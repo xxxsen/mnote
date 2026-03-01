@@ -6,7 +6,7 @@ import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import type { Template, Document, Tag } from "@/types";
+import type { Template, TemplateMeta, Document, Tag } from "@/types";
 import { ChevronLeft, Copy, Plus, Save, Search, Tags, X } from "lucide-react";
 
 type TemplateDraft = {
@@ -47,9 +47,10 @@ const resolveSystemVariableClient = (key: string) => {
 export default function TemplatesPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const [templates, setTemplates] = useState<Template[]>([]);
+  const [templates, setTemplates] = useState<TemplateMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedID, setSelectedID] = useState<string>("");
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [draft, setDraft] = useState<TemplateDraft>(emptyDraft);
   const [creatingDoc, setCreatingDoc] = useState(false);
   const [showVariableModal, setShowVariableModal] = useState(false);
@@ -94,19 +95,19 @@ export default function TemplatesPage() {
 
   const normalizedDraftContent = useMemo(() => normalizeTemplatePlaceholders(draft.content), [draft.content]);
   const isSaveDisabled = useMemo(() => {
-    if (!selected) return true;
+    if (!selectedTemplate) return true;
     return (
-      draft.name === (selected.name || "") &&
-      draft.description === (selected.description || "") &&
-      normalizedDraftContent === (selected.content || "") &&
-      JSON.stringify([...selectedTagIDs].sort()) === JSON.stringify([...(selected.default_tag_ids || [])].sort())
+      draft.name === (selectedTemplate.name || "") &&
+      draft.description === (selectedTemplate.description || "") &&
+      normalizedDraftContent === (selectedTemplate.content || "") &&
+      JSON.stringify([...selectedTagIDs].sort()) === JSON.stringify([...(selectedTemplate.default_tag_ids || [])].sort())
     );
-  }, [draft.description, draft.name, normalizedDraftContent, selected, selectedTagIDs]);
+  }, [draft.description, draft.name, normalizedDraftContent, selectedTagIDs, selectedTemplate]);
 
   const loadTemplates = useCallback(async () => {
     setLoading(true);
     try {
-      const items = await apiFetch<Template[]>("/templates");
+      const items = await apiFetch<TemplateMeta[]>("/templates/meta");
       const next = items || [];
       setTemplates(next);
       if (next.length === 0) {
@@ -126,20 +127,37 @@ export default function TemplatesPage() {
   }, [loadTemplates]);
 
   useEffect(() => {
-    if (!selected) {
+    const loadSelectedTemplate = async () => {
+      if (!selectedID) {
+        setSelectedTemplate(null);
+        return;
+      }
+      try {
+        const item = await apiFetch<Template>(`/templates/${selectedID}`);
+        setSelectedTemplate(item);
+      } catch (err) {
+        toast({ description: err instanceof Error ? err.message : "Failed to load template detail", variant: "error" });
+        setSelectedTemplate(null);
+      }
+    };
+    void loadSelectedTemplate();
+  }, [selectedID, toast]);
+
+  useEffect(() => {
+    if (!selectedTemplate) {
       setDraft(emptyDraft);
       setSelectedTagIDs([]);
       setShowTagInput(false);
       return;
     }
     setDraft({
-      name: selected.name || "",
-      description: selected.description || "",
-      content: selected.content || "",
+      name: selectedTemplate.name || "",
+      description: selectedTemplate.description || "",
+      content: selectedTemplate.content || "",
     });
-    setSelectedTagIDs(selected.default_tag_ids || []);
+    setSelectedTagIDs(selectedTemplate.default_tag_ids || []);
     setShowTagInput(false);
-  }, [selected]);
+  }, [selectedTemplate]);
 
   useEffect(() => {
     const missingIDs = selectedTagIDs.filter((id) => !allTags.some((tag) => tag.id === id));
@@ -172,9 +190,7 @@ export default function TemplatesPage() {
         body: JSON.stringify({
           name: "New Template",
           description: "",
-          category: "",
           content: "# New Template\n",
-          variables: [],
           default_tag_ids: [],
         }),
       });
@@ -186,17 +202,15 @@ export default function TemplatesPage() {
   };
 
   const saveTemplate = async () => {
-    if (!selected) return false;
+    if (!selectedTemplate) return false;
     const normalizedContent = normalizedDraftContent;
     try {
-      await apiFetch(`/templates/${selected.id}`, {
+      await apiFetch(`/templates/${selectedTemplate.id}`, {
         method: "PUT",
         body: JSON.stringify({
           name: draft.name,
           description: draft.description,
-          category: "",
           content: normalizedContent,
-          variables: [],
           default_tag_ids: selectedTagIDs,
         }),
       });
@@ -205,7 +219,7 @@ export default function TemplatesPage() {
       }
       toast({ description: "Template saved." });
       await loadTemplates();
-      setSelectedID(selected.id);
+      setSelectedID(selectedTemplate.id);
       return true;
     } catch (err) {
       toast({ description: err instanceof Error ? err.message : "Failed to save template", variant: "error" });
@@ -284,16 +298,16 @@ export default function TemplatesPage() {
   };
 
   const prepareUseTemplate = () => {
-    if (!selected) return;
+    if (!selected || !selectedTemplate) return;
     void (async () => {
       const normalizedContent = normalizeTemplatePlaceholders(draft.content);
       if (normalizedContent !== draft.content) {
         setDraft((prev) => ({ ...prev, content: normalizedContent }));
       }
       const changed =
-        draft.name !== (selected.name || "") ||
-        draft.description !== (selected.description || "") ||
-        normalizedContent !== (selected.content || "");
+        draft.name !== (selectedTemplate.name || "") ||
+        draft.description !== (selectedTemplate.description || "") ||
+        normalizedContent !== (selectedTemplate.content || "");
       if (changed) {
         const ok = await saveTemplate();
         if (!ok) return;
@@ -314,7 +328,7 @@ export default function TemplatesPage() {
     try {
       const doc = await apiFetch<Document>(`/templates/${selected.id}/create`, {
         method: "POST",
-        body: JSON.stringify({ variables, preview_content: previewContent }),
+        body: JSON.stringify({ variables }),
       });
       router.push(`/docs/${doc.id}`);
     } catch (err) {

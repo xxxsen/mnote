@@ -22,8 +22,6 @@ type CreateTemplateInput struct {
 	Name          string
 	Description   string
 	Content       string
-	Category      string
-	Variables     []string
 	DefaultTagIDs []string
 }
 
@@ -31,8 +29,6 @@ type UpdateTemplateInput struct {
 	Name          string
 	Description   string
 	Content       string
-	Category      string
-	Variables     []string
 	DefaultTagIDs []string
 }
 
@@ -40,7 +36,6 @@ type CreateDocumentFromTemplateInput struct {
 	TemplateID string
 	Title      string
 	Variables  map[string]string
-	Preview    string
 }
 
 func NewTemplateService(templates *repo.TemplateRepo, documents *DocumentService, tags *repo.TagRepo) *TemplateService {
@@ -49,6 +44,14 @@ func NewTemplateService(templates *repo.TemplateRepo, documents *DocumentService
 
 func (s *TemplateService) List(ctx context.Context, userID string) ([]model.Template, error) {
 	return s.templates.ListByUser(ctx, userID)
+}
+
+func (s *TemplateService) ListMeta(ctx context.Context, userID string) ([]model.TemplateMeta, error) {
+	return s.templates.ListMetaByUser(ctx, userID)
+}
+
+func (s *TemplateService) Get(ctx context.Context, userID, templateID string) (*model.Template, error) {
+	return s.templates.GetByID(ctx, userID, templateID)
 }
 
 func (s *TemplateService) Create(ctx context.Context, userID string, input CreateTemplateInput) (*model.Template, error) {
@@ -63,8 +66,6 @@ func (s *TemplateService) Create(ctx context.Context, userID string, input Creat
 		Name:          strings.TrimSpace(input.Name),
 		Description:   strings.TrimSpace(input.Description),
 		Content:       normalizedContent,
-		Category:      strings.TrimSpace(input.Category),
-		Variables:     extractTemplateVariables(normalizedContent),
 		DefaultTagIDs: uniqueStringSlice(input.DefaultTagIDs),
 		BuiltIn:       0,
 		Ctime:         now,
@@ -87,8 +88,6 @@ func (s *TemplateService) Update(ctx context.Context, userID, templateID string,
 		Name:          strings.TrimSpace(input.Name),
 		Description:   strings.TrimSpace(input.Description),
 		Content:       normalizedContent,
-		Category:      strings.TrimSpace(input.Category),
-		Variables:     extractTemplateVariables(normalizedContent),
 		DefaultTagIDs: uniqueStringSlice(input.DefaultTagIDs),
 		Mtime:         timeutil.NowUnix(),
 	}
@@ -112,10 +111,7 @@ func (s *TemplateService) CreateDocumentFromTemplate(ctx context.Context, userID
 		}
 		variables[key] = strings.TrimSpace(v)
 	}
-	content := strings.TrimSpace(input.Preview)
-	if content == "" {
-		content = applyTemplateVariables(tpl.Content, variables)
-	}
+	content := applyTemplateVariables(tpl.Content, variables)
 	title := strings.TrimSpace(input.Title)
 	if title == "" {
 		title = inferTemplateTitle(content, tpl.Name)
@@ -212,27 +208,6 @@ func inferTemplateTitle(content, fallback string) string {
 		return fallback
 	}
 	return "Untitled"
-}
-
-func extractTemplateVariables(content string) []string {
-	matches := builtInTemplateVarsRegex.FindAllStringSubmatch(content, -1)
-	out := make([]string, 0, len(matches))
-	seen := make(map[string]struct{})
-	for _, match := range matches {
-		if len(match) < 2 {
-			continue
-		}
-		key := strings.ToUpper(strings.TrimSpace(match[1]))
-		if key == "" {
-			continue
-		}
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, key)
-	}
-	return out
 }
 
 func uniqueStringSlice(values []string) []string {

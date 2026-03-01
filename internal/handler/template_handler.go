@@ -20,8 +20,6 @@ type templateRequest struct {
 	Name          string   `json:"name"`
 	Description   string   `json:"description"`
 	Content       string   `json:"content"`
-	Category      string   `json:"category"`
-	Variables     []string `json:"variables"`
 	DefaultTagIDs []string `json:"default_tag_ids"`
 }
 
@@ -40,6 +38,24 @@ func (h *TemplateHandler) List(c *gin.Context) {
 	response.Success(c, items)
 }
 
+func (h *TemplateHandler) ListMeta(c *gin.Context) {
+	items, err := h.templates.ListMeta(c.Request.Context(), getUserID(c))
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
+func (h *TemplateHandler) Get(c *gin.Context) {
+	item, err := h.templates.Get(c.Request.Context(), getUserID(c), c.Param("id"))
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, item)
+}
+
 func (h *TemplateHandler) Create(c *gin.Context) {
 	var req templateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -50,8 +66,6 @@ func (h *TemplateHandler) Create(c *gin.Context) {
 		Name:          req.Name,
 		Description:   req.Description,
 		Content:       req.Content,
-		Category:      req.Category,
-		Variables:     req.Variables,
 		DefaultTagIDs: req.DefaultTagIDs,
 	})
 	if err != nil {
@@ -71,8 +85,6 @@ func (h *TemplateHandler) Update(c *gin.Context) {
 		Name:          req.Name,
 		Description:   req.Description,
 		Content:       req.Content,
-		Category:      req.Category,
-		Variables:     req.Variables,
 		DefaultTagIDs: req.DefaultTagIDs,
 	}); err != nil {
 		handleError(c, err)
@@ -99,7 +111,6 @@ func (h *TemplateHandler) CreateDocument(c *gin.Context) {
 		TemplateID: c.Param("id"),
 		Title:      req.Title,
 		Variables:  req.Variables,
-		Preview:    req.PreviewContent,
 	})
 	if err != nil {
 		handleError(c, err)

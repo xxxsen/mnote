@@ -87,8 +87,17 @@ export interface Template {
   name: string;
   description: string;
   content: string;
-  category: string;
-  variables: string[];
+  default_tag_ids: string[];
+  built_in: number;
+  ctime: number;
+  mtime: number;
+}
+
+export interface TemplateMeta {
+  id: string;
+  user_id?: string;
+  name: string;
+  description: string;
   default_tag_ids: string[];
   built_in: number;
   ctime: number;
