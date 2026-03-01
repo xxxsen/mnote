@@ -360,67 +360,71 @@ export default function TemplatesPage() {
           </Button>
           <h1 className="text-xl font-bold">Templates</h1>
         </div>
-        <Button onClick={() => void createTemplate()}>
-          <Plus className="h-4 w-4 mr-2" />
-          New Template
-        </Button>
       </div>
 
       <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-[320px_1fr] gap-4">
-        <div className="border border-border rounded-xl p-2 bg-card max-h-[75vh] overflow-y-auto">
+        <div className="border border-border rounded-xl p-4 bg-card h-[75vh] max-h-[calc(100vh-10rem)] overflow-hidden flex flex-col">
           <div className="relative p-1 mb-2 border-b border-border">
-            <Search className="h-3.5 w-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-            <Input className="pl-8 h-8" placeholder="Search template title..." value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Search className="h-3.5 w-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+              <Input className="pl-8 h-8" placeholder="Search template title..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          {loading ? (
-            <div className="text-sm text-muted-foreground p-3">Loading...</div>
-          ) : filteredTemplates.length === 0 ? (
-            <div className="text-sm text-muted-foreground p-3">No templates.</div>
-          ) : (
-            filteredTemplates.map((item) => (
-              <div
-                key={item.id}
-                onClick={() => setSelectedID(item.id)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setSelectedID(item.id);
-                  }
-                }}
-                className={`w-full text-left rounded-lg px-3 py-2 mb-1 border ${item.id === selectedID ? "border-primary bg-primary/5" : "border-transparent hover:bg-muted"}`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0 text-left">
-                    <div className="text-sm font-semibold truncate">{item.name}</div>
-                    <div className="text-xs text-muted-foreground truncate">{item.description || "No description"}</div>
+          <div className="flex-1 min-h-0 overflow-y-auto pr-2" style={{ scrollbarGutter: "stable" }}>
+            {loading ? (
+              <div className="text-sm text-muted-foreground p-3">Loading...</div>
+            ) : filteredTemplates.length === 0 ? (
+              <div className="text-sm text-muted-foreground p-3">No templates.</div>
+            ) : (
+              filteredTemplates.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => setSelectedID(item.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedID(item.id);
+                    }
+                  }}
+                  className={`w-full text-left rounded-lg px-3 py-2 mb-1 border ${item.id === selectedID ? "border-primary bg-primary/5" : "border-transparent hover:bg-muted"}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 text-left">
+                      <div className="text-sm font-semibold truncate">{item.name}</div>
+                      <div className="text-xs text-muted-foreground truncate">{item.description || "No description"}</div>
+                    </div>
+                    {item.id === selectedID && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6 shrink-0 self-center"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void deleteTemplate(item.id, item.name);
+                        }}
+                        title="Delete template"
+                      >
+                        <X className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    )}
                   </div>
-                  {item.id === selectedID && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 shrink-0 self-center"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void deleteTemplate(item.id, item.name);
-                      }}
-                      title="Delete template"
-                    >
-                      <X className="h-3.5 w-3.5 text-destructive" />
-                    </Button>
-                  )}
                 </div>
-              </div>
-            ))
-          )}
+              ))
+            )}
+          </div>
+          <div className="pt-2 mt-auto border-t border-border">
+            <Button onClick={() => void createTemplate()} className="w-full">
+              <Plus className="h-4 w-4 mr-2" />
+              New Template
+            </Button>
+          </div>
         </div>
 
-        <div className="border border-border rounded-xl p-4 bg-card space-y-3 min-h-[75vh]">
+        <div className="border border-border rounded-xl p-4 bg-card h-[75vh] max-h-[calc(100vh-10rem)] overflow-hidden flex flex-col">
           {!selected ? (
             <div className="text-sm text-muted-foreground">Select a template.</div>
           ) : (
-            <>
+            <div className="flex flex-col gap-3 flex-1 min-h-0">
               <div>
                 <label className="text-xs text-muted-foreground">Name</label>
                 <Input value={draft.name} onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))} />
@@ -493,10 +497,10 @@ export default function TemplatesPage() {
                   <div className="ml-auto shrink-0 text-[11px] text-muted-foreground">{visibleSelectedTags.length}/{MAX_TAGS}</div>
                 </div>
               </div>
-              <div>
+              <div className="flex-1 min-h-0 flex flex-col">
                 <label className="text-xs text-muted-foreground">Content</label>
                 <textarea
-                  className="w-full min-h-[380px] rounded-md border border-border bg-background p-3 text-sm font-mono"
+                  className="w-full h-full min-h-[240px] rounded-md border border-border bg-background p-3 text-sm font-mono"
                   value={draft.content}
                   onChange={(e) => setDraft((prev) => ({ ...prev, content: e.target.value }))}
                   onBlur={() => {
@@ -507,7 +511,7 @@ export default function TemplatesPage() {
                   }}
                 />
               </div>
-              <div className="flex flex-wrap gap-2 justify-between">
+              <div className="flex flex-wrap gap-2 justify-between mt-auto pt-2 border-t border-border">
                 <Button onClick={prepareUseTemplate} disabled={creatingDoc}>
                   <Copy className="h-4 w-4 mr-2" />
                   Use Template
@@ -517,7 +521,7 @@ export default function TemplatesPage() {
                   Save
                 </Button>
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>
