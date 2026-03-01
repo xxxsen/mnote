@@ -5,8 +5,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/xxxsen/mnote/internal/pkg/errcode"
-	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 	"github.com/xxxsen/mnote/internal/service"
 )
@@ -28,6 +26,9 @@ func (h *AssetHandler) List(c *gin.Context) {
 			limit = uint(parsed)
 		}
 	}
+	if limit > 200 {
+		limit = 200
+	}
 	if value := c.Query("offset"); value != "" {
 		if parsed, err := strconv.Atoi(value); err == nil && parsed >= 0 {
 			offset = uint(parsed)
@@ -48,18 +49,4 @@ func (h *AssetHandler) References(c *gin.Context) {
 		return
 	}
 	response.Success(c, items)
-}
-
-func (h *AssetHandler) Delete(c *gin.Context) {
-	force := c.Query("force") == "1"
-	err := h.assets.Delete(c.Request.Context(), getUserID(c), c.Param("id"), force)
-	if err != nil {
-		if err == appErr.ErrConflict {
-			response.Error(c, errcode.ErrConflict, "asset is still referenced by documents")
-			return
-		}
-		handleError(c, err)
-		return
-	}
-	response.Success(c, gin.H{"ok": true})
 }

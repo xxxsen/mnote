@@ -51,7 +51,7 @@ export default function AssetsPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set("limit", "300");
+      params.set("limit", "200");
       const items = await apiFetch<Asset[]>(`/assets?${params.toString()}`);
       const next = items || [];
       setAssets(next);

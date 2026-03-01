@@ -131,22 +131,29 @@ func (r *AssetRepo) ListByFileKeys(ctx context.Context, userID string, fileKeys 
 	return items, rows.Err()
 }
 
-func (r *AssetRepo) DeleteByID(ctx context.Context, userID, assetID string) error {
-	sqlStr, args, err := builder.BuildDelete("assets", map[string]interface{}{"id": assetID, "user_id": userID})
+func (r *AssetRepo) ListByURLs(ctx context.Context, userID string, urls []string) ([]model.Asset, error) {
+	if len(urls) == 0 {
+		return []model.Asset{}, nil
+	}
+	sqlStr, args, err := builder.BuildSelect("assets", map[string]interface{}{"user_id": userID, "url in": urls}, []string{
+		"id", "user_id", "file_key", "url", "name", "content_type", "size", "ctime", "mtime",
+	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	res, err := r.db.ExecContext(ctx, sqlStr, args...)
+	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return err
+	defer func() { _ = rows.Close() }()
+	items := make([]model.Asset, 0)
+	for rows.Next() {
+		var item model.Asset
+		if err := rows.Scan(&item.ID, &item.UserID, &item.FileKey, &item.URL, &item.Name, &item.ContentType, &item.Size, &item.Ctime, &item.Mtime); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
 	}
-	if affected == 0 {
-		return appErr.ErrNotFound
-	}
-	return nil
+	return items, rows.Err()
 }

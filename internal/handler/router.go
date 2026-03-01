@@ -97,7 +97,6 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.POST("/templates/:id/create", deps.Templates.CreateDocument)
 	authGroup.GET("/assets", deps.Assets.List)
 	authGroup.GET("/assets/:id/references", deps.Assets.References)
-	authGroup.DELETE("/assets/:id", deps.Assets.Delete)
 
 	api.GET("/public/share/:token", deps.Shares.PublicGet)
 	api.GET("/public/share/:token/comments", deps.Shares.PublicListComments)

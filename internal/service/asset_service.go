@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/xxxsen/mnote/internal/model"
-	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
 	"github.com/xxxsen/mnote/internal/repo"
 )
@@ -56,12 +55,24 @@ func (s *AssetService) SyncDocumentReferences(ctx context.Context, userID, docID
 		return nil
 	}
 	keys := extractFileKeys(content)
-	if len(keys) == 0 {
+	urls := extractAssetURLs(content)
+	if len(keys) == 0 && len(urls) == 0 {
 		return s.docAssets.ReplaceByDocument(ctx, userID, docID, []string{}, timeutil.NowUnix())
 	}
-	assets, err := s.assets.ListByFileKeys(ctx, userID, keys)
-	if err != nil {
-		return err
+	assets := make([]model.Asset, 0)
+	if len(keys) > 0 {
+		items, err := s.assets.ListByFileKeys(ctx, userID, keys)
+		if err != nil {
+			return err
+		}
+		assets = append(assets, items...)
+	}
+	if len(urls) > 0 {
+		items, err := s.assets.ListByURLs(ctx, userID, urls)
+		if err != nil {
+			return err
+		}
+		assets = append(assets, items...)
 	}
 	idSet := make(map[string]struct{}, len(assets))
 	assetIDs := make([]string, 0, len(assets))
@@ -111,17 +122,6 @@ func (s *AssetService) ListReferences(ctx context.Context, userID, assetID strin
 	return result, nil
 }
 
-func (s *AssetService) Delete(ctx context.Context, userID, assetID string, force bool) error {
-	refCount, err := s.docAssets.CountByAsset(ctx, userID, assetID)
-	if err != nil {
-		return err
-	}
-	if refCount > 0 && !force {
-		return appErr.ErrConflict
-	}
-	return s.assets.DeleteByID(ctx, userID, assetID)
-}
-
 func (s *AssetService) RemoveDocumentReferences(ctx context.Context, userID, docID string) error {
 	if s == nil || s.docAssets == nil {
 		return nil
@@ -130,6 +130,7 @@ func (s *AssetService) RemoveDocumentReferences(ctx context.Context, userID, doc
 }
 
 var fileKeyRegex = regexp.MustCompile(`(?:https?://[^\s)]+)?/api/v1/files/([a-zA-Z0-9._\-]+)`)
+var assetURLRegex = regexp.MustCompile(`https?://[^\s)"'>]+`)
 
 func extractFileKeys(content string) []string {
 	matches := fileKeyRegex.FindAllStringSubmatch(content, -1)
@@ -153,4 +154,25 @@ func extractFileKeys(content string) []string {
 		keys = append(keys, key)
 	}
 	return keys
+}
+
+func extractAssetURLs(content string) []string {
+	matches := assetURLRegex.FindAllString(content, -1)
+	if len(matches) == 0 {
+		return []string{}
+	}
+	urls := make([]string, 0, len(matches))
+	seen := make(map[string]struct{})
+	for _, raw := range matches {
+		u := strings.TrimSpace(raw)
+		if u == "" {
+			continue
+		}
+		if _, ok := seen[u]; ok {
+			continue
+		}
+		seen[u] = struct{}{}
+		urls = append(urls, u)
+	}
+	return urls
 }

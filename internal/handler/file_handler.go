@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/xxxsen/common/logutil"
+	"go.uber.org/zap"
 
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/middleware"
@@ -55,6 +57,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 
 	reader, contentType, err := ensureReadSeekCloser(opened)
 	if err != nil {
+		_ = opened.Close()
 		response.Error(c, errcode.ErrInvalidFile, "failed to read file")
 		return
 	}
@@ -83,7 +86,17 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		fileURL = "/api/v1/files/" + key
 	}
 	if h.assets != nil && userID != "" {
-		_ = h.assets.RecordUpload(c.Request.Context(), userID, key, fileURL, file.Filename, contentType, file.Size)
+		if err := h.assets.RecordUpload(c.Request.Context(), userID, key, fileURL, file.Filename, contentType, file.Size); err != nil {
+			logutil.GetLogger(c.Request.Context()).Error(
+				"record asset upload failed",
+				zap.String("user_id", userID),
+				zap.String("file_key", key),
+				zap.String("file_name", file.Filename),
+				zap.Error(err),
+			)
+			response.Error(c, errcode.ErrUploadFailed, "upload succeeded but failed to index asset")
+			return
+		}
 	}
 	response.Success(c, UploadResponse{
 		URL:         fileURL,
