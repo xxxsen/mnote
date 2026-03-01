@@ -9,6 +9,14 @@ type UseShareLinkOptions = {
   onError?: (err: unknown) => void;
 };
 
+export type ShareConfigPayload = {
+  expires_at: number;
+  password?: string;
+  clear_password?: boolean;
+  permission: "view" | "comment";
+  allow_download: boolean;
+};
+
 export function useShareLink({ docId, onError }: UseShareLinkOptions) {
   const documentActions = useDocumentActions(docId);
   const [shareUrl, setShareUrl] = useState("");
@@ -41,6 +49,19 @@ export function useShareLink({ docId, onError }: UseShareLinkOptions) {
       onError?.(err);
     }
   }, [documentActions, onError]);
+
+  const updateShareConfig = useCallback(
+    async (payload: ShareConfigPayload) => {
+      try {
+        const res = await documentActions.updateShareConfig(payload);
+        setActiveShare(res);
+        setShareUrl(`${window.location.origin}/share/${res.token}`);
+      } catch (err) {
+        onError?.(err);
+      }
+    },
+    [documentActions, onError]
+  );
 
   const handleRevokeShare = useCallback(async () => {
     try {
@@ -86,6 +107,7 @@ export function useShareLink({ docId, onError }: UseShareLinkOptions) {
     copied,
     handleShare,
     loadShare,
+    updateShareConfig,
     handleRevokeShare,
     handleCopyLink,
   };

@@ -93,7 +93,7 @@ func (s *ExportService) ExportNotesZip(ctx context.Context, userID string) (stri
 	if err != nil {
 		return "", err
 	}
-	defer tmp.Close()
+	defer func() { _ = tmp.Close() }()
 	writer := zip.NewWriter(tmp)
 	nameCounts := make(map[string]int)
 	for _, doc := range docs {

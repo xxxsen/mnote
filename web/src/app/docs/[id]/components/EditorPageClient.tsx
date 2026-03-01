@@ -249,7 +249,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     previewLoading,
     handleOpenPreview,
   } = preview;
-  const { shareUrl, activeShare, copied, handleShare, loadShare, handleRevokeShare, handleCopyLink } = share;
+  const { shareUrl, activeShare, copied, handleShare, loadShare, updateShareConfig, handleRevokeShare, handleCopyLink } = share;
   const {
     showQuickOpen,
     quickOpenQuery,
@@ -296,6 +296,12 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const [wikilinkLoading, setWikilinkLoading] = useState(false);
   const wikilinkTimerRef = useRef<number | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [shareExpiresAtInput, setShareExpiresAtInput] = useState("");
+  const [shareExpiresAtUnix, setShareExpiresAtUnix] = useState(0);
+  const [sharePasswordInput, setSharePasswordInput] = useState("");
+  const [shareConfigSaving, setShareConfigSaving] = useState(false);
+  const [sharePermission, setSharePermission] = useState<"view" | "comment">("view");
+  const [shareAllowDownload, setShareAllowDownload] = useState(true);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
 
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
@@ -1221,6 +1227,29 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const hasMentionsPanel = backlinks.length > 0;
   const hasGraphPanel = backlinks.length > 0 || outboundLinks.length > 0;
   const hasSummaryPanel = summary.trim().length > 0;
+  useEffect(() => {
+    if (!activeShare) {
+      setShareExpiresAtInput("");
+      setShareExpiresAtUnix(0);
+      setSharePasswordInput("");
+      setSharePermission("view");
+      setShareAllowDownload(true);
+      return;
+    }
+    if (activeShare.expires_at > 0) {
+      const local = new Date(activeShare.expires_at * 1000 - new Date().getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 10);
+      setShareExpiresAtInput(local);
+      setShareExpiresAtUnix(activeShare.expires_at);
+    } else {
+      setShareExpiresAtInput("");
+      setShareExpiresAtUnix(0);
+    }
+    setSharePermission(activeShare.permission === 2 ? "comment" : "view");
+    setShareAllowDownload(activeShare.allow_download === 1);
+    setSharePasswordInput(activeShare.password || "");
+  }, [activeShare]);
   const availableFloatingTabs = useMemo(() => {
     const tabs: Array<"toc" | "mentions" | "graph" | "summary"> = [];
     if (hasTocPanel) tabs.push("toc");
@@ -1354,6 +1383,61 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
+
+  const saveShareConfig = useCallback(async (overrides?: Partial<{
+    expires_at: number;
+    permission: "view" | "comment";
+    allow_download: boolean;
+    password: string;
+    clear_password: boolean;
+  }>) => {
+    if (!activeShare) return;
+    try {
+      setShareConfigSaving(true);
+      const password = overrides?.password;
+      const clearPassword = overrides?.clear_password === true;
+      await updateShareConfig({
+        expires_at: overrides?.expires_at ?? shareExpiresAtUnix,
+        permission: overrides?.permission ?? sharePermission,
+        allow_download: overrides?.allow_download ?? shareAllowDownload,
+        password: password && password.trim() ? password.trim() : undefined,
+        clear_password: clearPassword || undefined,
+      });
+      if (clearPassword) {
+        setSharePasswordInput("");
+      }
+    } finally {
+      setShareConfigSaving(false);
+    }
+  }, [activeShare, shareAllowDownload, shareExpiresAtUnix, sharePermission, updateShareConfig]);
+
+  const resolveShareExpireTs = useCallback((rawValue: string): number => {
+    const raw = rawValue.trim();
+    if (!raw) return 0;
+
+    const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!dateOnly) return 0;
+    const year = Number(dateOnly[1]);
+    const month = Number(dateOnly[2]);
+    const day = Number(dateOnly[3]);
+    // Unified cross-browser behavior: selected day expires at local 23:59:59.
+    const ts = Math.floor(new Date(year, month - 1, day, 23, 59, 59, 0).getTime() / 1000);
+    return Number.isFinite(ts) && ts > 0 ? ts : 0;
+  }, []);
+
+  const handleShareExpireAtChange = useCallback((next: string) => {
+    setShareExpiresAtInput(next);
+    if (!next.trim()) {
+      setShareExpiresAtUnix(0);
+      void saveShareConfig({ expires_at: 0 });
+      return;
+    }
+    const ts = resolveShareExpireTs(next);
+    if (ts > 0) {
+      setShareExpiresAtUnix(ts);
+      void saveShareConfig({ expires_at: ts });
+    }
+  }, [resolveShareExpireTs, saveShareConfig]);
 
   const loadVersions = async () => {
     try {
@@ -1694,6 +1778,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         /* Hide Mermaid internal error messages */
         #mermaid-error-box, .mermaid-error-overlay, [id^="mermaid-error"] { display: none !important; }
         .mermaid-container > svg[id^="mermaid-"] { max-width: 100%; height: auto; }
+
       `}</style>
       <EditorHeader
         router={router}
@@ -2125,6 +2210,94 @@ here is the body of note.`}
                         <div className="flex items-center gap-2">
                           <Check className="h-3.5 w-3.5 text-primary" />
                           <span className="text-[10px] font-bold">COPIED TO CLIPBOARD</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {activeShare && (
+                    <div className="space-y-3 rounded-lg border border-border p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Share Settings</div>
+                        {shareConfigSaving && <div className="text-[10px] text-muted-foreground">Saving...</div>}
+                      </div>
+                      <div className="grid grid-cols-[84px_minmax(0,1fr)] items-center gap-x-2 gap-y-2">
+                        <div className="text-[11px] text-muted-foreground">Expire At</div>
+                        <div className="min-w-0 flex items-center gap-1.5">
+                          <input
+                            type="date"
+                            value={shareExpiresAtInput}
+                            onChange={(e) => handleShareExpireAtChange(e.target.value)}
+                            onBlur={(e) => handleShareExpireAtChange(e.target.value)}
+                            className="h-8 w-full min-w-0 rounded-md border border-border bg-background px-2 text-xs"
+                          />
+                        </div>
+
+                        <div className="text-[11px] text-muted-foreground">Permission</div>
+                        <select
+                          value={sharePermission}
+                          onChange={(e) => {
+                            const next = e.target.value as "view" | "comment";
+                            setSharePermission(next);
+                            void saveShareConfig({ permission: next });
+                          }}
+                          className="h-8 w-full min-w-0 rounded-md border border-border bg-background px-2 text-xs"
+                        >
+                          <option value="view">View</option>
+                          <option value="comment">Comment</option>
+                        </select>
+
+                        <div className="text-[11px] text-muted-foreground">Allow Download</div>
+                        <label className="inline-flex items-center h-8">
+                          <input
+                            type="checkbox"
+                            checked={shareAllowDownload}
+                            onChange={(e) => {
+                              const next = e.target.checked;
+                              setShareAllowDownload(next);
+                              void saveShareConfig({ allow_download: next });
+                            }}
+                          />
+                        </label>
+
+                        <div className="text-[11px] text-muted-foreground">Password</div>
+                        <div className="min-w-0 relative">
+                          <input
+                            type="text"
+                            value={sharePasswordInput}
+                            maxLength={6}
+                            inputMode="text"
+                            autoComplete="off"
+                            onChange={(e) => {
+                              const sanitized = e.target.value.replace(/[^A-Za-z0-9]/g, "").slice(0, 6);
+                              setSharePasswordInput(sanitized);
+                            }}
+                            onBlur={() => {
+                              const next = sharePasswordInput.trim();
+                              if (!next) return;
+                              void saveShareConfig({ password: next });
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                const next = sharePasswordInput.trim();
+                                if (!next) return;
+                                void saveShareConfig({ password: next });
+                              }
+                            }}
+                            placeholder="Set password"
+                            className="h-8 w-full min-w-0 rounded-md border border-border bg-background px-2 pr-9 text-xs"
+                          />
+                          <button
+                            type="button"
+                            className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                            onClick={() => {
+                              setSharePasswordInput("");
+                              void saveShareConfig({ clear_password: true });
+                            }}
+                            title="Clear password"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                       </div>
                     </div>

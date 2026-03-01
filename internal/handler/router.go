@@ -21,6 +21,8 @@ type RouterDeps struct {
 	SavedViews *SavedViewHandler
 	AI         *AIHandler
 	Import     *ImportHandler
+	Templates  *TemplateHandler
+	Assets     *AssetHandler
 	JWTSecret  []byte
 }
 
@@ -56,6 +58,7 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.GET("/documents/:id/versions/:version", deps.Versions.Get)
 
 	authGroup.POST("/documents/:id/share", deps.Shares.Create)
+	authGroup.PUT("/documents/:id/share", deps.Shares.UpdateConfig)
 	authGroup.GET("/documents/:id/share", deps.Shares.GetActive)
 	authGroup.DELETE("/documents/:id/share", deps.Shares.Revoke)
 	authGroup.GET("/shares", deps.Shares.List)
@@ -87,7 +90,19 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.GET("/import/notes/:job_id/preview", deps.Import.NotesPreview)
 	authGroup.POST("/import/notes/:job_id/confirm", deps.Import.NotesConfirm)
 	authGroup.GET("/import/notes/:job_id/status", deps.Import.NotesStatus)
+	authGroup.GET("/templates", deps.Templates.List)
+	authGroup.GET("/templates/meta", deps.Templates.ListMeta)
+	authGroup.GET("/templates/:id", deps.Templates.Get)
+	authGroup.POST("/templates", deps.Templates.Create)
+	authGroup.PUT("/templates/:id", deps.Templates.Update)
+	authGroup.DELETE("/templates/:id", deps.Templates.Delete)
+	authGroup.POST("/templates/:id/create", deps.Templates.CreateDocument)
+	authGroup.GET("/assets", deps.Assets.List)
+	authGroup.GET("/assets/:id/references", deps.Assets.References)
 
 	api.GET("/public/share/:token", deps.Shares.PublicGet)
+	api.GET("/public/share/:token/comments", deps.Shares.PublicListComments)
+	api.GET("/public/share/:token/comments/:comment_id/replies", deps.Shares.PublicListReplies)
+	api.POST("/public/share/:token/comments", middleware.OptionalJWTAuth(deps.JWTSecret), middleware.RateLimit(10*time.Second), deps.Shares.CreateComment)
 	api.GET("/files/:key", deps.Files.Get)
 }

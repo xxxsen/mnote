@@ -9,16 +9,20 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/xxxsen/common/logutil"
+	"go.uber.org/zap"
 
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/middleware"
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
+	"github.com/xxxsen/mnote/internal/service"
 )
 
 type FileHandler struct {
 	store         filestore.Store
 	maxUploadSize int64
+	assets        *service.AssetService
 }
 
 type UploadResponse struct {
@@ -29,6 +33,10 @@ type UploadResponse struct {
 
 func NewFileHandler(store filestore.Store, maxUploadSize int64) *FileHandler {
 	return &FileHandler{store: store, maxUploadSize: maxUploadSize}
+}
+
+func (h *FileHandler) SetAssetService(assets *service.AssetService) {
+	h.assets = assets
 }
 
 func (h *FileHandler) Upload(c *gin.Context) {
@@ -49,10 +57,11 @@ func (h *FileHandler) Upload(c *gin.Context) {
 
 	reader, contentType, err := ensureReadSeekCloser(opened)
 	if err != nil {
+		_ = opened.Close()
 		response.Error(c, errcode.ErrInvalidFile, "failed to read file")
 		return
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	if contentType == "application/octet-stream" {
 		if extType := mime.TypeByExtension(filepath.Ext(file.Filename)); extType != "" {
@@ -76,6 +85,19 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	if !strings.HasPrefix(fileURL, "http://") && !strings.HasPrefix(fileURL, "https://") {
 		fileURL = "/api/v1/files/" + key
 	}
+	if h.assets != nil && userID != "" {
+		if err := h.assets.RecordUpload(c.Request.Context(), userID, key, fileURL, file.Filename, contentType, file.Size); err != nil {
+			logutil.GetLogger(c.Request.Context()).Error(
+				"record asset upload failed",
+				zap.String("user_id", userID),
+				zap.String("file_key", key),
+				zap.String("file_name", file.Filename),
+				zap.Error(err),
+			)
+			response.Error(c, errcode.ErrUploadFailed, "upload succeeded but failed to index asset")
+			return
+		}
+	}
 	response.Success(c, UploadResponse{
 		URL:         fileURL,
 		Name:        file.Filename,
@@ -94,7 +116,7 @@ func (h *FileHandler) Get(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	contentType := mime.TypeByExtension(filepath.Ext(key))
 	if contentType == "" || contentType == "application/octet-stream" {
 		if seeker, ok := file.(io.ReadSeeker); ok {

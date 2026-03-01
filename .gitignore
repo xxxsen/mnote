@@ -13,3 +13,4 @@ __debug_bin*
 /sample
 web/public/yaegi.wasm
 /mnote
+/.cache

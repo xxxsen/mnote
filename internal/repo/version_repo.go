@@ -54,7 +54,7 @@ func (r *VersionRepo) GetLatestVersion(ctx context.Context, userID, docID string
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return 0, appErr.ErrNotFound
 	}
@@ -80,7 +80,7 @@ func (r *VersionRepo) List(ctx context.Context, userID, docID string) ([]model.D
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	versions := make([]model.DocumentVersion, 0)
 	for rows.Next() {
 		var v model.DocumentVersion
@@ -107,7 +107,7 @@ func (r *VersionRepo) ListSummaries(ctx context.Context, userID, docID string) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	versions := make([]model.DocumentVersionSummary, 0)
 	for rows.Next() {
 		var v model.DocumentVersionSummary
@@ -133,7 +133,7 @@ func (r *VersionRepo) ListByUser(ctx context.Context, userID string) ([]model.Do
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	versions := make([]model.DocumentVersion, 0)
 	for rows.Next() {
 		var v model.DocumentVersion
@@ -160,7 +160,7 @@ func (r *VersionRepo) GetByVersion(ctx context.Context, userID, docID string, ve
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, appErr.ErrNotFound
 	}

@@ -145,7 +145,10 @@ func (c *Chunker) Chunk(ctx context.Context, markdown string) ([]*model.ChunkEmb
 			}
 
 		default:
-			txt := extractText(n, reader.Source())
+			txt, err := extractText(n, reader.Source())
+			if err != nil {
+				return nil, err
+			}
 			if txt == "" {
 				continue
 			}
@@ -187,18 +190,24 @@ func estimateTokens(text string) int {
 	return count
 }
 
-func extractText(n ast.Node, source []byte) string {
-	var sb strings.Builder
-	ast.Walk(n, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+func extractText(n ast.Node, source []byte) (string, error) {
+	buf := make([]byte, 0, 256)
+	if err := ast.Walk(n, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
 		if node.Type() == ast.TypeBlock || node.Type() == ast.TypeInline {
 			if node.Kind() == ast.KindText {
-				sb.Write(node.(*ast.Text).Segment.Value(source))
+				textNode, ok := node.(*ast.Text)
+				if !ok {
+					return ast.WalkContinue, nil
+				}
+				buf = append(buf, textNode.Segment.Value(source)...)
 			}
 		}
 		return ast.WalkContinue, nil
-	})
-	return strings.TrimSpace(sb.String())
+	}); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(buf)), nil
 }

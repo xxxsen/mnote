@@ -124,7 +124,7 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open config: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var cfg Config
 	if err := json.NewDecoder(file).Decode(&cfg); err != nil {

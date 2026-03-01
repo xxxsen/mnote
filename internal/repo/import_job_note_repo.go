@@ -62,7 +62,7 @@ func (r *ImportJobNoteRepo) ListByJob(ctx context.Context, userID, jobID string)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []model.ImportJobNote
 	for rows.Next() {
 		var note model.ImportJobNote
@@ -104,7 +104,7 @@ func (r *ImportJobNoteRepo) ListByJobLimit(ctx context.Context, userID, jobID st
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []model.ImportJobNote
 	for rows.Next() {
 		var note model.ImportJobNote
@@ -145,7 +145,7 @@ func (r *ImportJobNoteRepo) ListTitles(ctx context.Context, userID, jobID string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var titles []string
 	for rows.Next() {
 		var title string

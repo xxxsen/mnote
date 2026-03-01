@@ -70,7 +70,7 @@ func (p *geminiProvider) Embed(ctx context.Context, model string, text string, t
 	if err != nil {
 		return nil, err
 	}
-	if resp.Embeddings == nil || len(resp.Embeddings) == 0 {
+	if len(resp.Embeddings) == 0 {
 		return nil, fmt.Errorf("no embedding values returned")
 	}
 	return resp.Embeddings[0].Values, nil

@@ -53,7 +53,7 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*model.User, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, appErr.ErrNotFound
 	}
@@ -75,7 +75,7 @@ func (r *UserRepo) GetByID(ctx context.Context, userID string) (*model.User, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, appErr.ErrNotFound
 	}

@@ -55,13 +55,11 @@ export class ApiError extends Error {
 
 export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
   const { requireAuth = true, headers = {}, ...rest } = options;
-  
+
   const authHeaders: Record<string, string> = {};
-  if (requireAuth) {
-    const token = getAuthToken();
-    if (token) {
-      authHeaders["Authorization"] = `Bearer ${token}`;
-    }
+  const token = getAuthToken();
+  if (token) {
+    authHeaders["Authorization"] = `Bearer ${token}`;
   }
 
   const res = await fetch(`${API_BASE}${endpoint}`, {

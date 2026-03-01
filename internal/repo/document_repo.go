@@ -180,7 +180,7 @@ func (r *DocumentRepo) GetByID(ctx context.Context, userID, docID string) (*mode
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, appErr.ErrNotFound
 	}
@@ -208,7 +208,7 @@ func (r *DocumentRepo) GetByTitle(ctx context.Context, userID, title string) (*m
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, appErr.ErrNotFound
 	}
@@ -243,7 +243,7 @@ func (r *DocumentRepo) List(ctx context.Context, userID string, starred *int, li
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	docs := make([]model.Document, 0)
 	for rows.Next() {
 		var doc model.Document
@@ -278,7 +278,7 @@ func (r *DocumentRepo) ListByIDs(ctx context.Context, userID string, docIDs []st
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	docs := make([]model.Document, 0)
 	for rows.Next() {
 		var doc model.Document
@@ -337,7 +337,7 @@ func (r *DocumentRepo) SearchLike(ctx context.Context, userID, query, tagID stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	docs := make([]model.Document, 0)
 	for rows.Next() {
 		var doc model.Document
@@ -449,7 +449,7 @@ func (r *DocumentRepo) GetBacklinks(ctx context.Context, userID, targetID string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	docs := make([]model.Document, 0)
 	for rows.Next() {

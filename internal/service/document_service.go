@@ -12,6 +12,7 @@ import (
 
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
+	"github.com/xxxsen/mnote/internal/pkg/password"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
 	"github.com/xxxsen/mnote/internal/repo"
 )
@@ -25,6 +26,7 @@ type DocumentService struct {
 	tagRepo        *repo.TagRepo
 	userRepo       *repo.UserRepo
 	ai             *AIService
+	assets         *AssetService
 	versionMaxKeep int
 }
 
@@ -32,6 +34,10 @@ const minSummaryChars = 100
 
 func NewDocumentService(docs *repo.DocumentRepo, summaries *repo.DocumentSummaryRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo, tagRepo *repo.TagRepo, userRepo *repo.UserRepo, ai *AIService, versionMaxKeep int) *DocumentService {
 	return &DocumentService{docs: docs, summaries: summaries, versions: versions, tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo, ai: ai, versionMaxKeep: versionMaxKeep}
+}
+
+func (s *DocumentService) SetAssetService(assets *AssetService) {
+	s.assets = assets
 }
 
 type DocumentSummary struct {
@@ -42,9 +48,12 @@ type DocumentSummary struct {
 }
 
 type PublicShareDetail struct {
-	Document *model.Document `json:"document"`
-	Author   string          `json:"author"`
-	Tags     []model.Tag     `json:"tags"`
+	Document      *model.Document `json:"document"`
+	Author        string          `json:"author"`
+	Tags          []model.Tag     `json:"tags"`
+	Permission    int             `json:"permission"`
+	AllowDownload int             `json:"allow_download"`
+	ExpiresAt     int64           `json:"expires_at"`
 }
 
 func (s *DocumentService) Search(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error) {
@@ -174,12 +183,15 @@ func (s *DocumentService) ListSharedDocuments(ctx context.Context, userID string
 	results := make([]SharedDocumentSummary, 0, len(items))
 	for _, item := range items {
 		results = append(results, SharedDocumentSummary{
-			ID:      item.ID,
-			Title:   item.Title,
-			Summary: item.Summary,
-			Mtime:   item.Mtime,
-			Token:   item.Token,
-			TagIDs:  tagIDsByDoc[item.ID],
+			ID:            item.ID,
+			Title:         item.Title,
+			Summary:       item.Summary,
+			Mtime:         item.Mtime,
+			Token:         item.Token,
+			TagIDs:        tagIDsByDoc[item.ID],
+			ExpiresAt:     item.ExpiresAt,
+			Permission:    item.Permission,
+			AllowDownload: item.AllowDownload,
 		})
 	}
 	return results, nil
@@ -268,6 +280,11 @@ func (s *DocumentService) Delete(ctx context.Context, userID, docID string) erro
 	if err := s.tags.DeleteByDoc(ctx, userID, docID); err != nil {
 		return err
 	}
+	if s.assets != nil {
+		if err := s.assets.RemoveDocumentReferences(ctx, userID, docID); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -301,18 +318,66 @@ func (s *DocumentService) CreateShare(ctx context.Context, userID, docID string)
 		return nil, err
 	}
 	share := &model.Share{
-		ID:         newID(),
-		UserID:     userID,
-		DocumentID: docID,
-		Token:      newToken(),
-		State:      repo.ShareStateActive,
-		Ctime:      now,
-		Mtime:      now,
+		ID:            newID(),
+		UserID:        userID,
+		DocumentID:    docID,
+		Token:         newToken(),
+		State:         repo.ShareStateActive,
+		ExpiresAt:     0,
+		Permission:    repo.SharePermissionView,
+		AllowDownload: 1,
+		Ctime:         now,
+		Mtime:         now,
 	}
 	if err := s.shares.Create(ctx, share); err != nil {
 		return nil, err
 	}
 	return share, nil
+}
+
+type ShareConfigInput struct {
+	ExpiresAt     int64
+	Password      string
+	ClearPassword bool
+	Permission    int
+	AllowDownload bool
+}
+
+type CreateShareCommentInput struct {
+	Token     string
+	Password  string
+	Author    string
+	ReplyToID string
+	Content   string
+}
+
+func (s *DocumentService) UpdateShareConfig(ctx context.Context, userID, docID string, input ShareConfigInput) (*model.Share, error) {
+	share, err := s.GetActiveShare(ctx, userID, docID)
+	if err != nil {
+		return nil, err
+	}
+	if input.Permission != repo.SharePermissionView && input.Permission != repo.SharePermissionComment {
+		return nil, appErr.ErrInvalid
+	}
+	if input.ExpiresAt < 0 {
+		return nil, appErr.ErrInvalid
+	}
+	passwordHash := share.PasswordHash
+	if strings.TrimSpace(input.Password) != "" {
+		passwordHash = strings.TrimSpace(input.Password)
+	}
+	if input.ClearPassword {
+		passwordHash = ""
+	}
+	allowDownload := 0
+	if input.AllowDownload {
+		allowDownload = 1
+	}
+	now := timeutil.NowUnix()
+	if err := s.shares.UpdateConfigByDocument(ctx, userID, docID, input.ExpiresAt, passwordHash, input.Permission, allowDownload, now); err != nil {
+		return nil, err
+	}
+	return s.GetActiveShare(ctx, userID, docID)
 }
 
 func (s *DocumentService) RevokeShare(ctx context.Context, userID, docID string) error {
@@ -336,13 +401,36 @@ func (s *DocumentService) GetActiveShare(ctx context.Context, userID, docID stri
 	return share, nil
 }
 
-func (s *DocumentService) GetShareByToken(ctx context.Context, token string) (*PublicShareDetail, error) {
+func (s *DocumentService) resolveAccessibleShareByToken(ctx context.Context, token, sharePassword string) (*model.Share, error) {
 	share, err := s.shares.GetByToken(ctx, token)
 	if err != nil {
 		return nil, err
 	}
 	if share.State != repo.ShareStateActive {
 		return nil, appErr.ErrNotFound
+	}
+	now := timeutil.NowUnix()
+	if share.ExpiresAt > 0 && share.ExpiresAt < now {
+		return nil, appErr.ErrNotFound
+	}
+	if share.PasswordHash != "" {
+		if strings.TrimSpace(sharePassword) == "" {
+			return nil, appErr.ErrForbidden
+		}
+		trimmed := strings.TrimSpace(sharePassword)
+		if share.PasswordHash != trimmed {
+			if err := password.Compare(share.PasswordHash, trimmed); err != nil {
+				return nil, appErr.ErrForbidden
+			}
+		}
+	}
+	return share, nil
+}
+
+func (s *DocumentService) GetShareByToken(ctx context.Context, token, sharePassword string) (*PublicShareDetail, error) {
+	share, err := s.resolveAccessibleShareByToken(ctx, token, sharePassword)
+	if err != nil {
+		return nil, err
 	}
 	doc, err := s.docs.GetByID(ctx, share.UserID, share.DocumentID)
 	if err != nil {
@@ -361,19 +449,167 @@ func (s *DocumentService) GetShareByToken(ctx context.Context, token string) (*P
 		return nil, err
 	}
 	return &PublicShareDetail{
-		Document: doc,
-		Author:   user.Email,
-		Tags:     tags,
+		Document:      doc,
+		Author:        user.Email,
+		Tags:          tags,
+		Permission:    share.Permission,
+		AllowDownload: share.AllowDownload,
+		ExpiresAt:     share.ExpiresAt,
 	}, nil
 }
 
+type ShareCommentWithReplies struct {
+	model.ShareComment
+	Replies []model.ShareComment `json:"replies"`
+}
+
+type ShareCommentListResult struct {
+	Items []ShareCommentWithReplies `json:"items"`
+	Total int                       `json:"total"`
+}
+
+func (s *DocumentService) ListShareCommentsByToken(ctx context.Context, token, sharePassword string, limit, offset int) (*ShareCommentListResult, error) {
+	share, err := s.resolveAccessibleShareByToken(ctx, token, sharePassword)
+	if err != nil {
+		return nil, err
+	}
+	total, err := s.shares.CountRootCommentsByShare(ctx, share.ID)
+	if err != nil {
+		return nil, err
+	}
+	roots, err := s.shares.ListCommentsByShare(ctx, share.ID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	if len(roots) == 0 {
+		return &ShareCommentListResult{
+			Items: []ShareCommentWithReplies{},
+			Total: total,
+		}, nil
+	}
+
+	var rootIDs []string
+	for _, r := range roots {
+		rootIDs = append(rootIDs, r.ID)
+	}
+
+	counts, err := s.shares.CountRepliesByRootIDs(ctx, share.ID, rootIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []ShareCommentWithReplies
+	for _, r := range roots {
+		r.ReplyCount = counts[r.ID]
+		previewReplies, err := s.shares.ListRepliesByRootID(ctx, share.ID, r.ID, 5, 0)
+		if err != nil {
+			return nil, err
+		}
+		if previewReplies == nil {
+			previewReplies = []model.ShareComment{}
+		}
+		node := ShareCommentWithReplies{
+			ShareComment: r,
+			Replies:      previewReplies,
+		}
+		result = append(result, node)
+	}
+
+	return &ShareCommentListResult{
+		Items: result,
+		Total: total,
+	}, nil
+}
+
+func (s *DocumentService) ListShareCommentRepliesByToken(ctx context.Context, token, sharePassword string, rootID string, limit, offset int) ([]model.ShareComment, error) {
+	share, err := s.resolveAccessibleShareByToken(ctx, token, sharePassword)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify the root comment exists and belongs to this share
+	root, err := s.shares.GetCommentByID(ctx, rootID)
+	if err != nil {
+		return nil, err
+	}
+	if root.ShareID != share.ID {
+		return nil, appErr.ErrNotFound
+	}
+
+	replies, err := s.shares.ListRepliesByRootID(ctx, share.ID, rootID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	if replies == nil {
+		return []model.ShareComment{}, nil
+	}
+	return replies, nil
+}
+
+func (s *DocumentService) CreateShareCommentByToken(ctx context.Context, input CreateShareCommentInput) (*model.ShareComment, error) {
+	share, err := s.resolveAccessibleShareByToken(ctx, input.Token, input.Password)
+	if err != nil {
+		return nil, err
+	}
+	if share.Permission != repo.SharePermissionComment {
+		return nil, appErr.ErrForbidden
+	}
+	content := strings.TrimSpace(input.Content)
+	if content == "" || utf8.RuneCountInString(content) > 2000 {
+		return nil, appErr.ErrInvalid
+	}
+	author := strings.TrimSpace(input.Author)
+	if author == "" {
+		author = "Guest"
+	}
+	if utf8.RuneCountInString(author) > 40 {
+		author = string([]rune(author)[:40])
+	}
+
+	rootID := ""
+	replyToID := strings.TrimSpace(input.ReplyToID)
+	if replyToID != "" {
+		target, err := s.shares.GetCommentByID(ctx, replyToID)
+		if err == nil && target.ShareID == share.ID {
+			if target.RootID == "" {
+				rootID = target.ID
+			} else {
+				rootID = target.RootID
+			}
+		} else {
+			replyToID = ""
+		}
+	}
+
+	now := timeutil.NowUnix()
+	comment := &model.ShareComment{
+		ID:         newID(),
+		ShareID:    share.ID,
+		DocumentID: share.DocumentID,
+		RootID:     rootID,
+		ReplyToID:  replyToID,
+		Author:     author,
+		Content:    content,
+		State:      repo.ShareCommentStateNormal,
+		Ctime:      now,
+		Mtime:      now,
+	}
+	if err := s.shares.CreateComment(ctx, comment); err != nil {
+		return nil, err
+	}
+	return comment, nil
+}
+
 type SharedDocumentSummary struct {
-	ID      string   `json:"id"`
-	Title   string   `json:"title"`
-	Summary string   `json:"summary"`
-	Mtime   int64    `json:"mtime"`
-	Token   string   `json:"token"`
-	TagIDs  []string `json:"tag_ids"`
+	ID            string   `json:"id"`
+	Title         string   `json:"title"`
+	Summary       string   `json:"summary"`
+	Mtime         int64    `json:"mtime"`
+	Token         string   `json:"token"`
+	TagIDs        []string `json:"tag_ids"`
+	ExpiresAt     int64    `json:"expires_at"`
+	Permission    int      `json:"permission"`
+	AllowDownload int      `json:"allow_download"`
 }
 
 type DocumentCreateInput struct {
@@ -458,6 +694,11 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 	if err := s.docs.UpdateLinks(ctx, userID, docID, linkIDs, now); err != nil {
 		return err
 	}
+	if s.assets != nil {
+		if err := s.assets.SyncDocumentReferences(ctx, userID, docID, input.Content); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -514,6 +755,11 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 	linkIDs := extractLinkIDs(input.Content)
 	if err := s.docs.UpdateLinks(ctx, userID, doc.ID, linkIDs, now); err != nil {
 		return nil, err
+	}
+	if s.assets != nil {
+		if err := s.assets.SyncDocumentReferences(ctx, userID, doc.ID, input.Content); err != nil {
+			return nil, err
+		}
 	}
 
 	return doc, nil

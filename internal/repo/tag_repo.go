@@ -84,7 +84,7 @@ func (r *TagRepo) List(ctx context.Context, userID string) ([]model.Tag, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	tags := make([]model.Tag, 0)
 	for rows.Next() {
 		var tag model.Tag
@@ -114,7 +114,7 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 		if err != nil {
 			return nil, err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		tags := make([]model.Tag, 0)
 		for rows.Next() {
 			var tag model.Tag
@@ -145,16 +145,16 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 		for rows.Next() {
 			var tag model.Tag
 			if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Pinned, &tag.Ctime, &tag.Mtime); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return nil, err
 			}
 			result = append(result, tag)
 		}
 		if err := rows.Err(); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
-		rows.Close()
+		_ = rows.Close()
 	}
 
 	remaining := limit
@@ -184,7 +184,7 @@ func (r *TagRepo) ListPage(ctx context.Context, userID string, query string, lim
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var tag model.Tag
 		if err := rows.Scan(&tag.ID, &tag.UserID, &tag.Name, &tag.Pinned, &tag.Ctime, &tag.Mtime); err != nil {
@@ -220,7 +220,7 @@ func (r *TagRepo) ListSummary(ctx context.Context, userID string, query string, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]model.TagSummary, 0)
 	for rows.Next() {
 		var item model.TagSummary
@@ -247,7 +247,7 @@ func (r *TagRepo) ListByIDs(ctx context.Context, userID string, ids []string) ([
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	tags := make([]model.Tag, 0)
 	for rows.Next() {
 		var tag model.Tag
@@ -280,7 +280,7 @@ func (r *TagRepo) ListByNames(ctx context.Context, userID string, names []string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	tags := make([]model.Tag, 0)
 	for rows.Next() {
 		var tag model.Tag

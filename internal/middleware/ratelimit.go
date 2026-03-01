@@ -15,15 +15,20 @@ import (
 )
 
 type rateLimiter struct {
-	mu     sync.Mutex
-	window time.Duration
-	last   map[string]time.Time
+	mu            sync.Mutex
+	window        time.Duration
+	last          map[string]time.Time
+	lastSweep     time.Time
+	sweepInterval time.Duration
+	now           func() time.Time
 }
 
 func RateLimit(window time.Duration) gin.HandlerFunc {
 	limiter := &rateLimiter{
-		window: window,
-		last:   make(map[string]time.Time),
+		window:        window,
+		last:          make(map[string]time.Time),
+		sweepInterval: window,
+		now:           time.Now,
 	}
 	return limiter.handle
 }
@@ -46,8 +51,9 @@ func (l *rateLimiter) handle(c *gin.Context) {
 	}
 	key := strings.Join([]string{ip, uid, path}, "|")
 
-	now := time.Now()
+	now := l.now()
 	l.mu.Lock()
+	l.cleanupExpiredLocked(now)
 	last, exists := l.last[key]
 	if exists && now.Sub(last) < l.window {
 		l.mu.Unlock()
@@ -63,4 +69,20 @@ func (l *rateLimiter) handle(c *gin.Context) {
 	l.last[key] = now
 	l.mu.Unlock()
 	c.Next()
+}
+
+func (l *rateLimiter) cleanupExpiredLocked(now time.Time) {
+	if len(l.last) == 0 {
+		l.lastSweep = now
+		return
+	}
+	if l.sweepInterval > 0 && !l.lastSweep.IsZero() && now.Sub(l.lastSweep) < l.sweepInterval {
+		return
+	}
+	for key, ts := range l.last {
+		if now.After(ts) && now.Sub(ts) >= l.window {
+			delete(l.last, key)
+		}
+	}
+	l.lastSweep = now
 }

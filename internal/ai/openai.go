@@ -80,7 +80,7 @@ func (p *openAIProvider) Generate(ctx context.Context, model string, prompt stri
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("openai request failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
@@ -118,7 +118,7 @@ func (p *openAIProvider) Embed(ctx context.Context, model string, text string, t
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("openai request failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))

@@ -58,7 +58,7 @@ func (r *DocumentSummaryRepo) ListByDocIDs(ctx context.Context, userID string, d
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make(map[string]string)
 	for rows.Next() {
 		var docID string
@@ -85,7 +85,7 @@ func (r *DocumentSummaryRepo) ListPendingDocuments(ctx context.Context, limit in
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var docs []model.Document
 	for rows.Next() {
 		var doc model.Document
