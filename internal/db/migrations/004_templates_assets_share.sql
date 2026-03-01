@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS templates (
 );
 
 CREATE INDEX IF NOT EXISTS idx_templates_user_mtime ON templates(user_id, mtime DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_templates_user_name ON templates(user_id, name);
 
 CREATE TABLE IF NOT EXISTS assets (
   id TEXT PRIMARY KEY,
@@ -43,3 +44,19 @@ CREATE TABLE IF NOT EXISTS document_assets (
 
 CREATE INDEX IF NOT EXISTS idx_document_assets_asset ON document_assets(user_id, asset_id);
 CREATE INDEX IF NOT EXISTS idx_document_assets_doc ON document_assets(user_id, document_id);
+
+CREATE TABLE IF NOT EXISTS share_comments (
+  id TEXT PRIMARY KEY,
+  share_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  author TEXT NOT NULL DEFAULT 'Guest',
+  content TEXT NOT NULL,
+  root_id TEXT NOT NULL DEFAULT '',
+  reply_to_id TEXT NOT NULL DEFAULT '',
+  state INTEGER NOT NULL DEFAULT 1,
+  ctime BIGINT NOT NULL,
+  mtime BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_share_comments_share_ctime ON share_comments(share_id, ctime DESC);
+CREATE INDEX IF NOT EXISTS idx_share_comments_root ON share_comments(share_id, root_id, ctime);
