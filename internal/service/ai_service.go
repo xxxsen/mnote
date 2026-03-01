@@ -248,22 +248,6 @@ func (s *AIService) ProcessPendingEmbeddings(ctx context.Context, delaySeconds i
 	return nil
 }
 
-func cosineSimilarity(a, b []float32) float32 {
-	if len(a) != len(b) {
-		return 0
-	}
-	var dot, normA, normB float64
-	for i := range a {
-		dot += float64(a[i]) * float64(b[i])
-		normA += float64(a[i]) * float64(a[i])
-		normB += float64(b[i]) * float64(b[i])
-	}
-	if normA == 0 || normB == 0 {
-		return 0
-	}
-	return float32(dot / (math.Sqrt(normA) * math.Sqrt(normB)))
-}
-
 func (s *AIService) Polish(ctx context.Context, input string) (string, error) {
 	text, err := s.cleanInput(input)
 	if err != nil {

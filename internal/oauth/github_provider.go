@@ -79,7 +79,7 @@ func (g *githubProvider) token(ctx context.Context, form url.Values) (string, er
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("github token exchange failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
@@ -110,7 +110,7 @@ func (g *githubProvider) user(ctx context.Context, accessToken string) (*githubU
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("github user request failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
@@ -139,7 +139,7 @@ func (g *githubProvider) primaryEmail(ctx context.Context, accessToken string) (
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("github emails request failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))

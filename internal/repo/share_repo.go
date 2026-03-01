@@ -110,7 +110,7 @@ func (r *ShareRepo) GetByToken(ctx context.Context, token string) (*model.Share,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, appErr.ErrNotFound
 	}
@@ -138,7 +138,7 @@ func (r *ShareRepo) GetActiveByDocument(ctx context.Context, userID, docID strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, appErr.ErrNotFound
 	}
@@ -183,7 +183,7 @@ func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID string, quer
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]SharedDocument, 0)
 	for rows.Next() {
 		var item SharedDocument
@@ -242,7 +242,7 @@ func (r *ShareRepo) ListCommentsByShare(ctx context.Context, shareID string, lim
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]model.ShareComment, 0)
 	for rows.Next() {
 		var item model.ShareComment
@@ -281,7 +281,7 @@ func (r *ShareRepo) GetCommentByID(ctx context.Context, commentID string) (*mode
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, appErr.ErrNotFound
 	}
@@ -324,7 +324,7 @@ func (r *ShareRepo) ListRepliesByRootIDs(ctx context.Context, shareID string, ro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]model.ShareComment, 0)
 	for rows.Next() {
 		var item model.ShareComment
@@ -367,7 +367,7 @@ func (r *ShareRepo) CountRepliesByRootIDs(ctx context.Context, shareID string, r
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	counts := make(map[string]int)
 	for rows.Next() {
@@ -418,7 +418,7 @@ func (r *ShareRepo) ListRepliesByRootID(ctx context.Context, shareID, rootID str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]model.ShareComment, 0)
 	for rows.Next() {
 		var item model.ShareComment

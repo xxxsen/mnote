@@ -69,7 +69,7 @@ func (r *AssetRepo) ListByUser(ctx context.Context, userID, query string, limit,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]model.Asset, 0)
 	for rows.Next() {
 		var item model.Asset
@@ -93,7 +93,7 @@ func (r *AssetRepo) GetByID(ctx context.Context, userID, assetID string) (*model
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, appErr.ErrNotFound
 	}
@@ -119,7 +119,7 @@ func (r *AssetRepo) ListByFileKeys(ctx context.Context, userID string, fileKeys 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]model.Asset, 0)
 	for rows.Next() {
 		var item model.Asset

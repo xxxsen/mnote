@@ -45,7 +45,7 @@ func (s *localStore) Save(ctx context.Context, key string, r ReadSeekCloser, siz
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
 		return err
 	}

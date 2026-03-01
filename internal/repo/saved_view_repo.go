@@ -35,7 +35,7 @@ func (r *SavedViewRepo) List(ctx context.Context, userID string) ([]model.SavedV
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]model.SavedView, 0)
 	for rows.Next() {

@@ -50,13 +50,13 @@ func (r *EmbeddingRepo) SaveChunks(ctx context.Context, chunks []*model.ChunkEmb
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	stmt, err := tx.PrepareContext(ctx, query)
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, c := range chunks {
 		if _, err := stmt.ExecContext(ctx, c.ChunkID, c.DocumentID, c.UserID, c.Content, pgvector.NewVector(c.Embedding), c.TokenCount, string(c.ChunkType), c.Position, c.Mtime); err != nil {
@@ -90,7 +90,7 @@ func (r *EmbeddingRepo) SearchChunks(ctx context.Context, userID string, query [
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []ChunkSearchResult
 	for rows.Next() {
@@ -127,7 +127,7 @@ func (r *EmbeddingRepo) ListStaleDocuments(ctx context.Context, limit int, maxMt
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var docs []model.Document
 	for rows.Next() {
 		var doc model.Document

@@ -52,7 +52,7 @@ func (s *ImportService) CreateHedgeDocJob(ctx context.Context, userID string, fi
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 	if s.jobRepo == nil || s.noteRepo == nil {
 		return nil, appErr.ErrInvalid
 	}
@@ -169,7 +169,7 @@ func (s *ImportService) CreateNotesJob(ctx context.Context, userID string, fileP
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 	if s.jobRepo == nil || s.noteRepo == nil {
 		return nil, appErr.ErrInvalid
 	}
@@ -603,7 +603,7 @@ func SaveTempFile(fileName string, reader io.Reader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer tmp.Close()
+	defer func() { _ = tmp.Close() }()
 	if _, err := io.Copy(tmp, reader); err != nil {
 		_ = os.Remove(tmp.Name())
 		return "", err

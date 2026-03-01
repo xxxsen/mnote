@@ -81,7 +81,7 @@ func (r *DocumentAssetRepo) CountByAssets(ctx context.Context, userID string, as
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var assetID string
 		var cnt int
@@ -107,7 +107,7 @@ func (r *DocumentAssetRepo) ListReferences(ctx context.Context, userID, assetID 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]DocumentAssetReference, 0)
 	for rows.Next() {
 		var item DocumentAssetReference

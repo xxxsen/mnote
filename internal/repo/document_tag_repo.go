@@ -66,7 +66,7 @@ func (r *DocumentTagRepo) ListTagIDs(ctx context.Context, userID, docID string) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	tags := make([]string, 0)
 	for rows.Next() {
 		var tagID string
@@ -89,7 +89,7 @@ func (r *DocumentTagRepo) ListDocIDsByTag(ctx context.Context, userID, tagID str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	docs := make([]string, 0)
 	for rows.Next() {
 		var docID string
@@ -112,7 +112,7 @@ func (r *DocumentTagRepo) ListByUser(ctx context.Context, userID string) ([]mode
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]model.DocumentTag, 0)
 	for rows.Next() {
 		var item model.DocumentTag
@@ -145,7 +145,7 @@ func (r *DocumentTagRepo) ListTagIDsByDocIDs(ctx context.Context, userID string,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make(map[string][]string)
 	for rows.Next() {
 		var docID string

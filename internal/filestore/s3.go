@@ -66,7 +66,7 @@ func createS3Store(args interface{}) (Store, error) {
 		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 		if endpoint != "" {
-			o.EndpointResolver = s3.EndpointResolverFromURL(endpoint)
+			o.BaseEndpoint = aws.String(endpoint)
 			o.UsePathStyle = true
 		}
 	})

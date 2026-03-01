@@ -58,7 +58,7 @@ func (r *OAuthRepo) GetByProviderUserID(ctx context.Context, provider, providerU
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, appErr.ErrNotFound
 	}
@@ -83,7 +83,7 @@ func (r *OAuthRepo) GetByUserProvider(ctx context.Context, userID, provider stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, appErr.ErrNotFound
 	}
@@ -105,7 +105,7 @@ func (r *OAuthRepo) ListByUser(ctx context.Context, userID string) ([]model.OAut
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	accounts := make([]model.OAuthAccount, 0)
 	for rows.Next() {
 		var account model.OAuthAccount
@@ -127,7 +127,7 @@ func (r *OAuthRepo) CountByUser(ctx context.Context, userID string) (int, error)
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return 0, nil
 	}

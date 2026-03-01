@@ -1,6 +1,8 @@
 .PHONY: build-image build-web-image build run-web run run-dev-docker test install-golangci-lint lint-go
 
 GOBIN ?= $(CURDIR)/bin
+GOCACHE ?= $(CURDIR)/.cache/go-build
+GOLANGCI_LINT_CACHE ?= $(CURDIR)/.cache/golangci-lint
 GOLANGCI_LINT_VERSION ?= v1.64.8
 GOLANGCI_LINT ?= $(GOBIN)/golangci-lint
 
@@ -26,7 +28,7 @@ test:
 	go test ./...
 
 install-golangci-lint:
-	GOBIN=$(GOBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	GOBIN=$(GOBIN) GOCACHE=$(GOCACHE) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 lint-go:
-	$(GOLANGCI_LINT) run --config .golangci.yml
+	GOCACHE=$(GOCACHE) GOLANGCI_LINT_CACHE=$(GOLANGCI_LINT_CACHE) $(GOLANGCI_LINT) run --config .golangci.yml ./...

@@ -44,7 +44,7 @@ func (h *ImportHandler) HedgeDocUpload(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalidFile, "failed to open file")
 		return
 	}
-	defer opened.Close()
+	defer func() { _ = opened.Close() }()
 
 	tmpPath, err := service.SaveTempFile(file.Filename, opened)
 	if err != nil {
@@ -82,7 +82,7 @@ func (h *ImportHandler) NotesUpload(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalidFile, "failed to open file")
 		return
 	}
-	defer opened.Close()
+	defer func() { _ = opened.Close() }()
 
 	tmpPath, err := service.SaveTempFile(file.Filename, opened)
 	if err != nil {

@@ -52,7 +52,7 @@ func (h *ShareHandler) UpdateConfig(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
-	permission := repo.SharePermissionView
+	var permission int
 	switch strings.TrimSpace(strings.ToLower(req.Permission)) {
 	case "", "view":
 		permission = repo.SharePermissionView

@@ -55,7 +55,7 @@ func (r *EmailVerificationRepo) LatestByEmail(ctx context.Context, email, purpos
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, appErr.ErrNotFound
 	}

@@ -58,7 +58,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalidFile, "failed to read file")
 		return
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	if contentType == "application/octet-stream" {
 		if extType := mime.TypeByExtension(filepath.Ext(file.Filename)); extType != "" {
@@ -103,7 +103,7 @@ func (h *FileHandler) Get(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	contentType := mime.TypeByExtension(filepath.Ext(key))
 	if contentType == "" || contentType == "application/octet-stream" {
 		if seeker, ok := file.(io.ReadSeeker); ok {

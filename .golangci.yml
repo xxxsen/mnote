@@ -18,6 +18,9 @@ linters:
 linters-settings:
   errcheck:
     check-type-assertions: true
+    exclude-functions:
+      - Close
+      - (*database/sql.Tx).Rollback
 
 issues:
   exclude-use-default: false

@@ -114,7 +114,7 @@ func (r *TemplateRepo) GetByID(ctx context.Context, userID, templateID string) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		return nil, appErr.ErrNotFound
 	}
@@ -134,7 +134,7 @@ func (r *TemplateRepo) ListByUser(ctx context.Context, userID string) ([]model.T
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]model.Template, 0)
 	for rows.Next() {
 		tpl, err := scanTemplate(rows)
