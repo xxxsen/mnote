@@ -110,17 +110,18 @@ export default function TemplatesPage() {
       const items = await apiFetch<TemplateMeta[]>("/templates/meta");
       const next = items || [];
       setTemplates(next);
-      if (next.length === 0) {
-        setSelectedID("");
-      } else if (!next.find((item) => item.id === selectedID)) {
-        setSelectedID(next[0].id);
-      }
+      setSelectedID((prev) => {
+        if (next.length === 0) return "";
+        if (!prev) return next[0].id;
+        if (next.find((item) => item.id === prev)) return prev;
+        return next[0].id;
+      });
     } catch (err) {
       toast({ description: err instanceof Error ? err.message : "Failed to load templates", variant: "error" });
     } finally {
       setLoading(false);
     }
-  }, [selectedID, toast]);
+  }, [toast]);
 
   useEffect(() => {
     void loadTemplates();
