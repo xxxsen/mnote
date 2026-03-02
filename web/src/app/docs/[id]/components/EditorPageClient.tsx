@@ -227,6 +227,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const router = useRouter();
   const id = docId;
   const { toast } = useToast();
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE || "/api/v1";
   const preview = usePreviewDoc({
     onError: () => {
       toast({ description: "Failed to load document preview", variant: "error" });
@@ -272,6 +273,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const [starred, setStarred] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<"summary" | "history" | "share">("summary");
   const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(loadThemePreference);
@@ -1750,6 +1752,44 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   ], [updateCursorInfo, currentThemeId]);
 
 
+  const downloadExport = useCallback(async (format: "markdown" | "confluence_html") => {
+    try {
+      setExporting(true);
+      const token = localStorage.getItem("mnote_token");
+      const res = await fetch(`${apiBase}/export/documents/${id}?format=${format}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const payload = await res.json().catch(() => ({}));
+        const message = payload?.msg || payload?.message || "Export failed";
+        throw new Error(message);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const disposition = res.headers.get("content-disposition") || "";
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      link.href = url;
+      link.download = match?.[1] || (format === "markdown" ? `${title || "note"}.md` : `${title || "note"}.html`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      toast({ description: err instanceof Error ? err.message : "Export failed", variant: "error" });
+    } finally {
+      setExporting(false);
+    }
+  }, [apiBase, id, title, toast]);
+
+
+
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
 
@@ -1792,6 +1832,9 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         loadVersions={loadVersions}
         starred={starred}
         handleStarToggle={handleStarToggle}
+        exportMarkdown={() => { void downloadExport("markdown"); }}
+        exportConfluenceHTML={() => { void downloadExport("confluence_html"); }}
+        exporting={exporting}
       />
 
       <div className="flex-1 flex overflow-hidden min-w-0 relative pb-8">

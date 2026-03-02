@@ -23,11 +23,12 @@ type ExportPayload struct {
 }
 
 type ExportService struct {
-	docs      *repo.DocumentRepo
-	summaries *repo.DocumentSummaryRepo
-	versions  *repo.VersionRepo
-	tags      *repo.TagRepo
-	docTags   *repo.DocumentTagRepo
+	docs              *repo.DocumentRepo
+	summaries         *repo.DocumentSummaryRepo
+	versions          *repo.VersionRepo
+	tags              *repo.TagRepo
+	docTags           *repo.DocumentTagRepo
+	confluenceBuilder *confluenceRenderer
 }
 
 type NotesExportItem struct {
@@ -38,7 +39,7 @@ type NotesExportItem struct {
 }
 
 func NewExportService(docs *repo.DocumentRepo, summaries *repo.DocumentSummaryRepo, versions *repo.VersionRepo, tags *repo.TagRepo, docTags *repo.DocumentTagRepo) *ExportService {
-	return &ExportService{docs: docs, summaries: summaries, versions: versions, tags: tags, docTags: docTags}
+	return &ExportService{docs: docs, summaries: summaries, versions: versions, tags: tags, docTags: docTags, confluenceBuilder: newConfluenceRenderer()}
 }
 
 func (s *ExportService) Export(ctx context.Context, userID string) (*ExportPayload, error) {
@@ -141,6 +142,39 @@ func (s *ExportService) ExportNotesZip(ctx context.Context, userID string) (stri
 		return "", err
 	}
 	return tmp.Name(), nil
+}
+
+func (s *ExportService) ExportDocument(ctx context.Context, userID, docID, format string) ([]byte, string, string, error) {
+	doc, err := s.docs.GetByID(ctx, userID, docID)
+	if err != nil {
+		return nil, "", "", err
+	}
+	baseTitle := strings.TrimSpace(doc.Title)
+	if baseTitle == "" {
+		baseTitle = "untitled"
+	}
+	safeTitle := sanitizeFileName(baseTitle)
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "", "markdown", "md":
+		return []byte(doc.Content), safeTitle + ".md", "text/markdown; charset=utf-8", nil
+	case "confluence_html", "confluence-html":
+		html, err := s.confluenceBuilder.Render(doc.Content)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return []byte(html), safeTitle + ".html", "text/html; charset=utf-8", nil
+	default:
+		return nil, "", "", fmt.Errorf("unsupported export format: %s", format)
+	}
+}
+
+func sanitizeFileName(value string) string {
+	replacer := strings.NewReplacer("/", "-", "\\", "-", ":", "-", "*", "-", "?", "", "\"", "", "<", "", ">", "", "|", "-")
+	clean := strings.TrimSpace(replacer.Replace(value))
+	if clean == "" {
+		return "untitled"
+	}
+	return clean
 }
 
 func (s *ExportService) attachSummaries(ctx context.Context, userID string, docs []model.Document) error {

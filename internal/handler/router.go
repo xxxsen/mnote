@@ -73,6 +73,7 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 
 	authGroup.GET("/export", deps.Export.Export)
 	authGroup.GET("/export/notes", deps.Export.ExportNotes)
+	authGroup.GET("/export/documents/:id", deps.Export.ExportDocument)
 	authGroup.POST("/files/upload", deps.Files.Upload)
 	authGroup.GET("/saved-views", deps.SavedViews.List)
 	authGroup.POST("/saved-views", deps.SavedViews.Create)

@@ -1,9 +1,9 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
-import { ChevronLeft, ChevronRight, Columns, Folder, Home, RefreshCw, Save, Star } from "lucide-react";
+import { ChevronLeft, ChevronRight, Columns, Download, Folder, Home, RefreshCw, Save, Star } from "lucide-react";
 
 type RouterLike = {
   push: (href: string) => void;
@@ -21,6 +21,9 @@ type EditorHeaderProps = {
   loadVersions: () => void;
   starred: number;
   handleStarToggle: () => void;
+  exportMarkdown: () => void;
+  exportConfluenceHTML: () => void;
+  exporting: boolean;
 };
 
 export const EditorHeader = memo(function EditorHeader({
@@ -35,7 +38,12 @@ export const EditorHeader = memo(function EditorHeader({
   loadVersions,
   starred,
   handleStarToggle,
+  exportMarkdown,
+  exportConfluenceHTML,
+  exporting,
 }: EditorHeaderProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
     <header className="h-14 border-b border-border flex items-center px-4 gap-4 justify-between bg-background/80 backdrop-blur-md z-40 sticky top-0 transition-all duration-300">
       <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -66,6 +74,42 @@ export const EditorHeader = memo(function EditorHeader({
             {hasUnsavedChanges ? "Unsaved Changes" : `Saved: ${formatDate(lastSavedAt)}`}
           </div>
         )}
+        <div className="relative">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setMenuOpen((prev) => !prev)}
+            className="h-8 w-8 text-muted-foreground"
+            title="Export"
+            disabled={exporting}
+          >
+            {exporting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          </Button>
+          {menuOpen && (
+            <div className="absolute right-0 top-10 w-44 rounded-md border border-border bg-background shadow-lg p-1 z-50">
+              <button
+                type="button"
+                className="w-full text-left px-3 py-2 text-xs rounded hover:bg-accent"
+                onClick={() => {
+                  exportMarkdown();
+                  setMenuOpen(false);
+                }}
+              >
+                Export as Markdown
+              </button>
+              <button
+                type="button"
+                className="w-full text-left px-3 py-2 text-xs rounded hover:bg-accent"
+                onClick={() => {
+                  exportConfluenceHTML();
+                  setMenuOpen(false);
+                }}
+              >
+                Export as Confluence HTML
+              </button>
+            </div>
+          )}
+        </div>
         <Button
           variant="ghost"
           size="icon"
