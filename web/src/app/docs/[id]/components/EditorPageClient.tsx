@@ -2380,13 +2380,13 @@ here is the body of note.`}
                         <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-border bg-popover p-1 shadow-md z-[120] animate-in fade-in zoom-in-95 duration-150">
                           <button
                             type="button"
-                            className="flex w-full items-center rounded-lg px-2 py-1.5 text-xs font-semibold hover:bg-accent hover:text-accent-foreground"
+                            className="flex w-full items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold hover:bg-accent hover:text-accent-foreground"
                             onClick={() => {
                               setShowExportMenu(false);
                               void handleExportConfluenceHTML();
                             }}
                           >
-                            <FileCode className="mr-2 h-3.5 w-3.5" />
+                            <FileCode className="h-3.5 w-3.5" />
                             Confluence HTML
                           </button>
                         </div>
