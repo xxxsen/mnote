@@ -1426,10 +1426,10 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         body: JSON.stringify({ document_id: id }),
       });
       downloadFile(result.html, `${title || "untitled"}.confluence.html`, "text/html");
-      toast({ description: "Confluence HTML exported." });
+      toast({ description: "Confluence HTML downloaded." });
     } catch (err) {
       console.error(err);
-      toast({ description: err instanceof Error ? err.message : "Failed to export Confluence HTML", variant: "error" });
+      toast({ description: err instanceof Error ? err.message : "Failed to download Confluence HTML", variant: "error" });
     }
   }, [downloadFile, id, title, toast]);
 
@@ -2369,7 +2369,7 @@ here is the body of note.`}
                           variant="outline"
                           className="rounded-l-none border-l-0 px-2"
                           onClick={() => setShowExportMenu((prev) => !prev)}
-                          aria-label="More export options"
+                          aria-label="More download options"
                           aria-expanded={showExportMenu}
                           aria-haspopup="menu"
                         >
@@ -2387,7 +2387,7 @@ here is the body of note.`}
                             }}
                           >
                             <FileCode className="mr-2 h-3.5 w-3.5" />
-                            Export Confluence HTML
+                            Download as Confluence HTML
                           </button>
                         </div>
                       )}
