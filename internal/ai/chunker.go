@@ -90,15 +90,17 @@ func (c *Chunker) Chunk(ctx context.Context, markdown string) ([]*model.ChunkEmb
 	for node := doc.FirstChild(); node != nil; node = node.NextSibling() {
 		switch n := node.(type) {
 		case *ast.Heading:
+			headingText, err := extractText(n, reader.Source())
+			if err != nil {
+				return nil, err
+			}
 			if n.Level == 1 || n.Level == 2 {
-				heading := string(n.Text(reader.Source()))
-				logger.Debug("new heading detected, flushing", zap.Int("level", n.Level), zap.String("heading", heading))
+				logger.Debug("new heading detected, flushing", zap.Int("level", n.Level), zap.String("heading", headingText))
 				flush()
-				currentHeading = heading
+				currentHeading = headingText
 			} else {
-				txt := string(n.Text(reader.Source()))
-				currentChunk = append(currentChunk, txt)
-				currentTokens += estimateTokens(txt)
+				currentChunk = append(currentChunk, headingText)
+				currentTokens += estimateTokens(headingText)
 			}
 		case *ast.FencedCodeBlock:
 			lang := string(n.Language(reader.Source()))
