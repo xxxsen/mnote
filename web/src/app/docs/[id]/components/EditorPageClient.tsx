@@ -26,6 +26,7 @@ import {
   Share2,
   Download,
   Trash2,
+  ChevronDown,
   ChevronRight,
   Home,
   Search,
@@ -303,6 +304,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const [sharePermission, setSharePermission] = useState<"view" | "comment">("view");
   const [shareAllowDownload, setShareAllowDownload] = useState(true);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -324,6 +326,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const colorButtonRef = useRef<HTMLButtonElement | null>(null);
   const sizeButtonRef = useRef<HTMLButtonElement | null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const scrollingSource = useRef<"editor" | "preview" | null>(null);
   const forcePreviewSyncRef = useRef(false);
 
@@ -722,6 +725,24 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     window.addEventListener("pointerdown", handlePointer);
     return () => window.removeEventListener("pointerdown", handlePointer);
   }, [activePopover]);
+
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (exportMenuRef.current?.contains(target)) return;
+      setShowExportMenu(false);
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [showExportMenu]);
+
+  useEffect(() => {
+    if (activeTab !== "share" || !showDetails) {
+      setShowExportMenu(false);
+    }
+  }, [activeTab, showDetails]);
 
   const renderPopover = (content: React.ReactNode) => {
     if (!popoverAnchor || typeof document === "undefined") return null;
@@ -1275,11 +1296,11 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     const spread = (
       docs: MnoteDocument[],
       x: number,
-      kind: "incoming" | "outgoing"
+      kind: "incoming" | "outgoing",
+      yMin = 14,
+      yMax = 86,
     ) => {
       if (docs.length === 0) return;
-      const yMin = 16;
-      const yMax = 84;
       const step = docs.length === 1 ? 0 : (yMax - yMin) / (docs.length - 1);
       docs.forEach((doc, index) => {
         const y = docs.length === 1 ? 50 : yMin + step * index;
@@ -1288,16 +1309,26 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
       });
     };
 
-    spread(incomingOnly, 24, "incoming");
-    spread(outgoingOnly, 76, "outgoing");
-    bothIDs.forEach((docID, index) => {
+    spread(incomingOnly, 14, "incoming");
+    spread(outgoingOnly, 86, "outgoing");
+    const bothDocs: MnoteDocument[] = bothIDs.reduce<MnoteDocument[]>((acc, docID) => {
       const doc = incomingMap.get(docID) || outgoingMap.get(docID);
-      if (!doc) return;
-      const side = index % 2 === 0 ? 40 : 60;
-      const y = Math.min(84, 20 + Math.floor(index / 2) * 14);
-      nodes.push({ id: doc.id, title: doc.title || "Untitled", x: side, y, kind: "both" });
-      positionByID[doc.id] = { x: side, y };
-    });
+      if (doc) acc.push(doc);
+      return acc;
+    }, []);
+    const spreadBoth = (docs: MnoteDocument[], y: number) => {
+      if (docs.length === 0) return;
+      const xMin = 34;
+      const xMax = 66;
+      const step = docs.length === 1 ? 0 : (xMax - xMin) / (docs.length - 1);
+      docs.forEach((doc, index) => {
+        const x = docs.length === 1 ? 50 : xMin + step * index;
+        nodes.push({ id: doc.id, title: doc.title || "Untitled", x, y, kind: "both" });
+        positionByID[doc.id] = { x, y };
+      });
+    };
+    spreadBoth(bothDocs.filter((_, index) => index % 2 === 0), 26);
+    spreadBoth(bothDocs.filter((_, index) => index % 2 === 1), 74);
 
     incomingOnly.forEach((doc) => edges.push({ from: doc.id, to: id }));
     outgoingOnly.forEach((doc) => edges.push({ from: id, to: doc.id }));
@@ -1395,10 +1426,10 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         body: JSON.stringify({ document_id: id }),
       });
       downloadFile(result.html, `${title || "untitled"}.confluence.html`, "text/html");
-      toast({ description: "Confluence HTML exported." });
+      toast({ description: "Confluence HTML downloaded." });
     } catch (err) {
       console.error(err);
-      toast({ description: err instanceof Error ? err.message : "Failed to export Confluence HTML", variant: "error" });
+      toast({ description: err instanceof Error ? err.message : "Failed to download Confluence HTML", variant: "error" });
     }
   }, [downloadFile, id, title, toast]);
 
@@ -2321,14 +2352,46 @@ here is the body of note.`}
                     </div>
                   )}
                   <div className="pt-4 border-t border-border mt-4">
-                    <Button variant="outline" className="w-full mb-2 text-xs font-bold" onClick={handleExportMarkdown}>
-                      <Download className="mr-2 h-3.5 w-3.5" />
-                      Export Markdown
-                    </Button>
-                    <Button variant="outline" className="w-full mb-2 text-xs font-bold" onClick={handleExportConfluenceHTML}>
-                      <FileCode className="mr-2 h-3.5 w-3.5" />
-                      Export Confluence HTML
-                    </Button>
+                    <div className="relative mb-2" ref={exportMenuRef}>
+                      <div className="flex items-center">
+                        <Button
+                          variant="outline"
+                          className="w-full rounded-r-none text-xs font-bold"
+                          onClick={() => {
+                            setShowExportMenu(false);
+                            handleExportMarkdown();
+                          }}
+                        >
+                          <Download className="mr-2 h-3.5 w-3.5" />
+                          Download
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="rounded-l-none border-l-0 px-2"
+                          onClick={() => setShowExportMenu((prev) => !prev)}
+                          aria-label="More download options"
+                          aria-expanded={showExportMenu}
+                          aria-haspopup="menu"
+                        >
+                          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showExportMenu ? "rotate-180" : ""}`} />
+                        </Button>
+                      </div>
+                      {showExportMenu && (
+                        <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-border bg-popover p-1 shadow-md z-[120] animate-in fade-in zoom-in-95 duration-150">
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold hover:bg-accent hover:text-accent-foreground"
+                            onClick={() => {
+                              setShowExportMenu(false);
+                              void handleExportConfluenceHTML();
+                            }}
+                          >
+                            <FileCode className="h-3.5 w-3.5" />
+                            Confluence HTML
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <Button variant="destructive" className="w-full text-xs font-bold" onClick={() => setShowDeleteConfirm(true)}>
                       <Trash2 className="mr-2 h-3.5 w-3.5" />
                       Delete Note
@@ -2994,7 +3057,7 @@ here is the body of note.`}
                       <Network className="h-3 w-3" />
                       Link Graph
                     </div>
-                    <div className="relative h-60 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80">
+                    <div className="relative h-64 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80">
                       <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
                         {linkGraph.edges.map((edge, index) => {
                           const from = linkGraph.positionByID[edge.from];
@@ -3013,29 +3076,36 @@ here is the body of note.`}
                           );
                         })}
                       </svg>
-                      {linkGraph.nodes.map((node) => (
-                        <button
-                          key={node.id}
-                          disabled={node.kind === "current"}
-                          onClick={() => {
-                            if (node.kind !== "current") {
+                      {linkGraph.nodes.map((node) => {
+                        if (node.kind === "current") {
+                          return (
+                            <div
+                              key={node.id}
+                              className="absolute z-10 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-indigo-500 bg-indigo-600 shadow-sm"
+                              style={{ left: `${node.x}%`, top: `${node.y}%` }}
+                              title={`Current: ${node.title}`}
+                            />
+                          );
+                        }
+                        return (
+                          <button
+                            key={node.id}
+                            onClick={() => {
                               router.push(`/docs/${node.id}`);
-                            }
-                          }}
-                          className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-lg border px-2 py-1 text-[10px] font-medium shadow-sm max-w-[84px] truncate ${node.kind === "current"
-                            ? "border-indigo-500 bg-indigo-600 text-white"
-                            : node.kind === "incoming"
+                            }}
+                            className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-lg border px-1.5 py-1 text-center text-[9px] font-medium leading-tight shadow-sm w-[72px] truncate ${node.kind === "incoming"
                               ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300"
                               : node.kind === "outgoing"
                                 ? "border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300"
                                 : "border-sky-200 bg-sky-50 text-sky-700 hover:border-sky-300"
-                            }`}
-                          style={{ left: `${node.x}%`, top: `${node.y}%` }}
-                          title={node.title}
-                        >
-                          {node.title}
-                        </button>
-                      ))}
+                              }`}
+                            style={{ left: `${node.x}%`, top: `${node.y}%` }}
+                            title={node.title}
+                          >
+                            {node.title}
+                          </button>
+                        );
+                      })}
                     </div>
                     <div className="flex items-center justify-between text-[10px] text-slate-500">
                       <span>Inbound: {backlinks.length}</span>

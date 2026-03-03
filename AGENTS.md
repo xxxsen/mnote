@@ -58,7 +58,8 @@
 
 ```bash
 # 后端自检
-go fmt ./... && go mod tidy && go test ./...
+# make lint-go, 如果golangci-lint不存在, 需要执行 `make install-golangci-lint` 进行安装
+go fmt ./... && go mod tidy && go test ./... && make lint-go
 
 # 前端自检
 npm run lint && npx tsc --noEmit
