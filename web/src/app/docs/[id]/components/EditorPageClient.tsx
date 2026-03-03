@@ -26,6 +26,7 @@ import {
   Share2,
   Download,
   Trash2,
+  ChevronDown,
   ChevronRight,
   Home,
   Search,
@@ -303,6 +304,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const [sharePermission, setSharePermission] = useState<"view" | "comment">("view");
   const [shareAllowDownload, setShareAllowDownload] = useState(true);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -324,6 +326,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const colorButtonRef = useRef<HTMLButtonElement | null>(null);
   const sizeButtonRef = useRef<HTMLButtonElement | null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const scrollingSource = useRef<"editor" | "preview" | null>(null);
   const forcePreviewSyncRef = useRef(false);
 
@@ -722,6 +725,24 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     window.addEventListener("pointerdown", handlePointer);
     return () => window.removeEventListener("pointerdown", handlePointer);
   }, [activePopover]);
+
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (exportMenuRef.current?.contains(target)) return;
+      setShowExportMenu(false);
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [showExportMenu]);
+
+  useEffect(() => {
+    if (activeTab !== "share" || !showDetails) {
+      setShowExportMenu(false);
+    }
+  }, [activeTab, showDetails]);
 
   const renderPopover = (content: React.ReactNode) => {
     if (!popoverAnchor || typeof document === "undefined") return null;
@@ -2321,14 +2342,46 @@ here is the body of note.`}
                     </div>
                   )}
                   <div className="pt-4 border-t border-border mt-4">
-                    <Button variant="outline" className="w-full mb-2 text-xs font-bold" onClick={handleExportMarkdown}>
-                      <Download className="mr-2 h-3.5 w-3.5" />
-                      Export Markdown
-                    </Button>
-                    <Button variant="outline" className="w-full mb-2 text-xs font-bold" onClick={handleExportConfluenceHTML}>
-                      <FileCode className="mr-2 h-3.5 w-3.5" />
-                      Export Confluence HTML
-                    </Button>
+                    <div className="relative mb-2" ref={exportMenuRef}>
+                      <div className="flex items-center">
+                        <Button
+                          variant="outline"
+                          className="w-full rounded-r-none text-xs font-bold"
+                          onClick={() => {
+                            setShowExportMenu(false);
+                            handleExportMarkdown();
+                          }}
+                        >
+                          <Download className="mr-2 h-3.5 w-3.5" />
+                          Download
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="rounded-l-none border-l-0 px-2"
+                          onClick={() => setShowExportMenu((prev) => !prev)}
+                          aria-label="More export options"
+                          aria-expanded={showExportMenu}
+                          aria-haspopup="menu"
+                        >
+                          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showExportMenu ? "rotate-180" : ""}`} />
+                        </Button>
+                      </div>
+                      {showExportMenu && (
+                        <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-border bg-popover p-1 shadow-md z-[120] animate-in fade-in zoom-in-95 duration-150">
+                          <button
+                            type="button"
+                            className="flex w-full items-center rounded-lg px-2 py-1.5 text-xs font-semibold hover:bg-accent hover:text-accent-foreground"
+                            onClick={() => {
+                              setShowExportMenu(false);
+                              void handleExportConfluenceHTML();
+                            }}
+                          >
+                            <FileCode className="mr-2 h-3.5 w-3.5" />
+                            Export Confluence HTML
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <Button variant="destructive" className="w-full text-xs font-bold" onClick={() => setShowDeleteConfirm(true)}>
                       <Trash2 className="mr-2 h-3.5 w-3.5" />
                       Delete Note
