@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/xxxsen/md2cfhtml"
 	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/repo"
 )
@@ -141,6 +142,18 @@ func (s *ExportService) ExportNotesZip(ctx context.Context, userID string) (stri
 		return "", err
 	}
 	return tmp.Name(), nil
+}
+
+func (s *ExportService) ConvertMarkdownToConfluenceHTML(ctx context.Context, userID, docID string) (string, error) {
+	doc, err := s.docs.GetByID(ctx, userID, docID)
+	if err != nil {
+		return "", err
+	}
+	html, err := md2cfhtml.ConvertString(doc.Content)
+	if err != nil {
+		return "", err
+	}
+	return html, nil
 }
 
 func (s *ExportService) attachSummaries(ctx context.Context, userID string, docs []model.Document) error {
