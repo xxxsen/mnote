@@ -1372,17 +1372,35 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     }
   };
 
-  const handleExport = () => {
-    const blob = new Blob([contentRef.current], { type: "text/markdown" });
+  const downloadFile = useCallback((content: string, filename: string, mimeType: string) => {
+    const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${title || "untitled"}.md`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
+  }, []);
+
+  const handleExportMarkdown = useCallback(() => {
+    downloadFile(contentRef.current, `${title || "untitled"}.md`, "text/markdown");
+  }, [downloadFile, title]);
+
+  const handleExportConfluenceHTML = useCallback(async () => {
+    try {
+      const result = await apiFetch<{ html: string }>("/export/confluence-html", {
+        method: "POST",
+        body: JSON.stringify({ document_id: id }),
+      });
+      downloadFile(result.html, `${title || "untitled"}.confluence.html`, "text/html");
+      toast({ description: "Confluence HTML exported." });
+    } catch (err) {
+      console.error(err);
+      toast({ description: err instanceof Error ? err.message : "Failed to export Confluence HTML", variant: "error" });
+    }
+  }, [downloadFile, id, title, toast]);
 
   const saveShareConfig = useCallback(async (overrides?: Partial<{
     expires_at: number;
@@ -2303,9 +2321,13 @@ here is the body of note.`}
                     </div>
                   )}
                   <div className="pt-4 border-t border-border mt-4">
-                    <Button variant="outline" className="w-full mb-2 text-xs font-bold" onClick={handleExport}>
+                    <Button variant="outline" className="w-full mb-2 text-xs font-bold" onClick={handleExportMarkdown}>
                       <Download className="mr-2 h-3.5 w-3.5" />
                       Export Markdown
+                    </Button>
+                    <Button variant="outline" className="w-full mb-2 text-xs font-bold" onClick={handleExportConfluenceHTML}>
+                      <FileCode className="mr-2 h-3.5 w-3.5" />
+                      Export Confluence HTML
                     </Button>
                     <Button variant="destructive" className="w-full text-xs font-bold" onClick={() => setShowDeleteConfirm(true)}>
                       <Trash2 className="mr-2 h-3.5 w-3.5" />
