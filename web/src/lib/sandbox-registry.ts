@@ -99,7 +99,16 @@ class SandboxRegistry {
               const { instance } = await WebAssembly.instantiate(buffer, go.importObject);
               self.postMessage({ type: 'system', content: 'Executing Go...' });
               self.GOSOURCE = e.data.code;
+              self.GO_EXEC_ERROR = '';
+              self.GO_AUTOIMPORT_APPLIED = '';
               await go.run(instance);
+              if (self.GO_AUTOIMPORT_APPLIED) {
+                self.postMessage({ type: 'system', content: 'Auto-imported: ' + self.GO_AUTOIMPORT_APPLIED });
+              }
+              if (self.GO_EXEC_ERROR) {
+                self.postMessage({ type: 'error', content: self.GO_EXEC_ERROR });
+                return;
+              }
               self.postMessage({ type: 'system', content: 'Process finished.' });
               self.postMessage({ type: 'done' });
             } catch (err) {
