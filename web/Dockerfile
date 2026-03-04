@@ -1,7 +1,8 @@
 FROM golang:1.25-alpine AS wasm-builder
 WORKDIR /src
-COPY wasm/yaegi-wrapper/ ./
-RUN GOOS=js GOARCH=wasm go build -o yaegi.wasm main.go
+RUN apk add --no-cache make
+COPY wasm/yaegi-wrapper/ ./wasm/yaegi-wrapper/
+RUN make -C /src/wasm/yaegi-wrapper build OUTPUT=/src/yaegi.wasm
 
 FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat
