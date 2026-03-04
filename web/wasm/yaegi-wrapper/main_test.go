@@ -1,6 +1,8 @@
 package main
 
 import (
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -45,6 +47,22 @@ func main() {
 	}
 }
 
+func TestResolveImportsSlashMapping(t *testing.T) {
+	source := `package main
+
+func main() {
+	_ = json.Marshal(map[string]string{"a": "b"})
+}`
+
+	res, err := resolveImports(source, []string{"json"})
+	if err != nil {
+		t.Fatalf("resolveImports error: %v", err)
+	}
+	if len(res.ImportsToAdd) != 1 || res.ImportsToAdd[0] != "encoding/json" {
+		t.Fatalf("unexpected imports to add: %v", res.ImportsToAdd)
+	}
+}
+
 func TestResolveImportsAmbiguous(t *testing.T) {
 	source := `package main
 
@@ -58,6 +76,102 @@ func main() {
 	}
 	if len(res.Ambiguous) != 1 {
 		t.Fatalf("expected ambiguous rand, got %v", res.Ambiguous)
+	}
+}
+
+func TestResolveImportsInvalidDefaultIdent(t *testing.T) {
+	source := `package main
+
+func main() {
+	_ = Foo.Bar()
+}`
+
+	res, err := resolveImports(source, []string{"Foo"})
+	if err != nil {
+		t.Fatalf("resolveImports error: %v", err)
+	}
+	if len(res.Unresolved) != 1 || res.Unresolved[0] != "Foo" {
+		t.Fatalf("expected unresolved Foo, got %v", res.Unresolved)
+	}
+}
+
+func TestCandidateImportPathsStdlibOverrides(t *testing.T) {
+	cases := []struct {
+		ident string
+		want  []string
+	}{
+		{ident: "json", want: []string{"encoding/json"}},
+		{ident: "base64", want: []string{"encoding/base64"}},
+		{ident: "httptest", want: []string{"net/http/httptest"}},
+		{ident: "x509", want: []string{"crypto/x509"}},
+		{ident: "fmt", want: []string{"fmt"}},
+		{ident: "template", want: []string{"html/template", "text/template"}},
+		{ident: "Foo", want: nil},
+	}
+
+	for _, tc := range cases {
+		got := candidateImportPaths(tc.ident)
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("candidateImportPaths(%q) = %v, want %v", tc.ident, got, tc.want)
+		}
+	}
+}
+
+func TestAutoImportIndexCoverage(t *testing.T) {
+	for ident, want := range autoImportIndex {
+		wantSorted := append([]string(nil), want...)
+		sort.Strings(wantSorted)
+
+		got := candidateImportPaths(ident)
+		if !reflect.DeepEqual(got, wantSorted) {
+			t.Fatalf("candidateImportPaths(%q) = %v, want %v", ident, got, wantSorted)
+		}
+
+		source := "package main\n\nfunc main() {}\n"
+		res, err := resolveImports(source, []string{ident})
+		if err != nil {
+			t.Fatalf("resolveImports(%q) error: %v", ident, err)
+		}
+
+		if len(wantSorted) == 1 {
+			if len(res.ImportsToAdd) != 1 || res.ImportsToAdd[0] != wantSorted[0] {
+				t.Fatalf("resolveImports(%q) imports = %v, want [%s]", ident, res.ImportsToAdd, wantSorted[0])
+			}
+			if len(res.Ambiguous) != 0 {
+				t.Fatalf("resolveImports(%q) unexpected ambiguous = %v", ident, res.Ambiguous)
+			}
+			continue
+		}
+
+		ambiguous, ok := res.Ambiguous[ident]
+		if !ok {
+			t.Fatalf("resolveImports(%q) expected ambiguous entry, got %v", ident, res.Ambiguous)
+		}
+		if !reflect.DeepEqual(ambiguous, wantSorted) {
+			t.Fatalf("resolveImports(%q) ambiguous = %v, want %v", ident, ambiguous, wantSorted)
+		}
+	}
+}
+
+func TestCollectSelectorCandidates(t *testing.T) {
+	source := `package main
+
+type helper struct{}
+
+func (helper) Upper(s string) string { return s }
+
+func main() {
+	fmt.Println(rand.Intn(2))
+	strings := helper{}
+	_ = strings.Upper("x")
+}`
+
+	idents, err := collectSelectorCandidates(source)
+	if err != nil {
+		t.Fatalf("collectSelectorCandidates error: %v", err)
+	}
+	if len(idents) != 2 || idents[0] != "fmt" || idents[1] != "rand" {
+		t.Fatalf("unexpected selector idents: %v", idents)
 	}
 }
 

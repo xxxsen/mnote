@@ -18,40 +18,42 @@ import (
 var undefinedIdentPattern = "undefined: "
 
 var autoImportIndex = map[string][]string{
-	"bufio":    {"bufio"},
-	"bytes":    {"bytes"},
-	"context":  {"context"},
-	"csv":      {"encoding/csv"},
-	"errors":   {"errors"},
-	"flag":     {"flag"},
-	"fmt":      {"fmt"},
-	"gzip":     {"compress/gzip"},
-	"hex":      {"encoding/hex"},
-	"hmac":     {"crypto/hmac"},
-	"http":     {"net/http"},
-	"io":       {"io"},
-	"json":     {"encoding/json"},
-	"log":      {"log"},
-	"math":     {"math"},
-	"md5":      {"crypto/md5"},
-	"os":       {"os"},
-	"path":     {"path"},
-	"filepath": {"path/filepath"},
-	"rand":     {"math/rand", "crypto/rand"},
-	"reflect":  {"reflect"},
-	"regexp":   {"regexp"},
-	"sha1":     {"crypto/sha1"},
-	"sha256":   {"crypto/sha256"},
-	"sort":     {"sort"},
-	"strconv":  {"strconv"},
-	"strings":  {"strings"},
-	"sync":     {"sync"},
-	"template": {"text/template"},
-	"time":     {"time"},
-	"url":      {"net/url"},
-	"utf8":     {"unicode/utf8"},
-	"xml":      {"encoding/xml"},
-	"zip":      {"archive/zip"},
+	"ascii85":   {"encoding/ascii85"},
+	"base64":    {"encoding/base64"},
+	"big":       {"math/big"},
+	"binary":    {"encoding/binary"},
+	"cmplx":     {"math/cmplx"},
+	"csv":       {"encoding/csv"},
+	"filepath":  {"path/filepath"},
+	"gzip":      {"compress/gzip"},
+	"heap":      {"container/heap"},
+	"hex":       {"encoding/hex"},
+	"hmac":      {"crypto/hmac"},
+	"http":      {"net/http"},
+	"httptest":  {"net/http/httptest"},
+	"httptrace": {"net/http/httptrace"},
+	"json":      {"encoding/json"},
+	"list":      {"container/list"},
+	"mail":      {"net/mail"},
+	"md5":       {"crypto/md5"},
+	"multipart": {"mime/multipart"},
+	"pem":       {"encoding/pem"},
+	"pkix":      {"crypto/x509/pkix"},
+	"rand":      {"math/rand", "crypto/rand"},
+	"ring":      {"container/ring"},
+	"scanner":   {"text/scanner"},
+	"sha1":      {"crypto/sha1"},
+	"sha256":    {"crypto/sha256"},
+	"smtp":      {"net/smtp"},
+	"tabwriter": {"text/tabwriter"},
+	"template":  {"text/template", "html/template"},
+	"tls":       {"crypto/tls"},
+	"url":       {"net/url"},
+	"utf16":     {"unicode/utf16"},
+	"utf8":      {"unicode/utf8"},
+	"x509":      {"crypto/x509"},
+	"xml":       {"encoding/xml"},
+	"zip":       {"archive/zip"},
 }
 
 type autoImportResolution struct {
@@ -96,6 +98,26 @@ func (f *autoImportFailure) Error() string {
 func runWithAutoImport(source string, maxAttempts int) ([]string, error) {
 	current := source
 	applied := map[string]struct{}{}
+
+	preIdents, preErr := collectSelectorCandidates(current)
+	if preErr != nil {
+		return sortedKeys(applied), fmt.Errorf("analyze selector imports: %w", preErr)
+	}
+	preResolution, resolveErr := resolveImports(current, preIdents)
+	if resolveErr != nil {
+		return sortedKeys(applied), fmt.Errorf("resolve selector imports: %w", resolveErr)
+	}
+	if len(preResolution.ImportsToAdd) > 0 {
+		next, addedNow, addErr := addImports(current, preResolution.ImportsToAdd)
+		if addErr != nil {
+			return sortedKeys(applied), fmt.Errorf("patch pre-imports: %w", addErr)
+		}
+		for _, pkg := range addedNow {
+			applied[pkg] = struct{}{}
+		}
+		current = next
+	}
+
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		err := evalSource(current)
 		if err == nil {
@@ -179,6 +201,40 @@ func extractUndefinedIdents(errText string) []string {
 	return out
 }
 
+func collectSelectorCandidates(source string) ([]string, error) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "snippet.go", source, parser.AllErrors)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := make(map[string]struct{})
+	idents := make([]string, 0)
+	ast.Inspect(file, func(node ast.Node) bool {
+		selector, ok := node.(*ast.SelectorExpr)
+		if !ok || selector.Sel == nil {
+			return true
+		}
+		x, ok := selector.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if x.Obj != nil {
+			return true
+		}
+		if !isLikelyPackageIdent(x.Name) {
+			return true
+		}
+		if _, exists := seen[x.Name]; !exists {
+			seen[x.Name] = struct{}{}
+			idents = append(idents, x.Name)
+		}
+		return true
+	})
+	sort.Strings(idents)
+	return idents, nil
+}
+
 func resolveImports(source string, missingIdents []string) (*autoImportResolution, error) {
 	existingAliases, existingPaths, err := parseExistingImports(source)
 	if err != nil {
@@ -194,8 +250,8 @@ func resolveImports(source string, missingIdents []string) (*autoImportResolutio
 			continue
 		}
 
-		candidates, ok := autoImportIndex[ident]
-		if !ok || len(candidates) == 0 {
+		candidates := candidateImportPaths(ident)
+		if len(candidates) == 0 {
 			res.Unresolved = append(res.Unresolved, ident)
 			continue
 		}
@@ -205,7 +261,6 @@ func resolveImports(source string, missingIdents []string) (*autoImportResolutio
 			res.Ambiguous[ident] = cloned
 			continue
 		}
-
 		path := candidates[0]
 		if _, exists := existingPaths[path]; exists {
 			continue
@@ -216,6 +271,38 @@ func resolveImports(source string, missingIdents []string) (*autoImportResolutio
 	sort.Strings(res.ImportsToAdd)
 	sort.Strings(res.Unresolved)
 	return res, nil
+}
+
+func candidateImportPaths(ident string) []string {
+	if candidates, ok := autoImportIndex[ident]; ok && len(candidates) > 0 {
+		cloned := append([]string(nil), candidates...)
+		sort.Strings(cloned)
+		return cloned
+	}
+	if isLikelyPackageIdent(ident) {
+		return []string{ident}
+	}
+	return nil
+}
+
+func isLikelyPackageIdent(ident string) bool {
+	if ident == "" {
+		return false
+	}
+	for i := 0; i < len(ident); i++ {
+		ch := ident[i]
+		if i == 0 {
+			if !((ch >= 'a' && ch <= 'z') || ch == '_') {
+				return false
+			}
+			continue
+		}
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func parseExistingImports(source string) (map[string]string, map[string]struct{}, error) {
