@@ -240,6 +240,13 @@ func resolveImports(source string, missingIdents []string) (*autoImportResolutio
 	if err != nil {
 		return nil, err
 	}
+	selectorIdents, selectorErr := collectSelectorCandidates(source)
+	selectorSet := make(map[string]struct{}, len(selectorIdents))
+	if selectorErr == nil {
+		for _, ident := range selectorIdents {
+			selectorSet[ident] = struct{}{}
+		}
+	}
 
 	res := &autoImportResolution{
 		Ambiguous: make(map[string][]string),
@@ -250,7 +257,8 @@ func resolveImports(source string, missingIdents []string) (*autoImportResolutio
 			continue
 		}
 
-		candidates := candidateImportPaths(ident)
+		_, usedAsSelector := selectorSet[ident]
+		candidates := candidateImportPaths(ident, usedAsSelector)
 		if len(candidates) == 0 {
 			res.Unresolved = append(res.Unresolved, ident)
 			continue
@@ -273,13 +281,13 @@ func resolveImports(source string, missingIdents []string) (*autoImportResolutio
 	return res, nil
 }
 
-func candidateImportPaths(ident string) []string {
+func candidateImportPaths(ident string, usedAsSelector bool) []string {
 	if candidates, ok := autoImportIndex[ident]; ok && len(candidates) > 0 {
 		cloned := append([]string(nil), candidates...)
 		sort.Strings(cloned)
 		return cloned
 	}
-	if isLikelyPackageIdent(ident) {
+	if usedAsSelector && isLikelyPackageIdent(ident) {
 		return []string{ident}
 	}
 	return nil

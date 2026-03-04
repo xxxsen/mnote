@@ -74,6 +74,7 @@ import { usePreviewDoc } from "../hooks/usePreviewDoc";
 import { useAiAssistant } from "../hooks/useAiAssistant";
 import { useSimilarDocs } from "../hooks/useSimilarDocs";
 import { useEditorLifecycle } from "../hooks/useEditorLifecycle";
+import { goAutocompleteExtension } from "@/lib/go-autocomplete";
 
 type InlineTagDropdownItem = {
   key: string;
@@ -1744,6 +1745,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     }),
     themeCompartment.of(getThemeById(currentThemeId).extension),
     EditorView.lineWrapping,
+    goAutocompleteExtension,
     keymap.of([indentWithTab]),
     EditorView.updateListener.of((update) => {
       if (update.selectionSet || update.docChanged) {
