@@ -97,20 +97,22 @@ func main() {
 
 func TestCandidateImportPathsStdlibOverrides(t *testing.T) {
 	cases := []struct {
-		ident string
-		want  []string
+		ident          string
+		usedAsSelector bool
+		want           []string
 	}{
-		{ident: "json", want: []string{"encoding/json"}},
-		{ident: "base64", want: []string{"encoding/base64"}},
-		{ident: "httptest", want: []string{"net/http/httptest"}},
-		{ident: "x509", want: []string{"crypto/x509"}},
-		{ident: "fmt", want: []string{"fmt"}},
-		{ident: "template", want: []string{"html/template", "text/template"}},
-		{ident: "Foo", want: nil},
+		{ident: "json", usedAsSelector: true, want: []string{"encoding/json"}},
+		{ident: "base64", usedAsSelector: true, want: []string{"encoding/base64"}},
+		{ident: "httptest", usedAsSelector: true, want: []string{"net/http/httptest"}},
+		{ident: "x509", usedAsSelector: true, want: []string{"crypto/x509"}},
+		{ident: "fmt", usedAsSelector: true, want: []string{"fmt"}},
+		{ident: "fmt", usedAsSelector: false, want: nil},
+		{ident: "template", usedAsSelector: true, want: []string{"html/template", "text/template"}},
+		{ident: "Foo", usedAsSelector: true, want: nil},
 	}
 
 	for _, tc := range cases {
-		got := candidateImportPaths(tc.ident)
+		got := candidateImportPaths(tc.ident, tc.usedAsSelector)
 		if !reflect.DeepEqual(got, tc.want) {
 			t.Fatalf("candidateImportPaths(%q) = %v, want %v", tc.ident, got, tc.want)
 		}
@@ -122,7 +124,7 @@ func TestAutoImportIndexCoverage(t *testing.T) {
 		wantSorted := append([]string(nil), want...)
 		sort.Strings(wantSorted)
 
-		got := candidateImportPaths(ident)
+		got := candidateImportPaths(ident, true)
 		if !reflect.DeepEqual(got, wantSorted) {
 			t.Fatalf("candidateImportPaths(%q) = %v, want %v", ident, got, wantSorted)
 		}
@@ -150,6 +152,55 @@ func TestAutoImportIndexCoverage(t *testing.T) {
 		if !reflect.DeepEqual(ambiguous, wantSorted) {
 			t.Fatalf("resolveImports(%q) ambiguous = %v, want %v", ident, ambiguous, wantSorted)
 		}
+	}
+}
+
+func TestResolveImportsAvoidsVariableAsPackage(t *testing.T) {
+	source := `package main
+
+func main() {
+	for a := 0; a < n; a++ {
+		fmt.Printf("%d", a)
+	}
+}`
+
+	res, err := resolveImports(source, []string{"n", "fmt"})
+	if err != nil {
+		t.Fatalf("resolveImports error: %v", err)
+	}
+	if len(res.ImportsToAdd) != 1 || res.ImportsToAdd[0] != "fmt" {
+		t.Fatalf("unexpected imports to add: %v", res.ImportsToAdd)
+	}
+	if len(res.Unresolved) != 1 || res.Unresolved[0] != "n" {
+		t.Fatalf("expected unresolved n, got %v", res.Unresolved)
+	}
+}
+
+func TestRunWithAutoImportAvoidsVariableAsPackage(t *testing.T) {
+	source := `package main
+
+func main() {
+	for a := 0; a < n; a++ {
+		fmt.Printf("%d", a)
+	}
+}`
+
+	applied, err := runWithAutoImport(source, 8)
+	if len(applied) != 1 || applied[0] != "fmt" {
+		t.Fatalf("unexpected applied imports: %v", applied)
+	}
+	if err == nil {
+		t.Fatalf("expected unresolved variable error, got nil")
+	}
+	autoErr, ok := err.(*autoImportFailure)
+	if !ok {
+		t.Fatalf("expected autoImportFailure, got %T (%v)", err, err)
+	}
+	if len(autoErr.Unresolved) != 1 || autoErr.Unresolved[0] != "n" {
+		t.Fatalf("expected unresolved n, got %v", autoErr.Unresolved)
+	}
+	if len(autoErr.Ambiguous) != 0 {
+		t.Fatalf("expected no ambiguous imports, got %v", autoErr.Ambiguous)
 	}
 }
 
