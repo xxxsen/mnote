@@ -67,29 +67,31 @@ type GoFenceContext = {
 
 function detectGoFence(doc: Text, pos: number): GoFenceContext {
   const cursorLine = doc.lineAt(pos).number;
-  let inFence = false;
-  let fenceLang = "";
-  let fenceStartLine = 0;
-
-  for (let lineNo = 1; lineNo <= cursorLine; lineNo += 1) {
-    const line = doc.line(lineNo).text.trim();
+  for (let lineNo = cursorLine; lineNo >= 1; lineNo -= 1) {
+    const raw = doc.line(lineNo).text;
+    const line = raw.trim();
     if (!line.startsWith("```")) continue;
-    if (!inFence) {
-      const lang = line.slice(3).trim().split(/\s+/)[0]?.toLowerCase() || "";
-      inFence = true;
-      fenceLang = lang;
-      fenceStartLine = lineNo;
-      continue;
+
+    // Opening fences in this editor are language-tagged (e.g. ```go [runnable]).
+    const lang = line.slice(3).trim().split(/\s+/)[0]?.toLowerCase() || "";
+
+    // If nearest fence has no language marker, treat it as a closing fence.
+    if (!lang) {
+      return { inGoFence: false, fenceStartLine: 0 };
     }
-    inFence = false;
-    fenceLang = "";
-    fenceStartLine = 0;
+
+    // Cursor on the opening fence line itself is outside code content.
+    if (lineNo === cursorLine) {
+      return { inGoFence: false, fenceStartLine: 0 };
+    }
+
+    return {
+      inGoFence: GO_FENCE_LANGS.has(lang),
+      fenceStartLine: lineNo,
+    };
   }
 
-  return {
-    inGoFence: inFence && GO_FENCE_LANGS.has(fenceLang),
-    fenceStartLine,
-  };
+  return { inGoFence: false, fenceStartLine: 0 };
 }
 
 function collectGoIdentifiers(doc: Text, fenceStartLine: number, pos: number): string[] {
