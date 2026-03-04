@@ -1,4 +1,4 @@
-.PHONY: build-image build-web-image build run-web run run-dev-docker test install-golangci-lint lint-go
+.PHONY: build-image build-web-image build-yaegi-wasm run-web run run-dev-docker test install-golangci-lint lint-go
 
 GOBIN ?= $(CURDIR)/bin
 GOCACHE ?= $(CURDIR)/.cache/go-build
@@ -14,6 +14,9 @@ build-web-image:
 
 build:
 	./scripts/build.sh
+
+build-yaegi-wasm:
+	$(MAKE) -C web/wasm/yaegi-wrapper build
 
 run-web:
 	./scripts/run-web.sh
