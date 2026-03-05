@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	stderrors "errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -183,12 +184,12 @@ func mapOAuthError(err error) string {
 	if err == nil {
 		return "internal"
 	}
-	switch err {
-	case appErr.ErrConflict:
+	switch {
+	case stderrors.Is(err, appErr.ErrConflict):
 		return "conflict"
-	case appErr.ErrInvalid:
+	case stderrors.Is(err, appErr.ErrInvalid):
 		return "invalid"
-	case appErr.ErrNotFound:
+	case stderrors.Is(err, appErr.ErrNotFound):
 		return "not_found"
 	default:
 		return "internal"

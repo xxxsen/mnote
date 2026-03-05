@@ -6,7 +6,6 @@ import (
 	"github.com/xxxsen/common/trace"
 	"go.uber.org/zap"
 
-	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 )
@@ -18,46 +17,23 @@ func getUserID(c *gin.Context) string {
 }
 
 func handleError(c *gin.Context, err error) {
-	if err != nil {
-		requestID, _ := trace.GetTraceId(c.Request.Context())
-		userID, _ := c.Get("user_id")
-		userEmail, _ := c.Get("user_email")
-		logutil.GetLogger(c.Request.Context()).Error(
-			"request error",
-			zap.Any("request_id", requestID),
-			zap.String("method", c.Request.Method),
-			zap.String("path", c.Request.URL.Path),
-			zap.Any("user_id", userID),
-			zap.Any("user_email", userEmail),
-			zap.Error(err),
-		)
-	}
-	switch {
-	case err == nil:
+	if err == nil {
 		return
-	case err == appErr.ErrUnauthorized:
-		response.Error(c, errcode.ErrUnauthorized, "unauthorized")
-	case err == appErr.ErrForbidden:
-		response.Error(c, errcode.ErrForbidden, "forbidden")
-	case err == appErr.ErrNotFound:
-		response.Error(c, errcode.ErrNotFound, "not found")
-	case appErr.IsInvalid(err):
-		msg := "invalid request"
-		if err != nil && err.Error() != appErr.ErrInvalid.Error() {
-			msg = err.Error()
-		}
-		response.Error(c, errcode.ErrInvalid, msg)
-	case err == appErr.ErrConflict:
-		response.Error(c, errcode.ErrConflict, "conflict")
-	case err == appErr.ErrTooMany:
-		response.Error(c, errcode.ErrTooMany, "too many requests")
-	case err == appErr.ErrImportTooManyNotes:
-		response.Error(c, errcode.ErrImportTooManyNotes, "too many notes")
-	case err == appErr.ErrImportNoteTooLarge:
-		response.Error(c, errcode.ErrImportNoteTooLarge, "note too large")
-	case err == appErr.ErrImportInvalidJSON:
-		response.Error(c, errcode.ErrImportInvalidJSON, "invalid json")
-	default:
-		response.Error(c, errcode.ErrInternal, "internal error")
 	}
+
+	requestID, _ := trace.GetTraceId(c.Request.Context())
+	userID, _ := c.Get("user_id")
+	userEmail, _ := c.Get("user_email")
+	logutil.GetLogger(c.Request.Context()).Error(
+		"request error",
+		zap.Any("request_id", requestID),
+		zap.String("method", c.Request.Method),
+		zap.String("path", c.Request.URL.Path),
+		zap.Any("user_id", userID),
+		zap.Any("user_email", userEmail),
+		zap.Error(err),
+	)
+
+	normalized := appErr.Normalize(err)
+	response.Error(c, normalized.Code(), normalized.Message())
 }
