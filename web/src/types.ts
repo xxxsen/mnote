@@ -121,3 +121,14 @@ export interface Asset {
   mtime: number;
   ref_count: number;
 }
+
+export interface Todo {
+  id: string;
+  user_id: string;
+  document_id: string;
+  content: string;
+  due_date: string;
+  done: number;
+  ctime: number;
+  mtime: number;
+}

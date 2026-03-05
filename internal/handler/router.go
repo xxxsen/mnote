@@ -23,6 +23,7 @@ type RouterDeps struct {
 	Import     *ImportHandler
 	Templates  *TemplateHandler
 	Assets     *AssetHandler
+	Todos      *TodoHandler
 	JWTSecret  []byte
 }
 
@@ -100,6 +101,12 @@ func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
 	authGroup.POST("/templates/:id/create", deps.Templates.CreateDocument)
 	authGroup.GET("/assets", deps.Assets.List)
 	authGroup.GET("/assets/:id/references", deps.Assets.References)
+
+	authGroup.POST("/todos", deps.Todos.Create)
+	authGroup.GET("/todos", deps.Todos.List)
+	authGroup.PUT("/todos/:id", deps.Todos.Update)
+	authGroup.PUT("/todos/:id/done", deps.Todos.ToggleDone)
+	authGroup.DELETE("/todos/:id", deps.Todos.Delete)
 
 	api.GET("/public/share/:token", deps.Shares.PublicGet)
 	api.GET("/public/share/:token/comments", deps.Shares.PublicListComments)

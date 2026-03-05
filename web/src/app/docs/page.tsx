@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { Document, Tag } from "@/types";
-import { Bookmark, ChevronDown, ChevronRight, Copy, Download, FileArchive, Images, LogOut, Pencil, Pin, Plus, Search, Settings, Share2, Star, Upload, X } from "lucide-react";
+import { Bookmark, CalendarDays, ChevronDown, ChevronRight, Copy, Download, FileArchive, Images, LogOut, Pencil, Pin, Plus, Search, Settings, Share2, Star, Upload, X } from "lucide-react";
 
 function TagEditor({
   doc,
@@ -63,7 +63,7 @@ function TagEditor({
       return;
     }
     if (selected.length >= 7) {
-        toast({ description: "You can only select up to 7 tags." });
+      toast({ description: "You can only select up to 7 tags." });
       return;
     }
     setSelected([...selected, id]);
@@ -144,8 +144,8 @@ function TagEditor({
     <div className="absolute inset-0 bg-card z-20 flex flex-col p-3 gap-2 animate-in fade-in zoom-in-95 duration-200 overflow-visible" onClick={(e) => e.stopPropagation()}>
       <div className="flex items-center justify-between">
         <span className="text-xs font-bold text-muted-foreground">Edit Tags</span>
-        <button 
-          onClick={(e) => { e.stopPropagation(); onClose(); }} 
+        <button
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
           className="h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
         >
           <X className="h-3.5 w-3.5" />
@@ -238,8 +238,8 @@ function TagEditor({
                   {item.type === "create"
                     ? `Create #${normalizedQuery}`
                     : item.type === "use"
-                    ? `Use existing #${normalizedQuery}`
-                    : `#${item.tag?.name || ""}`}
+                      ? `Use existing #${normalizedQuery}`
+                      : `#${item.tag?.name || ""}`}
                 </button>
               ))
             ) : (
@@ -266,7 +266,7 @@ function generatePixelAvatar(seed: string) {
   }
   const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
   const color = "#" + "00000".substring(0, 6 - c.length) + c;
-  
+
   let rects = "";
   for (let y = 0; y < 5; y++) {
     for (let x = 0; x < 3; x++) {
@@ -802,10 +802,10 @@ export default function DocsPage() {
   const handlePinToggle = async (e: React.MouseEvent, doc: DocumentWithTags) => {
     e.stopPropagation();
     const newPinned = doc.pinned ? 0 : 1;
-    
+
     const updateDocs = (prevDocs: DocumentWithTags[]) => {
-       const updated = prevDocs.map(d => d.id === doc.id ? { ...d, pinned: newPinned } : d);
-       return sortDocs(updated);
+      const updated = prevDocs.map(d => d.id === doc.id ? { ...d, pinned: newPinned } : d);
+      return sortDocs(updated);
     };
 
     setDocs(prev => updateDocs(prev));
@@ -823,7 +823,7 @@ export default function DocsPage() {
   const handleStarToggle = async (e: React.MouseEvent, doc: DocumentWithTags) => {
     e.stopPropagation();
     const newStarred = doc.starred ? 0 : 1;
-    
+
     setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, starred: newStarred } : d));
 
     try {
@@ -856,7 +856,7 @@ export default function DocsPage() {
 
   const handleUpdateTags = async (doc: DocumentWithTags, newTagIds: string[]) => {
     const updateDocs = (prevDocs: DocumentWithTags[]) => {
-       return prevDocs.map(d => d.id === doc.id ? { ...d, tag_ids: newTagIds } : d);
+      return prevDocs.map(d => d.id === doc.id ? { ...d, tag_ids: newTagIds } : d);
     };
     setDocs(prev => updateDocs(prev));
     setEditingDocId(null);
@@ -1074,11 +1074,11 @@ export default function DocsPage() {
       }
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
-      const payload = await res.json().catch(() => ({}));
-      const code = payload?.code;
-      if (typeof code === "number" && code !== 0) {
-        throw new ApiError(payload?.msg || payload?.message || "Export failed", code);
-      }
+        const payload = await res.json().catch(() => ({}));
+        const code = payload?.code;
+        if (typeof code === "number" && code !== 0) {
+          throw new ApiError(payload?.msg || payload?.message || "Export failed", code);
+        }
 
       }
       const blob = await res.blob();
@@ -1146,61 +1146,64 @@ export default function DocsPage() {
             <div className="flex flex-col gap-1">
               <button
                 onClick={() => { setSelectedTag(""); setShowStarred(false); setShowShared(false); }}
-                className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
-                  selectedTag === "" && !showStarred && !showShared
-                    ? "bg-accent text-accent-foreground" 
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
+                className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${selectedTag === "" && !showStarred && !showShared
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
               >
                 <span>All Notes</span>
-                <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
-                  selectedTag === "" && !showStarred && !showShared
-                    ? "bg-background/20 text-accent-foreground"
-                    : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
-                }`}>
+                <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${selectedTag === "" && !showStarred && !showShared
+                  ? "bg-background/20 text-accent-foreground"
+                  : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
+                  }`}>
                   {totalDocs}
                 </span>
               </button>
               <button
                 onClick={() => { setSelectedTag(""); setShowStarred(true); setShowShared(false); }}
-                className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
-                  showStarred
-                    ? "bg-accent text-accent-foreground" 
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
+                className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${showStarred
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
               >
                 <div className="flex items-center">
                   <Star className={`mr-2 h-4 w-4 ${showStarred ? "fill-current" : ""}`} />
                   <span>Starred</span>
                 </div>
-                <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
-                  showStarred
-                    ? "bg-background/20 text-accent-foreground"
-                    : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
-                }`}>
+                <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${showStarred
+                  ? "bg-background/20 text-accent-foreground"
+                  : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
+                  }`}>
                   {starredTotal}
                 </span>
-                </button>
-                <button
-                  onClick={() => { setSelectedTag(""); setShowStarred(false); setShowShared(true); }}
-                  className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
-                    showShared
-                      ? "bg-accent text-accent-foreground" 
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              </button>
+              <button
+                onClick={() => { setSelectedTag(""); setShowStarred(false); setShowShared(true); }}
+                className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${showShared
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   }`}
-                >
-                  <div className="flex items-center">
-                    <Share2 className={`mr-2 h-4 w-4 ${showShared ? "fill-current" : ""}`} />
-                    <span>Shared</span>
-                  </div>
-                  <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
-                    showShared
-                      ? "bg-background/20 text-accent-foreground"
-                      : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
+              >
+                <div className="flex items-center">
+                  <Share2 className={`mr-2 h-4 w-4 ${showShared ? "fill-current" : ""}`} />
+                  <span>Shared</span>
+                </div>
+                <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${showShared
+                  ? "bg-background/20 text-accent-foreground"
+                  : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
                   }`}>
-                    {sharedTotal}
-                  </span>
-                </button>
+                  {sharedTotal}
+                </span>
+              </button>
+              <button
+                onClick={() => router.push("/todos")}
+                className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all text-muted-foreground hover:bg-muted hover:text-foreground`}
+              >
+                <div className="flex items-center">
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  <span>TODOs</span>
+                </div>
+              </button>
             </div>
           </div>
 
@@ -1229,11 +1232,10 @@ export default function DocsPage() {
                     <button
                       key={view.id}
                       onClick={() => applySavedView(view)}
-                      className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
-                        isActive
-                          ? "bg-accent text-accent-foreground"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      }`}
+                      className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${isActive
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
                     >
                       <span className="flex items-center gap-1.5 min-w-0">
                         <Bookmark className={`h-3 w-3 shrink-0 ${isActive ? "fill-current" : ""}`} />
@@ -1242,11 +1244,10 @@ export default function DocsPage() {
                       <span
                         role="button"
                         tabIndex={0}
-                        className={`rounded p-1 transition-colors ${
-                          isActive
-                            ? "text-accent-foreground/80 hover:text-accent-foreground"
-                            : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
-                        }`}
+                        className={`rounded p-1 transition-colors ${isActive
+                          ? "text-accent-foreground/80 hover:text-accent-foreground"
+                          : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+                          }`}
                         onClick={(event) => {
                           event.stopPropagation();
                           void removeSavedView(view.id);
@@ -1274,7 +1275,8 @@ export default function DocsPage() {
             <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-bold uppercase text-muted-foreground">RECENT UPDATES</div>
             </div>
-            <style dangerouslySetInnerHTML={{__html: `
+            <style dangerouslySetInnerHTML={{
+              __html: `
               @keyframes marquee {
                 0% { transform: translateX(0); }
                 100% { transform: translateX(-100%); }
@@ -1314,7 +1316,7 @@ export default function DocsPage() {
 
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs font-bold uppercase text-muted-foreground">Tags</div>
-            <button 
+            <button
               onClick={() => router.push(`/tags?return=${encodeURIComponent("/docs")}`)}
               className="text-muted-foreground hover:text-foreground transition-colors"
               title="Manage Tags"
@@ -1325,8 +1327,8 @@ export default function DocsPage() {
           <div className="mb-2">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-              <Input 
-                placeholder="Filter tags..." 
+              <Input
+                placeholder="Filter tags..."
                 value={tagSearch}
                 onChange={(e) => setTagSearch(e.target.value)}
                 className="h-7 text-xs pl-7 bg-background/50 border-border focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0"
@@ -1345,11 +1347,10 @@ export default function DocsPage() {
                   <button
                     key={tag.id}
                     onClick={() => { setSelectedTag(tag.id); setShowStarred(false); setShowShared(false); }}
-                    className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${
-                      selectedTag === tag.id
-                        ? "bg-accent text-accent-foreground" 
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
+                    className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${selectedTag === tag.id
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
                   >
                     <span className="truncate">#{tag.name}</span>
                     <div className="ml-2 flex items-center gap-1">
@@ -1369,19 +1370,17 @@ export default function DocsPage() {
                         }}
                         title={tag.pinned ? "Unpin tag" : "Pin tag"}
                         aria-label={tag.pinned ? "Unpin tag" : "Pin tag"}
-                        className={`rounded p-1 transition-colors ${
-                          tag.pinned
-                            ? "text-primary opacity-100"
-                            : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
-                        }`}
+                        className={`rounded p-1 transition-colors ${tag.pinned
+                          ? "text-primary opacity-100"
+                          : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+                          }`}
                       >
                         <Pin className={`h-3 w-3 ${tag.pinned ? "fill-current" : ""}`} />
                       </span>
-                      <span className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${
-                        selectedTag === tag.id
-                          ? "bg-background/20 text-accent-foreground"
-                          : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
-                      }`}>
+                      <span className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${selectedTag === tag.id
+                        ? "bg-background/20 text-accent-foreground"
+                        : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"
+                        }`}>
                         {tag.count}
                       </span>
                     </div>
@@ -1407,299 +1406,298 @@ export default function DocsPage() {
 
       <main className="flex-1 flex flex-col min-w-0">
         <header className="relative h-14 border-b border-border flex items-center px-4 gap-4 justify-between bg-background z-40">
-           <div className="flex items-center gap-2 flex-1 max-w-md relative">
-             <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-             <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                {selectedTag && (
-                  <div className="flex items-center gap-1 bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap">
-                    #{tagIndex[selectedTag]?.name || "tag"}
-                    <button onClick={() => setSelectedTag("")} className="hover:text-primary/70">
-                      <X className="h-2.5 w-2.5" />
-                    </button>
-                  </div>
-                )}
-               <Input 
-                 placeholder={selectedTag ? "Search in tag..." : "Search... (type / for tags)"} 
-                 className="border-none shadow-none focus-visible:ring-0 px-0 h-9 flex-1 min-w-[50px]"
-                 value={search}
-                 onChange={(e) => {
-                   setSearch(e.target.value);
-                   if (e.target.value.startsWith("/")) {
-                     setShowTagSelector(true);
-                   } else {
-                     setShowTagSelector(false);
-                   }
-                 }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      setShowTagSelector(false);
-                    } else if (e.key === "Backspace" || e.key === "Delete") {
-                      if (search === "" && selectedTag) {
-                        e.preventDefault();
-                        setSelectedTag("");
-                      }
-                    } else if (showTagSelector) {
-                     if (e.key === "ArrowDown") {
-                       e.preventDefault();
-                       setActiveTagIndex(prev => (prev + 1) % (filteredTags.length || 1));
-                     } else if (e.key === "ArrowUp") {
-                       e.preventDefault();
-                       setActiveTagIndex(prev => (prev - 1 + (filteredTags.length || 1)) % (filteredTags.length || 1));
-                     } else if (e.key === "Enter") {
-                       if (filteredTags.length > 0) {
-                         e.preventDefault();
-                         const tag = filteredTags[activeTagIndex];
-                          if (tag) {
-                            setSelectedTag(tag.id);
-                            setShowStarred(false);
-                            setShowShared(false);
-                            setSearch("");
-                            setShowTagSelector(false);
-                          }
-                       }
-                     }
-                   }
-                 }}
-               />
-             </div>
-             {search && !showTagSelector && (
-               <button onClick={() => setSearch("")} className="shrink-0">
-                 <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-               </button>
-             )}
-
-             {showTagSelector && (
-               <div 
-                 ref={tagSelectorRef}
-                 className="absolute top-full left-0 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-200"
-               >
-                 <div className="p-1">
-                   {filteredTags.map((tag, index) => (
-                       <button
-                         key={tag.id}
-                          onClick={() => {
-                            setSelectedTag(tag.id);
-                            setShowStarred(false);
-                            setShowShared(false);
-                            setSearch("");
-                            setShowTagSelector(false);
-                          }}
-                         className={`flex w-full items-center px-3 py-2 text-sm rounded-md text-left transition-colors ${
-                           index === activeTagIndex 
-                             ? "bg-accent text-accent-foreground" 
-                             : "hover:bg-accent/50 hover:text-accent-foreground"
-                         }`}
-                       >
-                         <span className="font-mono text-muted-foreground mr-2">#</span>
-                         {tag.name}
-                       </button>
-                     ))}
-                    {search.slice(1).trim() !== "" && filteredTags.length === 0 && (
-                      <div className="px-3 py-2 text-sm text-muted-foreground italic">No tags found</div>
-                    )}
-                  </div>
+          <div className="flex items-center gap-2 flex-1 max-w-md relative">
+            <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              {selectedTag && (
+                <div className="flex items-center gap-1 bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap">
+                  #{tagIndex[selectedTag]?.name || "tag"}
+                  <button onClick={() => setSelectedTag("")} className="hover:text-primary/70">
+                    <X className="h-2.5 w-2.5" />
+                  </button>
                 </div>
               )}
-           </div>
-            <div className="flex items-center gap-3 relative" ref={menuRef}>
-              <Button
-                onClick={() => router.push("/assets")}
-                variant="outline"
-                size="sm"
-                className="rounded-xl text-xs font-semibold"
-              >
-                <Images className="mr-1.5 h-3.5 w-3.5" />
-                Assets
-              </Button>
-              <div className="relative flex items-center">
-                <Button onClick={handleCreate} size="sm" className="rounded-r-none rounded-l-xl bg-[#6366f1] hover:bg-[#4f46e5] text-white border-none font-bold tracking-wide">
-                  + NEW
-                </Button>
-                <Button
-                  onClick={() => setShowCreateMenu((prev) => !prev)}
-                  size="sm"
-                  className="rounded-l-none rounded-r-xl bg-[#6366f1] hover:bg-[#4f46e5] text-white border-none px-2"
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </Button>
-                {showCreateMenu && (
-                  <div className="absolute right-0 top-full mt-2 w-44 rounded-xl border border-border bg-popover p-1 shadow-md z-[100] animate-in fade-in zoom-in-95 duration-200">
-                    <button
-                      onClick={() => {
-                        setShowCreateMenu(false);
-                        router.push("/templates");
-                      }}
-                      className="relative flex w-full cursor-default select-none items-center justify-center text-center rounded-lg px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-                    >
-                      TEMPLATE
-                    </button>
-                  </div>
-                )}
-              </div>
-              <button 
-                onClick={() => {
-                  setShowCreateMenu(false);
-                  setShowUserMenu(!showUserMenu);
+              <Input
+                placeholder={selectedTag ? "Search in tag..." : "Search... (type / for tags)"}
+                className="border-none shadow-none focus-visible:ring-0 px-0 h-9 flex-1 min-w-[50px]"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  if (e.target.value.startsWith("/")) {
+                    setShowTagSelector(true);
+                  } else {
+                    setShowTagSelector(false);
+                  }
                 }}
-                className="w-8 h-8 rounded-full overflow-hidden border border-border hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                title={userEmail || "User menu"}
-              >
-                {avatarUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={avatarUrl} alt="User" className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
-                )}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setShowTagSelector(false);
+                  } else if (e.key === "Backspace" || e.key === "Delete") {
+                    if (search === "" && selectedTag) {
+                      e.preventDefault();
+                      setSelectedTag("");
+                    }
+                  } else if (showTagSelector) {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setActiveTagIndex(prev => (prev + 1) % (filteredTags.length || 1));
+                    } else if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setActiveTagIndex(prev => (prev - 1 + (filteredTags.length || 1)) % (filteredTags.length || 1));
+                    } else if (e.key === "Enter") {
+                      if (filteredTags.length > 0) {
+                        e.preventDefault();
+                        const tag = filteredTags[activeTagIndex];
+                        if (tag) {
+                          setSelectedTag(tag.id);
+                          setShowStarred(false);
+                          setShowShared(false);
+                          setSearch("");
+                          setShowTagSelector(false);
+                        }
+                      }
+                    }
+                  }
+                }}
+              />
+            </div>
+            {search && !showTagSelector && (
+              <button onClick={() => setSearch("")} className="shrink-0">
+                <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
               </button>
-              {showUserMenu && (
-                <div className="absolute right-0 top-full mt-2 w-48 rounded-md border border-border bg-popover p-1 shadow-md z-[100] animate-in fade-in zoom-in-95 duration-200">
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground truncate border-b border-border/50 mb-1">
-                    {userEmail || "Signed in"}
-                  </div>
+            )}
+
+            {showTagSelector && (
+              <div
+                ref={tagSelectorRef}
+                className="absolute top-full left-0 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-200"
+              >
+                <div className="p-1">
+                  {filteredTags.map((tag, index) => (
+                    <button
+                      key={tag.id}
+                      onClick={() => {
+                        setSelectedTag(tag.id);
+                        setShowStarred(false);
+                        setShowShared(false);
+                        setSearch("");
+                        setShowTagSelector(false);
+                      }}
+                      className={`flex w-full items-center px-3 py-2 text-sm rounded-md text-left transition-colors ${index === activeTagIndex
+                        ? "bg-accent text-accent-foreground"
+                        : "hover:bg-accent/50 hover:text-accent-foreground"
+                        }`}
+                    >
+                      <span className="font-mono text-muted-foreground mr-2">#</span>
+                      {tag.name}
+                    </button>
+                  ))}
+                  {search.slice(1).trim() !== "" && filteredTags.length === 0 && (
+                    <div className="px-3 py-2 text-sm text-muted-foreground italic">No tags found</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-3 relative" ref={menuRef}>
+            <Button
+              onClick={() => router.push("/assets")}
+              variant="outline"
+              size="sm"
+              className="rounded-xl text-xs font-semibold"
+            >
+              <Images className="mr-1.5 h-3.5 w-3.5" />
+              Assets
+            </Button>
+            <div className="relative flex items-center">
+              <Button onClick={handleCreate} size="sm" className="rounded-r-none rounded-l-xl bg-[#6366f1] hover:bg-[#4f46e5] text-white border-none font-bold tracking-wide">
+                + NEW
+              </Button>
+              <Button
+                onClick={() => setShowCreateMenu((prev) => !prev)}
+                size="sm"
+                className="rounded-l-none rounded-r-xl bg-[#6366f1] hover:bg-[#4f46e5] text-white border-none px-2"
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </Button>
+              {showCreateMenu && (
+                <div className="absolute right-0 top-full mt-2 w-44 rounded-xl border border-border bg-popover p-1 shadow-md z-[100] animate-in fade-in zoom-in-95 duration-200">
                   <button
                     onClick={() => {
-                      setShowUserMenu(false);
-                      router.push("/settings?return=/docs");
+                      setShowCreateMenu(false);
+                      router.push("/templates");
                     }}
-                    className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                    className="relative flex w-full cursor-default select-none items-center justify-center text-center rounded-lg px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
                   >
-                    <Settings className="mr-2 h-4 w-4" />
-                    <span>Account Settings</span>
-                  </button>
-                  <div
-                    className="relative"
-                    onMouseEnter={() => setShowImportMenu(true)}
-                    onMouseLeave={() => setShowImportMenu(false)}
-                  >
-                    <button
-                      onClick={() => setShowImportMenu((prev) => !prev)}
-                      className="relative flex w-full cursor-default select-none items-center justify-between rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <span className="flex items-center">
-                        <Download className="mr-2 h-4 w-4" />
-                        Import
-                      </span>
-                      <ChevronRight className="h-3.5 w-3.5 opacity-70" />
-                    </button>
-                    {showImportMenu && (
-                      <div className="absolute right-full top-0 mr-1 w-44 rounded-md border border-border bg-popover p-1 shadow-md">
-                          <button
-                            onClick={() => {
-                              setShowUserMenu(false);
-                              setShowImportMenu(false);
-                              openImportModal("hedgedoc");
-                            }}
-                            className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-                          >
-                            <FileArchive className="mr-2 h-4 w-4" />
-                            HedgeDoc
-                          </button>
-                          <button
-                            onClick={() => {
-                              setShowUserMenu(false);
-                              setShowImportMenu(false);
-                              openImportModal("notes");
-                            }}
-                            className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-                          >
-                            <FileArchive className="mr-2 h-4 w-4" />
-                            MicroNote
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={openExportModal}
-                      className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <Upload className="mr-2 h-4 w-4" />
-                      <span>Export</span>
-                    </button>
-                    <button
-                      onClick={handleLogout}
-                      className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-                    >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Sign out</span>
+                    TEMPLATE
                   </button>
                 </div>
               )}
             </div>
+            <button
+              onClick={() => {
+                setShowCreateMenu(false);
+                setShowUserMenu(!showUserMenu);
+              }}
+              className="w-8 h-8 rounded-full overflow-hidden border border-border hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              title={userEmail || "User menu"}
+            >
+              {avatarUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarUrl} alt="User" className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
+              )}
+            </button>
+            {showUserMenu && (
+              <div className="absolute right-0 top-full mt-2 w-48 rounded-md border border-border bg-popover p-1 shadow-md z-[100] animate-in fade-in zoom-in-95 duration-200">
+                <div className="px-2 py-1.5 text-xs text-muted-foreground truncate border-b border-border/50 mb-1">
+                  {userEmail || "Signed in"}
+                </div>
+                <button
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    router.push("/settings?return=/docs");
+                  }}
+                  className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Account Settings</span>
+                </button>
+                <div
+                  className="relative"
+                  onMouseEnter={() => setShowImportMenu(true)}
+                  onMouseLeave={() => setShowImportMenu(false)}
+                >
+                  <button
+                    onClick={() => setShowImportMenu((prev) => !prev)}
+                    className="relative flex w-full cursor-default select-none items-center justify-between rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                  >
+                    <span className="flex items-center">
+                      <Download className="mr-2 h-4 w-4" />
+                      Import
+                    </span>
+                    <ChevronRight className="h-3.5 w-3.5 opacity-70" />
+                  </button>
+                  {showImportMenu && (
+                    <div className="absolute right-full top-0 mr-1 w-44 rounded-md border border-border bg-popover p-1 shadow-md">
+                      <button
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          setShowImportMenu(false);
+                          openImportModal("hedgedoc");
+                        }}
+                        className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <FileArchive className="mr-2 h-4 w-4" />
+                        HedgeDoc
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          setShowImportMenu(false);
+                          openImportModal("notes");
+                        }}
+                        className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <FileArchive className="mr-2 h-4 w-4" />
+                        MicroNote
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={openExportModal}
+                  className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  <span>Export</span>
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Sign out</span>
+                </button>
+              </div>
+            )}
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
           {aiSearchDocs.length > 0 && (
             <div className="mb-10">
-               <div className="flex items-center gap-2 mb-4">
-                  <div className="bg-indigo-500/10 p-1 rounded-md">
-                    <Search className="h-4 w-4 text-indigo-500" />
-                  </div>
-                  <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex-1">AI Semantic Discovery</h2>
-                  {aiSearching && <div className="text-[10px] text-muted-foreground animate-pulse">Analyzing library...</div>}
-               </div>
-               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {aiSearchDocs.map((doc) => {
-                     const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter(Boolean) as Tag[];
-                     return (
-                        <div
-                          key={`ai-${doc.id}`}
-                          onClick={() => router.push(`/docs/${doc.id}`)}
-                          className="group relative flex flex-col border border-indigo-500/30 bg-indigo-500/5 p-4 h-56 hover:border-indigo-500 transition-colors cursor-pointer rounded-[8px] overflow-hidden"
-                        >
-                           <div className="absolute top-2 right-2 text-indigo-500/40 group-hover:text-indigo-500 transition-colors">
-                              <Search className="h-3 w-3" />
-                           </div>
-                           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-mono text-indigo-500/70 uppercase tracking-tighter">
-                              {Math.round((doc.score || 0) * 100)}% Match
-                           </div>
-                           <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
-                           <div className="relative flex-1 min-h-0 mb-2 overflow-hidden">
-                              <div className="text-sm text-muted-foreground whitespace-pre-wrap font-sans pb-8 break-words line-clamp-6">
-                                {doc.summary || doc.content}
-                              </div>
-                              <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-background/10 to-transparent pointer-events-none" />
-                           </div>
-                           <div className="mt-auto flex flex-wrap gap-1 justify-center pt-2">
-                              {docTags.map(tag => (
-                                <span key={tag.id} className="text-[10px] bg-indigo-500/10 text-indigo-600 px-1.5 py-0.5 rounded-full border border-indigo-500/10">
-                                  #{tag.name}
-                                </span>
-                              ))}
-                           </div>
+              <div className="flex items-center gap-2 mb-4">
+                <div className="bg-indigo-500/10 p-1 rounded-md">
+                  <Search className="h-4 w-4 text-indigo-500" />
+                </div>
+                <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex-1">AI Semantic Discovery</h2>
+                {aiSearching && <div className="text-[10px] text-muted-foreground animate-pulse">Analyzing library...</div>}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {aiSearchDocs.map((doc) => {
+                  const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter(Boolean) as Tag[];
+                  return (
+                    <div
+                      key={`ai-${doc.id}`}
+                      onClick={() => router.push(`/docs/${doc.id}`)}
+                      className="group relative flex flex-col border border-indigo-500/30 bg-indigo-500/5 p-4 h-56 hover:border-indigo-500 transition-colors cursor-pointer rounded-[8px] overflow-hidden"
+                    >
+                      <div className="absolute top-2 right-2 text-indigo-500/40 group-hover:text-indigo-500 transition-colors">
+                        <Search className="h-3 w-3" />
+                      </div>
+                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-mono text-indigo-500/70 uppercase tracking-tighter">
+                        {Math.round((doc.score || 0) * 100)}% Match
+                      </div>
+                      <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
+                      <div className="relative flex-1 min-h-0 mb-2 overflow-hidden">
+                        <div className="text-sm text-muted-foreground whitespace-pre-wrap font-sans pb-8 break-words line-clamp-6">
+                          {doc.summary || doc.content}
                         </div>
-                     );
-                  })}
-               </div>
-               <div className="mt-6 border-b border-border shadow-sm shadow-indigo-500/10" />
+                        <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-background/10 to-transparent pointer-events-none" />
+                      </div>
+                      <div className="mt-auto flex flex-wrap gap-1 justify-center pt-2">
+                        {docTags.map(tag => (
+                          <span key={tag.id} className="text-[10px] bg-indigo-500/10 text-indigo-600 px-1.5 py-0.5 rounded-full border border-indigo-500/10">
+                            #{tag.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-6 border-b border-border shadow-sm shadow-indigo-500/10" />
             </div>
           )}
 
           {loading ? (
-             <div className="flex justify-center py-20 text-muted-foreground animate-pulse">Loading...</div>
+            <div className="flex justify-center py-20 text-muted-foreground animate-pulse">Loading...</div>
           ) : docs.length === 0 ? (
-             <div className="text-center py-20 text-muted-foreground">
-               {showShared ? "No shared notes found." : "No micro notes found."}
-             </div>
-           ) : (
+            <div className="text-center py-20 text-muted-foreground">
+              {showShared ? "No shared notes found." : "No micro notes found."}
+            </div>
+          ) : (
             <div className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {docs.map((doc, index) => {
                   const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter(Boolean) as Tag[];
                   const isEditing = editingDocId === doc.id;
                   const previewContent = showShared ? (doc.summary || "") : doc.content;
-                
-                return (
-                  <div
-                    key={doc.id || `${doc.title}-${doc.mtime}-${index}`}
-                    onClick={() => router.push(`/docs/${doc.id}`)}
-                    className={`group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer rounded-[8px] ${isEditing ? "overflow-visible" : "overflow-hidden"}`}
-                  >
-                    {isEditing && (
-        <TagEditor
-          doc={doc}
-          allTags={tags}
-          onSave={handleUpdateTags}
-          onClose={() => setEditingDocId(null)}
-        />
-                    )}
+
+                  return (
+                    <div
+                      key={doc.id || `${doc.title}-${doc.mtime}-${index}`}
+                      onClick={() => router.push(`/docs/${doc.id}`)}
+                      className={`group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer rounded-[8px] ${isEditing ? "overflow-visible" : "overflow-hidden"}`}
+                    >
+                      {isEditing && (
+                        <TagEditor
+                          doc={doc}
+                          allTags={tags}
+                          onSave={handleUpdateTags}
+                          onClose={() => setEditingDocId(null)}
+                        />
+                      )}
 
                       {!isEditing && (
                         <div className="absolute top-2 right-2 flex gap-1 z-20">
@@ -1720,21 +1718,19 @@ export default function DocsPage() {
                             <>
                               <button
                                 onClick={(e) => handleStarToggle(e, doc)}
-                                className={`p-1.5 rounded-full transition-all ${
-                                  doc.starred 
-                                    ? "text-yellow-500 opacity-100 bg-background/80 shadow-sm" 
-                                    : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
-                                }`}
+                                className={`p-1.5 rounded-full transition-all ${doc.starred
+                                  ? "text-yellow-500 opacity-100 bg-background/80 shadow-sm"
+                                  : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
+                                  }`}
                               >
                                 <Star className={`h-3.5 w-3.5 ${doc.starred ? "fill-current" : ""}`} />
                               </button>
                               <button
                                 onClick={(e) => handlePinToggle(e, doc)}
-                                className={`p-1.5 rounded-full transition-all ${
-                                  doc.pinned 
-                                    ? "text-foreground opacity-100 bg-background/80 shadow-sm" 
-                                    : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
-                                }`}
+                                className={`p-1.5 rounded-full transition-all ${doc.pinned
+                                  ? "text-foreground opacity-100 bg-background/80 shadow-sm"
+                                  : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
+                                  }`}
                               >
                                 <Pin className={`h-3.5 w-3.5 ${doc.pinned ? "fill-current" : ""}`} />
                               </button>
@@ -1743,21 +1739,21 @@ export default function DocsPage() {
                         </div>
                       )}
 
-                    <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
-                    
-                    <div className="relative flex-1 min-h-0 mb-2 overflow-hidden">
-                      <div className="text-sm text-muted-foreground whitespace-pre-wrap font-sans pb-8 break-words">
-                        {previewContent || <span className="italic opacity-50">Empty</span>}
-                      </div>
-                      <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-card to-transparent pointer-events-none" />
-                    </div>
+                      <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
 
-                    <div className="mt-auto flex flex-col gap-1 border-t border-border/50 pt-2 z-10">
-                      <div className="text-[10px] text-muted-foreground font-mono text-center mb-1">
-                        Updated {formatRelativeTime(doc.mtime)}
+                      <div className="relative flex-1 min-h-0 mb-2 overflow-hidden">
+                        <div className="text-sm text-muted-foreground whitespace-pre-wrap font-sans pb-8 break-words">
+                          {previewContent || <span className="italic opacity-50">Empty</span>}
+                        </div>
+                        <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-card to-transparent pointer-events-none" />
                       </div>
-                      <div className="relative group/tags flex items-center justify-center min-h-[1.5rem]">
-                         <div className="flex flex-wrap gap-1 max-h-12 overflow-hidden justify-center items-center px-4 transition-all">
+
+                      <div className="mt-auto flex flex-col gap-1 border-t border-border/50 pt-2 z-10">
+                        <div className="text-[10px] text-muted-foreground font-mono text-center mb-1">
+                          Updated {formatRelativeTime(doc.mtime)}
+                        </div>
+                        <div className="relative group/tags flex items-center justify-center min-h-[1.5rem]">
+                          <div className="flex flex-wrap gap-1 max-h-12 overflow-hidden justify-center items-center px-4 transition-all">
                             {docTags.length > 0 ? (
                               docTags.map((tag) => (
                                 <span
@@ -1771,17 +1767,17 @@ export default function DocsPage() {
                             ) : (
                               <span className="text-[10px] text-muted-foreground/40 italic px-1">No tags</span>
                             )}
-                         </div>
-                         <button 
+                          </div>
+                          <button
                             onClick={(e) => { e.stopPropagation(); setEditingDocId(doc.id); }}
                             className="absolute right-0 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground transition-all hover:bg-muted rounded-full"
                             title="Edit tags"
-                         >
-                           <Pencil className="h-3 w-3" />
-                         </button>
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
                   );
                 })}
               </div>
@@ -1908,11 +1904,10 @@ export default function DocsPage() {
                         <button
                           key={item.value}
                           onClick={() => setImportMode(item.value)}
-                          className={`rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
-                            importMode === item.value
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border hover:bg-accent"
-                          }`}
+                          className={`rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${importMode === item.value
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border hover:bg-accent"
+                            }`}
                         >
                           <div>{item.label}</div>
                           <div className="text-[10px] text-muted-foreground mt-1">{item.hint}</div>

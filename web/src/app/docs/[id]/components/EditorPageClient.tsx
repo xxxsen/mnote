@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import MarkdownPreview from "@/components/markdown-preview";
 import { Tag, DocumentVersionSummary, Document as MnoteDocument } from "@/types";
+import { todoService } from "@/lib/todo.service";
 import {
   Share2,
   Download,
@@ -293,6 +294,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   });
   const [slashMenu, setSlashMenu] = useState<{ open: boolean; x: number; y: number; filter: string }>({ open: false, x: 0, y: 0, filter: "" });
   const [slashIndex, setSlashIndex] = useState(0);
+  const [todoMenu, setTodoMenu] = useState<{ open: boolean; x: number; y: number; from: number; text: string; done: boolean }>({ open: false, x: 0, y: 0, from: 0, text: "", done: false });
   const [wikilinkMenu, setWikilinkMenu] = useState<{ open: boolean; x: number; y: number; query: string; from: number }>({ open: false, x: 0, y: 0, query: "", from: 0 });
   const [wikilinkResults, setWikilinkResults] = useState<{ id: string; title: string }[]>([]);
   const [wikilinkLoading, setWikilinkLoading] = useState(false);
@@ -322,8 +324,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const editorViewRef = useRef<EditorView | null>(null);
   const pasteHandlerRef = useRef<((event: ClipboardEvent) => void) | null>(null);
   const editorKeydownHandlerRef = useRef<((event: KeyboardEvent) => void) | null>(null);
-  const wikilinkKeydownRef = useRef<(event: KeyboardEvent) => boolean>(() => false);
-  const slashKeydownRef = useRef<(event: KeyboardEvent) => boolean>(() => false);
   const colorButtonRef = useRef<HTMLButtonElement | null>(null);
   const sizeButtonRef = useRef<HTMLButtonElement | null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -1124,6 +1124,16 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     return false;
   }, [filteredSlashCommands, handleSlashAction, slashIndex, slashMenu.open]);
 
+  const handleTodoMenuKeydown = useCallback((e: KeyboardEvent | React.KeyboardEvent) => {
+    if (!todoMenu.open) return false;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setTodoMenu(prev => ({ ...prev, open: false }));
+      return true;
+    }
+    return false;
+  }, [todoMenu.open]);
+
   // Wikilink search effect
   useEffect(() => {
     if (!wikilinkMenu.open) {
@@ -1205,13 +1215,21 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     return false;
   }, [wikilinkMenu.open, wikilinkResults, wikilinkIndex, handleWikilinkSelect]);
 
+  const slashKeydownRef = useRef(handleSlashKeyDown);
+  const wikilinkKeydownRef = useRef(handleWikilinkKeyDown);
+  const todoKeydownRef = useRef(handleTodoMenuKeydown);
+
   useEffect(() => {
-    wikilinkKeydownRef.current = (event: KeyboardEvent) => handleWikilinkKeyDown(event);
+    wikilinkKeydownRef.current = (event: React.KeyboardEvent | KeyboardEvent) => handleWikilinkKeyDown(event);
   }, [handleWikilinkKeyDown]);
 
   useEffect(() => {
-    slashKeydownRef.current = (event: KeyboardEvent) => handleSlashKeyDown(event);
+    slashKeydownRef.current = (event: React.KeyboardEvent | KeyboardEvent) => handleSlashKeyDown(event);
   }, [handleSlashKeyDown]);
+
+  useEffect(() => {
+    todoKeydownRef.current = handleTodoMenuKeydown;
+  }, [handleTodoMenuKeydown]);
 
   const handleColor = useCallback((color: string) => {
     setActivePopover(null);
@@ -1792,6 +1810,28 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
             });
           }
 
+          // Check for Todo # trigger
+          // Match lines starting with "- [ ] " or "- [x] " anywhere
+          const todoMatch = textBefore.match(/^\s*-\s*\[([ xX])\]\s*(.*?)#$/);
+          if (todoMatch) {
+            const hasExistingTodo = textBefore.includes("<!-- mnote=todo ");
+            if (!hasExistingTodo) {
+              const done = todoMatch[1].toLowerCase() === "x";
+              const text = todoMatch[2].trim();
+              const todoFrom = line.from + textBefore.length - 1; // position of '#'
+              const coords = update.view.coordsAtPos(pos);
+              if (coords) {
+                startTransition(() => {
+                  setTodoMenu({ open: true, x: coords.left, y: coords.bottom + 5, from: todoFrom, text, done });
+                });
+              }
+            }
+          } else {
+            startTransition(() => {
+              setTodoMenu(prev => prev.open ? { ...prev, open: false } : prev);
+            });
+          }
+
           startTransition(() => {
             setSlashMenu(prev => prev.open ? { ...prev, open: false } : prev);
           });
@@ -2054,6 +2094,11 @@ here is the body of note.`}
                     if (wikilinkKeydownRef.current(e)) {
                       e.preventDefault();
                       e.stopPropagation();
+                      return;
+                    }
+                    if (todoKeydownRef.current(e)) {
+                      e.preventDefault();
+                      e.stopPropagation();
                     }
                   };
                   editorKeydownHandlerRef.current = keydownHandler;
@@ -2076,20 +2121,19 @@ here is the body of note.`}
                   <div className="text-[10px] font-bold text-muted-foreground px-2 py-1 uppercase tracking-widest border-b border-border mb-1">Commands</div>
                   <div className="max-h-64 overflow-y-auto no-scrollbar">
                     {filteredSlashCommands.map((cmd, index) => (
-                        <button
-                          key={cmd.id}
-                          onClick={() => handleSlashAction(cmd.action)}
-                          onMouseEnter={() => setSlashIndex(index)}
-                          className={`flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md text-left transition-colors ${
-                            index === slashIndex
-                              ? "bg-accent text-accent-foreground"
-                              : "hover:bg-accent hover:text-accent-foreground"
+                      <button
+                        key={cmd.id}
+                        onClick={() => handleSlashAction(cmd.action)}
+                        onMouseEnter={() => setSlashIndex(index)}
+                        className={`flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md text-left transition-colors ${index === slashIndex
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent hover:text-accent-foreground"
                           }`}
-                        >
-                          <span className="opacity-70">{cmd.icon}</span>
-                          <span className="font-medium">{cmd.label}</span>
-                        </button>
-                      ))}
+                      >
+                        <span className="opacity-70">{cmd.icon}</span>
+                        <span className="font-medium">{cmd.label}</span>
+                      </button>
+                    ))}
                     {filteredSlashCommands.length === 0 && (
                       <div className="px-2 py-2 text-xs text-muted-foreground italic">No commands found</div>
                     )}
@@ -2124,6 +2168,57 @@ here is the body of note.`}
                       <div className="px-2 py-2 text-xs text-muted-foreground italic">No documents found</div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* Todo Date Picker Menu */}
+              {todoMenu.open && (
+                <div
+                  className="fixed z-[60] bg-popover border border-border rounded-lg shadow-2xl p-3 w-64 animate-in fade-in zoom-in-95 duration-200"
+                  style={{ left: todoMenu.x, top: todoMenu.y }}
+                >
+                  <div className="text-xs font-semibold text-muted-foreground mb-2">Set Due Date for Todo</div>
+                  <div className="text-sm mb-3 text-popover-foreground line-clamp-1 border-l-2 border-primary pl-2">{todoMenu.text || "Empty todo"}</div>
+                  <input
+                    type="date"
+                    className="w-full flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    autoFocus
+                    onChange={async (e) => {
+                      const date = e.target.value;
+                      if (!date) return;
+
+                      try {
+                        const todo = await todoService.create(id, todoMenu.text, date, todoMenu.done);
+                        const view = editorViewRef.current;
+                        if (!view) return;
+
+                        view.dispatch({
+                          changes: {
+                            from: todoMenu.from,
+                            to: todoMenu.from + 1, // replace the '#'
+                            insert: ` <!-- mnote=todo id=${todo.id} date=${date} -->`
+                          }
+                        });
+                        setTodoMenu(prev => ({ ...prev, open: false }));
+                        view.focus();
+                      } catch (err) {
+                        toast({ title: "Failed to create Todo", description: String(err) });
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setTodoMenu(prev => ({ ...prev, open: false }));
+
+                        // Focus back on editor
+                        const view = editorViewRef.current;
+                        if (view) {
+                          view.focus();
+                        }
+                      }
+                    }}
+                  />
                 </div>
               )}
 
@@ -2926,58 +3021,58 @@ here is the body of note.`}
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60">
               <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar">
                 <div className="flex items-center gap-1 pr-2">
-                {hasTocPanel && (
-                  <button
-                    onClick={() => {
-                      setFloatingPanelTab("toc");
-                      setFloatingPanelTouched(true);
-                    }}
-                    className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "toc"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
-                  >
-                    TOC
-                  </button>
-                )}
-                {hasMentionsPanel && (
-                  <button
-                    onClick={() => {
-                      setFloatingPanelTab("mentions");
-                      setFloatingPanelTouched(true);
-                    }}
-                    className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "mentions"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
-                  >
-                    Mentions
-                  </button>
-                )}
-                {hasGraphPanel && (
-                  <button
-                    onClick={() => {
-                      setFloatingPanelTab("graph");
-                      setFloatingPanelTouched(true);
-                    }}
-                    className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "graph"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
-                  >
-                    Graph
-                  </button>
-                )}
-                {hasSummaryPanel && (
-                  <button
-                    onClick={() => {
-                      setFloatingPanelTab("summary");
-                      setFloatingPanelTouched(true);
-                    }}
-                    className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "summary"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
-                  >
-                    Summary
-                  </button>
-                )}
+                  {hasTocPanel && (
+                    <button
+                      onClick={() => {
+                        setFloatingPanelTab("toc");
+                        setFloatingPanelTouched(true);
+                      }}
+                      className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "toc"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
+                    >
+                      TOC
+                    </button>
+                  )}
+                  {hasMentionsPanel && (
+                    <button
+                      onClick={() => {
+                        setFloatingPanelTab("mentions");
+                        setFloatingPanelTouched(true);
+                      }}
+                      className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "mentions"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
+                    >
+                      Mentions
+                    </button>
+                  )}
+                  {hasGraphPanel && (
+                    <button
+                      onClick={() => {
+                        setFloatingPanelTab("graph");
+                        setFloatingPanelTouched(true);
+                      }}
+                      className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "graph"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
+                    >
+                      Graph
+                    </button>
+                  )}
+                  {hasSummaryPanel && (
+                    <button
+                      onClick={() => {
+                        setFloatingPanelTab("summary");
+                        setFloatingPanelTouched(true);
+                      }}
+                      className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "summary"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
+                    >
+                      Summary
+                    </button>
+                  )}
                 </div>
               </div>
               <button

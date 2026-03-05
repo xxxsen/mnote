@@ -9,7 +9,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
-import { Copy, Check, Maximize2, X, Bug } from "lucide-react";
+import { Copy, Check, Maximize2, X, Bug, ListTodo } from "lucide-react";
 import Mermaid from "@/components/mermaid";
 import { CodeSandbox } from "@/components/code-sandbox";
 import { cn } from "@/lib/utils";
@@ -241,6 +241,14 @@ export const convertWikilinks = (content: string) => {
       });
     })
     .join("\n");
+};
+
+export const convertTodoMarkers = (content: string) => {
+  const markerPattern = /<!--\s*mnote=todo\s+id=([a-f0-9]+)\s+date=(\d{4}-\d{2}-\d{2})\s*-->/g;
+  return content.replace(
+    markerPattern,
+    '<span class="mnote-todo-marker" data-todo-id="$1" data-todo-date="$2"></span>'
+  );
 };
 
 type ThemedSyntaxHighlighterProps = Omit<
@@ -1094,7 +1102,8 @@ const MarkdownPreview = memo(
         .replace(/\\\[(.*?)\\\]/g, '$$$$$1$$$$');
 
       const wikilinkProcessed = convertWikilinks(mathFixed);
-      const safeContent = escapeUnsupportedHtml(convertAdmonitions(wikilinkProcessed));
+      const todoProcessed = convertTodoMarkers(wikilinkProcessed);
+      const safeContent = escapeUnsupportedHtml(convertAdmonitions(todoProcessed));
       return { processedContent: safeContent, tocMarkdown: toc };
     }, [content]);
 
@@ -1333,10 +1342,39 @@ const MarkdownPreview = memo(
             </span>
           );
         },
-        span({ node, style, children, ...props }: React.HTMLAttributes<HTMLSpanElement> & { node?: InlineHtmlNode }) {
+        span({ node, style, className, children, ...props }: React.HTMLAttributes<HTMLSpanElement> & { node?: InlineHtmlNode }) {
+          const classNames = (() => {
+            const values: string[] = [];
+            const append = (input: unknown) => {
+              if (!input) return;
+              if (Array.isArray(input)) {
+                input.forEach(append);
+                return;
+              }
+              const text = String(input).trim();
+              if (!text) return;
+              values.push(...text.split(/\s+/));
+            };
+            append(className);
+            append(node?.properties?.className);
+            return values;
+          })();
+          const isTodoMarker = classNames.includes("mnote-todo-marker");
+          if (isTodoMarker) {
+            const todoDate = String((node?.properties as Record<string, unknown> | undefined)?.dataTodoDate ?? "").trim();
+            return (
+              <span
+                className="mnote-todo-marker-render inline-flex items-center gap-1 align-middle ml-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"
+                title={todoDate ? `Linked todo (${todoDate})` : "Linked todo"}
+              >
+                <ListTodo className="h-3.5 w-3.5" />
+                {todoDate ? <span className="leading-none">{todoDate}</span> : null}
+              </span>
+            );
+          }
           const inlineStyle = toSafeInlineStyle(style ?? node?.properties?.style);
           return (
-            <span {...props} style={inlineStyle}>
+            <span {...props} className={className} style={inlineStyle}>
               {children}
             </span>
           );
