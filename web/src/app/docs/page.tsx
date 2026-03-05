@@ -7,256 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { Document, Tag } from "@/types";
-import { Bookmark, CalendarDays, ChevronDown, ChevronRight, Copy, Download, FileArchive, Images, LogOut, Pencil, Pin, Plus, Search, Settings, Share2, Star, Upload, X } from "lucide-react";
-
-function TagEditor({
-  doc,
-  allTags,
-  onSave,
-  onClose,
-}: {
-  doc: DocumentWithTags;
-  allTags: Tag[];
-  onSave: (doc: DocumentWithTags, ids: string[]) => void;
-  onClose: () => void;
-}) {
-  const [selected, setSelected] = useState<string[]>(doc.tag_ids || []);
-  const { toast } = useToast();
-  const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<Tag[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const timerRef = useRef<number | null>(null);
-  const lastQueryRef = useRef("");
-  const tagLookup = useRef<Record<string, Tag>>({});
-
-  const normalizedQuery = query.trim();
-  const suggestionList = suggestions.filter((tag) => !selected.includes(tag.id));
-  const exactMatch = suggestionList.find((tag) => tag.name === normalizedQuery) || allTags.find((tag) => tag.name === normalizedQuery) || null;
-  useEffect(() => {
-    const next: Record<string, Tag> = {};
-    allTags.forEach((tag) => {
-      next[tag.id] = tag;
-    });
-    (doc.tags || []).forEach((tag) => {
-      next[tag.id] = tag;
-    });
-    tagLookup.current = next;
-  }, [allTags, doc.tags]);
-  const dropdownItems = (() => {
-    if (!normalizedQuery || searching) return [] as Array<{ type: "use" | "create" | "suggestion"; tag?: Tag; key: string }>;
-    const items: Array<{ type: "use" | "create" | "suggestion"; tag?: Tag; key: string }> = [];
-    if (exactMatch) {
-      items.push({ type: "use", tag: exactMatch, key: `use-${exactMatch.id}` });
-    } else {
-      items.push({ type: "create", key: `create-${normalizedQuery}` });
-    }
-    suggestionList.forEach((tag) => {
-      if (exactMatch && tag.id === exactMatch.id) return;
-      items.push({ type: "suggestion", tag, key: `tag-${tag.id}` });
-    });
-    return items;
-  })();
-  const toggle = (id: string) => {
-    if (selected.includes(id)) {
-      setSelected(selected.filter((tagId) => tagId !== id));
-      return;
-    }
-    if (selected.length >= 7) {
-      toast({ description: "You can only select up to 7 tags." });
-      return;
-    }
-    setSelected([...selected, id]);
-  };
-
-  const resetSearch = () => {
-    setQuery("");
-    setSuggestions([]);
-    setActiveIndex(0);
-  };
-
-  const addTagByName = async (name: string) => {
-    if (!name) return;
-    const existing = suggestionList.find((tag) => tag.name === name) || allTags.find((tag) => tag.name === name) || null;
-    if (existing) {
-      tagLookup.current[existing.id] = existing;
-      toggle(existing.id);
-      resetSearch();
-      return;
-    }
-    if (!/^[\p{Script=Han}A-Za-z0-9]{1,16}$/u.test(name)) {
-      toast({ description: "Tags must be letters, numbers, or Chinese characters, and at most 16 characters." });
-      return;
-    }
-    if (selected.length >= 7) {
-      toast({ description: "You can only select up to 7 tags." });
-      return;
-    }
-    try {
-      const created = await apiFetch<Tag>("/tags", {
-        method: "POST",
-        body: JSON.stringify({ name }),
-      });
-      tagLookup.current[created.id] = created;
-      setSelected((prev) => [...prev, created.id]);
-      resetSearch();
-    } catch (err) {
-      console.error(err);
-      toast({ description: err instanceof Error ? err : "Failed to add tag", variant: "error" });
-    }
-  };
-
-  useEffect(() => {
-    if (timerRef.current) {
-      window.clearTimeout(timerRef.current);
-    }
-    if (!normalizedQuery) {
-      setSuggestions([]);
-      setSearching(false);
-      setActiveIndex(0);
-      return;
-    }
-    setSearching(true);
-    lastQueryRef.current = normalizedQuery;
-    timerRef.current = window.setTimeout(async () => {
-      try {
-        const params = new URLSearchParams();
-        params.set("q", normalizedQuery);
-        params.set("limit", "5");
-        const res = await apiFetch<Tag[]>(`/tags?${params.toString()}`);
-        if (lastQueryRef.current !== normalizedQuery) return;
-        setSuggestions(res || []);
-      } catch (err) {
-        console.error(err);
-        if (lastQueryRef.current === normalizedQuery) {
-          setSuggestions([]);
-        }
-      } finally {
-        if (lastQueryRef.current === normalizedQuery) {
-          setSearching(false);
-          setActiveIndex(0);
-        }
-      }
-    }, 200);
-  }, [normalizedQuery]);
-
-  return (
-    <div className="absolute inset-0 bg-card z-20 flex flex-col p-3 gap-2 animate-in fade-in zoom-in-95 duration-200 overflow-visible" onClick={(e) => e.stopPropagation()}>
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-muted-foreground">Edit Tags</span>
-        <button
-          onClick={(e) => { e.stopPropagation(); onClose(); }}
-          className="h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <div className="space-y-2">
-        <div className="flex flex-wrap gap-1.5">
-          {selected.length === 0 ? (
-            <div className="text-xs text-muted-foreground">No tags yet</div>
-          ) : (
-            selected.map((id) => {
-              const tag = tagLookup.current[id];
-              return (
-                <button
-                  key={id}
-                  onClick={(e) => { e.stopPropagation(); toggle(id); }}
-                  className="px-2 py-0.5 rounded-xl text-[10px] border border-transparent bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  #{tag?.name || id}
-                </button>
-              );
-            })
-          )}
-        </div>
-        <Input
-          placeholder="Search tag..."
-          value={query}
-          maxLength={16}
-          onChange={(e) => {
-            const filtered = e.target.value.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "");
-            setQuery(filtered);
-          }}
-          onKeyDown={(e) => {
-            if (!dropdownItems.length) {
-              if (e.key === "Enter") {
-                addTagByName(normalizedQuery);
-              }
-              return;
-            }
-            if (e.key === "ArrowDown") {
-              e.preventDefault();
-              setActiveIndex((prev) => (prev + 1) % dropdownItems.length);
-              return;
-            }
-            if (e.key === "ArrowUp") {
-              e.preventDefault();
-              setActiveIndex((prev) => (prev - 1 + dropdownItems.length) % dropdownItems.length);
-              return;
-            }
-            if (e.key === "Escape") {
-              e.preventDefault();
-              resetSearch();
-              return;
-            }
-            if (e.key === "Enter") {
-              e.preventDefault();
-              const item = dropdownItems[activeIndex];
-              if (!item) return;
-              if (item.type === "create") {
-                addTagByName(normalizedQuery);
-              } else if (item.tag) {
-                tagLookup.current[item.tag.id] = item.tag;
-                toggle(item.tag.id);
-                resetSearch();
-              }
-            }
-          }}
-        />
-        {normalizedQuery && (
-          <div className="border border-border rounded-xl overflow-hidden bg-background">
-            {searching ? (
-              <div className="px-3 py-2 text-xs text-muted-foreground">Searching...</div>
-            ) : dropdownItems.length > 0 ? (
-              dropdownItems.map((item, index) => (
-                <button
-                  key={item.key}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 ${index === activeIndex ? "bg-muted/40" : ""}`}
-                  onClick={() => {
-                    if (item.type === "create") {
-                      addTagByName(normalizedQuery);
-                      return;
-                    }
-                    if (item.tag) {
-                      tagLookup.current[item.tag.id] = item.tag;
-                      toggle(item.tag.id);
-                      resetSearch();
-                    }
-                  }}
-                >
-                  {item.type === "create"
-                    ? `Create #${normalizedQuery}`
-                    : item.type === "use"
-                      ? `Use existing #${normalizedQuery}`
-                      : `#${item.tag?.name || ""}`}
-                </button>
-              ))
-            ) : (
-              <div className="px-3 py-2 text-xs text-muted-foreground">No matching tags</div>
-            )}
-          </div>
-        )}
-      </div>
-      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>{selected.length}/7 selected</span>
-        <Button size="sm" className="h-7 text-xs" onClick={(e) => { e.stopPropagation(); onSave(doc, selected); }}>
-          Save Changes
-        </Button>
-      </div>
-    </div>
-  );
-}
+import { Bookmark, CalendarDays, ChevronDown, ChevronRight, Copy, Download, FileArchive, Images, LogOut, Pin, Plus, Search, Settings, Share2, Star, Upload, X } from "lucide-react";
 
 
 function generatePixelAvatar(seed: string) {
@@ -364,7 +115,6 @@ export default function DocsPage() {
   const [totalDocs, setTotalDocs] = useState(0);
   const [starredTotal, setStarredTotal] = useState(0);
   const [sharedTotal, setSharedTotal] = useState(0);
-  const [tags, setTags] = useState<Tag[]>([]);
   const [sidebarTags, setSidebarTags] = useState<TagSummary[]>([]);
   const [sidebarLoading, setSidebarLoading] = useState(false);
   const [sidebarHasMore, setSidebarHasMore] = useState(true);
@@ -396,7 +146,6 @@ export default function DocsPage() {
   const [showImportMenu, setShowImportMenu] = useState(false);
   const [showTagSelector, setShowTagSelector] = useState(false);
   const [activeTagIndex, setActiveTagIndex] = useState(0);
-  const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importStep, setImportStep] = useState<ImportStep>("upload");
   const [importMode, setImportMode] = useState<ImportMode>("append");
@@ -682,7 +431,6 @@ export default function DocsPage() {
       }
       const res = await apiFetch<Tag[]>(`/tags?${params.toString()}`);
       const next = res || [];
-      setTags(next);
       mergeTags(next);
     } catch (e) {
       console.error(e);
@@ -852,26 +600,6 @@ export default function DocsPage() {
       toast({ description: err instanceof Error ? err : "Failed to update tag pin", variant: "error" });
     }
 
-  };
-
-  const handleUpdateTags = async (doc: DocumentWithTags, newTagIds: string[]) => {
-    const updateDocs = (prevDocs: DocumentWithTags[]) => {
-      return prevDocs.map(d => d.id === doc.id ? { ...d, tag_ids: newTagIds } : d);
-    };
-    setDocs(prev => updateDocs(prev));
-    setEditingDocId(null);
-
-    try {
-      await apiFetch(`/documents/${doc.id}/tags`, {
-        method: "PUT",
-        body: JSON.stringify({
-          tag_ids: newTagIds,
-        })
-      });
-      void fetchSummary();
-    } catch (err) {
-      console.error("Failed to update tags", err);
-    }
   };
 
   const loadMoreSidebarTags = useCallback(() => {
@@ -1681,63 +1409,51 @@ export default function DocsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {docs.map((doc, index) => {
                   const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter(Boolean) as Tag[];
-                  const isEditing = editingDocId === doc.id;
                   const previewContent = showShared ? (doc.summary || "") : doc.content;
 
                   return (
                     <div
                       key={doc.id || `${doc.title}-${doc.mtime}-${index}`}
                       onClick={() => router.push(`/docs/${doc.id}`)}
-                      className={`group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer rounded-[8px] ${isEditing ? "overflow-visible" : "overflow-hidden"}`}
+                      className="group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer rounded-[8px] overflow-hidden"
                     >
-                      {isEditing && (
-                        <TagEditor
-                          doc={doc}
-                          allTags={tags}
-                          onSave={handleUpdateTags}
-                          onClose={() => setEditingDocId(null)}
-                        />
-                      )}
-
-                      {!isEditing && (
-                        <div className="absolute top-2 right-2 flex gap-1 z-20">
-                          {showShared ? (
+                      <div className="absolute top-2 right-2 flex gap-1 z-20">
+                        {showShared ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (doc.share_token) {
+                                handleCopyShare(doc.share_token);
+                              }
+                            }}
+                            className="p-1.5 rounded-full transition-all text-muted-foreground opacity-100 bg-background/80 shadow-sm hover:text-foreground"
+                            title="Copy share link"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <>
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (doc.share_token) {
-                                  handleCopyShare(doc.share_token);
-                                }
-                              }}
-                              className="p-1.5 rounded-full transition-all text-muted-foreground opacity-100 bg-background/80 shadow-sm hover:text-foreground"
-                              title="Copy share link"
+                              onClick={(e) => handleStarToggle(e, doc)}
+                              className={`p-1.5 rounded-full transition-all ${doc.starred
+                                ? "text-yellow-500 opacity-100 bg-background/80 shadow-sm"
+                                : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
+                                }`}
                             >
-                              <Copy className="h-3.5 w-3.5" />
+                              <Star className={`h-3.5 w-3.5 ${doc.starred ? "fill-current" : ""}`} />
                             </button>
-                          ) : (
-                            <>
-                              <button
-                                onClick={(e) => handleStarToggle(e, doc)}
-                                className={`p-1.5 rounded-full transition-all ${doc.starred
-                                  ? "text-yellow-500 opacity-100 bg-background/80 shadow-sm"
-                                  : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
-                                  }`}
-                              >
-                                <Star className={`h-3.5 w-3.5 ${doc.starred ? "fill-current" : ""}`} />
-                              </button>
-                              <button
-                                onClick={(e) => handlePinToggle(e, doc)}
-                                className={`p-1.5 rounded-full transition-all ${doc.pinned
-                                  ? "text-foreground opacity-100 bg-background/80 shadow-sm"
-                                  : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
-                                  }`}
-                              >
-                                <Pin className={`h-3.5 w-3.5 ${doc.pinned ? "fill-current" : ""}`} />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      )}
+                            <button
+                              onClick={(e) => handlePinToggle(e, doc)}
+                              className={`p-1.5 rounded-full transition-all ${doc.pinned
+                                ? "text-foreground opacity-100 bg-background/80 shadow-sm"
+                                : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"
+                                }`}
+                            >
+                              <Pin className={`h-3.5 w-3.5 ${doc.pinned ? "fill-current" : ""}`} />
+                            </button>
+                          </>
+                        )}
+                      </div>
 
                       <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
 
@@ -1768,13 +1484,6 @@ export default function DocsPage() {
                               <span className="text-[10px] text-muted-foreground/40 italic px-1">No tags</span>
                             )}
                           </div>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setEditingDocId(doc.id); }}
-                            className="absolute right-0 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground transition-all hover:bg-muted rounded-full"
-                            title="Edit tags"
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </button>
                         </div>
                       </div>
                     </div>
