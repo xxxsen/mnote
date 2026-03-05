@@ -244,7 +244,7 @@ export const convertWikilinks = (content: string) => {
 };
 
 export const convertTodoMarkers = (content: string) => {
-  const markerPattern = /<!--\s*mnote=todo\s+id=([a-f0-9]+)\s+date=(\d{4}-\d{2}-\d{2})\s*-->/g;
+  const markerPattern = /<!--\s*mnote=todo\s+t=([A-Za-z0-9]{8})\s+d=(\d{4}-\d{2}-\d{2})\s*-->/g;
   return content.replace(
     markerPattern,
     '<span class="mnote-todo-marker" data-todo-id="$1" data-todo-date="$2"></span>'

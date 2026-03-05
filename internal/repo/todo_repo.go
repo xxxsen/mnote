@@ -22,6 +22,7 @@ func NewTodoRepo(db *sql.DB) *TodoRepo {
 func (r *TodoRepo) Create(ctx context.Context, todo *model.Todo) error {
 	data := map[string]interface{}{
 		"id":          todo.ID,
+		"marker_id":   todo.MarkerID,
 		"user_id":     todo.UserID,
 		"document_id": todo.DocumentID,
 		"content":     todo.Content,
@@ -50,10 +51,11 @@ func (r *TodoRepo) Update(ctx context.Context, todo *model.Todo) error {
 		"user_id": todo.UserID,
 	}
 	update := map[string]interface{}{
-		"content":  todo.Content,
-		"due_date": todo.DueDate,
-		"done":     todo.Done,
-		"mtime":    todo.Mtime,
+		"marker_id": todo.MarkerID,
+		"content":   todo.Content,
+		"due_date":  todo.DueDate,
+		"done":      todo.Done,
+		"mtime":     todo.Mtime,
 	}
 	sqlStr, args, err := builder.BuildUpdate("todos", where, update)
 	if err != nil {
@@ -108,7 +110,7 @@ func (r *TodoRepo) GetByID(ctx context.Context, userID, id string) (*model.Todo,
 		"user_id": userID,
 	}
 	sqlStr, args, err := builder.BuildSelect("todos", where, []string{
-		"id", "user_id", "document_id", "content", "due_date", "done", "ctime", "mtime",
+		"id", "marker_id", "user_id", "document_id", "content", "due_date", "done", "ctime", "mtime",
 	})
 	if err != nil {
 		return nil, err
@@ -116,7 +118,7 @@ func (r *TodoRepo) GetByID(ctx context.Context, userID, id string) (*model.Todo,
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	row := r.db.QueryRowContext(ctx, sqlStr, args...)
 	var todo model.Todo
-	if err := row.Scan(&todo.ID, &todo.UserID, &todo.DocumentID, &todo.Content, &todo.DueDate, &todo.Done, &todo.Ctime, &todo.Mtime); err != nil {
+	if err := row.Scan(&todo.ID, &todo.MarkerID, &todo.UserID, &todo.DocumentID, &todo.Content, &todo.DueDate, &todo.Done, &todo.Ctime, &todo.Mtime); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, appErr.ErrNotFound
 		}
@@ -133,7 +135,7 @@ func (r *TodoRepo) ListByDateRange(ctx context.Context, userID, startDate, endDa
 		"_orderby":    "due_date asc, ctime asc",
 	}
 	sqlStr, args, err := builder.BuildSelect("todos", where, []string{
-		"id", "user_id", "document_id", "content", "due_date", "done", "ctime", "mtime",
+		"id", "marker_id", "user_id", "document_id", "content", "due_date", "done", "ctime", "mtime",
 	})
 	if err != nil {
 		return nil, err
@@ -148,7 +150,7 @@ func (r *TodoRepo) ListByDateRange(ctx context.Context, userID, startDate, endDa
 	items := make([]model.Todo, 0)
 	for rows.Next() {
 		var item model.Todo
-		if err := rows.Scan(&item.ID, &item.UserID, &item.DocumentID, &item.Content, &item.DueDate, &item.Done, &item.Ctime, &item.Mtime); err != nil {
+		if err := rows.Scan(&item.ID, &item.MarkerID, &item.UserID, &item.DocumentID, &item.Content, &item.DueDate, &item.Done, &item.Ctime, &item.Mtime); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -163,7 +165,7 @@ func (r *TodoRepo) ListByDocumentID(ctx context.Context, userID, docID string) (
 		"_orderby":    "ctime asc",
 	}
 	sqlStr, args, err := builder.BuildSelect("todos", where, []string{
-		"id", "user_id", "document_id", "content", "due_date", "done", "ctime", "mtime",
+		"id", "marker_id", "user_id", "document_id", "content", "due_date", "done", "ctime", "mtime",
 	})
 	if err != nil {
 		return nil, err
@@ -178,7 +180,7 @@ func (r *TodoRepo) ListByDocumentID(ctx context.Context, userID, docID string) (
 	items := make([]model.Todo, 0)
 	for rows.Next() {
 		var item model.Todo
-		if err := rows.Scan(&item.ID, &item.UserID, &item.DocumentID, &item.Content, &item.DueDate, &item.Done, &item.Ctime, &item.Mtime); err != nil {
+		if err := rows.Scan(&item.ID, &item.MarkerID, &item.UserID, &item.DocumentID, &item.Content, &item.DueDate, &item.Done, &item.Ctime, &item.Mtime); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

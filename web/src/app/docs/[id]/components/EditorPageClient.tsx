@@ -508,8 +508,8 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     return "";
   }, []);
 
-  const randomString = useCallback((length: number) => {
-    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const randomBase62 = useCallback((length: number) => {
+    const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     if (length <= 0) return "";
     if (typeof crypto !== "undefined" && crypto.getRandomValues) {
       const values = new Uint32Array(length);
@@ -524,6 +524,44 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     }
     return out;
   }, []);
+
+  const normalizeTodoMarkers = useCallback((text: string, forceRegenerate: boolean) => {
+    const isDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+    const markerPattern = /^[A-Za-z0-9]{8}$/;
+    const seen = new Set<string>();
+    let repaired = 0;
+
+    const content = text.replace(/<!--\s*([^<>]*?)\s*-->/g, (full, body: string) => {
+      const fields = body.trim().split(/\s+/);
+      if (fields.length === 0) return full;
+
+      const meta: Record<string, string> = {};
+      for (const field of fields) {
+        const idx = field.indexOf("=");
+        if (idx <= 0) continue;
+        meta[field.slice(0, idx)] = field.slice(idx + 1);
+      }
+
+      if (meta.mnote !== "todo") return full;
+      const dueDate = meta.d || meta.date || "";
+      if (!isDate(dueDate)) return full;
+
+      let markerID = (meta.t || meta.id || "").trim();
+      const invalid = !markerPattern.test(markerID);
+      const duplicated = markerID !== "" && seen.has(markerID);
+      if (forceRegenerate || invalid || duplicated) {
+        markerID = randomBase62(8);
+        while (seen.has(markerID)) {
+          markerID = randomBase62(8);
+        }
+        repaired += 1;
+      }
+      seen.add(markerID);
+      return `<!-- mnote=todo t=${markerID} d=${dueDate} -->`;
+    });
+
+    return { content, repaired };
+  }, [randomBase62]);
 
   const extractLinkedDocIDs = useCallback((value: string) => {
     const ids: string[] = [];
@@ -930,15 +968,27 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
 
   const handlePaste = useCallback(
     async (event: ClipboardEvent) => {
+      const pastedText = event.clipboardData?.getData("text/plain") || "";
+      if (pastedText) {
+        const normalized = normalizeTodoMarkers(pastedText, true);
+        if (normalized.content !== pastedText) {
+          event.preventDefault();
+          insertTextAtCursor(normalized.content);
+          toast({ description: "Pasted todo markers were regenerated for this document." });
+          return;
+        }
+      }
+
       const items = event.clipboardData?.items;
       if (!items || items.length === 0) return;
+
       const fileItem = Array.from(items).find((item) => item.kind === "file");
       if (!fileItem) return;
       const file = fileItem.getAsFile();
       if (!file) return;
 
       event.preventDefault();
-      const placeholder = `file_uploading_${randomString(8)}`;
+      const placeholder = `file_uploading_${randomBase62(8)}`;
       insertTextAtCursor(placeholder);
       try {
         const result = await uploadFile(file);
@@ -970,7 +1020,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         toast({ description: err instanceof Error ? err : "Upload failed", variant: "error" });
       }
     },
-    [insertTextAtCursor, randomString, replacePlaceholder, toast]
+    [insertTextAtCursor, normalizeTodoMarkers, randomBase62, replacePlaceholder, toast]
   );
 
   const handleUndo = useCallback(() => {
@@ -1388,7 +1438,25 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   }, [availableFloatingTabs, floatingPanelTab]);
 
   const handleSave = useCallback(async () => {
-    const latestContent = contentRef.current;
+    const normalized = normalizeTodoMarkers(contentRef.current, false);
+    const latestContent = normalized.content;
+    if (latestContent !== contentRef.current) {
+      const view = editorViewRef.current;
+      if (view) {
+        view.dispatch({
+          changes: { from: 0, to: view.state.doc.length, insert: latestContent },
+          selection: view.state.selection,
+        });
+      }
+      contentRef.current = latestContent;
+      setContent(latestContent);
+      setPreviewContent(latestContent);
+      schedulePreviewUpdate();
+      if (normalized.repaired > 0) {
+        toast({ description: `${normalized.repaired} invalid todo marker(s) were repaired before saving.` });
+      }
+    }
+
     const derivedTitle = extractTitleFromContent(latestContent);
     if (!derivedTitle) {
       toast({ description: "Please add a title using markdown heading (Title + ===)." });
@@ -1410,7 +1478,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     } finally {
       setSaving(false);
     }
-  }, [documentActions, extractTitleFromContent, id, toast]);
+  }, [documentActions, extractTitleFromContent, id, normalizeTodoMarkers, schedulePreviewUpdate, toast]);
 
   const handleDelete = async () => {
     try {
@@ -1729,7 +1797,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     return () => {
       const view = editorViewRef.current;
       if (view && pasteHandlerRef.current) {
-        view.dom.removeEventListener("paste", pasteHandlerRef.current);
+        view.dom.removeEventListener("paste", pasteHandlerRef.current, true);
       }
     };
   }, []);
@@ -1743,6 +1811,33 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         window.clearTimeout(scrollSyncTimerRef.current);
       }
     };
+  }, []);
+
+  const handleTodoEnter = useCallback((view: EditorView) => {
+    const selection = view.state.selection.main;
+    if (!selection.empty) return false;
+
+    const line = view.state.doc.lineAt(selection.head);
+    if (selection.head !== line.to) return false;
+
+    const match = line.text.match(/^(\s*)-\s*\[([ xX])\]\s*(.*)$/);
+    if (!match) return false;
+
+    const itemContent = match[3].trim();
+    if (!itemContent) {
+      view.dispatch({
+        changes: { from: line.from, to: line.to, insert: match[1] },
+        selection: { anchor: line.from + match[1].length },
+      });
+      return true;
+    }
+
+    const insertText = `\n${match[1]}- [ ] `;
+    view.dispatch({
+      changes: { from: selection.head, to: selection.head, insert: insertText },
+      selection: { anchor: selection.head + insertText.length },
+    });
+    return true;
   }, []);
 
   const editorExtensions = useMemo(() => [
@@ -1764,7 +1859,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     themeCompartment.of(getThemeById(currentThemeId).extension),
     EditorView.lineWrapping,
     goAutocompleteExtension,
-    keymap.of([indentWithTab]),
+    keymap.of([{ key: "Enter", run: handleTodoEnter }, indentWithTab]),
     EditorView.updateListener.of((update) => {
       if (update.selectionSet || update.docChanged) {
         updateCursorInfo(update.view);
@@ -1838,7 +1933,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         }
       }
     }),
-  ], [updateCursorInfo, currentThemeId]);
+  ], [updateCursorInfo, currentThemeId, handleTodoEnter]);
 
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
@@ -2073,13 +2168,13 @@ here is the body of note.`}
                   editorViewRef.current = view;
                   view.scrollDOM.addEventListener("scroll", handleEditorScroll);
                   if (pasteHandlerRef.current) {
-                    view.dom.removeEventListener("paste", pasteHandlerRef.current);
+                    view.dom.removeEventListener("paste", pasteHandlerRef.current, true);
                   }
                   const handler = (event: ClipboardEvent) => {
                     void handlePaste(event);
                   };
                   pasteHandlerRef.current = handler;
-                  view.dom.addEventListener("paste", handler);
+                  view.dom.addEventListener("paste", handler, true);
 
                   // Add keydown listener to view.dom in CAPTURE phase
                   if (editorKeydownHandlerRef.current) {
@@ -2196,7 +2291,7 @@ here is the body of note.`}
                           changes: {
                             from: todoMenu.from,
                             to: todoMenu.from + 1, // replace the '#'
-                            insert: ` <!-- mnote=todo id=${todo.id} date=${date} -->`
+                            insert: ` <!-- mnote=todo t=${todo.marker_id} d=${date} -->`
                           }
                         });
                         setTodoMenu(prev => ({ ...prev, open: false }));

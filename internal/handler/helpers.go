@@ -41,8 +41,12 @@ func handleError(c *gin.Context, err error) {
 		response.Error(c, errcode.ErrForbidden, "forbidden")
 	case err == appErr.ErrNotFound:
 		response.Error(c, errcode.ErrNotFound, "not found")
-	case err == appErr.ErrInvalid:
-		response.Error(c, errcode.ErrInvalid, "invalid request")
+	case appErr.IsInvalid(err):
+		msg := "invalid request"
+		if err != nil && err.Error() != appErr.ErrInvalid.Error() {
+			msg = err.Error()
+		}
+		response.Error(c, errcode.ErrInvalid, msg)
 	case err == appErr.ErrConflict:
 		response.Error(c, errcode.ErrConflict, "conflict")
 	case err == appErr.ErrTooMany:

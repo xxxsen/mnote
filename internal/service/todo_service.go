@@ -16,17 +16,18 @@ import (
 )
 
 // todoLinePattern matches lines like:
-// - [ ] content <!-- mnote=todo id=... date=YYYY-MM-DD -->
-// - [x] content <!-- mnote=todo id=... date=YYYY-MM-DD -->
+// - [ ] content <!-- mnote=todo t=Ab3k9P2x d=YYYY-MM-DD -->
+// - [x] content <!-- mnote=todo t=Ab3k9P2x d=YYYY-MM-DD -->
 var todoLinePattern = regexp.MustCompile(`^(\s*-\s*\[)([ xX])(\]\s*)(.+?)\s*<!--\s*(.*?)\s*-->\s*$`)
-var todoIDPattern = regexp.MustCompile(`^[a-f0-9]+$`)
+var todoTaskLinePattern = regexp.MustCompile(`^\s*-\s*\[[ xX]\]`)
+var todoMarkerIDPattern = regexp.MustCompile(`^[A-Za-z0-9]{8}$`)
 var todoDatePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 
 type parsedTodo struct {
-	ID      string
-	Content string
-	DueDate string
-	Done    bool
+	MarkerID string
+	Content  string
+	DueDate  string
+	Done     bool
 }
 
 type parsedTodoLine struct {
@@ -34,15 +35,15 @@ type parsedTodoLine struct {
 	Checkbox string
 	Suffix   string
 	Content  string
-	ID       string
+	MarkerID string
 	DueDate  string
 }
 
-func formatTodoMarker(id, dueDate string) string {
-	return fmt.Sprintf("<!-- mnote=todo id=%s date=%s -->", id, dueDate)
+func formatTodoMarker(markerID, dueDate string) string {
+	return fmt.Sprintf("<!-- mnote=todo t=%s d=%s -->", markerID, dueDate)
 }
 
-func parseTodoMarker(raw string) (id, dueDate string, ok bool) {
+func parseTodoMarker(raw string) (markerID, dueDate string, ok bool) {
 	fields := strings.Fields(strings.TrimSpace(raw))
 	if len(fields) == 0 {
 		return "", "", false
@@ -58,12 +59,12 @@ func parseTodoMarker(raw string) (id, dueDate string, ok bool) {
 	if m["mnote"] != "todo" {
 		return "", "", false
 	}
-	id = m["id"]
-	dueDate = m["date"]
-	if !todoIDPattern.MatchString(id) || !todoDatePattern.MatchString(dueDate) {
+	markerID = m["t"]
+	dueDate = m["d"]
+	if !todoMarkerIDPattern.MatchString(markerID) || !todoDatePattern.MatchString(dueDate) {
 		return "", "", false
 	}
-	return id, dueDate, true
+	return markerID, dueDate, true
 }
 
 func parseTodoLine(line string) (parsedTodoLine, bool) {
@@ -71,7 +72,7 @@ func parseTodoLine(line string) (parsedTodoLine, bool) {
 	if m == nil {
 		return parsedTodoLine{}, false
 	}
-	id, dueDate, ok := parseTodoMarker(m[5])
+	markerID, dueDate, ok := parseTodoMarker(m[5])
 	if !ok {
 		return parsedTodoLine{}, false
 	}
@@ -80,28 +81,37 @@ func parseTodoLine(line string) (parsedTodoLine, bool) {
 		Checkbox: m[2],
 		Suffix:   m[3],
 		Content:  m[4],
-		ID:       id,
+		MarkerID: markerID,
 		DueDate:  dueDate,
 	}, true
 }
 
-func parseTodosFromContent(content string) []parsedTodo {
+func parseTodosFromContent(content string) ([]parsedTodo, []int) {
 	var todos []parsedTodo
+	invalidLines := make([]int, 0)
 	lines := strings.Split(content, "\n")
-	for _, line := range lines {
+	for i, line := range lines {
+		if !todoTaskLinePattern.MatchString(line) {
+			continue
+		}
+		if !strings.Contains(line, "mnote=todo") {
+			continue
+		}
+
 		item, ok := parseTodoLine(line)
 		if !ok {
+			invalidLines = append(invalidLines, i+1)
 			continue
 		}
 		done := item.Checkbox == "x" || item.Checkbox == "X"
 		todos = append(todos, parsedTodo{
-			ID:      item.ID,
-			Content: strings.TrimSpace(item.Content),
-			DueDate: item.DueDate,
-			Done:    done,
+			MarkerID: item.MarkerID,
+			Content:  strings.TrimSpace(item.Content),
+			DueDate:  item.DueDate,
+			Done:     done,
 		})
 	}
-	return todos
+	return todos, invalidLines
 }
 
 type TodoService struct {
@@ -122,20 +132,27 @@ func (s *TodoService) CreateTodo(ctx context.Context, userID, docID, content, du
 		doneVal = 1
 	}
 	now := timeutil.NowUnix()
-	todo := &model.Todo{
-		ID:         newID(),
-		UserID:     userID,
-		DocumentID: docID,
-		Content:    content,
-		DueDate:    dueDate,
-		Done:       doneVal,
-		Ctime:      now,
-		Mtime:      now,
+	for i := 0; i < 5; i++ {
+		todo := &model.Todo{
+			ID:         newID(),
+			MarkerID:   newMarkerID(),
+			UserID:     userID,
+			DocumentID: docID,
+			Content:    content,
+			DueDate:    dueDate,
+			Done:       doneVal,
+			Ctime:      now,
+			Mtime:      now,
+		}
+		if err := s.todos.Create(ctx, todo); err != nil {
+			if err == appErr.ErrConflict {
+				continue
+			}
+			return nil, err
+		}
+		return todo, nil
 	}
-	if err := s.todos.Create(ctx, todo); err != nil {
-		return nil, err
-	}
-	return todo, nil
+	return nil, appErr.ErrConflict
 }
 
 func (s *TodoService) ToggleDone(ctx context.Context, userID, todoID string, done bool) error {
@@ -181,7 +198,7 @@ func (s *TodoService) ToggleDoneAndSync(ctx context.Context, userID, todoID stri
 	changed := false
 	for i, line := range lines {
 		item, ok := parseTodoLine(line)
-		if !ok || item.ID != todoID {
+		if !ok || item.MarkerID != todo.MarkerID {
 			continue
 		}
 		oldCheck := item.Checkbox
@@ -194,7 +211,7 @@ func (s *TodoService) ToggleDoneAndSync(ctx context.Context, userID, todoID stri
 		if oldCheck == newCheck || (done && (oldCheck == "x" || oldCheck == "X")) {
 			continue
 		}
-		lines[i] = item.Prefix + newCheck + item.Suffix + item.Content + " " + formatTodoMarker(item.ID, item.DueDate)
+		lines[i] = item.Prefix + newCheck + item.Suffix + item.Content + " " + formatTodoMarker(item.MarkerID, item.DueDate)
 		changed = true
 		break
 	}
@@ -255,10 +272,10 @@ func (s *TodoService) UpdateContentAndSync(ctx context.Context, userID, todoID, 
 	changed := false
 	for i, line := range lines {
 		item, ok := parseTodoLine(line)
-		if !ok || item.ID != todoID {
+		if !ok || item.MarkerID != todo.MarkerID {
 			continue
 		}
-		lines[i] = item.Prefix + item.Checkbox + item.Suffix + newContent + " " + formatTodoMarker(item.ID, item.DueDate)
+		lines[i] = item.Prefix + item.Checkbox + item.Suffix + newContent + " " + formatTodoMarker(item.MarkerID, item.DueDate)
 		changed = true
 		break
 	}
@@ -300,7 +317,14 @@ func (s *TodoService) DeleteTodo(ctx context.Context, userID, todoID string) err
 func (s *TodoService) SyncTodosFromContent(ctx context.Context, userID, docID, content string) error {
 	logger := logutil.GetLogger(ctx)
 
-	parsed := parseTodosFromContent(content)
+	parsed, invalidLines := parseTodosFromContent(content)
+	if len(invalidLines) > 0 {
+		lineParts := make([]string, 0, len(invalidLines))
+		for _, line := range invalidLines {
+			lineParts = append(lineParts, fmt.Sprintf("%d", line))
+		}
+		return appErr.WrapInvalid("invalid todo marker at line(s): " + strings.Join(lineParts, ", ") + ", expected <!-- mnote=todo t=XXXXXXXX d=YYYY-MM-DD -->")
+	}
 	existing, err := s.todos.ListByDocumentID(ctx, userID, docID)
 	if err != nil {
 		return err
@@ -308,20 +332,24 @@ func (s *TodoService) SyncTodosFromContent(ctx context.Context, userID, docID, c
 
 	existingMap := make(map[string]*model.Todo)
 	for i := range existing {
-		existingMap[existing[i].ID] = &existing[i]
+		existingMap[existing[i].MarkerID] = &existing[i]
 	}
 
 	now := timeutil.NowUnix()
-	parsedIDs := make(map[string]bool)
+	parsedMarkerIDs := make(map[string]bool)
 
 	for _, p := range parsed {
-		parsedIDs[p.ID] = true
+		if parsedMarkerIDs[p.MarkerID] {
+			return appErr.ErrConflict
+		}
+		parsedMarkerIDs[p.MarkerID] = true
+
 		doneVal := 0
 		if p.Done {
 			doneVal = 1
 		}
 
-		if ex, ok := existingMap[p.ID]; ok {
+		if ex, ok := existingMap[p.MarkerID]; ok {
 			// Update if content, due_date, or done changed
 			if ex.Content != p.Content || ex.DueDate != p.DueDate || ex.Done != doneVal {
 				ex.Content = p.Content
@@ -329,13 +357,14 @@ func (s *TodoService) SyncTodosFromContent(ctx context.Context, userID, docID, c
 				ex.Done = doneVal
 				ex.Mtime = now
 				if err := s.todos.Update(ctx, ex); err != nil {
-					logger.Warn("failed to update todo", zap.String("todo_id", p.ID), zap.Error(err))
+					logger.Warn("failed to update todo", zap.String("marker_id", p.MarkerID), zap.Error(err))
 				}
 			}
 		} else {
 			// New todo referenced in content but not in DB — create it
 			todo := &model.Todo{
-				ID:         p.ID,
+				ID:         newID(),
+				MarkerID:   p.MarkerID,
 				UserID:     userID,
 				DocumentID: docID,
 				Content:    p.Content,
@@ -345,16 +374,16 @@ func (s *TodoService) SyncTodosFromContent(ctx context.Context, userID, docID, c
 				Mtime:      now,
 			}
 			if err := s.todos.Create(ctx, todo); err != nil {
-				logger.Warn("failed to create todo from content", zap.String("todo_id", p.ID), zap.Error(err))
+				logger.Warn("failed to create todo from content", zap.String("marker_id", p.MarkerID), zap.Error(err))
 			}
 		}
 	}
 
 	// Delete todos that are no longer in content
 	var toDelete []string
-	for id := range existingMap {
-		if !parsedIDs[id] {
-			toDelete = append(toDelete, id)
+	for markerID, todo := range existingMap {
+		if !parsedMarkerIDs[markerID] {
+			toDelete = append(toDelete, todo.ID)
 		}
 	}
 	if len(toDelete) > 0 {

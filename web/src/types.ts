@@ -124,6 +124,7 @@ export interface Asset {
 
 export interface Todo {
   id: string;
+  marker_id: string;
   user_id: string;
   document_id: string;
   content: string;

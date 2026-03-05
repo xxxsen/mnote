@@ -1,6 +1,9 @@
 package errors
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	ErrNotFound           = errors.New("not found")
@@ -21,4 +24,12 @@ func IsNotFound(err error) bool {
 
 func IsConflict(err error) bool {
 	return errors.Is(err, ErrConflict)
+}
+
+func IsInvalid(err error) bool {
+	return errors.Is(err, ErrInvalid)
+}
+
+func WrapInvalid(message string) error {
+	return fmt.Errorf("%w: %s", ErrInvalid, message)
 }

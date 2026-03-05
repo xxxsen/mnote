@@ -291,7 +291,9 @@ func (s *DocumentService) Delete(ctx context.Context, userID, docID string) erro
 		}
 	}
 	if s.todos != nil {
-		_ = s.todos.SyncTodosFromContent(ctx, userID, docID, "")
+		if err := s.todos.SyncTodosFromContent(ctx, userID, docID, ""); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -708,7 +710,9 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 		}
 	}
 	if s.todos != nil {
-		_ = s.todos.SyncTodosFromContent(ctx, userID, docID, input.Content)
+		if err := s.todos.SyncTodosFromContent(ctx, userID, docID, input.Content); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -769,6 +773,11 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 	}
 	if s.assets != nil {
 		if err := s.assets.SyncDocumentReferences(ctx, userID, doc.ID, input.Content); err != nil {
+			return nil, err
+		}
+	}
+	if s.todos != nil {
+		if err := s.todos.SyncTodosFromContent(ctx, userID, doc.ID, input.Content); err != nil {
 			return nil, err
 		}
 	}
