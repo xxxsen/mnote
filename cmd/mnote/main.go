@@ -137,6 +137,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	templateRepo := repo.NewTemplateRepo(db)
 	assetRepo := repo.NewAssetRepo(db)
 	documentAssetRepo := repo.NewDocumentAssetRepo(db)
+	todoRepo := repo.NewTodoRepo(db)
 
 	mailSender := service.NewEmailSender(cfg.Mail)
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, mailSender)
@@ -284,6 +285,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	documentService := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, aiService, cfg.VersionMaxKeep)
 	assetService := service.NewAssetService(assetRepo, documentAssetRepo)
 	documentService.SetAssetService(assetService)
+	todoService := service.NewTodoService(todoRepo)
 
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, summaryRepo, versionRepo, tagRepo, docTagRepo)
@@ -303,6 +305,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	savedViewHandler := handler.NewSavedViewHandler(savedViewService)
 	templateHandler := handler.NewTemplateHandler(templateService)
 	assetHandler := handler.NewAssetHandler(assetService)
+	todoHandler := handler.NewTodoHandler(todoService)
 	store, err := filestore.New(cfg.FileStore)
 	if err != nil {
 		return fmt.Errorf("init file store: %w", err)
@@ -325,6 +328,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		Import:     importHandler,
 		Templates:  templateHandler,
 		Assets:     assetHandler,
+		Todos:      todoHandler,
 		JWTSecret:  []byte(cfg.JWTSecret),
 	}
 

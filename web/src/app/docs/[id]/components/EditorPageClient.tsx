@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import MarkdownPreview from "@/components/markdown-preview";
 import { Tag, DocumentVersionSummary, Document as MnoteDocument } from "@/types";
+
 import {
   Share2,
   Download,
@@ -293,6 +294,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   });
   const [slashMenu, setSlashMenu] = useState<{ open: boolean; x: number; y: number; filter: string }>({ open: false, x: 0, y: 0, filter: "" });
   const [slashIndex, setSlashIndex] = useState(0);
+
   const [wikilinkMenu, setWikilinkMenu] = useState<{ open: boolean; x: number; y: number; query: string; from: number }>({ open: false, x: 0, y: 0, query: "", from: 0 });
   const [wikilinkResults, setWikilinkResults] = useState<{ id: string; title: string }[]>([]);
   const [wikilinkLoading, setWikilinkLoading] = useState(false);
@@ -322,8 +324,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const editorViewRef = useRef<EditorView | null>(null);
   const pasteHandlerRef = useRef<((event: ClipboardEvent) => void) | null>(null);
   const editorKeydownHandlerRef = useRef<((event: KeyboardEvent) => void) | null>(null);
-  const wikilinkKeydownRef = useRef<(event: KeyboardEvent) => boolean>(() => false);
-  const slashKeydownRef = useRef<(event: KeyboardEvent) => boolean>(() => false);
   const colorButtonRef = useRef<HTMLButtonElement | null>(null);
   const sizeButtonRef = useRef<HTMLButtonElement | null>(null);
   const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -508,8 +508,8 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     return "";
   }, []);
 
-  const randomString = useCallback((length: number) => {
-    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const randomBase62 = useCallback((length: number) => {
+    const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     if (length <= 0) return "";
     if (typeof crypto !== "undefined" && crypto.getRandomValues) {
       const values = new Uint32Array(length);
@@ -524,6 +524,8 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     }
     return out;
   }, []);
+
+
 
   const extractLinkedDocIDs = useCallback((value: string) => {
     const ids: string[] = [];
@@ -932,13 +934,14 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     async (event: ClipboardEvent) => {
       const items = event.clipboardData?.items;
       if (!items || items.length === 0) return;
+
       const fileItem = Array.from(items).find((item) => item.kind === "file");
       if (!fileItem) return;
       const file = fileItem.getAsFile();
       if (!file) return;
 
       event.preventDefault();
-      const placeholder = `file_uploading_${randomString(8)}`;
+      const placeholder = `file_uploading_${randomBase62(8)}`;
       insertTextAtCursor(placeholder);
       try {
         const result = await uploadFile(file);
@@ -970,7 +973,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         toast({ description: err instanceof Error ? err : "Upload failed", variant: "error" });
       }
     },
-    [insertTextAtCursor, randomString, replacePlaceholder, toast]
+    [insertTextAtCursor, randomBase62, replacePlaceholder, toast]
   );
 
   const handleUndo = useCallback(() => {
@@ -1124,6 +1127,8 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     return false;
   }, [filteredSlashCommands, handleSlashAction, slashIndex, slashMenu.open]);
 
+
+
   // Wikilink search effect
   useEffect(() => {
     if (!wikilinkMenu.open) {
@@ -1205,12 +1210,15 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     return false;
   }, [wikilinkMenu.open, wikilinkResults, wikilinkIndex, handleWikilinkSelect]);
 
+  const slashKeydownRef = useRef(handleSlashKeyDown);
+  const wikilinkKeydownRef = useRef(handleWikilinkKeyDown);
+
   useEffect(() => {
-    wikilinkKeydownRef.current = (event: KeyboardEvent) => handleWikilinkKeyDown(event);
+    wikilinkKeydownRef.current = (event: React.KeyboardEvent | KeyboardEvent) => handleWikilinkKeyDown(event);
   }, [handleWikilinkKeyDown]);
 
   useEffect(() => {
-    slashKeydownRef.current = (event: KeyboardEvent) => handleSlashKeyDown(event);
+    slashKeydownRef.current = (event: React.KeyboardEvent | KeyboardEvent) => handleSlashKeyDown(event);
   }, [handleSlashKeyDown]);
 
   const handleColor = useCallback((color: string) => {
@@ -1371,6 +1379,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
 
   const handleSave = useCallback(async () => {
     const latestContent = contentRef.current;
+
     const derivedTitle = extractTitleFromContent(latestContent);
     if (!derivedTitle) {
       toast({ description: "Please add a title using markdown heading (Title + ===)." });
@@ -1711,7 +1720,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     return () => {
       const view = editorViewRef.current;
       if (view && pasteHandlerRef.current) {
-        view.dom.removeEventListener("paste", pasteHandlerRef.current);
+        view.dom.removeEventListener("paste", pasteHandlerRef.current, true);
       }
     };
   }, []);
@@ -1725,6 +1734,33 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         window.clearTimeout(scrollSyncTimerRef.current);
       }
     };
+  }, []);
+
+  const handleTodoEnter = useCallback((view: EditorView) => {
+    const selection = view.state.selection.main;
+    if (!selection.empty) return false;
+
+    const line = view.state.doc.lineAt(selection.head);
+    if (selection.head !== line.to) return false;
+
+    const match = line.text.match(/^(\s*)-\s*\[([ xX])\]\s*(.*)$/);
+    if (!match) return false;
+
+    const itemContent = match[3].trim();
+    if (!itemContent) {
+      view.dispatch({
+        changes: { from: line.from, to: line.to, insert: match[1] },
+        selection: { anchor: line.from + match[1].length },
+      });
+      return true;
+    }
+
+    const insertText = `\n${match[1]}- [ ] `;
+    view.dispatch({
+      changes: { from: selection.head, to: selection.head, insert: insertText },
+      selection: { anchor: selection.head + insertText.length },
+    });
+    return true;
   }, []);
 
   const editorExtensions = useMemo(() => [
@@ -1746,7 +1782,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     themeCompartment.of(getThemeById(currentThemeId).extension),
     EditorView.lineWrapping,
     goAutocompleteExtension,
-    keymap.of([indentWithTab]),
+    keymap.of([{ key: "Enter", run: handleTodoEnter }, indentWithTab]),
     EditorView.updateListener.of((update) => {
       if (update.selectionSet || update.docChanged) {
         updateCursorInfo(update.view);
@@ -1792,13 +1828,14 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
             });
           }
 
+
           startTransition(() => {
             setSlashMenu(prev => prev.open ? { ...prev, open: false } : prev);
           });
         }
       }
     }),
-  ], [updateCursorInfo, currentThemeId]);
+  ], [updateCursorInfo, currentThemeId, handleTodoEnter]);
 
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
@@ -2033,13 +2070,13 @@ here is the body of note.`}
                   editorViewRef.current = view;
                   view.scrollDOM.addEventListener("scroll", handleEditorScroll);
                   if (pasteHandlerRef.current) {
-                    view.dom.removeEventListener("paste", pasteHandlerRef.current);
+                    view.dom.removeEventListener("paste", pasteHandlerRef.current, true);
                   }
                   const handler = (event: ClipboardEvent) => {
                     void handlePaste(event);
                   };
                   pasteHandlerRef.current = handler;
-                  view.dom.addEventListener("paste", handler);
+                  view.dom.addEventListener("paste", handler, true);
 
                   // Add keydown listener to view.dom in CAPTURE phase
                   if (editorKeydownHandlerRef.current) {
@@ -2054,7 +2091,9 @@ here is the body of note.`}
                     if (wikilinkKeydownRef.current(e)) {
                       e.preventDefault();
                       e.stopPropagation();
+                      return;
                     }
+
                   };
                   editorKeydownHandlerRef.current = keydownHandler;
                   view.dom.addEventListener("keydown", keydownHandler, true);
@@ -2076,20 +2115,19 @@ here is the body of note.`}
                   <div className="text-[10px] font-bold text-muted-foreground px-2 py-1 uppercase tracking-widest border-b border-border mb-1">Commands</div>
                   <div className="max-h-64 overflow-y-auto no-scrollbar">
                     {filteredSlashCommands.map((cmd, index) => (
-                        <button
-                          key={cmd.id}
-                          onClick={() => handleSlashAction(cmd.action)}
-                          onMouseEnter={() => setSlashIndex(index)}
-                          className={`flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md text-left transition-colors ${
-                            index === slashIndex
-                              ? "bg-accent text-accent-foreground"
-                              : "hover:bg-accent hover:text-accent-foreground"
+                      <button
+                        key={cmd.id}
+                        onClick={() => handleSlashAction(cmd.action)}
+                        onMouseEnter={() => setSlashIndex(index)}
+                        className={`flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md text-left transition-colors ${index === slashIndex
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent hover:text-accent-foreground"
                           }`}
-                        >
-                          <span className="opacity-70">{cmd.icon}</span>
-                          <span className="font-medium">{cmd.label}</span>
-                        </button>
-                      ))}
+                      >
+                        <span className="opacity-70">{cmd.icon}</span>
+                        <span className="font-medium">{cmd.label}</span>
+                      </button>
+                    ))}
                     {filteredSlashCommands.length === 0 && (
                       <div className="px-2 py-2 text-xs text-muted-foreground italic">No commands found</div>
                     )}
@@ -2126,6 +2164,7 @@ here is the body of note.`}
                   </div>
                 </div>
               )}
+
 
             </div>
           </div>
@@ -2926,58 +2965,58 @@ here is the body of note.`}
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60">
               <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar">
                 <div className="flex items-center gap-1 pr-2">
-                {hasTocPanel && (
-                  <button
-                    onClick={() => {
-                      setFloatingPanelTab("toc");
-                      setFloatingPanelTouched(true);
-                    }}
-                    className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "toc"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
-                  >
-                    TOC
-                  </button>
-                )}
-                {hasMentionsPanel && (
-                  <button
-                    onClick={() => {
-                      setFloatingPanelTab("mentions");
-                      setFloatingPanelTouched(true);
-                    }}
-                    className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "mentions"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
-                  >
-                    Mentions
-                  </button>
-                )}
-                {hasGraphPanel && (
-                  <button
-                    onClick={() => {
-                      setFloatingPanelTab("graph");
-                      setFloatingPanelTouched(true);
-                    }}
-                    className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "graph"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
-                  >
-                    Graph
-                  </button>
-                )}
-                {hasSummaryPanel && (
-                  <button
-                    onClick={() => {
-                      setFloatingPanelTab("summary");
-                      setFloatingPanelTouched(true);
-                    }}
-                    className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "summary"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
-                  >
-                    Summary
-                  </button>
-                )}
+                  {hasTocPanel && (
+                    <button
+                      onClick={() => {
+                        setFloatingPanelTab("toc");
+                        setFloatingPanelTouched(true);
+                      }}
+                      className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "toc"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
+                    >
+                      TOC
+                    </button>
+                  )}
+                  {hasMentionsPanel && (
+                    <button
+                      onClick={() => {
+                        setFloatingPanelTab("mentions");
+                        setFloatingPanelTouched(true);
+                      }}
+                      className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "mentions"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
+                    >
+                      Mentions
+                    </button>
+                  )}
+                  {hasGraphPanel && (
+                    <button
+                      onClick={() => {
+                        setFloatingPanelTab("graph");
+                        setFloatingPanelTouched(true);
+                      }}
+                      className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "graph"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
+                    >
+                      Graph
+                    </button>
+                  )}
+                  {hasSummaryPanel && (
+                    <button
+                      onClick={() => {
+                        setFloatingPanelTab("summary");
+                        setFloatingPanelTouched(true);
+                      }}
+                      className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${floatingPanelTab === "summary"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}
+                    >
+                      Summary
+                    </button>
+                  )}
                 </div>
               </div>
               <button

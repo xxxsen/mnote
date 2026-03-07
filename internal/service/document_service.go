@@ -285,6 +285,7 @@ func (s *DocumentService) Delete(ctx context.Context, userID, docID string) erro
 			return err
 		}
 	}
+
 	return nil
 }
 

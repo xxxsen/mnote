@@ -243,6 +243,8 @@ export const convertWikilinks = (content: string) => {
     .join("\n");
 };
 
+
+
 type ThemedSyntaxHighlighterProps = Omit<
   React.ComponentProps<typeof SyntaxHighlighter>,
   "style"
@@ -1333,10 +1335,10 @@ const MarkdownPreview = memo(
             </span>
           );
         },
-        span({ node, style, children, ...props }: React.HTMLAttributes<HTMLSpanElement> & { node?: InlineHtmlNode }) {
+        span({ node, style, className, children, ...props }: React.HTMLAttributes<HTMLSpanElement> & { node?: InlineHtmlNode }) {
           const inlineStyle = toSafeInlineStyle(style ?? node?.properties?.style);
           return (
-            <span {...props} style={inlineStyle}>
+            <span {...props} className={className} style={inlineStyle}>
               {children}
             </span>
           );
