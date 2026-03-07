@@ -1368,22 +1368,21 @@ export default function DocsPage() {
                     <div
                       key={`ai-${doc.id}`}
                       onClick={() => router.push(`/docs/${doc.id}`)}
-                      className="group relative flex flex-col border border-indigo-500/30 bg-indigo-500/5 p-4 h-56 hover:border-indigo-500 transition-colors cursor-pointer rounded-[8px] overflow-hidden"
+                      className="group relative flex flex-col border border-indigo-500/30 bg-indigo-500/5 p-4 h-auto min-h-[140px] hover:border-indigo-500 transition-colors cursor-pointer rounded-[8px] overflow-hidden"
                     >
                       <div className="absolute top-2 right-2 text-indigo-500/40 group-hover:text-indigo-500 transition-colors">
                         <Search className="h-3 w-3" />
                       </div>
-                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[9px] font-mono text-indigo-500/70 uppercase tracking-tighter">
+                      <h3
+                        className="font-mono font-bold text-lg mb-2 px-2 text-center flex-1 flex items-center justify-center line-clamp-3"
+                        title={doc.title}
+                      >
+                        {doc.title}
+                      </h3>
+                      <div className="text-[9px] font-mono text-indigo-500/70 uppercase tracking-tighter text-center mb-2">
                         {Math.round((doc.score || 0) * 100)}% Match
                       </div>
-                      <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
-                      <div className="relative flex-1 min-h-0 mb-2 overflow-hidden">
-                        <div className="text-sm text-muted-foreground whitespace-pre-wrap font-sans pb-8 break-words line-clamp-6">
-                          {doc.summary || doc.content}
-                        </div>
-                        <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-background/10 to-transparent pointer-events-none" />
-                      </div>
-                      <div className="mt-auto flex flex-wrap gap-1 justify-center pt-2">
+                      <div className="mt-auto flex flex-wrap gap-1 justify-center pt-2 border-t border-indigo-500/20">
                         {docTags.map(tag => (
                           <span key={tag.id} className="text-[10px] bg-indigo-500/10 text-indigo-600 px-1.5 py-0.5 rounded-full border border-indigo-500/10">
                             #{tag.name}
@@ -1409,13 +1408,12 @@ export default function DocsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {docs.map((doc, index) => {
                   const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter(Boolean) as Tag[];
-                  const previewContent = showShared ? (doc.summary || "") : doc.content;
 
                   return (
                     <div
                       key={doc.id || `${doc.title}-${doc.mtime}-${index}`}
                       onClick={() => router.push(`/docs/${doc.id}`)}
-                      className="group relative flex flex-col border border-border bg-card p-4 h-56 hover:border-foreground transition-colors cursor-pointer rounded-[8px] overflow-hidden"
+                      className="group relative flex flex-col border border-border bg-card p-4 h-auto min-h-[140px] hover:border-foreground transition-colors cursor-pointer rounded-[8px] overflow-hidden"
                     >
                       <div className="absolute top-2 right-2 flex gap-1 z-20">
                         {showShared ? (
@@ -1455,14 +1453,12 @@ export default function DocsPage() {
                         )}
                       </div>
 
-                      <h3 className="font-mono font-bold text-lg mb-2 truncate px-2 text-center">{doc.title}</h3>
-
-                      <div className="relative flex-1 min-h-0 mb-2 overflow-hidden">
-                        <div className="text-sm text-muted-foreground whitespace-pre-wrap font-sans pb-8 break-words">
-                          {previewContent || <span className="italic opacity-50">Empty</span>}
-                        </div>
-                        <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-card to-transparent pointer-events-none" />
-                      </div>
+                      <h3
+                        className="font-mono font-bold text-lg mb-2 px-2 text-center flex-1 flex items-center justify-center line-clamp-3"
+                        title={doc.title}
+                      >
+                        {doc.title}
+                      </h3>
 
                       <div className="mt-auto flex flex-col gap-1 border-t border-border/50 pt-2 z-10">
                         <div className="text-[10px] text-muted-foreground font-mono text-center mb-1">
