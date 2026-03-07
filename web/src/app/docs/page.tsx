@@ -1368,17 +1368,19 @@ export default function DocsPage() {
                     <div
                       key={`ai-${doc.id}`}
                       onClick={() => router.push(`/docs/${doc.id}`)}
-                      className="group relative flex flex-col border border-indigo-500/30 bg-indigo-500/5 p-4 h-auto min-h-[140px] hover:border-indigo-500 transition-colors cursor-pointer rounded-[8px] overflow-hidden"
+                      className="group relative flex flex-col border border-indigo-500/30 bg-indigo-500/5 p-4 h-48 hover:border-indigo-500 transition-colors cursor-pointer rounded-[8px] overflow-hidden"
                     >
                       <div className="absolute top-2 right-2 text-indigo-500/40 group-hover:text-indigo-500 transition-colors">
                         <Search className="h-3 w-3" />
                       </div>
-                      <h3
-                        className="font-mono font-bold text-lg mb-2 px-2 text-center flex-1 flex items-center justify-center line-clamp-3"
-                        title={doc.title}
-                      >
-                        {doc.title}
-                      </h3>
+                      <div className="flex-1 flex items-center justify-center px-2">
+                        <h3
+                          className="font-mono font-bold text-lg text-center line-clamp-3"
+                          title={doc.title}
+                        >
+                          {doc.title}
+                        </h3>
+                      </div>
                       <div className="text-[9px] font-mono text-indigo-500/70 uppercase tracking-tighter text-center mb-2">
                         {Math.round((doc.score || 0) * 100)}% Match
                       </div>
@@ -1413,7 +1415,7 @@ export default function DocsPage() {
                     <div
                       key={doc.id || `${doc.title}-${doc.mtime}-${index}`}
                       onClick={() => router.push(`/docs/${doc.id}`)}
-                      className="group relative flex flex-col border border-border bg-card p-4 h-auto min-h-[140px] hover:border-foreground transition-colors cursor-pointer rounded-[8px] overflow-hidden"
+                      className="group relative flex flex-col border border-border bg-card p-4 h-48 hover:border-foreground transition-colors cursor-pointer rounded-[8px] overflow-hidden"
                     >
                       <div className="absolute top-2 right-2 flex gap-1 z-20">
                         {showShared ? (
@@ -1453,19 +1455,21 @@ export default function DocsPage() {
                         )}
                       </div>
 
-                      <h3
-                        className="font-mono font-bold text-lg mb-2 px-2 text-center flex-1 flex items-center justify-center line-clamp-3"
-                        title={doc.title}
-                      >
-                        {doc.title}
-                      </h3>
+                      <div className="flex-1 flex items-center justify-center px-2">
+                        <h3
+                          className="font-mono font-bold text-lg text-center line-clamp-3"
+                          title={doc.title}
+                        >
+                          {doc.title}
+                        </h3>
+                      </div>
 
-                      <div className="mt-auto flex flex-col gap-1 border-t border-border/50 pt-2 z-10">
+                      <div className="mt-auto flex flex-col gap-1 border-t border-border/50 pt-2 pb-1 z-10">
                         <div className="text-[10px] text-muted-foreground font-mono text-center mb-1">
                           Updated {formatRelativeTime(doc.mtime)}
                         </div>
                         <div className="relative group/tags flex items-center justify-center min-h-[1.5rem]">
-                          <div className="flex flex-wrap gap-1 max-h-12 overflow-hidden justify-center items-center px-4 transition-all">
+                          <div className="flex flex-wrap gap-1 max-h-[2.75rem] overflow-hidden justify-center items-center px-2 transition-all">
                             {docTags.length > 0 ? (
                               docTags.map((tag) => (
                                 <span
