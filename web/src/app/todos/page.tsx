@@ -106,6 +106,7 @@ export default function TodosPage() {
   const [creating, setCreating] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingTodoID, setEditingTodoID] = useState("");
+  const [editingTodoDueDate, setEditingTodoDueDate] = useState("");
   const [editTodoContent, setEditTodoContent] = useState("");
   const [updating, setUpdating] = useState(false);
   const [dayViewOpen, setDayViewOpen] = useState(false);
@@ -239,6 +240,7 @@ export default function TodosPage() {
   const closeEditPanel = useCallback(() => {
     setEditOpen(false);
     setEditingTodoID("");
+    setEditingTodoDueDate("");
     setEditTodoContent("");
     setUpdating(false);
   }, []);
@@ -255,6 +257,7 @@ export default function TodosPage() {
 
   const openEditPanel = useCallback((todo: Todo) => {
     setEditingTodoID(todo.id);
+    setEditingTodoDueDate(todo.due_date);
     setEditTodoContent(todo.content);
     setEditOpen(true);
   }, []);
@@ -647,11 +650,13 @@ export default function TodosPage() {
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Todo Content</label>
                 <textarea
                   rows={3}
+                  maxLength={500}
                   className="w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   placeholder="What needs to be done?"
                   value={newTodoContent}
                   onChange={(e) => setNewTodoContent(e.target.value)}
                 />
+                <div className="text-[10px] text-muted-foreground text-right mt-1">{newTodoContent.length}/500</div>
               </div>
 
               <div className="pt-1 flex items-center justify-end gap-2">
@@ -678,7 +683,7 @@ export default function TodosPage() {
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <div className="text-xs uppercase tracking-wider text-muted-foreground">Edit Todo</div>
-                <div className="text-sm font-semibold">{editingTodoID}</div>
+                <div className="text-sm font-semibold">{editingTodoDueDate}</div>
               </div>
               <button
                 type="button"
@@ -694,11 +699,13 @@ export default function TodosPage() {
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Todo Content</label>
                 <textarea
                   rows={3}
+                  maxLength={500}
                   className="w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   placeholder="Update todo content"
                   value={editTodoContent}
                   onChange={(e) => setEditTodoContent(e.target.value)}
                 />
+                <div className="text-[10px] text-muted-foreground text-right mt-1">{editTodoContent.length}/500</div>
               </div>
 
               <div className="pt-1 flex items-center justify-end gap-2">

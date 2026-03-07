@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS todos (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   content TEXT NOT NULL,
-  due_date TEXT,
+  due_date TEXT NOT NULL,
   done INTEGER NOT NULL DEFAULT 0,
   ctime BIGINT NOT NULL,
   mtime BIGINT NOT NULL

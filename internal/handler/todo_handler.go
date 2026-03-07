@@ -2,6 +2,7 @@ package handler
 
 import (
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/xxxsen/mnote/internal/pkg/response"
 	"github.com/xxxsen/mnote/internal/service"
 )
+
+const maxTodoContentLength = 500
 
 type TodoHandler struct {
 	todos *service.TodoService
@@ -33,6 +36,10 @@ func (h *TodoHandler) Create(c *gin.Context) {
 	}
 	if req.Content == "" {
 		response.Error(c, errcode.ErrInvalid, "content is required")
+		return
+	}
+	if utf8.RuneCountInString(req.Content) > maxTodoContentLength {
+		response.Error(c, errcode.ErrInvalid, "content is too long")
 		return
 	}
 	if req.DueDate == "" {
@@ -61,6 +68,14 @@ func (h *TodoHandler) List(c *gin.Context) {
 	endDate := c.Query("end")
 	if startDate == "" || endDate == "" {
 		response.Error(c, errcode.ErrInvalid, "start and end query params are required (YYYY-MM-DD)")
+		return
+	}
+	if _, err := time.Parse("2006-01-02", startDate); err != nil {
+		response.Error(c, errcode.ErrInvalid, "start must be in YYYY-MM-DD format")
+		return
+	}
+	if _, err := time.Parse("2006-01-02", endDate); err != nil {
+		response.Error(c, errcode.ErrInvalid, "end must be in YYYY-MM-DD format")
 		return
 	}
 	todos, err := h.todos.ListByDateRange(c.Request.Context(), userID, startDate, endDate)
@@ -104,6 +119,10 @@ func (h *TodoHandler) Update(c *gin.Context) {
 	}
 	if req.Content == "" {
 		response.Error(c, errcode.ErrInvalid, "content is required")
+		return
+	}
+	if utf8.RuneCountInString(req.Content) > maxTodoContentLength {
+		response.Error(c, errcode.ErrInvalid, "content is too long")
 		return
 	}
 	todo, err := h.todos.UpdateContent(c.Request.Context(), userID, todoID, req.Content)
