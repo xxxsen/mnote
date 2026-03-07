@@ -285,8 +285,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	documentService := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, aiService, cfg.VersionMaxKeep)
 	assetService := service.NewAssetService(assetRepo, documentAssetRepo)
 	documentService.SetAssetService(assetService)
-	todoService := service.NewTodoService(todoRepo, docRepo)
-	documentService.SetTodoService(todoService)
+	todoService := service.NewTodoService(todoRepo)
 
 	tagService := service.NewTagService(tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, summaryRepo, versionRepo, tagRepo, docTagRepo)

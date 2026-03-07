@@ -8,7 +8,7 @@ import { todoService } from "@/lib/todo.service";
 import { Todo } from "@/types";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import { CheckCircle2, Circle, ArrowLeft, CalendarDays, X, FileText, Eye } from "lucide-react";
+import { CheckCircle2, Circle, ArrowLeft, CalendarDays, X, Eye } from "lucide-react";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const INITIAL_MONTH_RADIUS = 2;
@@ -272,7 +272,7 @@ export default function TodosPage() {
 
     setCreating(true);
     try {
-      await todoService.create("", content, selectedDate, false);
+      await todoService.create(content, selectedDate, false);
       if (firstMonth && lastMonth) {
         const res = await todoService.listByDateRange(dateKey(startOfMonth(firstMonth)), dateKey(endOfMonth(lastMonth)));
         setTodos(res || []);
@@ -531,19 +531,7 @@ export default function TodosPage() {
                                     )}
                                   </button>
 
-                                  {todo.document_id ? (
-                                    <button
-                                      onClick={(evt) => {
-                                        evt.stopPropagation();
-                                        router.push(`/docs/${todo.document_id}`);
-                                      }}
-                                      className="shrink-0 text-muted-foreground hover:text-indigo-500 transition-colors"
-                                      title="Open source note"
-                                      aria-label="Open source note"
-                                    >
-                                      <FileText className="h-3.5 w-3.5" />
-                                    </button>
-                                  ) : null}
+
                                 </div>
                               ))}
                             </div>
@@ -628,16 +616,7 @@ export default function TodosPage() {
                       )}
                     </button>
 
-                    {todo.document_id ? (
-                      <button
-                        onClick={() => router.push(`/docs/${todo.document_id}`)}
-                        className="shrink-0 text-muted-foreground hover:text-indigo-500 transition-colors"
-                        title="Open source note"
-                        aria-label="Open source note"
-                      >
-                        <FileText className="h-4 w-4" />
-                      </button>
-                    ) : null}
+
                   </div>
                 ))
               )}

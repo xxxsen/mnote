@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import MarkdownPreview from "@/components/markdown-preview";
 import { Tag, DocumentVersionSummary, Document as MnoteDocument } from "@/types";
-import { todoService } from "@/lib/todo.service";
+
 import {
   Share2,
   Download,
@@ -294,7 +294,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   });
   const [slashMenu, setSlashMenu] = useState<{ open: boolean; x: number; y: number; filter: string }>({ open: false, x: 0, y: 0, filter: "" });
   const [slashIndex, setSlashIndex] = useState(0);
-  const [todoMenu, setTodoMenu] = useState<{ open: boolean; x: number; y: number; from: number; text: string; done: boolean }>({ open: false, x: 0, y: 0, from: 0, text: "", done: false });
+
   const [wikilinkMenu, setWikilinkMenu] = useState<{ open: boolean; x: number; y: number; query: string; from: number }>({ open: false, x: 0, y: 0, query: "", from: 0 });
   const [wikilinkResults, setWikilinkResults] = useState<{ id: string; title: string }[]>([]);
   const [wikilinkLoading, setWikilinkLoading] = useState(false);
@@ -525,43 +525,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     return out;
   }, []);
 
-  const normalizeTodoMarkers = useCallback((text: string, forceRegenerate: boolean) => {
-    const isDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
-    const markerPattern = /^[A-Za-z0-9]{8}$/;
-    const seen = new Set<string>();
-    let repaired = 0;
 
-    const content = text.replace(/<!--\s*([^<>]*?)\s*-->/g, (full, body: string) => {
-      const fields = body.trim().split(/\s+/);
-      if (fields.length === 0) return full;
-
-      const meta: Record<string, string> = {};
-      for (const field of fields) {
-        const idx = field.indexOf("=");
-        if (idx <= 0) continue;
-        meta[field.slice(0, idx)] = field.slice(idx + 1);
-      }
-
-      if (meta.mnote !== "todo") return full;
-      const dueDate = meta.d || meta.date || "";
-      if (!isDate(dueDate)) return full;
-
-      let markerID = (meta.t || meta.id || "").trim();
-      const invalid = !markerPattern.test(markerID);
-      const duplicated = markerID !== "" && seen.has(markerID);
-      if (forceRegenerate || invalid || duplicated) {
-        markerID = randomBase62(8);
-        while (seen.has(markerID)) {
-          markerID = randomBase62(8);
-        }
-        repaired += 1;
-      }
-      seen.add(markerID);
-      return `<!-- mnote=todo t=${markerID} d=${dueDate} -->`;
-    });
-
-    return { content, repaired };
-  }, [randomBase62]);
 
   const extractLinkedDocIDs = useCallback((value: string) => {
     const ids: string[] = [];
@@ -968,17 +932,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
 
   const handlePaste = useCallback(
     async (event: ClipboardEvent) => {
-      const pastedText = event.clipboardData?.getData("text/plain") || "";
-      if (pastedText) {
-        const normalized = normalizeTodoMarkers(pastedText, true);
-        if (normalized.content !== pastedText) {
-          event.preventDefault();
-          insertTextAtCursor(normalized.content);
-          toast({ description: "Pasted todo markers were regenerated for this document." });
-          return;
-        }
-      }
-
       const items = event.clipboardData?.items;
       if (!items || items.length === 0) return;
 
@@ -1020,7 +973,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         toast({ description: err instanceof Error ? err : "Upload failed", variant: "error" });
       }
     },
-    [insertTextAtCursor, normalizeTodoMarkers, randomBase62, replacePlaceholder, toast]
+    [insertTextAtCursor, randomBase62, replacePlaceholder, toast]
   );
 
   const handleUndo = useCallback(() => {
@@ -1174,15 +1127,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     return false;
   }, [filteredSlashCommands, handleSlashAction, slashIndex, slashMenu.open]);
 
-  const handleTodoMenuKeydown = useCallback((e: KeyboardEvent | React.KeyboardEvent) => {
-    if (!todoMenu.open) return false;
-    if (e.key === "Escape") {
-      e.preventDefault();
-      setTodoMenu(prev => ({ ...prev, open: false }));
-      return true;
-    }
-    return false;
-  }, [todoMenu.open]);
+
 
   // Wikilink search effect
   useEffect(() => {
@@ -1267,7 +1212,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
 
   const slashKeydownRef = useRef(handleSlashKeyDown);
   const wikilinkKeydownRef = useRef(handleWikilinkKeyDown);
-  const todoKeydownRef = useRef(handleTodoMenuKeydown);
 
   useEffect(() => {
     wikilinkKeydownRef.current = (event: React.KeyboardEvent | KeyboardEvent) => handleWikilinkKeyDown(event);
@@ -1276,10 +1220,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   useEffect(() => {
     slashKeydownRef.current = (event: React.KeyboardEvent | KeyboardEvent) => handleSlashKeyDown(event);
   }, [handleSlashKeyDown]);
-
-  useEffect(() => {
-    todoKeydownRef.current = handleTodoMenuKeydown;
-  }, [handleTodoMenuKeydown]);
 
   const handleColor = useCallback((color: string) => {
     setActivePopover(null);
@@ -1438,24 +1378,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   }, [availableFloatingTabs, floatingPanelTab]);
 
   const handleSave = useCallback(async () => {
-    const normalized = normalizeTodoMarkers(contentRef.current, false);
-    const latestContent = normalized.content;
-    if (latestContent !== contentRef.current) {
-      const view = editorViewRef.current;
-      if (view) {
-        view.dispatch({
-          changes: { from: 0, to: view.state.doc.length, insert: latestContent },
-          selection: view.state.selection,
-        });
-      }
-      contentRef.current = latestContent;
-      setContent(latestContent);
-      setPreviewContent(latestContent);
-      schedulePreviewUpdate();
-      if (normalized.repaired > 0) {
-        toast({ description: `${normalized.repaired} invalid todo marker(s) were repaired before saving.` });
-      }
-    }
+    const latestContent = contentRef.current;
 
     const derivedTitle = extractTitleFromContent(latestContent);
     if (!derivedTitle) {
@@ -1478,7 +1401,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     } finally {
       setSaving(false);
     }
-  }, [documentActions, extractTitleFromContent, id, normalizeTodoMarkers, schedulePreviewUpdate, toast]);
+  }, [documentActions, extractTitleFromContent, id, toast]);
 
   const handleDelete = async () => {
     try {
@@ -1905,27 +1828,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
             });
           }
 
-          // Check for Todo # trigger
-          // Match lines starting with "- [ ] " or "- [x] " anywhere
-          const todoMatch = textBefore.match(/^\s*-\s*\[([ xX])\]\s*(.*?)#$/);
-          if (todoMatch) {
-            const hasExistingTodo = textBefore.includes("<!-- mnote=todo ");
-            if (!hasExistingTodo) {
-              const done = todoMatch[1].toLowerCase() === "x";
-              const text = todoMatch[2].trim();
-              const todoFrom = line.from + textBefore.length - 1; // position of '#'
-              const coords = update.view.coordsAtPos(pos);
-              if (coords) {
-                startTransition(() => {
-                  setTodoMenu({ open: true, x: coords.left, y: coords.bottom + 5, from: todoFrom, text, done });
-                });
-              }
-            }
-          } else {
-            startTransition(() => {
-              setTodoMenu(prev => prev.open ? { ...prev, open: false } : prev);
-            });
-          }
 
           startTransition(() => {
             setSlashMenu(prev => prev.open ? { ...prev, open: false } : prev);
@@ -2191,10 +2093,7 @@ here is the body of note.`}
                       e.stopPropagation();
                       return;
                     }
-                    if (todoKeydownRef.current(e)) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }
+
                   };
                   editorKeydownHandlerRef.current = keydownHandler;
                   view.dom.addEventListener("keydown", keydownHandler, true);
@@ -2266,56 +2165,6 @@ here is the body of note.`}
                 </div>
               )}
 
-              {/* Todo Date Picker Menu */}
-              {todoMenu.open && (
-                <div
-                  className="fixed z-[60] bg-popover border border-border rounded-lg shadow-2xl p-3 w-64 animate-in fade-in zoom-in-95 duration-200"
-                  style={{ left: todoMenu.x, top: todoMenu.y }}
-                >
-                  <div className="text-xs font-semibold text-muted-foreground mb-2">Set Due Date for Todo</div>
-                  <div className="text-sm mb-3 text-popover-foreground line-clamp-1 border-l-2 border-primary pl-2">{todoMenu.text || "Empty todo"}</div>
-                  <input
-                    type="date"
-                    className="w-full flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    autoFocus
-                    onChange={async (e) => {
-                      const date = e.target.value;
-                      if (!date) return;
-
-                      try {
-                        const todo = await todoService.create(id, todoMenu.text, date, todoMenu.done);
-                        const view = editorViewRef.current;
-                        if (!view) return;
-
-                        view.dispatch({
-                          changes: {
-                            from: todoMenu.from,
-                            to: todoMenu.from + 1, // replace the '#'
-                            insert: ` <!-- mnote=todo t=${todo.marker_id} d=${date} -->`
-                          }
-                        });
-                        setTodoMenu(prev => ({ ...prev, open: false }));
-                        view.focus();
-                      } catch (err) {
-                        toast({ title: "Failed to create Todo", description: String(err) });
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setTodoMenu(prev => ({ ...prev, open: false }));
-
-                        // Focus back on editor
-                        const view = editorViewRef.current;
-                        if (view) {
-                          view.focus();
-                        }
-                      }
-                    }}
-                  />
-                </div>
-              )}
 
             </div>
           </div>

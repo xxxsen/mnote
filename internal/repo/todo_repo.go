@@ -158,36 +158,6 @@ func (r *TodoRepo) ListByDateRange(ctx context.Context, userID, startDate, endDa
 	return items, rows.Err()
 }
 
-func (r *TodoRepo) ListByDocumentID(ctx context.Context, userID, docID string) ([]model.Todo, error) {
-	where := map[string]interface{}{
-		"user_id":     userID,
-		"document_id": docID,
-		"_orderby":    "ctime asc",
-	}
-	sqlStr, args, err := builder.BuildSelect("todos", where, []string{
-		"id", "marker_id", "user_id", "document_id", "content", "due_date", "done", "ctime", "mtime",
-	})
-	if err != nil {
-		return nil, err
-	}
-	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-
-	items := make([]model.Todo, 0)
-	for rows.Next() {
-		var item model.Todo
-		if err := rows.Scan(&item.ID, &item.MarkerID, &item.UserID, &item.DocumentID, &item.Content, &item.DueDate, &item.Done, &item.Ctime, &item.Mtime); err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
-}
-
 func (r *TodoRepo) Delete(ctx context.Context, userID, id string) error {
 	sqlStr, args, err := builder.BuildDelete("todos", map[string]interface{}{
 		"id":      id,
@@ -207,43 +177,6 @@ func (r *TodoRepo) Delete(ctx context.Context, userID, id string) error {
 	}
 	if affected == 0 {
 		return appErr.ErrNotFound
-	}
-	return nil
-}
-
-func (r *TodoRepo) DeleteByDocumentID(ctx context.Context, userID, docID string) error {
-	sqlStr, args, err := builder.BuildDelete("todos", map[string]interface{}{
-		"user_id":     userID,
-		"document_id": docID,
-	})
-	if err != nil {
-		return err
-	}
-	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	if _, err := r.db.ExecContext(ctx, sqlStr, args...); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (r *TodoRepo) DeleteByIDs(ctx context.Context, userID string, ids []string) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	idList := make([]interface{}, len(ids))
-	for i, id := range ids {
-		idList[i] = id
-	}
-	sqlStr, args, err := builder.BuildDelete("todos", map[string]interface{}{
-		"user_id": userID,
-		"id in":   idList,
-	})
-	if err != nil {
-		return err
-	}
-	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	if _, err := r.db.ExecContext(ctx, sqlStr, args...); err != nil {
-		return err
 	}
 	return nil
 }

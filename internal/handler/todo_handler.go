@@ -17,10 +17,9 @@ func NewTodoHandler(todos *service.TodoService) *TodoHandler {
 }
 
 type createTodoRequest struct {
-	DocumentID string `json:"document_id"`
-	Content    string `json:"content"`
-	DueDate    string `json:"due_date"`
-	Done       *bool  `json:"done"`
+	Content string `json:"content"`
+	DueDate string `json:"due_date"`
+	Done    *bool  `json:"done"`
 }
 
 func (h *TodoHandler) Create(c *gin.Context) {
@@ -38,7 +37,7 @@ func (h *TodoHandler) Create(c *gin.Context) {
 	if req.Done != nil {
 		done = *req.Done
 	}
-	todo, err := h.todos.CreateTodo(c.Request.Context(), userID, req.DocumentID, req.Content, req.DueDate, done)
+	todo, err := h.todos.CreateTodo(c.Request.Context(), userID, req.Content, req.DueDate, done)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -78,7 +77,7 @@ func (h *TodoHandler) ToggleDone(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalid, "invalid request body")
 		return
 	}
-	if err := h.todos.ToggleDoneAndSync(c.Request.Context(), userID, todoID, req.Done); err != nil {
+	if err := h.todos.ToggleDone(c.Request.Context(), userID, todoID, req.Done); err != nil {
 		handleError(c, err)
 		return
 	}
@@ -97,7 +96,7 @@ func (h *TodoHandler) Update(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalid, "content is required")
 		return
 	}
-	todo, err := h.todos.UpdateContentAndSync(c.Request.Context(), userID, todoID, req.Content)
+	todo, err := h.todos.UpdateContent(c.Request.Context(), userID, todoID, req.Content)
 	if err != nil {
 		handleError(c, err)
 		return

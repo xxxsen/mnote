@@ -27,7 +27,6 @@ type DocumentService struct {
 	userRepo       *repo.UserRepo
 	ai             *AIService
 	assets         *AssetService
-	todos          *TodoService
 	versionMaxKeep int
 }
 
@@ -39,10 +38,6 @@ func NewDocumentService(docs *repo.DocumentRepo, summaries *repo.DocumentSummary
 
 func (s *DocumentService) SetAssetService(assets *AssetService) {
 	s.assets = assets
-}
-
-func (s *DocumentService) SetTodoService(todos *TodoService) {
-	s.todos = todos
 }
 
 type DocumentSummary struct {
@@ -290,11 +285,7 @@ func (s *DocumentService) Delete(ctx context.Context, userID, docID string) erro
 			return err
 		}
 	}
-	if s.todos != nil {
-		if err := s.todos.SyncTodosFromContent(ctx, userID, docID, ""); err != nil {
-			return err
-		}
-	}
+
 	return nil
 }
 
@@ -709,11 +700,6 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 			return err
 		}
 	}
-	if s.todos != nil {
-		if err := s.todos.SyncTodosFromContent(ctx, userID, docID, input.Content); err != nil {
-			return err
-		}
-	}
 
 	return nil
 }
@@ -773,11 +759,6 @@ func (s *DocumentService) Create(ctx context.Context, userID string, input Docum
 	}
 	if s.assets != nil {
 		if err := s.assets.SyncDocumentReferences(ctx, userID, doc.ID, input.Content); err != nil {
-			return nil, err
-		}
-	}
-	if s.todos != nil {
-		if err := s.todos.SyncTodosFromContent(ctx, userID, doc.ID, input.Content); err != nil {
 			return nil, err
 		}
 	}

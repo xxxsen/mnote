@@ -2,10 +2,10 @@ import { apiFetch } from "@/lib/api";
 import type { Todo } from "@/types";
 
 export const todoService = {
-    create(docId: string, content: string, dueDate: string, done = false): Promise<Todo> {
+    create(content: string, dueDate: string, done = false): Promise<Todo> {
         return apiFetch<Todo>("/todos", {
             method: "POST",
-            body: JSON.stringify({ document_id: docId, content, due_date: dueDate, done }),
+            body: JSON.stringify({ content, due_date: dueDate, done }),
         });
     },
 
