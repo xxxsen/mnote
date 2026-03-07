@@ -1470,7 +1470,7 @@ export default function DocsPage() {
                               docTags.map((tag) => (
                                 <span
                                   key={tag.id}
-                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-secondary-foreground border border-border/50 whitespace-nowrap max-w-[80px] truncate"
+                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-secondary-foreground border border-border/50 whitespace-nowrap"
                                   title={tag.name}
                                 >
                                   #{tag.name}
