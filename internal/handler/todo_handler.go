@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
@@ -31,6 +33,14 @@ func (h *TodoHandler) Create(c *gin.Context) {
 	}
 	if req.Content == "" {
 		response.Error(c, errcode.ErrInvalid, "content is required")
+		return
+	}
+	if req.DueDate == "" {
+		response.Error(c, errcode.ErrInvalid, "due_date is required")
+		return
+	}
+	if _, err := time.Parse("2006-01-02", req.DueDate); err != nil {
+		response.Error(c, errcode.ErrInvalid, "due_date must be in YYYY-MM-DD format")
 		return
 	}
 	done := false
