@@ -10,7 +10,7 @@ import { languages } from "@codemirror/language-data";
 import { LanguageDescription } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { styleTags } from "@lezer/highlight";
-import { Compartment } from "@codemirror/state";
+import { Compartment, Prec } from "@codemirror/state";
 import { getThemeById, loadThemePreference, saveThemePreference, type ThemeId } from "@/lib/editor-themes";
 import { undo, redo, indentWithTab } from "@codemirror/commands";
 import { keymap } from "@codemirror/view";
@@ -1736,31 +1736,100 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     };
   }, []);
 
-  const handleTodoEnter = useCallback((view: EditorView) => {
+  const handleListEnter = useCallback((view: EditorView) => {
     const selection = view.state.selection.main;
     if (!selection.empty) return false;
 
     const line = view.state.doc.lineAt(selection.head);
     if (selection.head !== line.to) return false;
 
-    const match = line.text.match(/^(\s*)-\s*\[([ xX])\]\s*(.*)$/);
-    if (!match) return false;
-
-    const itemContent = match[3].trim();
-    if (!itemContent) {
+    // Try checkbox: - [ ] text
+    const todoMatch = line.text.match(/^(\s*)-\s*\[([ xX])\]\s*(.*)$/);
+    if (todoMatch) {
+      const itemContent = todoMatch[3].trim();
+      if (!itemContent) {
+        view.dispatch({
+          changes: { from: line.from, to: line.to, insert: todoMatch[1] },
+          selection: { anchor: line.from + todoMatch[1].length },
+        });
+        return true;
+      }
+      const insertText = `\n${todoMatch[1]}- [ ] `;
       view.dispatch({
-        changes: { from: line.from, to: line.to, insert: match[1] },
-        selection: { anchor: line.from + match[1].length },
+        changes: { from: selection.head, to: selection.head, insert: insertText },
+        selection: { anchor: selection.head + insertText.length },
       });
       return true;
     }
 
-    const insertText = `\n${match[1]}- [ ] `;
-    view.dispatch({
-      changes: { from: selection.head, to: selection.head, insert: insertText },
-      selection: { anchor: selection.head + insertText.length },
-    });
-    return true;
+    // Try unordered list: - text or * text
+    const ulMatch = line.text.match(/^(\s*)([-*])\s(.*)$/);
+    if (ulMatch) {
+      const itemContent = ulMatch[3].trim();
+      if (!itemContent) {
+        view.dispatch({
+          changes: { from: line.from, to: line.to, insert: ulMatch[1] },
+          selection: { anchor: line.from + ulMatch[1].length },
+        });
+        return true;
+      }
+      const insertText = `\n${ulMatch[1]}${ulMatch[2]} `;
+      view.dispatch({
+        changes: { from: selection.head, to: selection.head, insert: insertText },
+        selection: { anchor: selection.head + insertText.length },
+      });
+      return true;
+    }
+
+    // Try ordered list: 1. text
+    const olMatch = line.text.match(/^(\s*)(\d+)\.\s(.*)$/);
+    if (olMatch) {
+      const itemContent = olMatch[3].trim();
+      if (!itemContent) {
+        view.dispatch({
+          changes: { from: line.from, to: line.to, insert: olMatch[1] },
+          selection: { anchor: line.from + olMatch[1].length },
+        });
+        return true;
+      }
+      const nextNum = parseInt(olMatch[2], 10) + 1;
+      const insertText = `\n${olMatch[1]}${nextNum}. `;
+      view.dispatch({
+        changes: { from: selection.head, to: selection.head, insert: insertText },
+        selection: { anchor: selection.head + insertText.length },
+      });
+      return true;
+    }
+
+    // If current line is not a list item itself, check whether we're on a
+    // lazy continuation line (a non-blank, non-indented line that immediately
+    // follows a list item).  In that case we simply insert a plain newline so
+    // the built-in markdown extension doesn't mishandle the Enter key (which
+    // could delete the line content — Bug 3).
+    const lineText = line.text;
+    if (lineText.trim() !== "") {
+      let checkLineNum = line.number - 1;
+      while (checkLineNum >= 1) {
+        const checkLine = view.state.doc.line(checkLineNum);
+        const checkText = checkLine.text.trim();
+        if (checkText === "") break;
+        if (
+          /^\s*([-*])\s/.test(checkLine.text) ||
+          /^\s*\d+\.\s/.test(checkLine.text) ||
+          /^\s*-\s*\[[ xX]\]/.test(checkLine.text)
+        ) {
+          // We're on a lazy continuation line — insert a plain newline
+          view.dispatch({
+            changes: { from: selection.head, to: selection.head, insert: "\n" },
+            selection: { anchor: selection.head + 1 },
+          });
+          return true;
+        }
+        checkLineNum--;
+      }
+    }
+
+    return false;
   }, []);
 
   const editorExtensions = useMemo(() => [
@@ -1782,7 +1851,8 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     themeCompartment.of(getThemeById(currentThemeId).extension),
     EditorView.lineWrapping,
     goAutocompleteExtension,
-    keymap.of([{ key: "Enter", run: handleTodoEnter }, indentWithTab]),
+    Prec.highest(keymap.of([{ key: "Enter", run: handleListEnter }])),
+    keymap.of([indentWithTab]),
     EditorView.updateListener.of((update) => {
       if (update.selectionSet || update.docChanged) {
         updateCursorInfo(update.view);
@@ -1835,7 +1905,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         }
       }
     }),
-  ], [updateCursorInfo, currentThemeId, handleTodoEnter]);
+  ], [updateCursorInfo, currentThemeId, handleListEnter]);
 
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;

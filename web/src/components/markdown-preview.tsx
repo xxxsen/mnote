@@ -295,6 +295,49 @@ type InlineHtmlNode = {
   properties?: Record<string, unknown>;
 };
 
+export const breakLazyListContinuation = (content: string): string => {
+  const lines = content.split("\n");
+  const result: string[] = [];
+  let inCodeBlock = false;
+  let inList = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("```")) {
+      inCodeBlock = !inCodeBlock;
+      result.push(line);
+      inList = false;
+      continue;
+    }
+    if (inCodeBlock) {
+      result.push(line);
+      continue;
+    }
+
+    const isListItem = /^\s*([-*])\s/.test(line) || /^\s*\d+\.\s/.test(line) || /^\s*-\s*\[[ xX]\]/.test(line);
+    const isBlank = trimmed === "";
+    // Lines indented with 2+ spaces are valid list continuations
+    const isIndentedContinuation = /^\s{2,}\S/.test(line);
+
+    if (isListItem) {
+      inList = true;
+      result.push(line);
+    } else if (inList && !isBlank && !isIndentedContinuation) {
+      // Non-indented, non-list line following a list — break lazy continuation
+      inList = false;
+      result.push("");
+      result.push(line);
+    } else {
+      if (isBlank) inList = false;
+      result.push(line);
+    }
+  }
+
+  return result.join("\n");
+};
+
 const remarkSoftBreaks = () => {
   return (tree: MdastNode) => {
     const walk = (node: MdastNode) => {
@@ -1097,7 +1140,8 @@ const MarkdownPreview = memo(
 
       const wikilinkProcessed = convertWikilinks(mathFixed);
       const safeContent = escapeUnsupportedHtml(convertAdmonitions(wikilinkProcessed));
-      return { processedContent: safeContent, tocMarkdown: toc };
+      const lazyFixed = breakLazyListContinuation(safeContent);
+      return { processedContent: lazyFixed, tocMarkdown: toc };
     }, [content]);
 
     const rehypeSlugger = useMemo(() => {
