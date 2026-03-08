@@ -1743,6 +1743,17 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     const line = view.state.doc.lineAt(selection.head);
     if (selection.head !== line.to) return false;
 
+    // Exit blockquote on the second Enter: `> ` -> empty line
+    const emptyQuoteMatch = line.text.match(/^(\s*)(?:>\s*)+$/);
+    if (emptyQuoteMatch) {
+      const indent = emptyQuoteMatch[1];
+      view.dispatch({
+        changes: { from: line.from, to: line.to, insert: indent },
+        selection: { anchor: line.from + indent.length },
+      });
+      return true;
+    }
+
     // Try checkbox: - [ ] text
     const todoMatch = line.text.match(/^(\s*)-\s*\[([ xX])\]\s*(.*)$/);
     if (todoMatch) {
@@ -1805,9 +1816,10 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     // lazy continuation line (a non-blank, non-indented line that immediately
     // follows a list item).  In that case we simply insert a plain newline so
     // the built-in markdown extension doesn't mishandle the Enter key (which
-    // could delete the line content — Bug 3).
+    // could delete the line content — Bug 3). We do the same for blockquotes
+    // so lazy quote lines don't get auto-prefixed with `> ` on Enter.
     const lineText = line.text;
-    if (lineText.trim() !== "") {
+    if (lineText.trim() !== "" && !/^\s*(?:>\s*)+/.test(lineText)) {
       let checkLineNum = line.number - 1;
       while (checkLineNum >= 1) {
         const checkLine = view.state.doc.line(checkLineNum);
@@ -1819,6 +1831,14 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
           /^\s*-\s*\[[ xX]\]/.test(checkLine.text)
         ) {
           // We're on a lazy continuation line — insert a plain newline
+          view.dispatch({
+            changes: { from: selection.head, to: selection.head, insert: "\n" },
+            selection: { anchor: selection.head + 1 },
+          });
+          return true;
+        }
+        if (/^\s*(?:>\s*)+/.test(checkLine.text)) {
+          // We're on a lazy blockquote continuation line — insert a plain newline
           view.dispatch({
             changes: { from: selection.head, to: selection.head, insert: "\n" },
             selection: { anchor: selection.head + 1 },

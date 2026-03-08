@@ -300,6 +300,7 @@ export const breakLazyListContinuation = (content: string): string => {
   const result: string[] = [];
   let inCodeBlock = false;
   let inList = false;
+  let inBlockquote = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -309,6 +310,7 @@ export const breakLazyListContinuation = (content: string): string => {
       inCodeBlock = !inCodeBlock;
       result.push(line);
       inList = false;
+      inBlockquote = false;
       continue;
     }
     if (inCodeBlock) {
@@ -317,11 +319,22 @@ export const breakLazyListContinuation = (content: string): string => {
     }
 
     const isListItem = /^\s*([-*])\s/.test(line) || /^\s*\d+\.\s/.test(line) || /^\s*-\s*\[[ xX]\]/.test(line);
+    const isBlockquoteLine = /^\s*(?:>\s*)+/.test(line);
     const isBlank = trimmed === "";
     // Lines indented with 2+ spaces are valid list continuations
     const isIndentedContinuation = /^\s{2,}\S/.test(line);
 
-    if (isListItem) {
+    if (isBlockquoteLine) {
+      inBlockquote = true;
+      inList = false;
+      result.push(line);
+    } else if (inBlockquote && !isBlank) {
+      // Non-blockquote line following a blockquote — break lazy continuation
+      inBlockquote = false;
+      inList = false;
+      result.push("");
+      result.push(line);
+    } else if (isListItem) {
       inList = true;
       result.push(line);
     } else if (inList && !isBlank && !isIndentedContinuation) {
@@ -330,7 +343,10 @@ export const breakLazyListContinuation = (content: string): string => {
       result.push("");
       result.push(line);
     } else {
-      if (isBlank) inList = false;
+      if (isBlank) {
+        inList = false;
+        inBlockquote = false;
+      }
       result.push(line);
     }
   }
