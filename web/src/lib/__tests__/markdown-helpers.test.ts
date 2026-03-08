@@ -178,4 +178,9 @@ describe("breakLazyListContinuation", () => {
         const input = "```\n> abc\nbcd\n```";
         expect(breakLazyListContinuation(input)).toBe(input);
     });
+
+    it("does not transform content inside tilde fenced code blocks", () => {
+        const input = "~~~txt\n- item\ncontinuation\n> quote\ntext\n~~~";
+        expect(breakLazyListContinuation(input)).toBe(input);
+    });
 });

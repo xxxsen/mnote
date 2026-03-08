@@ -299,21 +299,48 @@ export const breakLazyListContinuation = (content: string): string => {
   const lines = content.split("\n");
   const result: string[] = [];
   let inCodeBlock = false;
+  let codeFenceMarker: "`" | "~" | null = null;
+  let codeFenceLength = 0;
   let inList = false;
   let inBlockquote = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
+    const fenceMatch = line.match(/^\s{0,3}([`~]{3,})(.*)$/);
 
-    if (trimmed.startsWith("```")) {
-      inCodeBlock = !inCodeBlock;
+    if (!inCodeBlock && fenceMatch) {
+      const fence = fenceMatch[1];
+      const marker = fence[0];
+      const isUniformFence = fence.split("").every((ch) => ch === marker);
+      if (isUniformFence && (marker === "`" || marker === "~")) {
+        inCodeBlock = true;
+        codeFenceMarker = marker;
+        codeFenceLength = fence.length;
+      }
       result.push(line);
       inList = false;
       inBlockquote = false;
       continue;
     }
     if (inCodeBlock) {
+      if (fenceMatch && codeFenceMarker) {
+        const fence = fenceMatch[1];
+        const trailing = fenceMatch[2];
+        const isUniformFence = fence.split("").every((ch) => ch === fence[0]);
+        const isClosingFence =
+          isUniformFence &&
+          fence[0] === codeFenceMarker &&
+          fence.length >= codeFenceLength &&
+          trailing.trim() === "";
+        if (isClosingFence) {
+          inCodeBlock = false;
+          codeFenceMarker = null;
+          codeFenceLength = 0;
+          inList = false;
+          inBlockquote = false;
+        }
+      }
       result.push(line);
       continue;
     }
