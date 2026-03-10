@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { toSafeInlineStyle, toFontSize, convertAdmonitions, escapeUnsupportedHtml, FONT_SIZE_MAP } from "@/components/markdown-preview";
+import {
+    toSafeInlineStyle,
+    toFontSize,
+    convertAdmonitions,
+    escapeUnsupportedHtml,
+    breakLazyListContinuation,
+    FONT_SIZE_MAP
+} from "@/components/markdown-preview";
 
 describe("toSafeInlineStyle", () => {
     it("parses color and font-size from a CSS string", () => {
@@ -148,5 +155,39 @@ describe("escapeUnsupportedHtml", () => {
     it("strips encoded javascript protocol variants", () => {
         const input = `<a href="java&#x73;cript:alert('x')">bad</a>`;
         expect(escapeUnsupportedHtml(input)).toBe("<a>bad</a>");
+    });
+});
+
+describe("breakLazyListContinuation", () => {
+    it("breaks lazy list continuation with a blank line", () => {
+        const input = "- item\ncontinuation";
+        expect(breakLazyListContinuation(input)).toBe("- item\n\ncontinuation");
+    });
+
+    it("breaks lazy blockquote continuation with a blank line", () => {
+        const input = "> abc\nbcd";
+        expect(breakLazyListContinuation(input)).toBe("> abc\n\nbcd");
+    });
+
+    it("keeps explicit multi-line blockquotes unchanged", () => {
+        const input = "> abc\n> bcd";
+        expect(breakLazyListContinuation(input)).toBe(input);
+    });
+
+    it("does not transform content inside fenced code blocks", () => {
+        const input = "```\n> abc\nbcd\n```";
+        expect(breakLazyListContinuation(input)).toBe(input);
+    });
+
+    it("does not transform content inside tilde fenced code blocks", () => {
+        const input = "~~~txt\n- item\ncontinuation\n> quote\ntext\n~~~";
+        expect(breakLazyListContinuation(input)).toBe(input);
+    });
+
+    it("does not treat indented code block lines as list or blockquote", () => {
+        const blockquoteLikeCode = "    > quoted\nnext";
+        const listLikeCode = "    - item\nnext";
+        expect(breakLazyListContinuation(blockquoteLikeCode)).toBe(blockquoteLikeCode);
+        expect(breakLazyListContinuation(listLikeCode)).toBe(listLikeCode);
     });
 });
