@@ -345,8 +345,14 @@ export const breakLazyListContinuation = (content: string): string => {
       continue;
     }
 
-    const isListItem = /^\s*([-*])\s/.test(line) || /^\s*\d+\.\s/.test(line) || /^\s*-\s*\[[ xX]\]/.test(line);
-    const isBlockquoteLine = /^\s*(?:>\s*)+/.test(line);
+    // Preserve indented code block lines (4+ spaces or a tab) as plain text.
+    const isIndentedCodeLine = /^(?: {4,}|\t+)\S/.test(line);
+    const isListItem = !isIndentedCodeLine && (
+      /^\s*([-*])\s/.test(line) ||
+      /^\s*\d+\.\s/.test(line) ||
+      /^\s*-\s*\[[ xX]\]/.test(line)
+    );
+    const isBlockquoteLine = !isIndentedCodeLine && /^\s*(?:>\s*)+/.test(line);
     const isBlank = trimmed === "";
     // Lines indented with 2+ spaces are valid list continuations
     const isIndentedContinuation = /^\s{2,}\S/.test(line);

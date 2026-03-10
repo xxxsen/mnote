@@ -183,4 +183,11 @@ describe("breakLazyListContinuation", () => {
         const input = "~~~txt\n- item\ncontinuation\n> quote\ntext\n~~~";
         expect(breakLazyListContinuation(input)).toBe(input);
     });
+
+    it("does not treat indented code block lines as list or blockquote", () => {
+        const blockquoteLikeCode = "    > quoted\nnext";
+        const listLikeCode = "    - item\nnext";
+        expect(breakLazyListContinuation(blockquoteLikeCode)).toBe(blockquoteLikeCode);
+        expect(breakLazyListContinuation(listLikeCode)).toBe(listLikeCode);
+    });
 });
