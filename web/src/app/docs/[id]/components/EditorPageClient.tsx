@@ -7,7 +7,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
-import { LanguageDescription } from "@codemirror/language";
+import { LanguageDescription, syntaxTree } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { styleTags } from "@lezer/highlight";
 import { Compartment, Prec } from "@codemirror/state";
@@ -1739,6 +1739,27 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const handleListEnter = useCallback((view: EditorView) => {
     const selection = view.state.selection.main;
     if (!selection.empty) return false;
+    const tree = syntaxTree(view.state);
+    const isInsideCodeRegion = (pos: number) => {
+      let node = tree.resolveInner(pos, -1);
+      while (node) {
+        if (
+          node.name === "FencedCode" ||
+          node.name === "CodeBlock" ||
+          node.name === "InlineCode" ||
+          node.name === "CodeText"
+        ) {
+          return true;
+        }
+        if (!node.parent) break;
+        node = node.parent;
+      }
+      return false;
+    };
+    const checkPos = Math.max(0, selection.head - 1);
+    if (isInsideCodeRegion(selection.head) || isInsideCodeRegion(checkPos)) {
+      return false;
+    }
 
     const line = view.state.doc.lineAt(selection.head);
     if (selection.head !== line.to) return false;
@@ -1819,7 +1840,11 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     // could delete the line content — Bug 3). We do the same for blockquotes
     // so lazy quote lines don't get auto-prefixed with `> ` on Enter.
     const lineText = line.text;
-    if (lineText.trim() !== "" && !/^\s*(?:>\s*)+/.test(lineText)) {
+    if (
+      lineText.trim() !== "" &&
+      !/^\s*(?:>\s*)+/.test(lineText) &&
+      !/^\s+/.test(lineText)
+    ) {
       let checkLineNum = line.number - 1;
       while (checkLineNum >= 1) {
         const checkLine = view.state.doc.line(checkLineNum);
