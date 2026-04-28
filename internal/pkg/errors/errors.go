@@ -7,7 +7,7 @@ import (
 )
 
 type AppError struct {
-	code    int
+	code    uint32
 	message string
 	cause   error
 }
@@ -40,7 +40,7 @@ func (e *AppError) Is(target error) bool {
 	return e.code == t.code
 }
 
-func (e *AppError) Code() int {
+func (e *AppError) Code() uint32 {
 	if e == nil {
 		return errcode.ErrInternal
 	}
@@ -54,7 +54,7 @@ func (e *AppError) Message() string {
 	return e.message
 }
 
-func New(code int, message string) *AppError {
+func New(code uint32, message string) *AppError {
 	return &AppError{
 		code:    code,
 		message: message,

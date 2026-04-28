@@ -2,26 +2,59 @@ package job
 
 import (
 	"context"
-
-	"github.com/xxxsen/mnote/internal/service"
+	"fmt"
 )
 
+type embeddingProcessor interface {
+	ProcessPendingEmbeddings(ctx context.Context, delaySeconds int64) error
+}
+
+type summaryProcessor interface {
+	ProcessPendingSummaries(ctx context.Context, delaySeconds int64) error
+}
+
+// AIEmbeddingJob syncs document embeddings for newly modified documents.
 type AIEmbeddingJob struct {
-	ai           *service.AIService
+	ai           embeddingProcessor
 	delaySeconds int64
 }
 
-func NewAIEmbeddingJob(ai *service.AIService, delaySeconds int64) *AIEmbeddingJob {
+func NewAIEmbeddingJob(ai embeddingProcessor, delaySeconds int64) *AIEmbeddingJob {
 	return &AIEmbeddingJob{ai: ai, delaySeconds: delaySeconds}
 }
 
-func (j *AIEmbeddingJob) Name() string {
-	return "ai_embedding"
-}
+func (j *AIEmbeddingJob) Name() string { return "ai_embedding" }
 
 func (j *AIEmbeddingJob) Run(ctx context.Context) error {
 	if j.ai == nil {
 		return nil
 	}
-	return j.ai.ProcessPendingEmbeddings(ctx, j.delaySeconds)
+	if err := j.ai.ProcessPendingEmbeddings(ctx, j.delaySeconds); err != nil {
+		return fmt.Errorf("process pending embeddings: %w", err)
+	}
+	return nil
+}
+
+// AISummaryJob generates AI summaries for documents that lack them.
+type AISummaryJob struct {
+	documents    summaryProcessor
+	delaySeconds int64
+}
+
+func NewAISummaryJob(
+	documents summaryProcessor, delaySeconds int64,
+) *AISummaryJob {
+	return &AISummaryJob{documents: documents, delaySeconds: delaySeconds}
+}
+
+func (j *AISummaryJob) Name() string { return "ai_summary" }
+
+func (j *AISummaryJob) Run(ctx context.Context) error {
+	if j.documents == nil {
+		return nil
+	}
+	if err := j.documents.ProcessPendingSummaries(ctx, j.delaySeconds); err != nil {
+		return fmt.Errorf("process pending summaries: %w", err)
+	}
+	return nil
 }

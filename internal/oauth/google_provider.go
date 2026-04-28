@@ -47,11 +47,11 @@ func (g *googleProvider) ExchangeCode(ctx context.Context, code string) (*Profil
 	form.Set("grant_type", "authorization_code")
 	accessToken, err := g.token(ctx, form)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("exchange token: %w", err)
 	}
 	user, err := g.user(ctx, accessToken)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetch userinfo: %w", err)
 	}
 	email := strings.TrimSpace(user.Email)
 	if user.Sub == "" || email == "" {
@@ -65,23 +65,24 @@ type googleTokenResponse struct {
 }
 
 func (g *googleProvider) token(ctx context.Context, form url.Values) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://oauth2.googleapis.com/token", strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://oauth2.googleapis.com/token",
+		strings.NewReader(form.Encode()))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("google token exchange failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("%w: token exchange: %s: %s", ErrRequestFailed, resp.Status, strings.TrimSpace(string(body)))
 	}
 	var out googleTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", err
+		return "", fmt.Errorf("decode: %w", err)
 	}
 	if out.AccessToken == "" {
 		return "", appErr.ErrInvalid
@@ -97,30 +98,27 @@ type googleUserResponse struct {
 func (g *googleProvider) user(ctx context.Context, accessToken string) (*googleUserResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://openidconnect.googleapis.com/v1/userinfo", nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("google userinfo failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("%w: userinfo: %s: %s", ErrRequestFailed, resp.Status, strings.TrimSpace(string(body)))
 	}
 	var out googleUserResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode: %w", err)
 	}
 	return &out, nil
 }
 
-func newGoogleProvider(args interface{}) (Provider, error) {
-	cfg, err := decodeProviderArgs(args)
-	if err != nil {
-		return nil, err
-	}
+func newGoogleProvider(args any) (Provider, error) {
+	cfg := decodeProviderArgs(args)
 	client := cfg.Client
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}

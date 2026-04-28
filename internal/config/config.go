@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -42,14 +43,14 @@ type CORSConfig struct {
 }
 
 type FileStoreConfig struct {
-	Type string      `json:"type"`
-	Data interface{} `json:"data"`
+	Type string `json:"type"`
+	Data any    `json:"data"`
 }
 
 type AIProviderConfig struct {
-	Name string      `json:"name"`
-	Type string      `json:"type"`
-	Data interface{} `json:"data"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+	Data any    `json:"data"`
 }
 
 type AIFeatureConfig struct {
@@ -119,6 +120,12 @@ type BannerConfig struct {
 	Redirect string `json:"redirect"`
 }
 
+var (
+	errDatabaseRequired  = errors.New("database.host or database.dsn is required")
+	errJWTSecretRequired = errors.New("jwt_secret is required")
+	errPortRequired      = errors.New("port is required")
+)
+
 func Load(path string) (*Config, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -130,47 +137,66 @@ func Load(path string) (*Config, error) {
 	if err := json.NewDecoder(file).Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
-	if cfg.Database.Host == "" && cfg.Database.DSN == "" {
-		return nil, fmt.Errorf("database.host or database.dsn is required")
+	if err := cfg.validate(); err != nil {
+		return nil, err
 	}
-	if cfg.JWTSecret == "" {
-		return nil, fmt.Errorf("jwt_secret is required")
-	}
-	if cfg.Port == 0 {
-		return nil, fmt.Errorf("port is required")
-	}
-	if cfg.JWTTTLHours == 0 {
-		cfg.JWTTTLHours = 72
-	}
-	if cfg.VersionMaxKeep == 0 {
-		cfg.VersionMaxKeep = 10
-	}
-	if cfg.MaxUploadSize <= 0 {
-		cfg.MaxUploadSize = 20 * 1024 * 1024
-	}
-	if cfg.LogConfig.Level == "" {
-		cfg.LogConfig.Level = "info"
-	}
-	if cfg.FileStore.Type == "" {
-		cfg.FileStore.Type = "local"
-	}
-	if cfg.AI.Timeout == 0 {
-		cfg.AI.Timeout = 30
-	}
-	if cfg.AI.MaxInputChars == 0 {
-		cfg.AI.MaxInputChars = 64 * 1024
-	}
-	if cfg.AIJob.SummaryDelaySeconds == 0 {
-		cfg.AIJob.SummaryDelaySeconds = 300
-	}
-	if cfg.AIJob.EmbeddingDelaySeconds == 0 {
-		cfg.AIJob.EmbeddingDelaySeconds = 300
-	}
-	if cfg.Properties.EnableGithubOauth && len(cfg.OAuth.Github.Scopes) == 0 {
-		cfg.OAuth.Github.Scopes = []string{"user:email"}
-	}
-	if cfg.Properties.EnableGoogleOauth && len(cfg.OAuth.Google.Scopes) == 0 {
-		cfg.OAuth.Google.Scopes = []string{"openid", "email", "profile"}
-	}
+	cfg.applyDefaults()
 	return &cfg, nil
+}
+
+func (c *Config) validate() error {
+	if c.Database.Host == "" && c.Database.DSN == "" {
+		return errDatabaseRequired
+	}
+	if c.JWTSecret == "" {
+		return errJWTSecretRequired
+	}
+	if c.Port == 0 {
+		return errPortRequired
+	}
+	return nil
+}
+
+func (c *Config) applyDefaults() {
+	if c.JWTTTLHours == 0 {
+		c.JWTTTLHours = 72
+	}
+	if c.VersionMaxKeep == 0 {
+		c.VersionMaxKeep = 10
+	}
+	if c.MaxUploadSize <= 0 {
+		c.MaxUploadSize = 20 * 1024 * 1024
+	}
+	if c.LogConfig.Level == "" {
+		c.LogConfig.Level = "info"
+	}
+	if c.FileStore.Type == "" {
+		c.FileStore.Type = "local"
+	}
+	c.applyAIDefaults()
+	c.applyOAuthDefaults()
+}
+
+func (c *Config) applyAIDefaults() {
+	if c.AI.Timeout == 0 {
+		c.AI.Timeout = 30
+	}
+	if c.AI.MaxInputChars == 0 {
+		c.AI.MaxInputChars = 64 * 1024
+	}
+	if c.AIJob.SummaryDelaySeconds == 0 {
+		c.AIJob.SummaryDelaySeconds = 300
+	}
+	if c.AIJob.EmbeddingDelaySeconds == 0 {
+		c.AIJob.EmbeddingDelaySeconds = 300
+	}
+}
+
+func (c *Config) applyOAuthDefaults() {
+	if c.Properties.EnableGithubOauth && len(c.OAuth.Github.Scopes) == 0 {
+		c.OAuth.Github.Scopes = []string{"user:email"}
+	}
+	if c.Properties.EnableGoogleOauth && len(c.OAuth.Google.Scopes) == 0 {
+		c.OAuth.Google.Scopes = []string{"openid", "email", "profile"}
+	}
 }

@@ -17,15 +17,16 @@ type ProviderArgs struct {
 	Client *http.Client
 }
 
-func decodeProviderArgs(args interface{}) (ProviderArgs, error) {
+func decodeProviderArgs(args any) ProviderArgs {
 	if args == nil {
-		return ProviderArgs{}, nil
+		return ProviderArgs{}
 	}
-	if cfg, ok := args.(ProviderArgs); ok {
-		cfg.Config.RedirectURL = strings.TrimSpace(cfg.Config.RedirectURL)
-		cfg.Config.ClientID = strings.TrimSpace(cfg.Config.ClientID)
-		cfg.Config.ClientSecret = strings.TrimSpace(cfg.Config.ClientSecret)
-		return cfg, nil
+	cfg, ok := args.(ProviderArgs)
+	if !ok {
+		return ProviderArgs{}
 	}
-	return ProviderArgs{}, nil
+	cfg.Config.RedirectURL = strings.TrimSpace(cfg.Config.RedirectURL)
+	cfg.Config.ClientID = strings.TrimSpace(cfg.Config.ClientID)
+	cfg.Config.ClientSecret = strings.TrimSpace(cfg.Config.ClientSecret)
+	return cfg
 }

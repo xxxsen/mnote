@@ -45,17 +45,17 @@ func (g *githubProvider) ExchangeCode(ctx context.Context, code string) (*Profil
 	form.Set("redirect_uri", g.cfg.Config.RedirectURL)
 	accessToken, err := g.token(ctx, form)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("exchange token: %w", err)
 	}
 	user, err := g.user(ctx, accessToken)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetch user: %w", err)
 	}
 	email := strings.TrimSpace(user.Email)
 	if email == "" {
 		email, err = g.primaryEmail(ctx, accessToken)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("fetch primary email: %w", err)
 		}
 	}
 	if email == "" {
@@ -69,24 +69,25 @@ type githubTokenResponse struct {
 }
 
 func (g *githubProvider) token(ctx context.Context, form url.Values) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://github.com/login/oauth/access_token", strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://github.com/login/oauth/access_token",
+		strings.NewReader(form.Encode()))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("github token exchange failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("%w: token exchange: %s: %s", ErrRequestFailed, resp.Status, strings.TrimSpace(string(body)))
 	}
 	var out githubTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", err
+		return "", fmt.Errorf("decode: %w", err)
 	}
 	if out.AccessToken == "" {
 		return "", appErr.ErrInvalid
@@ -102,22 +103,22 @@ type githubUserResponse struct {
 func (g *githubProvider) user(ctx context.Context, accessToken string) (*githubUserResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user", nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("github user request failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("%w: user request: %s: %s", ErrRequestFailed, resp.Status, strings.TrimSpace(string(body)))
 	}
 	var out githubUserResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode: %w", err)
 	}
 	return &out, nil
 }
@@ -131,22 +132,22 @@ type githubEmailResponse struct {
 func (g *githubProvider) primaryEmail(ctx context.Context, accessToken string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user/emails", nil)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("github emails request failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("%w: emails request: %s: %s", ErrRequestFailed, resp.Status, strings.TrimSpace(string(body)))
 	}
 	var emails []githubEmailResponse
 	if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
-		return "", err
+		return "", fmt.Errorf("decode: %w", err)
 	}
 	for _, item := range emails {
 		if item.Primary && item.Verified {
@@ -164,11 +165,8 @@ func (g *githubProvider) primaryEmail(ctx context.Context, accessToken string) (
 	return "", nil
 }
 
-func newGithubProvider(args interface{}) (Provider, error) {
-	cfg, err := decodeProviderArgs(args)
-	if err != nil {
-		return nil, err
-	}
+func newGithubProvider(args any) (Provider, error) {
+	cfg := decodeProviderArgs(args)
 	client := cfg.Client
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}

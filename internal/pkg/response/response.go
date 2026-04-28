@@ -22,10 +22,10 @@ func AsCodeErr(code uint32, msg string) error {
 	return codeErr{code: code, msg: msg}
 }
 
-func Success(c *gin.Context, data interface{}) {
+func Success(c *gin.Context, data any) {
 	proxyutil.SuccessJson(c, data)
 }
 
-func Error(c *gin.Context, code int, message string) {
-	proxyutil.FailJson(c, 200, AsCodeErr(uint32(code), message))
+func Error(c *gin.Context, code uint32, message string) {
+	proxyutil.FailJson(c, 200, AsCodeErr(code, message))
 }

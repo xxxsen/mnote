@@ -5,13 +5,18 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
 	"sync"
+)
 
-	"github.com/xxxsen/mnote/internal/config"
+var (
+	ErrStoreTypeRequired = errors.New("file_store.type is required")
+	ErrUnsupportedStore  = errors.New("unsupported file store type")
+	ErrConfigRequired    = errors.New("store config is required")
 )
 
 type Store interface {
@@ -26,7 +31,12 @@ type ReadSeekCloser interface {
 	Close() error
 }
 
-type Factory func(args interface{}) (Store, error)
+type Config struct {
+	Type string `json:"type"`
+	Data any    `json:"data"`
+}
+
+type Factory func(args any) (Store, error)
 
 var (
 	registryMu sync.RWMutex
@@ -43,23 +53,23 @@ func Register(name string, factory Factory) {
 	registryMu.Unlock()
 }
 
-func New(cfg config.FileStoreConfig) (Store, error) {
+func New(cfg Config) (Store, error) {
 	key := strings.ToLower(strings.TrimSpace(cfg.Type))
 	if key == "" {
-		return nil, fmt.Errorf("file_store.type is required")
+		return nil, ErrStoreTypeRequired
 	}
 	registryMu.RLock()
 	factory := registry[key]
 	registryMu.RUnlock()
 	if factory == nil {
-		return nil, fmt.Errorf("unsupported file store type: %s", cfg.Type)
+		return nil, fmt.Errorf("%w: %s", ErrUnsupportedStore, cfg.Type)
 	}
 	return factory(cfg.Data)
 }
 
-func decodeConfig(args interface{}, dst interface{}) error {
+func decodeConfig(args, dst any) error {
 	if args == nil {
-		return fmt.Errorf("store config is required")
+		return ErrConfigRequired
 	}
 	data, err := json.Marshal(args)
 	if err != nil {
@@ -88,8 +98,7 @@ func randomHex(size int) string {
 		return ""
 	}
 	buf := make([]byte, size)
-	_, err := rand.Read(buf)
-	if err != nil {
+	if _, err := rand.Read(buf); err != nil {
 		return ""
 	}
 	return hex.EncodeToString(buf)

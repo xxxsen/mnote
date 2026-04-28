@@ -8,8 +8,8 @@ import (
 
 type IProvider interface {
 	Name() string
-	Generate(ctx context.Context, model string, prompt string) (string, error)
-	Embed(ctx context.Context, model string, text string, taskType string) ([]float32, error)
+	Generate(ctx context.Context, model, prompt string) (string, error)
+	Embed(ctx context.Context, model, text, taskType string) ([]float32, error)
 }
 
 type IGenerator interface {
@@ -17,7 +17,7 @@ type IGenerator interface {
 }
 
 type IEmbedder interface {
-	Embed(ctx context.Context, text string, taskType string) ([]float32, error)
+	Embed(ctx context.Context, text, taskType string) ([]float32, error)
 	ModelName() string
 }
 
@@ -31,7 +31,11 @@ func NewGenerator(p IProvider, model string) IGenerator {
 }
 
 func (g *generator) Generate(ctx context.Context, prompt string) (string, error) {
-	return g.provider.Generate(ctx, g.model, prompt)
+	res, err := g.provider.Generate(ctx, g.model, prompt)
+	if err != nil {
+		return "", fmt.Errorf("generate: %w", err)
+	}
+	return res, nil
 }
 
 type embedder struct {
@@ -43,15 +47,19 @@ func NewEmbedder(p IProvider, model string) IEmbedder {
 	return &embedder{provider: p, model: model}
 }
 
-func (e *embedder) Embed(ctx context.Context, text string, taskType string) ([]float32, error) {
-	return e.provider.Embed(ctx, e.model, text, taskType)
+func (e *embedder) Embed(ctx context.Context, text, taskType string) ([]float32, error) {
+	res, err := e.provider.Embed(ctx, e.model, text, taskType)
+	if err != nil {
+		return nil, fmt.Errorf("embed: %w", err)
+	}
+	return res, nil
 }
 
 func (e *embedder) ModelName() string {
 	return e.model
 }
 
-type ProviderFactory func(args interface{}) (IProvider, error)
+type ProviderFactory func(args any) (IProvider, error)
 
 var registry = map[string]ProviderFactory{}
 
@@ -63,14 +71,14 @@ func Register(name string, factory ProviderFactory) {
 	registry[key] = factory
 }
 
-func NewProvider(name string, args interface{}) (IProvider, error) {
+func NewProvider(name string, args any) (IProvider, error) {
 	key := strings.ToLower(strings.TrimSpace(name))
 	if key == "" {
-		return nil, fmt.Errorf("ai.provider is required")
+		return nil, ErrProviderRequired
 	}
 	factory := registry[key]
 	if factory == nil {
-		return nil, fmt.Errorf("unsupported ai provider: %s", name)
+		return nil, fmt.Errorf("%w: %s", ErrNotConfigured, name)
 	}
 	return factory(args)
 }

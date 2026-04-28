@@ -2,15 +2,19 @@ package embedcache
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/xxxsen/common/logutil"
-	"github.com/xxxsen/mnote/internal/ai"
 	"go.uber.org/zap"
+
+	"github.com/xxxsen/mnote/internal/ai"
 )
 
-func WrapLruCacheToEmbedder(e ai.IEmbedder, size int, ttl time.Duration) ai.IEmbedder {
+func WrapLruCacheToEmbedder(
+	e ai.IEmbedder, size int, ttl time.Duration,
+) ai.IEmbedder {
 	if e == nil || size <= 0 || ttl <= 0 {
 		return e
 	}
@@ -25,18 +29,23 @@ type lruEmbedder struct {
 	cache *expirable.LRU[string, []float32]
 }
 
-func (l *lruEmbedder) Embed(ctx context.Context, text string, taskType string) ([]float32, error) {
+func (l *lruEmbedder) Embed(
+	ctx context.Context, text, taskType string,
+) ([]float32, error) {
 	if l == nil || l.next == nil {
 		return nil, nil
 	}
 	cacheKey, _, _ := buildCacheKey(l.next.ModelName(), taskType, text)
 	if cached, ok := l.cache.Get(cacheKey); ok {
-		logutil.GetLogger(ctx).Debug("embedding cache hit (lru)", zap.String("task_type", taskType))
+		logutil.GetLogger(ctx).Debug(
+			"embedding cache hit (lru)",
+			zap.String("task_type", taskType),
+		)
 		return cloneEmbedding(cached), nil
 	}
 	res, err := l.next.Embed(ctx, text, taskType)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("embed via next: %w", err)
 	}
 	l.cache.Add(cacheKey, cloneEmbedding(res))
 	return res, nil

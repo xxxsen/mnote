@@ -40,16 +40,22 @@ func NewManager(
 	}
 }
 
-func (m *Manager) Embed(ctx context.Context, text string, taskType string) ([]float32, error) {
+func (m *Manager) Embed(
+	ctx context.Context, text, taskType string,
+) ([]float32, error) {
 	if m.embedder == nil {
-		return nil, fmt.Errorf("embedder not configured")
+		return nil, ErrNotConfigured
 	}
-	return m.embedder.Embed(ctx, text, taskType)
+	res, err := m.embedder.Embed(ctx, text, taskType)
+	if err != nil {
+		return nil, fmt.Errorf("embed: %w", err)
+	}
+	return res, nil
 }
 
 func (m *Manager) Polish(ctx context.Context, text string) (string, error) {
 	if m.polisher == nil {
-		return "", fmt.Errorf("polisher not configured")
+		return "", ErrNotConfigured
 	}
 	prompt := fmt.Sprintf(`You are a professional editor.
 Polish the following markdown to be more professional and clear without changing the meaning.
@@ -63,9 +69,11 @@ CONTENT:
 	return m.generateText(ctx, m.polisher, prompt)
 }
 
-func (m *Manager) Generate(ctx context.Context, description string) (string, error) {
+func (m *Manager) Generate(
+	ctx context.Context, description string,
+) (string, error) {
 	if m.generator == nil {
-		return "", fmt.Errorf("generator not configured")
+		return "", ErrNotConfigured
 	}
 	fullPrompt := fmt.Sprintf(`You are a helpful writer.
 Generate a complete markdown article based on the description below.
@@ -77,9 +85,11 @@ DESCRIPTION:
 	return m.generateText(ctx, m.generator, fullPrompt)
 }
 
-func (m *Manager) ExtractTags(ctx context.Context, text string, maxTags int) ([]string, error) {
+func (m *Manager) ExtractTags(
+	ctx context.Context, text string, maxTags int,
+) ([]string, error) {
 	if m.tagger == nil {
-		return nil, fmt.Errorf("tagger not configured")
+		return nil, ErrNotConfigured
 	}
 	if maxTags <= 0 {
 		maxTags = 7
@@ -102,9 +112,11 @@ CONTENT:
 	return parseTags(result, maxTags)
 }
 
-func (m *Manager) Summarize(ctx context.Context, text string) (string, error) {
+func (m *Manager) Summarize(
+	ctx context.Context, text string,
+) (string, error) {
 	if m.summarizer == nil {
-		return "", fmt.Errorf("summarizer not configured")
+		return "", ErrNotConfigured
 	}
 	prompt := fmt.Sprintf(`You are a helpful assistant.
 Summarize the following markdown into a concise paragraph (2-4 sentences).
@@ -117,19 +129,23 @@ CONTENT:
 	return m.generateText(ctx, m.summarizer, prompt)
 }
 
-func (m *Manager) generateText(ctx context.Context, gen IGenerator, prompt string) (string, error) {
+func (m *Manager) generateText(
+	ctx context.Context, gen IGenerator, prompt string,
+) (string, error) {
 	if m.cfg.Timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(m.cfg.Timeout)*time.Second)
+		ctx, cancel = context.WithTimeout(
+			ctx, time.Duration(m.cfg.Timeout)*time.Second,
+		)
 		defer cancel()
 	}
 	resp, err := gen.Generate(ctx, prompt)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("generate text: %w", err)
 	}
 	text := strings.TrimSpace(resp)
 	if text == "" {
-		return "", fmt.Errorf("empty ai response")
+		return "", ErrEmptyResponse
 	}
 	return text, nil
 }
@@ -179,7 +195,7 @@ func parseTags(output string, maxTags int) ([]string, error) {
 		}
 	}
 	if len(uniq) == 0 {
-		return nil, fmt.Errorf("no tags found")
+		return nil, ErrNoTags
 	}
 	return uniq, nil
 }
