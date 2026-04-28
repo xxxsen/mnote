@@ -37,3 +37,10 @@ export type SaveDocumentPayload = {
   title: string;
   content: string;
 };
+
+export type InlineTagDropdownItem = {
+  key: string;
+  type: "use" | "create" | "suggestion";
+  tag?: Tag;
+  name?: string;
+};

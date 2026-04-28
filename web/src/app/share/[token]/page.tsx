@@ -1,786 +1,64 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback, memo } from "react";
-import { useParams } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
-import { apiFetch, ApiError, getAuthToken } from "@/lib/api";
-import MarkdownPreview from "@/components/markdown-preview";
-import { PublicShareDetail, ShareComment, ShareCommentsPage } from "@/types";
 import { formatDate, generatePixelAvatar } from "@/lib/utils";
 import { Clock, User, Tag as TagIcon, ArrowUp, Link2, Download, Menu, X, ChevronRight, Send, Eye, PencilLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-
-interface SharedContentProps {
-  previewRef: React.RefObject<HTMLDivElement | null>;
-  content: string;
-  handleTocLoaded: (toc: string) => void;
-}
-
-const SharedContent = memo(({ previewRef, content, handleTocLoaded }: SharedContentProps) => (
-  <article className="w-full bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 relative overflow-visible">
-    <div className="p-6 md:p-12 lg:p-16">
-      <MarkdownPreview
-        ref={previewRef}
-        content={content}
-        className="prose prose-slate max-w-none prose-headings:scroll-mt-24 prose-img:rounded-xl text-slate-800"
-        onTocLoaded={handleTocLoaded}
-      />
-    </div>
-  </article>
-));
-
-SharedContent.displayName = "SharedContent";
-
-const GUEST_ANON_ID_KEY = "mnote_share_guest_id";
-
-const generateGuestAnonID = () => Math.random().toString(36).slice(2, 6).toUpperCase();
-
-const isGuestAuthor = (author: string | undefined) => {
-  const value = (author || "Guest").trim();
-  return value === "Guest" || value.startsWith("Guest #");
-};
-
-const guestFingerprint = (author: string | undefined) => {
-  const value = (author || "").trim();
-  const match = value.match(/^Guest\s*#([A-Za-z0-9]{4})$/);
-  if (!match) return "";
-  return match[1].toUpperCase();
-};
-
-// --- Start of CommentItem component ---
-function CommentItem({
-  comment,
-  token,
-  accessPassword,
-  canAnnotate,
-  replyingToId,
-  setReplyingTo,
-  inlineReplyContent,
-  setInlineReplyContent,
-  onToast,
-  guestAuthor,
-}: {
-  comment: ShareComment;
-  token: string;
-  accessPassword: string;
-  canAnnotate: boolean;
-  replyingToId: string | null;
-  setReplyingTo: (user: { id: string; author: string } | null) => void;
-  inlineReplyContent: string;
-  setInlineReplyContent: (val: string) => void;
-  onToast: (message: string, durationMs?: number) => void;
-  guestAuthor: string;
-}) {
-  const mergeRepliesByID = useCallback((base: ShareComment[], incoming: ShareComment[]) => {
-    if (!incoming.length) return base;
-    const seen = new Set(base.map((item) => item.id));
-    const merged = [...base];
-    for (const item of incoming) {
-      if (seen.has(item.id)) continue;
-      seen.add(item.id);
-      merged.push(item);
-    }
-    return merged;
-  }, []);
-
-  const [replies, setReplies] = useState<ShareComment[]>(comment.replies || []);
-  const [repliesLoading, setRepliesLoading] = useState(false);
-  const [hasMoreReplies, setHasMoreReplies] = useState(false);
-  const [inlineReplySubmitting, setInlineReplySubmitting] = useState(false);
-  const [repliesExpanded, setRepliesExpanded] = useState((comment.replies?.length || 0) > 0);
-  const [loadedRepliesCount, setLoadedRepliesCount] = useState(comment.replies?.length || 0);
-  const [replyCount, setReplyCount] = useState<number>(typeof comment.reply_count === "number" ? comment.reply_count : replies.length);
-
-  // Sync initial replies if they come from parent, but don't overwrite if we've locally loaded/expanded
-  useEffect(() => {
-    if (comment.replies && replies.length === 0) {
-      setReplies(comment.replies);
-      setLoadedRepliesCount(comment.replies.length);
-      if (comment.replies.length > 0) {
-        setRepliesExpanded(true);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comment.replies]);
-
-  useEffect(() => {
-    if (typeof comment.reply_count === "number" && comment.reply_count > replyCount) {
-      setReplyCount(comment.reply_count);
-    }
-  }, [comment.reply_count, replyCount]);
-
-  // Keep "load more" state in sync with known total count.
-  useEffect(() => {
-    setHasMoreReplies(replyCount > replies.length);
-  }, [replyCount, replies.length]);
-
-  const fetchReplies = async (offset = 0) => {
-    setRepliesLoading(true);
-    try {
-      const res = await apiFetch<ShareComment[]>(`/public/share/${token}/comments/${comment.id}/replies?limit=10&offset=${offset}${accessPassword.trim() ? `&password=${accessPassword.trim()}` : ''}`, { requireAuth: false });
-      if (offset === 0) {
-        setReplies(res || []);
-        setLoadedRepliesCount((res || []).length);
-      } else {
-        setReplies(prev => mergeRepliesByID(prev, res || []));
-        setLoadedRepliesCount((prev) => prev + (res || []).length);
-      }
-      setRepliesExpanded(true);
-    } catch (err) {
-      console.error("Failed to load replies:", err);
-    } finally {
-      setRepliesLoading(false);
-    }
-  };
-
-  const handleExpandReplies = () => {
-    if (!repliesExpanded && replies.length === 0) {
-      void fetchReplies(0);
-    } else {
-      setRepliesExpanded(true);
-    }
-  };
-
-  const handleSubmitInlineReply = async () => {
-    if (!canAnnotate || inlineReplySubmitting || !replyingToId) return;
-    const content = inlineReplyContent.trim();
-    if (!content) return;
-
-    setInlineReplySubmitting(true);
-    try {
-      const created = await apiFetch<ShareComment>(`/public/share/${token}/comments`, {
-        method: "POST",
-        requireAuth: false,
-        body: JSON.stringify({
-          password: accessPassword.trim() || undefined,
-          author: guestAuthor || undefined,
-          content,
-          reply_to_id: replyingToId,
-        }),
-      });
-      // Try to insert it into our local list optimistically
-      setReplies(prev => mergeRepliesByID(prev, [created]));
-      setReplyCount((prev) => prev + 1);
-      setRepliesExpanded(true);
-      setInlineReplyContent("");
-      setReplyingTo(null);
-    } catch (err) {
-      console.error(err);
-      onToast(err instanceof Error ? err.message : "Failed to add reply", 3000);
-    } finally {
-      setInlineReplySubmitting(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-3 p-4 rounded-xl border border-slate-200/60 bg-white shadow-sm hover:border-slate-300 hover:shadow-md transition-all duration-200">
-      <div className="flex gap-4">
-        <div className="w-10 h-10 rounded-full border border-slate-200 flex-shrink-0 overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={generatePixelAvatar(comment.author || "Guest")} alt={comment.author || "Guest"} className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex justify-between items-baseline mb-1">
-            <div className="font-semibold text-sm text-slate-900 truncate mr-2">
-              {comment.author || "Guest"}
-              {isGuestAuthor(comment.author) && guestFingerprint(comment.author) && (
-                <span className="ml-2 text-[10px] font-mono text-slate-400 align-middle">ID:{guestFingerprint(comment.author)}</span>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="text-xs text-slate-400 whitespace-nowrap">{formatDate(comment.ctime)}</div>
-              {canAnnotate && (
-                <button
-                  onClick={() => {
-                    setReplyingTo(replyingToId === comment.id ? null : { id: comment.id, author: comment.author || "Guest" })
-                    setInlineReplyContent("")
-                  }}
-                  className="text-xs font-medium text-slate-400 hover:text-indigo-600 transition-colors"
-                >
-                  {replyingToId === comment.id ? 'Cancel' : 'REPLY'}
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="text-sm text-slate-700 whitespace-pre-wrap break-words leading-relaxed mb-2">
-            {comment.content}
-          </div>
-        </div>
-      </div>
-
-      {/* Inline Reply Form for Root Comment */}
-      {replyingToId === comment.id && (
-        <div className="mt-2 ml-14 bg-slate-50 rounded-xl p-3 border border-slate-200">
-          <textarea
-            value={inlineReplyContent}
-            onChange={(e) => setInlineReplyContent(e.target.value.slice(0, 2000))}
-            placeholder={`Reply to ${comment.author || "Guest"}...`}
-            className="w-full bg-white rounded-md border border-slate-300 px-3 py-2 text-sm min-h-[80px] resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-          />
-          <div className="mt-2 flex items-center justify-between">
-            <div className="text-xs text-slate-400">{inlineReplyContent.length}/2000</div>
-            <div className="flex gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setReplyingTo(null)} className="h-8 text-xs">Cancel</Button>
-              <Button onClick={() => void handleSubmitInlineReply()} disabled={inlineReplySubmitting || !inlineReplyContent.trim()} className="h-8 px-4 text-xs">
-                <Send className="mr-2 h-3 w-3" />
-                {inlineReplySubmitting ? "Posting..." : "REPLY"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Replies Section */}
-      {replyCount > 0 && !repliesExpanded && (
-        <div className="mt-1 ml-14">
-          <button
-            onClick={handleExpandReplies}
-            className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1"
-          >
-            <span className="inline-block transform rotate-90 scale-y-125 text-[10px] text-indigo-400">▸</span>
-            View {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
-          </button>
-        </div>
-      )}
-
-      {repliesExpanded && (
-        <div className="mt-2 ml-4 pl-4 border-l-2 border-slate-100 space-y-4">
-          {replies.map((reply) => (
-            <div key={reply.id} className="flex flex-col gap-2">
-              <div className="flex gap-3 mt-2">
-                <div className="w-8 h-8 rounded-full border border-slate-200 flex-shrink-0 overflow-hidden">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={generatePixelAvatar(reply.author || "Guest")} alt={reply.author || "Guest"} className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
-                </div>
-                <div className="flex-1 min-w-0 bg-slate-50/80 p-3 rounded-xl border border-slate-200/60 hover:border-slate-300 transition-colors">
-                  <div className="flex justify-between items-baseline mb-1">
-                    <div className="font-semibold text-xs text-slate-900 truncate mr-2">
-                      {reply.author || "Guest"}
-                      {isGuestAuthor(reply.author) && guestFingerprint(reply.author) && (
-                        <span className="ml-2 text-[9px] font-mono text-slate-400 align-middle">ID:{guestFingerprint(reply.author)}</span>
-                      )}
-                      {reply.reply_to_id !== comment.id && reply.reply_to_id && (
-                        <span className="text-slate-400 font-normal ml-1">
-                          <span className="inline-block mx-1">▸</span>
-                          {/* Try to resolve sub-reply target locally */}
-                          {replies.find(r => r.id === reply.reply_to_id)?.author || "Someone"}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-[10px] text-slate-400 whitespace-nowrap">{formatDate(reply.ctime)}</div>
-                      {canAnnotate && (
-                        <button
-                          onClick={() => {
-                            setReplyingTo(replyingToId === reply.id ? null : { id: reply.id, author: reply.author || "Guest" })
-                            setInlineReplyContent("")
-                          }}
-                          className="text-[10px] font-medium text-slate-400 hover:text-indigo-600 transition-colors"
-                        >
-                          {replyingToId === reply.id ? 'Cancel' : 'REPLY'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-xs text-slate-700 whitespace-pre-wrap break-words leading-relaxed mb-2">
-                    {reply.content}
-                  </div>
-                </div>
-              </div>
-
-              {/* Inline Reply Form for Sub-Reply */}
-              {replyingToId === reply.id && (
-                <div className="mt-1 ml-11 bg-white rounded-xl p-3 border border-slate-200 shadow-sm">
-                  <textarea
-                    value={inlineReplyContent}
-                    onChange={(e) => setInlineReplyContent(e.target.value.slice(0, 2000))}
-                    placeholder={`Reply to ${reply.author || "Guest"}...`}
-                    className="w-full bg-slate-50 rounded-md border border-slate-300 px-3 py-2 text-xs min-h-[80px] resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                  />
-                  <div className="mt-2 flex items-center justify-between">
-                    <div className="text-[10px] text-slate-400">{inlineReplyContent.length}/2000</div>
-                    <div className="flex gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => setReplyingTo(null)} className="h-7 text-[10px]">Cancel</Button>
-                      <Button onClick={() => void handleSubmitInlineReply()} disabled={inlineReplySubmitting || !inlineReplyContent.trim()} className="h-7 px-3 text-[10px]">
-                        <Send className="mr-1 h-2.5 w-2.5" />
-                        {inlineReplySubmitting ? "Posting..." : "REPLY"}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-
-          {repliesLoading && <div className="text-xs text-slate-400 mt-2 ml-4">Loading replies...</div>}
-
-          {hasMoreReplies && !repliesLoading && (
-            <button
-              onClick={() => void fetchReplies(loadedRepliesCount)}
-              className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors ml-4 mt-2"
-            >
-              Load more replies...
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-// --- End of CommentItem component ---
+import { useSharePage } from "./hooks/useSharePage";
+import { estimateReadingTime } from "./utils";
+import SharedContent from "./components/SharedContent";
+import CommentItem from "./components/CommentItem";
 
 export default function SharePage() {
-  const params = useParams();
-  const token = params.token as string;
-  const [detail, setDetail] = useState<PublicShareDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [tocContent, setTocContent] = useState("");
-  const [showFloatingToc, setShowFloatingToc] = useState(false);
-  const [tocCollapsed, setTocCollapsed] = useState(false);
-  const [scrollProgress, setScrollProgress] = useState(0);
-  const [showScrollTop, setShowScrollTop] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const [showMobileToc, setShowMobileToc] = useState(false);
-  const [sharePasswordInput, setSharePasswordInput] = useState("");
-  const [accessPassword, setAccessPassword] = useState("");
-  const [passwordRequired, setPasswordRequired] = useState(false);
-  const [passwordError, setPasswordError] = useState("");
-  const [comments, setComments] = useState<ShareComment[]>([]);
-  const [commentsTotal, setCommentsTotal] = useState(0);
-  const [commentsLoading, setCommentsLoading] = useState(false);
-  const [annotationContent, setAnnotationContent] = useState("");
-  const [annotationSubmitting, setAnnotationSubmitting] = useState(false);
-  const [replyingTo, setReplyingTo] = useState<{ id: string; author: string } | null>(null);
-  const [inlineReplyContent, setInlineReplyContent] = useState("");
-  const [commentsHasMore, setCommentsHasMore] = useState(true);
-  const [commentsAppending, setCommentsAppending] = useState(false);
-  const [loadedCommentsCount, setLoadedCommentsCount] = useState(0);
-  const [guestAuthor, setGuestAuthor] = useState("");
-  const previewRef = useRef<HTMLDivElement>(null);
-  const doc = detail?.document;
-  const hasTocToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
-  const canAnnotate = detail?.permission === 2;
-  const permissionLabel = canAnnotate ? "Annotate" : "Read";
-  const permissionHint = canAnnotate ? "Can comment on this share" : "Read access only";
-  const showToast = useCallback((message: string, durationMs = 2500) => {
-    setToast(message);
-    window.setTimeout(() => setToast(null), durationMs);
-  }, []);
-
-  useEffect(() => {
-    const token = getAuthToken();
-    if (token) {
-      setGuestAuthor("");
-      return;
-    }
-    let anonID = "";
-    try {
-      anonID = localStorage.getItem(GUEST_ANON_ID_KEY) || "";
-      if (!/^[A-Z0-9]{4}$/.test(anonID)) {
-        anonID = generateGuestAnonID();
-        localStorage.setItem(GUEST_ANON_ID_KEY, anonID);
-      }
-    } catch {
-      anonID = generateGuestAnonID();
-    }
-    setGuestAuthor(`Guest #${anonID}`);
-  }, []);
-
-  const estimateReadingTime = (content: string) => {
-    const wordsPerMinute = 200;
-    const wordCount = content.trim().split(/\s+/).length;
-    return Math.ceil(wordCount / wordsPerMinute);
-  };
-
-  const slugify = useCallback((value: string) => {
-    const base = value
-      .toLowerCase()
-      .trim()
-      .replace(/[^\p{L}\p{N}\s-]/gu, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    return base || "section";
-  }, []);
-
-
-  const getElementById = useCallback((id: string) => {
-    const container = previewRef.current;
-    if (!container) return null;
-    const safe = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id.replace(/"/g, '\\"');
-    return container.querySelector(`#${safe}`) as HTMLElement | null;
-  }, []);
-
-  const scrollToElement = useCallback((el: HTMLElement) => {
-    const container = previewRef.current;
-    if (!container) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    const isScrollable = container.scrollHeight > container.clientHeight + 1;
-    if (!isScrollable) {
-      const top = window.scrollY + el.getBoundingClientRect().top - 80;
-      window.scrollTo({ top, behavior: "smooth" });
-      return;
-    }
-    const containerTop = container.getBoundingClientRect().top;
-    const targetTop = el.getBoundingClientRect().top;
-    const offset = targetTop - containerTop + container.scrollTop - 80;
-    container.scrollTo({ top: offset, behavior: "smooth" });
-  }, []);
-
-  useEffect(() => {
-    let ticking = false;
-    const handleScroll = () => {
-      if (!ticking) {
-        window.requestAnimationFrame(() => {
-          const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
-          if (totalHeight > 0) {
-            setScrollProgress((window.scrollY / totalHeight) * 100);
-          }
-          setShowScrollTop(window.scrollY > 400);
-          ticking = false;
-        });
-        ticking = true;
-      }
-    };
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      // Intentionally empty, could be removed or kept for navbar styling if needed later
-    };
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  const mergeCommentsByID = useCallback((base: ShareComment[], incoming: ShareComment[]) => {
-    if (!incoming.length) return base;
-    const seen = new Set(base.map((item) => item.id));
-    const merged = [...base];
-    for (const item of incoming) {
-      if (seen.has(item.id)) continue;
-      seen.add(item.id);
-      merged.push(item);
-    }
-    return merged;
-  }, []);
-
-  const fetchComments = useCallback(async (isBackground = false, isAppend = false) => {
-    if (!detail) {
-      if (!isAppend) {
-        setComments([]);
-        setCommentsTotal(0);
-        setLoadedCommentsCount(0);
-      }
-      return;
-    }
-    if (isAppend) {
-      if (commentsAppending) return;
-      setCommentsAppending(true);
-    } else if (!isBackground) {
-      setCommentsLoading(true);
-    }
-    try {
-      const qs = new URLSearchParams();
-      if (accessPassword.trim()) {
-        qs.set("password", accessPassword.trim());
-      }
-      qs.set("limit", "10");
-      qs.set("offset", isAppend ? loadedCommentsCount.toString() : "0");
-
-      const query = qs.toString();
-      const page = await apiFetch<ShareCommentsPage>(`/public/share/${token}/comments${query ? `?${query}` : ""}`, { requireAuth: false });
-      const items = page?.items || [];
-      const total = typeof page?.total === "number" ? page.total : items.length;
-
-      if (isAppend) {
-        setComments(prev => mergeCommentsByID(prev, items || []));
-        const nextLoaded = loadedCommentsCount + items.length;
-        setLoadedCommentsCount(nextLoaded);
-        setCommentsHasMore(nextLoaded < total);
-      } else {
-        setComments(items || []);
-        setLoadedCommentsCount(items.length);
-        setCommentsHasMore(items.length < total);
-      }
-      setCommentsTotal(total);
-    } catch (err) {
-      console.error(err);
-      if (!isAppend) {
-        setComments([]);
-        setCommentsTotal(0);
-      }
-    } finally {
-      if (isAppend) {
-        setCommentsAppending(false);
-      } else if (!isBackground) {
-        setCommentsLoading(false);
-      }
-    }
-  }, [accessPassword, detail, token, loadedCommentsCount, commentsAppending, mergeCommentsByID]);
-
-  useEffect(() => {
-    void fetchComments(false, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail, accessPassword, token]); // Re-fetch on auth/detail change, ignore comments.length to avoid loops
-
-  const handleLoadMoreComments = useCallback(() => {
-    if (!commentsLoading && !commentsAppending && commentsHasMore) {
-      void fetchComments(true, true);
-    }
-  }, [commentsLoading, commentsAppending, commentsHasMore, fetchComments]);
-
-  // Add a generic scroll listener to load more comments if we reach the bottom of the page
-  useEffect(() => {
-    const handleBottomScroll = () => {
-      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500) { // 500px threshold
-        if (!commentsLoading && !commentsAppending && commentsHasMore && comments.length > 0) {
-          handleLoadMoreComments();
-        }
-      }
-    };
-    window.addEventListener("scroll", handleBottomScroll);
-    return () => window.removeEventListener("scroll", handleBottomScroll);
-  }, [commentsLoading, commentsAppending, commentsHasMore, comments.length, handleLoadMoreComments]);
-
-  const handleSubmitComment = async () => {
-    if (!detail || !canAnnotate || annotationSubmitting) return;
-    const content = annotationContent.trim();
-    if (!content) {
-      showToast("Please enter comment content.");
-      return;
-    }
-    setAnnotationSubmitting(true);
-    try {
-      const created = await apiFetch<ShareComment>(`/public/share/${token}/comments`, {
-        method: "POST",
-        requireAuth: false,
-        body: JSON.stringify({
-          password: accessPassword.trim() || undefined,
-          author: guestAuthor || undefined,
-          content,
-        }),
-      });
-      setComments((prev) => [created, ...prev]);
-      setCommentsTotal((prev) => prev + 1);
-      setLoadedCommentsCount((prev) => prev + 1);
-      setAnnotationContent("");
-      showToast("Comment added.");
-      void fetchComments(true); // silent background refresh
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to add comment";
-      showToast(msg, 3000);
-    } finally {
-      setAnnotationSubmitting(false);
-    }
-  };
-
-  // Replaced inline reply function with the one local to `CommentItem`.
-  // Removed `handleSubmitInlineReply` from this level to avoid duplicating state handling for sub-lists.
-
-  useEffect(() => {
-    const fetchDoc = async () => {
-      try {
-        const params = new URLSearchParams();
-        if (accessPassword.trim()) {
-          params.set("password", accessPassword.trim());
-        }
-        const query = params.toString();
-        const d = await apiFetch<PublicShareDetail>(`/public/share/${token}${query ? `?${query}` : ""}`, { requireAuth: false });
-        setDetail(d);
-        setPasswordRequired(false);
-        setPasswordError("");
-      } catch (err) {
-        if (err instanceof ApiError && err.code === 10000002) {
-          setPasswordRequired(true);
-          setPasswordError(accessPassword ? "Invalid password." : "");
-        } else {
-          console.error(err);
-          setError(true);
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchDoc();
-  }, [accessPassword, token]);
-
-  useEffect(() => {
-    if (!doc) return;
-    const extractTitle = (value: string) => {
-      const lines = value.split("\n");
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        const h1Match = line.match(/^#\s+(.+)$/);
-        if (h1Match) return h1Match[1].trim();
-        if (i + 1 < lines.length && /^=+$/.test(lines[i + 1].trim())) return line;
-        return line.length > 50 ? line.slice(0, 50) + "..." : line;
-      }
-      return "";
-    };
-    const derivedTitle = extractTitle(doc.content) || doc.title || "MNOTE";
-    if (typeof document !== "undefined") {
-      document.title = derivedTitle;
-    }
-  }, [doc]);
-
-  const handleCopyLink = () => {
-    const value = window.location.href;
-
-    const fallbackCopy = () => {
-      const textarea = document.createElement("textarea");
-      textarea.value = value;
-      textarea.setAttribute("readonly", "");
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-      const ok = document.execCommand("copy");
-      document.body.removeChild(textarea);
-      return ok;
-    };
-
-    const copyPromise =
-      typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function"
-        ? navigator.clipboard.writeText(value).then(() => true).catch(() => fallbackCopy())
-        : Promise.resolve(fallbackCopy());
-
-    void copyPromise.then((ok) => {
-      if (ok) {
-        setToast("Link copied to clipboard!");
-      } else {
-        setToast("Failed to copy link");
-      }
-      setTimeout(() => setToast(null), 3000);
-    });
-  };
-
-  const handleExport = () => {
-    if (!doc || detail?.allow_download === 0) return;
-    const blob = new Blob([doc.content], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${doc.title || "untitled"}.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  useEffect(() => {
-    if (!doc) return;
-    const scrollToHash = () => {
-      const hash = typeof window !== "undefined" ? window.location.hash : "";
-      if (!hash) return false;
-      const raw = decodeURIComponent(hash.slice(1));
-      const normalized = raw.normalize("NFKC");
-      const candidates = [raw, normalized, raw.toLowerCase(), slugify(raw), slugify(normalized)];
-      for (const candidate of candidates) {
-        const el = getElementById(candidate);
-        if (el) {
-          scrollToElement(el);
-          return true;
-        }
-      }
-      const headings = previewRef.current?.querySelectorAll("h1, h2, h3, h4, h5, h6") || [];
-      for (const heading of headings) {
-        const text = heading.textContent?.trim() || "";
-        if (!text) continue;
-        const headingSlug = slugify(text);
-        if (candidates.includes(headingSlug) || candidates.includes(text)) {
-          scrollToElement(heading as HTMLElement);
-          return true;
-        }
-      }
-      return false;
-    };
-
-    let attempts = 0;
-    const tryScroll = () => {
-      if (scrollToHash()) return;
-      attempts += 1;
-      if (attempts < 12) {
-        window.setTimeout(tryScroll, 100);
-      }
-    };
-
-    tryScroll();
-
-    const onHashChange = () => {
-      attempts = 0;
-      tryScroll();
-    };
-
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, [doc, slugify, getElementById, scrollToElement]);
-
-  useEffect(() => {
-    const hasToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
-    if (!tocContent || !hasToken) {
-      setShowFloatingToc(false);
-      return;
-    }
-
-    const container = previewRef.current;
-    if (!container) return;
-
-    let timer: number | null = null;
-    let ticking = false;
-
-    const updateVisibility = () => {
-      ticking = false;
-      const tocEl = container.querySelector(".toc-wrapper") as HTMLElement | null;
-      if (!tocEl) {
-        setShowFloatingToc(false);
-        return;
-      }
-      const isScrollable = container.scrollHeight > container.clientHeight + 1;
-      if (isScrollable) {
-        const top = tocEl.offsetTop;
-        const bottom = top + tocEl.offsetHeight;
-        const viewTop = container.scrollTop;
-        const viewBottom = viewTop + container.clientHeight;
-        const inView = bottom > viewTop && top < viewBottom;
-        setShowFloatingToc(!inView);
-        return;
-      }
-      const rect = tocEl.getBoundingClientRect();
-      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-      const inView = rect.bottom > 0 && rect.top < viewportHeight;
-      setShowFloatingToc(!inView);
-    };
-
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      window.requestAnimationFrame(updateVisibility);
-    };
-
-    const scrollTarget = container.scrollHeight > container.clientHeight + 1 ? container : window;
-    timer = window.setTimeout(updateVisibility, 120);
-    scrollTarget.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-
-    return () => {
-      scrollTarget.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-      if (timer) window.clearTimeout(timer);
-    };
-  }, [tocContent, doc]);
-
-  const handleTocLoaded = useCallback((toc: string) => {
-    setTocContent(hasTocToken ? toc : "");
-  }, [hasTocToken]);
+  const {
+    token,
+    detail,
+    doc,
+    loading,
+    error,
+    previewRef,
+    canAnnotate,
+    permissionLabel,
+    permissionHint,
+    tocContent,
+    showFloatingToc,
+    tocCollapsed,
+    setTocCollapsed,
+    showMobileToc,
+    setShowMobileToc,
+    handleTocLoaded,
+    scrollProgress,
+    showScrollTop,
+    toast,
+    showToast,
+    sharePasswordInput,
+    setSharePasswordInput,
+    accessPassword,
+    setAccessPassword,
+    passwordRequired,
+    passwordError,
+    setLoading,
+    comments,
+    commentsTotal,
+    commentsLoading,
+    annotationContent,
+    setAnnotationContent,
+    annotationSubmitting,
+    replyingTo,
+    setReplyingTo,
+    inlineReplyContent,
+    setInlineReplyContent,
+    commentsHasMore,
+    handleSubmitComment,
+    handleLoadMoreComments,
+    guestAuthor,
+    handleCopyLink,
+    handleExport,
+    slugify,
+    getElementById,
+    scrollToElement,
+  } = useSharePage();
 
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
   if (passwordRequired) {
@@ -888,7 +166,6 @@ export default function SharePage() {
       </div>
 
       <div className="w-full max-w-4xl px-4 md:px-0 py-12 md:py-20 flex flex-col items-center">
-        {/* Article Header */}
         <header className="w-full mb-3 flex flex-col px-4 md:px-0">
           <div className="flex items-center gap-2 text-indigo-600 font-mono text-xs mb-4 font-bold uppercase tracking-wider">
             <span>Public Note</span>
@@ -973,14 +250,12 @@ export default function SharePage() {
           </div>
         )}
 
-        {/* Content Container */}
         <SharedContent
           previewRef={previewRef}
           content={doc.content}
           handleTocLoaded={handleTocLoaded}
         />
 
-        {/* Comments Section */}
         <div className="w-full mt-12 bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 p-6 md:p-12 lg:p-16">
           <h2 className="text-2xl font-bold text-slate-800 mb-8">Comments ({commentsTotal})</h2>
 
@@ -1073,8 +348,6 @@ export default function SharePage() {
           </div>
         </div>
       )}
-
-
 
       {showFloatingToc && tocContent && (
         <div className="fixed top-24 right-8 z-30 hidden w-72 rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md xl:block animate-in fade-in slide-in-from-right-4 duration-500">

@@ -1,416 +1,48 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type UIEvent } from "react";
-import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useToast } from "@/components/ui/toast";
-import type { Template, TemplateMeta, TemplateMetaPage, Document, Tag } from "@/types";
 import { ChevronLeft, Copy, Plus, Save, Search, Tags, X } from "lucide-react";
-
-type TemplateDraft = {
-  name: string;
-  description: string;
-  content: string;
-};
-
-const emptyDraft: TemplateDraft = {
-  name: "",
-  description: "",
-  content: "",
-};
-
-const VARIABLE_REGEX = /\{\{\s*([a-zA-Z0-9_:\-]+)\s*\}\}/g;
-const TEMPLATE_META_PAGE_LIMIT = 20;
-const MAX_TAGS = 7;
-const TAG_NAME_REGEX = /^[\p{Script=Han}A-Za-z0-9]{1,16}$/u;
-const normalizeTemplatePlaceholders = (content: string) =>
-  content.replace(VARIABLE_REGEX, (_raw, key: string) => `{{${String(key || "").trim().toUpperCase()}}}`);
-const formatTemplateMtime = (mtime: number) => {
-  if (!mtime) return "Unknown";
-  return new Date(mtime * 1000).toLocaleString();
-};
-
-const resolveSystemVariableClient = (key: string) => {
-  const now = new Date();
-  const normalized = key.trim().toUpperCase();
-  if (normalized === "SYS:TODAY" || normalized === "SYS:DATE") {
-    return now.toISOString().slice(0, 10);
-  }
-  if (normalized === "SYS:TIME") {
-    return now.toTimeString().slice(0, 5);
-  }
-  if (normalized === "SYS:DATETIME" || normalized === "SYS:NOW") {
-    const date = now.toISOString().slice(0, 10);
-    const time = now.toTimeString().slice(0, 5);
-    return `${date} ${time}`;
-  }
-  return "";
-};
+import { useTemplates } from "./hooks/useTemplates";
+import { MAX_TAGS, formatTemplateMtime, normalizeTemplatePlaceholders } from "./utils";
+import { VariableModal } from "./components/VariableModal";
 
 export default function TemplatesPage() {
-  const router = useRouter();
-  const { toast } = useToast();
-  const [templates, setTemplates] = useState<TemplateMeta[]>([]);
-  const [templatesTotal, setTemplatesTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [selectedID, setSelectedID] = useState<string>("");
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
-  const [draft, setDraft] = useState<TemplateDraft>(emptyDraft);
-  const [creatingDoc, setCreatingDoc] = useState(false);
-  const [showVariableModal, setShowVariableModal] = useState(false);
-  const [variableValues, setVariableValues] = useState<Record<string, string>>({});
-  const [search, setSearch] = useState("");
-  const [selectedTagIDs, setSelectedTagIDs] = useState<string[]>([]);
-  const [allTags, setAllTags] = useState<Tag[]>([]);
-  const [tagQuery, setTagQuery] = useState("");
-  const [showTagInput, setShowTagInput] = useState(false);
-
-  const selected = useMemo(() => templates.find((item) => item.id === selectedID) || null, [selectedID, templates]);
-  const tagMap = useMemo(() => {
-    const map: Record<string, Tag> = {};
-    allTags.forEach((tag) => {
-      map[tag.id] = tag;
-    });
-    return map;
-  }, [allTags]);
-  const visibleSelectedTags = useMemo(
-    () => selectedTagIDs.map((id) => tagMap[id]).filter(Boolean) as Tag[],
-    [selectedTagIDs, tagMap]
-  );
-  const detectedVariables = useMemo(() => {
-    const text = draft.content || "";
-    const result: string[] = [];
-    const seen = new Set<string>();
-    let match: RegExpExecArray | null;
-    while ((match = VARIABLE_REGEX.exec(text)) !== null) {
-      const key = (match[1] || "").trim().toUpperCase();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      result.push(key);
-    }
-    VARIABLE_REGEX.lastIndex = 0;
-    return result;
-  }, [draft.content]);
-  const filteredTemplates = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return templates;
-    return templates.filter((item) => item.name.toLowerCase().includes(query));
-  }, [search, templates]);
-
-  const normalizedDraftContent = useMemo(() => normalizeTemplatePlaceholders(draft.content), [draft.content]);
-  const isSaveDisabled = useMemo(() => {
-    if (!selectedTemplate) return true;
-    return (
-      draft.name === (selectedTemplate.name || "") &&
-      draft.description === (selectedTemplate.description || "") &&
-      normalizedDraftContent === (selectedTemplate.content || "") &&
-      JSON.stringify([...selectedTagIDs].sort()) === JSON.stringify([...(selectedTemplate.default_tag_ids || [])].sort())
-    );
-  }, [draft.description, draft.name, normalizedDraftContent, selectedTagIDs, selectedTemplate]);
-
-  const loadTemplates = useCallback(async (offset: number, reset = false) => {
-    if (reset) {
-      setLoading(true);
-    } else {
-      setLoadingMore(true);
-    }
-    try {
-      const params = new URLSearchParams();
-      params.set("limit", String(TEMPLATE_META_PAGE_LIMIT));
-      params.set("offset", String(offset));
-      const page = await apiFetch<TemplateMetaPage>(`/templates/meta?${params.toString()}`);
-      const next = page?.items || [];
-      setTemplatesTotal(page?.total || 0);
-
-      if (reset) {
-        setTemplates(next);
-        setSelectedID((prev) => {
-          if (next.length === 0) return "";
-          if (!prev) return next[0].id;
-          if (next.find((item) => item.id === prev)) return prev;
-          return next[0].id;
-        });
-        return;
-      }
-
-      if (next.length > 0) {
-        setTemplates((prev) => {
-          const existing = new Set(prev.map((item) => item.id));
-          const merged = [...prev];
-          next.forEach((item) => {
-            if (!existing.has(item.id)) {
-              merged.push(item);
-            }
-          });
-          return merged;
-        });
-      }
-    } catch (err) {
-      toast({ description: err instanceof Error ? err.message : "Failed to load templates", variant: "error" });
-    } finally {
-      if (reset) {
-        setLoading(false);
-      } else {
-        setLoadingMore(false);
-      }
-    }
-  }, [toast]);
-
-  useEffect(() => {
-    void loadTemplates(0, true);
-  }, [loadTemplates]);
-
-  const handleTemplateListScroll = useCallback(
-    (e: UIEvent<HTMLDivElement>) => {
-      if (loading || loadingMore) return;
-      if (templates.length >= templatesTotal) return;
-      const el = e.currentTarget;
-      const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 48;
-      if (nearBottom) {
-        void loadTemplates(templates.length, false);
-      }
-    },
-    [loadTemplates, loading, loadingMore, templates.length, templatesTotal]
-  );
-
-  useEffect(() => {
-    const loadSelectedTemplate = async () => {
-      if (!selectedID) {
-        setSelectedTemplate(null);
-        return;
-      }
-      try {
-        const item = await apiFetch<Template>(`/templates/${selectedID}`);
-        setSelectedTemplate(item);
-      } catch (err) {
-        toast({ description: err instanceof Error ? err.message : "Failed to load template detail", variant: "error" });
-        setSelectedTemplate(null);
-      }
-    };
-    void loadSelectedTemplate();
-  }, [selectedID, toast]);
-
-  useEffect(() => {
-    if (!selectedTemplate) {
-      setDraft(emptyDraft);
-      setSelectedTagIDs([]);
-      setShowTagInput(false);
-      return;
-    }
-    setDraft({
-      name: selectedTemplate.name || "",
-      description: selectedTemplate.description || "",
-      content: selectedTemplate.content || "",
-    });
-    setSelectedTagIDs(selectedTemplate.default_tag_ids || []);
-    setShowTagInput(false);
-  }, [selectedTemplate]);
-
-  useEffect(() => {
-    const missingIDs = selectedTagIDs.filter((id) => !allTags.some((tag) => tag.id === id));
-    if (missingIDs.length === 0) return;
-
-    const loadMissingTags = async () => {
-      try {
-        const items = await apiFetch<Tag[]>("/tags/ids", {
-          method: "POST",
-          body: JSON.stringify({ ids: missingIDs }),
-        });
-        if (!items || items.length === 0) return;
-        setAllTags((prev) => {
-          const map = new Map(prev.map((tag) => [tag.id, tag] as const));
-          items.forEach((tag) => map.set(tag.id, tag));
-          return Array.from(map.values());
-        });
-      } catch {
-        // Ignore silently; unresolved/deleted tags stay hidden in UI.
-      }
-    };
-
-    void loadMissingTags();
-  }, [allTags, selectedTagIDs]);
-
-  const createTemplate = async () => {
-    try {
-      const item = await apiFetch<Template>("/templates", {
-        method: "POST",
-        body: JSON.stringify({
-          name: "New Template",
-          description: "",
-          content: "# New Template\n",
-          default_tag_ids: [],
-        }),
-      });
-      await loadTemplates(0, true);
-      setSelectedID(item.id);
-    } catch (err) {
-      toast({ description: err instanceof Error ? err.message : "Failed to create template", variant: "error" });
-    }
-  };
-
-  const saveTemplate = async () => {
-    if (!selectedTemplate) return false;
-    const normalizedContent = normalizedDraftContent;
-    try {
-      await apiFetch(`/templates/${selectedTemplate.id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          name: draft.name,
-          description: draft.description,
-          content: normalizedContent,
-          default_tag_ids: selectedTagIDs,
-        }),
-      });
-      if (normalizedContent !== draft.content) {
-        setDraft((prev) => ({ ...prev, content: normalizedContent }));
-      }
-      setSelectedTemplate((prev) =>
-        prev
-          ? {
-              ...prev,
-              name: draft.name,
-              description: draft.description,
-              content: normalizedContent,
-              default_tag_ids: [...selectedTagIDs],
-              mtime: Math.floor(Date.now() / 1000),
-            }
-          : prev
-      );
-      toast({ description: "Template saved." });
-      await loadTemplates(0, true);
-      setSelectedID(selectedTemplate.id);
-      return true;
-    } catch (err) {
-      toast({ description: err instanceof Error ? err.message : "Failed to save template", variant: "error" });
-      return false;
-    }
-  };
-
-  const addTag = async (nameOrTag: string | Tag) => {
-    if (selectedTagIDs.length >= MAX_TAGS) {
-      toast({ description: `You can only select up to ${MAX_TAGS} tags.` });
-      return;
-    }
-    if (typeof nameOrTag !== "string") {
-      if (!selectedTagIDs.includes(nameOrTag.id)) {
-        setSelectedTagIDs((prev) => [...prev, nameOrTag.id]);
-      }
-      setTagQuery("");
-      setShowTagInput(false);
-      return;
-    }
-    const name = nameOrTag.trim();
-    if (!name) return;
-    if (!TAG_NAME_REGEX.test(name)) {
-      toast({ description: "Tags must be letters, numbers, or Chinese characters, and at most 16 characters.", variant: "error" });
-      return;
-    }
-
-    try {
-      const created = await apiFetch<Tag>("/tags", {
-        method: "POST",
-        body: JSON.stringify({ name }),
-      });
-      setAllTags((prev) => [...prev, created]);
-      setSelectedTagIDs((prev) => [...prev, created.id]);
-      setTagQuery("");
-      setShowTagInput(false);
-    } catch (err) {
-      try {
-        const params = new URLSearchParams();
-        params.set("q", name);
-        params.set("limit", "10");
-        const found = await apiFetch<Tag[]>(`/tags?${params.toString()}`);
-        const existing = (found || []).find((tag) => tag.name === name) || null;
-        if (existing) {
-          setAllTags((prev) => {
-            if (prev.some((tag) => tag.id === existing.id)) return prev;
-            return [...prev, existing];
-          });
-          if (!selectedTagIDs.includes(existing.id)) {
-            setSelectedTagIDs((prev) => [...prev, existing.id]);
-          }
-          setTagQuery("");
-          setShowTagInput(false);
-          return;
-        }
-      } catch {
-        // ignore and show original error below
-      }
-      toast({ description: err instanceof Error ? err.message : "Failed to create tag", variant: "error" });
-    }
-  };
-
-  const deleteTemplate = async (templateID: string, templateName: string) => {
-    const ok = window.confirm(`Delete template "${templateName}"?`);
-    if (!ok) return;
-    try {
-      await apiFetch(`/templates/${templateID}`, { method: "DELETE" });
-      toast({ description: "Template deleted." });
-      await loadTemplates(0, true);
-      if (selectedID === templateID) {
-        setSelectedID("");
-      }
-    } catch (err) {
-      toast({ description: err instanceof Error ? err.message : "Failed to delete template", variant: "error" });
-    }
-  };
-
-  const prepareUseTemplate = () => {
-    if (!selected || !selectedTemplate) return;
-    void (async () => {
-      const normalizedContent = normalizeTemplatePlaceholders(draft.content);
-      if (normalizedContent !== draft.content) {
-        setDraft((prev) => ({ ...prev, content: normalizedContent }));
-      }
-      const changed =
-        draft.name !== (selectedTemplate.name || "") ||
-        draft.description !== (selectedTemplate.description || "") ||
-        normalizedContent !== (selectedTemplate.content || "");
-      if (changed) {
-        const ok = await saveTemplate();
-        if (!ok) return;
-      }
-      const fillable = detectedVariables.filter((key) => !key.startsWith("SYS:"));
-      const initial: Record<string, string> = {};
-      fillable.forEach((key) => {
-        initial[key] = "";
-      });
-      setVariableValues(initial);
-      setShowVariableModal(true);
-    })();
-  };
-
-  const createFromTemplate = async (variables: Record<string, string>) => {
-    if (!selected) return;
-    setCreatingDoc(true);
-    try {
-      const doc = await apiFetch<Document>(`/templates/${selected.id}/create`, {
-        method: "POST",
-        body: JSON.stringify({ variables }),
-      });
-      router.push(`/docs/${doc.id}`);
-    } catch (err) {
-      toast({ description: err instanceof Error ? err.message : "Failed to create note from template", variant: "error" });
-    } finally {
-      setCreatingDoc(false);
-      setShowVariableModal(false);
-    }
-  };
-
-  const previewContent = useMemo(() => {
-    return normalizeTemplatePlaceholders(draft.content).replace(VARIABLE_REGEX, (_raw, key: string) => {
-      const normalized = String(key || "").trim().toUpperCase();
-      if (!normalized) return "";
-      if (normalized.startsWith("SYS:")) {
-        return resolveSystemVariableClient(normalized);
-      }
-      return variableValues[normalized] || "";
-    });
-  }, [draft.content, variableValues]);
+  const {
+    router,
+    templates: filteredTemplates,
+    templatesTotal,
+    loading,
+    loadingMore,
+    selectedID,
+    setSelectedID,
+    selected,
+    draft,
+    setDraft,
+    creatingDoc,
+    showVariableModal,
+    setShowVariableModal,
+    variableValues,
+    setVariableValues,
+    search,
+    setSearch,
+    selectedTagIDs,
+    setSelectedTagIDs,
+    visibleSelectedTags,
+    tagQuery,
+    setTagQuery,
+    showTagInput,
+    setShowTagInput,
+    isSaveDisabled,
+    handleTemplateListScroll,
+    createTemplate,
+    saveTemplate,
+    addTag,
+    deleteTemplate,
+    prepareUseTemplate,
+    createFromTemplate,
+    previewContent,
+  } = useTemplates();
 
   return (
     <div className="min-h-screen bg-background text-foreground p-6">
@@ -591,42 +223,14 @@ export default function TemplatesPage() {
       </div>
 
       {showVariableModal && selected && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-5xl max-h-[90vh] rounded-xl border border-border bg-card p-4 overflow-hidden">
-            <div className="text-sm font-semibold mb-3">Template Preview</div>
-            <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-4 h-[calc(90vh-6rem)] min-h-[360px]">
-              <div className="space-y-3 overflow-y-auto pr-1">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Variables</div>
-                {Object.keys(variableValues).length === 0 ? (
-                  <div className="text-xs text-muted-foreground">No custom variables.</div>
-                ) : (
-                  Object.keys(variableValues).map((key) => (
-                    <div key={key} className="grid grid-cols-[120px_1fr] items-center gap-2">
-                      <div className="text-xs text-muted-foreground font-mono truncate">{key}</div>
-                      <Input
-                        value={variableValues[key] || ""}
-                        onChange={(e) => setVariableValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                        placeholder="Value"
-                      />
-                    </div>
-                  ))
-                )}
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button variant="outline" onClick={() => setShowVariableModal(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={() => void createFromTemplate(variableValues)} disabled={creatingDoc}>
-                    Apply
-                  </Button>
-                </div>
-              </div>
-              <div className="rounded-lg border border-border bg-background p-3 overflow-y-auto">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Preview</div>
-                <pre className="text-sm whitespace-pre-wrap break-words font-mono leading-6">{previewContent}</pre>
-              </div>
-            </div>
-          </div>
-        </div>
+        <VariableModal
+          variableValues={variableValues}
+          setVariableValues={setVariableValues}
+          previewContent={previewContent}
+          creatingDoc={creatingDoc}
+          onCancel={() => setShowVariableModal(false)}
+          onApply={createFromTemplate}
+        />
       )}
     </div>
   );
