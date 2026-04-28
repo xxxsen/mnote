@@ -17,16 +17,15 @@ import (
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/response"
-	"github.com/xxxsen/mnote/internal/service"
 )
 
 type OAuthHandler struct {
-	oauth      *service.OAuthService
+	oauth      IOAuthService
 	stateStore *oauthStateStore
 	exchange   *oauthExchangeStore
 }
 
-func NewOAuthHandler(oauth *service.OAuthService) *OAuthHandler {
+func NewOAuthHandler(oauth IOAuthService) *OAuthHandler {
 	return &OAuthHandler{oauth: oauth, stateStore: newOAuthStateStore(), exchange: newOAuthExchangeStore()}
 }
 

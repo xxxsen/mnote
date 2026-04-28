@@ -8,14 +8,13 @@ import (
 	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
-	"github.com/xxxsen/mnote/internal/service"
 )
 
 type TagHandler struct {
-	tags *service.TagService
+	tags ITagService
 }
 
-func NewTagHandler(tags *service.TagService) *TagHandler {
+func NewTagHandler(tags ITagService) *TagHandler {
 	return &TagHandler{tags: tags}
 }
 

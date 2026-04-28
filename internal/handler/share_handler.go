@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/xxxsen/mnote/internal/middleware"
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 	"github.com/xxxsen/mnote/internal/repo"
@@ -13,10 +14,10 @@ import (
 )
 
 type ShareHandler struct {
-	documents *service.DocumentService
+	documents IDocumentService
 }
 
-func NewShareHandler(documents *service.DocumentService) *ShareHandler {
+func NewShareHandler(documents IDocumentService) *ShareHandler {
 	return &ShareHandler{
 		documents: documents,
 	}
@@ -66,13 +67,14 @@ func (h *ShareHandler) UpdateConfig(c *gin.Context) {
 	if req.AllowDownload != nil {
 		allowDownload = *req.AllowDownload
 	}
-	share, err := h.documents.UpdateShareConfig(c.Request.Context(), getUserID(c), c.Param("id"), service.ShareConfigInput{
-		ExpiresAt:     req.ExpiresAt,
-		Password:      req.Password,
-		ClearPassword: req.ClearPassword,
-		Permission:    permission,
-		AllowDownload: allowDownload,
-	})
+	share, err := h.documents.UpdateShareConfig(c.Request.Context(), getUserID(c), c.Param("id"),
+		service.ShareConfigInput{
+			ExpiresAt:     req.ExpiresAt,
+			Password:      req.Password,
+			ClearPassword: req.ClearPassword,
+			Permission:    permission,
+			AllowDownload: allowDownload,
+		})
 	if err != nil {
 		handleError(c, err)
 		return
@@ -97,8 +99,17 @@ func (h *ShareHandler) GetActive(c *gin.Context) {
 	response.Success(c, gin.H{"share": share})
 }
 
+func getSharePassword(c *gin.Context) string {
+	if pw := c.GetHeader("X-Share-Password"); pw != "" {
+		return pw
+	}
+	return c.Query("password")
+}
+
 func (h *ShareHandler) PublicGet(c *gin.Context) {
-	detail, err := h.documents.GetShareByToken(c.Request.Context(), c.Param("token"), c.Query("password"))
+	detail, err := h.documents.GetShareByToken(
+		c.Request.Context(), c.Param("token"), getSharePassword(c),
+	)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -119,7 +130,15 @@ func (h *ShareHandler) PublicListComments(c *gin.Context) {
 			offset = parsed
 		}
 	}
-	result, err := h.documents.ListShareCommentsByToken(c.Request.Context(), c.Param("token"), c.Query("password"), limit, offset)
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	result, err := h.documents.ListShareCommentsByToken(
+		c.Request.Context(), c.Param("token"), getSharePassword(c), limit, offset,
+	)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -129,12 +148,18 @@ func (h *ShareHandler) PublicListComments(c *gin.Context) {
 
 func (h *ShareHandler) PublicListReplies(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
-	if limit <= 0 {
+	if limit <= 0 || limit > 100 {
 		limit = 10
 	}
 	offset, _ := strconv.Atoi(c.Query("offset"))
+	if offset < 0 {
+		offset = 0
+	}
 
-	items, err := h.documents.ListShareCommentRepliesByToken(c.Request.Context(), c.Param("token"), c.Query("password"), c.Param("comment_id"), limit, offset)
+	items, err := h.documents.ListShareCommentRepliesByToken(
+		c.Request.Context(), c.Param("token"),
+		getSharePassword(c), c.Param("comment_id"), limit, offset,
+	)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -150,7 +175,7 @@ func (h *ShareHandler) CreateComment(c *gin.Context) {
 	}
 	author := req.Author
 	if strings.TrimSpace(author) == "" {
-		if emailValue, exists := c.Get("user_email"); exists {
+		if emailValue, exists := c.Get(middleware.ContextUserEmailKey); exists {
 			if email, ok := emailValue.(string); ok && strings.TrimSpace(email) != "" {
 				author = email
 			}

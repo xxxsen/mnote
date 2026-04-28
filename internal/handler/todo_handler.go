@@ -8,16 +8,15 @@ import (
 
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
-	"github.com/xxxsen/mnote/internal/service"
 )
 
 const maxTodoContentLength = 500
 
 type TodoHandler struct {
-	todos *service.TodoService
+	todos ITodoHandlerService
 }
 
-func NewTodoHandler(todos *service.TodoService) *TodoHandler {
+func NewTodoHandler(todos ITodoHandlerService) *TodoHandler {
 	return &TodoHandler{todos: todos}
 }
 

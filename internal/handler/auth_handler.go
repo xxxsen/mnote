@@ -7,14 +7,13 @@ import (
 
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
-	"github.com/xxxsen/mnote/internal/service"
 )
 
 type AuthHandler struct {
-	auth *service.AuthService
+	auth IAuthService
 }
 
-func NewAuthHandler(auth *service.AuthService) *AuthHandler {
+func NewAuthHandler(auth IAuthService) *AuthHandler {
 	return &AuthHandler{auth: auth}
 }
 

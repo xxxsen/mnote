@@ -9,11 +9,11 @@ import (
 )
 
 type SavedViewHandler struct {
-	service *service.SavedViewService
+	service ISavedViewService
 }
 
-func NewSavedViewHandler(service *service.SavedViewService) *SavedViewHandler {
-	return &SavedViewHandler{service: service}
+func NewSavedViewHandler(svc ISavedViewService) *SavedViewHandler {
+	return &SavedViewHandler{service: svc}
 }
 
 type savedViewCreateRequest struct {

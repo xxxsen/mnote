@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -13,10 +14,10 @@ import (
 )
 
 type DocumentHandler struct {
-	documents *service.DocumentService
+	documents IDocumentService
 }
 
-func NewDocumentHandler(documents *service.DocumentService) *DocumentHandler {
+func NewDocumentHandler(documents IDocumentService) *DocumentHandler {
 	return &DocumentHandler{documents: documents}
 }
 
@@ -80,83 +81,54 @@ func (h *DocumentHandler) Create(c *gin.Context) {
 	response.Success(c, doc)
 }
 
-func (h *DocumentHandler) List(c *gin.Context) {
-	userID := getUserID(c)
-	query := c.Query("q")
-	tagID := c.Query("tag_id")
-	var starred *int
+type listParams struct {
+	query       string
+	tagID       string
+	starred     *int
+	limit       uint
+	offset      uint
+	orderBy     string
+	includeTags bool
+}
+
+func parseListParams(c *gin.Context) listParams {
+	p := listParams{
+		query: c.Query("q"),
+		tagID: c.Query("tag_id"),
+	}
 	if value := c.Query("starred"); value != "" {
 		if parsed, err := strconv.Atoi(value); err == nil {
-			val := parsed
-			starred = &val
+			p.starred = &parsed
 		}
 	}
-	limit := uint(0)
-	offset := uint(0)
-	orderBy := ""
 	if value := c.Query("limit"); value != "" {
 		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
-			limit = uint(parsed)
+			p.limit = uint(parsed)
 		}
 	}
 	if value := c.Query("offset"); value != "" {
 		if parsed, err := strconv.Atoi(value); err == nil && parsed >= 0 {
-			offset = uint(parsed)
+			p.offset = uint(parsed)
 		}
 	}
-	if value := c.Query("order"); value == "mtime" {
-		orderBy = "mtime desc"
+	if c.Query("order") == "mtime" {
+		p.orderBy = "mtime desc"
 	}
-	includeTags := false
 	if value := c.Query("include"); value != "" {
 		for _, part := range strings.Split(value, ",") {
 			if strings.TrimSpace(part) == "tags" {
-				includeTags = true
+				p.includeTags = true
 				break
 			}
 		}
 	}
-	docs, err := h.documents.Search(c.Request.Context(), userID, query, tagID, starred, limit, offset, orderBy)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-	ids := make([]string, 0, len(docs))
-	for _, doc := range docs {
-		ids = append(ids, doc.ID)
-	}
-	tagMap, err := h.documents.ListTagIDsByDocIDs(c.Request.Context(), userID, ids)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-	var tagIndex map[string]model.Tag
-	if includeTags {
-		uniqueIDs := make([]string, 0)
-		seen := make(map[string]struct{})
-		for _, ids := range tagMap {
-			for _, id := range ids {
-				if _, ok := seen[id]; ok {
-					continue
-				}
-				seen[id] = struct{}{}
-				uniqueIDs = append(uniqueIDs, id)
-			}
-		}
-		if len(uniqueIDs) > 0 {
-			tags, err := h.documents.ListTagsByIDs(c.Request.Context(), userID, uniqueIDs)
-			if err != nil {
-				handleError(c, err)
-				return
-			}
-			tagIndex = make(map[string]model.Tag, len(tags))
-			for _, tag := range tags {
-				tagIndex[tag.ID] = tag
-			}
-		} else {
-			tagIndex = map[string]model.Tag{}
-		}
-	}
+	return p
+}
+
+func buildListItems(
+	docs []model.Document, tagMap map[string][]string,
+	tagIndex map[string]model.Tag, includeTags bool,
+) []documentListItem {
 	items := make([]documentListItem, 0, len(docs))
 	for _, doc := range docs {
 		tagIDs := tagMap[doc.ID]
@@ -187,7 +159,71 @@ func (h *DocumentHandler) List(c *gin.Context) {
 		}
 		items = append(items, item)
 	}
-	response.Success(c, items)
+	return items
+}
+
+func (h *DocumentHandler) List(c *gin.Context) {
+	userID := getUserID(c)
+	p := parseListParams(c)
+	docs, err := h.documents.Search(
+		c.Request.Context(), userID, p.query, p.tagID,
+		p.starred, p.limit, p.offset, p.orderBy,
+	)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	ids := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		ids = append(ids, doc.ID)
+	}
+	tagMap, err := h.documents.ListTagIDsByDocIDs(c.Request.Context(), userID, ids)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	var tagIndex map[string]model.Tag
+	if p.includeTags {
+		tagIndex, err = h.buildTagIndex(c, userID, tagMap)
+		if err != nil {
+			handleError(c, err)
+			return
+		}
+	}
+	response.Success(c, buildListItems(docs, tagMap, tagIndex, p.includeTags))
+}
+
+func (h *DocumentHandler) buildTagIndex(
+	c *gin.Context, userID string, tagMap map[string][]string,
+) (map[string]model.Tag, error) {
+	uniqueIDs := collectUniqueTagIDs(tagMap)
+	if len(uniqueIDs) == 0 {
+		return map[string]model.Tag{}, nil
+	}
+	tags, err := h.documents.ListTagsByIDs(c.Request.Context(), userID, uniqueIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list tags: %w", err)
+	}
+	idx := make(map[string]model.Tag, len(tags))
+	for _, tag := range tags {
+		idx[tag.ID] = tag
+	}
+	return idx, nil
+}
+
+func collectUniqueTagIDs(tagMap map[string][]string) []string {
+	seen := make(map[string]struct{})
+	out := make([]string, 0)
+	for _, ids := range tagMap {
+		for _, id := range ids {
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func (h *DocumentHandler) Get(c *gin.Context) {
@@ -396,6 +432,9 @@ func (h *DocumentHandler) Backlinks(c *gin.Context) {
 	items := make([]documentListItem, 0, len(docs))
 	for _, doc := range docs {
 		docTagIDs := tagIDsByDoc[doc.ID]
+		if docTagIDs == nil {
+			docTagIDs = []string{}
+		}
 		docTags := make([]model.Tag, 0, len(docTagIDs))
 		for _, tid := range docTagIDs {
 			if t, ok := tagMap[tid]; ok {

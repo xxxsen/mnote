@@ -9,18 +9,17 @@ import (
 
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
-	"github.com/xxxsen/mnote/internal/service"
 )
 
 type ExportHandler struct {
-	export *service.ExportService
+	export IExportService
 }
 
 type markdownToConfluenceHTMLRequest struct {
 	DocumentID string `json:"document_id"`
 }
 
-func NewExportHandler(export *service.ExportService) *ExportHandler {
+func NewExportHandler(export IExportService) *ExportHandler {
 	return &ExportHandler{export: export}
 }
 
