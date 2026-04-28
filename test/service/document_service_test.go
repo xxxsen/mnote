@@ -23,7 +23,7 @@ func TestDocumentServiceVersioningAndDelete(t *testing.T) {
 	tagRepo := repo.NewTagRepo(db)
 	userRepo := repo.NewUserRepo(db)
 
-	docs := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
+	docs := service.NewDocumentService(nil, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
 
 	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestDocumentServiceShareState(t *testing.T) {
 	tagRepo := repo.NewTagRepo(db)
 	userRepo := repo.NewUserRepo(db)
 
-	docs := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
+	docs := service.NewDocumentService(nil, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
 
 	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})
 	require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestDocumentServiceShareComments(t *testing.T) {
 	tagRepo := repo.NewTagRepo(db)
 	userRepo := repo.NewUserRepo(db)
 
-	docs := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
+	docs := service.NewDocumentService(nil, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
 
 	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})
 	require.NoError(t, err)

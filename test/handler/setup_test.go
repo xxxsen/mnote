@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/xxxsen/common/webapi"
 
-	"github.com/xxxsen/mnote/internal/config"
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/handler"
 	"github.com/xxxsen/mnote/internal/middleware"
@@ -61,10 +60,10 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	verifyService := service.NewEmailVerificationService(emailCodeRepo, noopSender{})
 	authService := service.NewAuthService(userRepo, verifyService, jwtSecret, time.Hour, true)
 	oauthService := service.NewOAuthService(userRepo, oauthRepo, jwtSecret, time.Hour, map[string]oauth.Provider{})
-	documentService := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
+	documentService := service.NewDocumentService(nil, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
 	assetService := service.NewAssetService(assetRepo, documentAssetRepo)
 	documentService.SetAssetService(assetService)
-	tagService := service.NewTagService(tagRepo, docTagRepo)
+	tagService := service.NewTagService(nil, tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, summaryRepo, versionRepo, tagRepo, docTagRepo)
 	savedViewService := service.NewSavedViewService(savedViewRepo)
 	templateService := service.NewTemplateService(templateRepo, documentService, tagRepo)
@@ -72,9 +71,9 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	tmpDir, err := os.MkdirTemp("", "mnote-upload-*")
 	require.NoError(t, err)
 
-	store, err := filestore.New(config.FileStoreConfig{
+	store, err := filestore.New(filestore.Config{
 		Type: "local",
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"dir": tmpDir,
 		},
 	})
@@ -83,7 +82,7 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	deps := handler.RouterDeps{
 		Auth:       handler.NewAuthHandler(authService),
 		OAuth:      handler.NewOAuthHandler(oauthService),
-		Properties: handler.NewPropertiesHandler(config.Properties{}, config.BannerConfig{}),
+		Properties: handler.NewPropertiesHandler(handler.Properties{}, handler.BannerConfig{}),
 		Documents:  handler.NewDocumentHandler(documentService),
 		Versions:   handler.NewVersionHandler(documentService),
 		Shares:     handler.NewShareHandler(documentService),
