@@ -2,8 +2,15 @@ package oauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+)
+
+var (
+	ErrProviderRequired = errors.New("oauth provider is required")
+	ErrUnsupportedOAuth = errors.New("unsupported oauth provider")
+	ErrRequestFailed    = errors.New("oauth request failed")
 )
 
 type Profile struct {
@@ -18,7 +25,7 @@ type Provider interface {
 	ExchangeCode(ctx context.Context, code string) (*Profile, error)
 }
 
-type ProviderFactory func(args interface{}) (Provider, error)
+type ProviderFactory func(args any) (Provider, error)
 
 var registry = map[string]ProviderFactory{}
 
@@ -30,14 +37,14 @@ func Register(name string, factory ProviderFactory) {
 	registry[key] = factory
 }
 
-func NewProvider(name string, args interface{}) (Provider, error) {
+func NewProvider(name string, args any) (Provider, error) {
 	key := strings.ToLower(strings.TrimSpace(name))
 	if key == "" {
-		return nil, fmt.Errorf("oauth provider is required")
+		return nil, ErrProviderRequired
 	}
 	factory := registry[key]
 	if factory == nil {
-		return nil, fmt.Errorf("unsupported oauth provider: %s", name)
+		return nil, fmt.Errorf("%w: %s", ErrUnsupportedOAuth, name)
 	}
 	return factory(args)
 }

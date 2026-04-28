@@ -2,7 +2,6 @@ package ai
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/xxxsen/common/logutil"
@@ -30,7 +29,9 @@ func NewGroupGenerator(items []GeneratorEntry) IGenerator {
 	return &groupGenerator{items: items}
 }
 
-func (g *groupGenerator) Generate(ctx context.Context, prompt string) (string, error) {
+func (g *groupGenerator) Generate(
+	ctx context.Context, prompt string,
+) (string, error) {
 	var lastErr error
 	for i, item := range g.items {
 		if item.Generator == nil {
@@ -41,10 +42,15 @@ func (g *groupGenerator) Generate(ctx context.Context, prompt string) (string, e
 			return res, nil
 		}
 		lastErr = err
-		logutil.GetLogger(ctx).Warn("generator failed", zap.Int("index", i), zap.String("name", item.Name), zap.Error(err))
+		logutil.GetLogger(ctx).Warn(
+			"generator failed",
+			zap.Int("index", i),
+			zap.String("name", item.Name),
+			zap.Error(err),
+		)
 	}
 	if lastErr == nil {
-		return "", fmt.Errorf("generator not configured")
+		return "", ErrNotConfigured
 	}
 	return "", lastErr
 }
@@ -60,7 +66,9 @@ func NewGroupEmbedder(items []EmbedderEntry) IEmbedder {
 	return &groupEmbedder{items: items}
 }
 
-func (g *groupEmbedder) Embed(ctx context.Context, text string, taskType string) ([]float32, error) {
+func (g *groupEmbedder) Embed(
+	ctx context.Context, text, taskType string,
+) ([]float32, error) {
 	var lastErr error
 	for i, item := range g.items {
 		if item.Embedder == nil {
@@ -71,10 +79,15 @@ func (g *groupEmbedder) Embed(ctx context.Context, text string, taskType string)
 			return res, nil
 		}
 		lastErr = err
-		logutil.GetLogger(ctx).Warn("embedder failed", zap.Int("index", i), zap.String("name", item.Name), zap.Error(err))
+		logutil.GetLogger(ctx).Warn(
+			"embedder failed",
+			zap.Int("index", i),
+			zap.String("name", item.Name),
+			zap.Error(err),
+		)
 	}
 	if lastErr == nil {
-		return nil, fmt.Errorf("embedder not configured")
+		return nil, ErrNotConfigured
 	}
 	return nil, lastErr
 }

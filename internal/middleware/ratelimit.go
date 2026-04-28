@@ -38,7 +38,7 @@ func (l *rateLimiter) handle(c *gin.Context) {
 		c.Next()
 		return
 	}
-	ip := c.ClientIP() //TODO: 这里需要换成X-Real-IP
+	ip := c.ClientIP() // TODO: 这里需要换成X-Real-IP
 	uid := "0"
 	if v, ok := c.Get(ContextUserIDKey); ok {
 		if id, ok := v.(string); ok && id != "" {

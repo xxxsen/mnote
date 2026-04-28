@@ -2,23 +2,24 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/xxxsen/mnote/internal/ai"
 	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
-	"github.com/xxxsen/mnote/internal/service"
 )
 
 type AIHandler struct {
-	ai        *service.AIService
-	documents *service.DocumentService
-	tags      *service.TagService
+	ai        IAIHandlerService
+	documents IDocumentService
+	tags      ITagService
 }
 
-func NewAIHandler(ai *service.AIService, documents *service.DocumentService, tags *service.TagService) *AIHandler {
+func NewAIHandler(ai IAIHandlerService, documents IDocumentService, tags ITagService) *AIHandler {
 	return &AIHandler{ai: ai, documents: documents, tags: tags}
 }
 
@@ -48,7 +49,7 @@ func (h *AIHandler) Polish(c *gin.Context) {
 	}
 	result, err := h.ai.Polish(c.Request.Context(), req.Text)
 	if err != nil {
-		if errors.Is(err, service.ErrAIUnavailable) {
+		if errors.Is(err, ai.ErrUnavailable) {
 			response.Error(c, errcode.ErrAIUnavailable, "ai not configured")
 			return
 		}
@@ -66,7 +67,7 @@ func (h *AIHandler) Generate(c *gin.Context) {
 	}
 	result, err := h.ai.Generate(c.Request.Context(), req.Prompt)
 	if err != nil {
-		if errors.Is(err, service.ErrAIUnavailable) {
+		if errors.Is(err, ai.ErrUnavailable) {
 			response.Error(c, errcode.ErrAIUnavailable, "ai not configured")
 			return
 		}
@@ -84,7 +85,7 @@ func (h *AIHandler) Summary(c *gin.Context) {
 	}
 	result, err := h.ai.Summarize(c.Request.Context(), req.Text)
 	if err != nil {
-		if errors.Is(err, service.ErrAIUnavailable) {
+		if errors.Is(err, ai.ErrUnavailable) {
 			response.Error(c, errcode.ErrAIUnavailable, "ai not configured")
 			return
 		}
@@ -102,28 +103,17 @@ func (h *AIHandler) Tags(c *gin.Context) {
 	}
 	tags, err := h.ai.ExtractTags(c.Request.Context(), req.Text, req.MaxTags)
 	if err != nil {
-		if errors.Is(err, service.ErrAIUnavailable) {
+		if errors.Is(err, ai.ErrUnavailable) {
 			response.Error(c, errcode.ErrAIUnavailable, "ai not configured")
 			return
 		}
 		handleError(c, err)
 		return
 	}
-	var existingTags []model.Tag
-	if req.DocumentID != "" {
-		userID := getUserID(c)
-		tagIDs, err := h.documents.ListTagIDs(c.Request.Context(), userID, req.DocumentID)
-		if err != nil {
-			handleError(c, err)
-			return
-		}
-		if len(tagIDs) > 0 {
-			existingTags, err = h.tags.ListByIDs(c.Request.Context(), userID, tagIDs)
-			if err != nil {
-				handleError(c, err)
-				return
-			}
-		}
+	existingTags, err := h.fetchExistingTags(c, req.DocumentID)
+	if err != nil {
+		handleError(c, err)
+		return
 	}
 	response.Success(c, gin.H{"tags": tags, "existing_tags": existingTags})
 }
@@ -142,13 +132,14 @@ func (h *AIHandler) Search(c *gin.Context) {
 	excludeID := c.Query("exclude_id")
 
 	userID := getUserID(c)
-	docs, scores, err := h.documents.SemanticSearch(c.Request.Context(), userID, query, "", nil, uint(limit), 0, "", excludeID)
+	docs, scores, err := h.documents.SemanticSearch(c.Request.Context(), userID, query, "", nil, uint(limit), 0, "",
+		excludeID)
 	if err != nil {
 		handleError(c, err)
 		return
 	}
 	if len(docs) == 0 {
-		response.Success(c, gin.H{"items": []interface{}{}})
+		response.Success(c, gin.H{"items": []any{}})
 		return
 	}
 
@@ -169,5 +160,23 @@ func (h *AIHandler) Search(c *gin.Context) {
 		})
 	}
 	response.Success(c, gin.H{"items": results})
+}
 
+func (h *AIHandler) fetchExistingTags(c *gin.Context, documentID string) ([]model.Tag, error) {
+	if documentID == "" {
+		return nil, nil
+	}
+	userID := getUserID(c)
+	tagIDs, err := h.documents.ListTagIDs(c.Request.Context(), userID, documentID)
+	if err != nil {
+		return nil, fmt.Errorf("list tag ids: %w", err)
+	}
+	if len(tagIDs) == 0 {
+		return nil, nil
+	}
+	tags, err := h.tags.ListByIDs(c.Request.Context(), userID, tagIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list tags: %w", err)
+	}
+	return tags, nil
 }

@@ -25,7 +25,7 @@ func TestTemplateServiceSystemVariables(t *testing.T) {
 	userRepo := repo.NewUserRepo(db)
 	templateRepo := repo.NewTemplateRepo(db)
 
-	docs := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
+	docs := service.NewDocumentService(nil, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
 	templates := service.NewTemplateService(templateRepo, docs, tagRepo)
 
 	tpl, err := templates.Create(context.Background(), "user-1", service.CreateTemplateInput{
@@ -59,9 +59,9 @@ func TestTemplateServiceCreateDocumentSkipsDeletedDefaultTags(t *testing.T) {
 	userRepo := repo.NewUserRepo(db)
 	templateRepo := repo.NewTemplateRepo(db)
 
-	docs := service.NewDocumentService(docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
+	docs := service.NewDocumentService(nil, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
 	templates := service.NewTemplateService(templateRepo, docs, tagRepo)
-	tags := service.NewTagService(tagRepo, docTagRepo)
+	tags := service.NewTagService(nil, tagRepo, docTagRepo)
 
 	tag, err := tags.Create(context.Background(), "user-1", "MyTag")
 	require.NoError(t, err)

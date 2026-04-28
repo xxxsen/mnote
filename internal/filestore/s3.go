@@ -2,6 +2,7 @@ package filestore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -12,6 +13,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+var (
+	errS3ConfigRequired = errors.New("s3 endpoint/bucket/secret_id/secret_key are required")
+	errFileKeyRequired  = errors.New("file key is required")
 )
 
 type s3Config struct {
@@ -35,13 +41,14 @@ func init() {
 	Register("s3", createS3Store)
 }
 
-func createS3Store(args interface{}) (Store, error) {
+func createS3Store(args any) (Store, error) {
 	cfg := &s3Config{}
 	if err := decodeConfig(args, cfg); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode s3 config: %w", err)
 	}
-	if cfg.Endpoint == "" || cfg.Bucket == "" || cfg.SecretID == "" || cfg.SecretKey == "" {
-		return nil, fmt.Errorf("s3 endpoint/bucket/secret_id/secret_key are required")
+	if cfg.Endpoint == "" || cfg.Bucket == "" ||
+		cfg.SecretID == "" || cfg.SecretKey == "" {
+		return nil, errS3ConfigRequired
 	}
 	if cfg.Region == "" {
 		cfg.Region = "cn"
@@ -60,7 +67,7 @@ func createS3Store(args interface{}) (Store, error) {
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.SecretID, cfg.SecretKey, "")),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load aws config: %w", err)
 	}
 	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
@@ -80,11 +87,11 @@ func createS3Store(args interface{}) (Store, error) {
 
 func (s *s3Store) Save(ctx context.Context, key string, r ReadSeekCloser, size int64) error {
 	if key == "" {
-		return fmt.Errorf("file key is required")
+		return errFileKeyRequired
 	}
 	objectKey, err := s.objectKey(key)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve object key: %w", err)
 	}
 	_, err = s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(s.bucket),
@@ -92,20 +99,23 @@ func (s *s3Store) Save(ctx context.Context, key string, r ReadSeekCloser, size i
 		Body:          r,
 		ContentLength: aws.Int64(size),
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("put object: %w", err)
+	}
+	return nil
 }
 
 func (s *s3Store) Open(ctx context.Context, key string) (io.ReadCloser, error) {
 	objectKey, err := s.objectKey(key)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve object key: %w", err)
 	}
 	resp, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(objectKey),
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get object: %w", err)
 	}
 	return resp.Body, nil
 }
@@ -122,33 +132,37 @@ func (s *s3Store) GenerateFileRef(userID, filename string) string {
 }
 
 func (s *s3Store) objectKey(key string) (string, error) {
-	if strings.HasPrefix(key, "http://") || strings.HasPrefix(key, "https://") {
-		u, err := url.Parse(key)
-		if err != nil {
-			return "", err
-		}
-		trimmed := strings.TrimPrefix(u.Path, "/")
-		if s.baseURL != "" {
-			base, _ := url.Parse(s.baseURL)
-			if base != nil {
-				basePath := strings.TrimPrefix(base.Path, "/")
-				if basePath != "" && strings.HasPrefix(trimmed, basePath+"/") {
-					trimmed = strings.TrimPrefix(trimmed, basePath+"/")
-				}
-			}
-		}
-		if s.prefix != "" && strings.HasPrefix(trimmed, s.prefix+"/") {
-			return trimmed, nil
-		}
-		if s.prefix != "" {
-			return path.Join(s.prefix, trimmed), nil
-		}
-		return trimmed, nil
+	if !strings.HasPrefix(key, "http://") && !strings.HasPrefix(key, "https://") {
+		return s.applyPrefix(key), nil
 	}
-	if s.prefix != "" {
-		return path.Join(s.prefix, key), nil
+	u, err := url.Parse(key)
+	if err != nil {
+		return "", fmt.Errorf("parse key url: %w", err)
 	}
-	return key, nil
+	trimmed := s.stripBasePath(strings.TrimPrefix(u.Path, "/"))
+	return s.applyPrefix(trimmed), nil
+}
+
+func (s *s3Store) stripBasePath(p string) string {
+	if s.baseURL == "" {
+		return p
+	}
+	base, _ := url.Parse(s.baseURL)
+	if base == nil {
+		return p
+	}
+	basePath := strings.TrimPrefix(base.Path, "/")
+	if basePath != "" && strings.HasPrefix(p, basePath+"/") {
+		return strings.TrimPrefix(p, basePath+"/")
+	}
+	return p
+}
+
+func (s *s3Store) applyPrefix(key string) string {
+	if s.prefix != "" && !strings.HasPrefix(key, s.prefix+"/") {
+		return path.Join(s.prefix, key)
+	}
+	return key
 }
 
 func buildBaseURL(cfg *s3Config) string {
@@ -156,11 +170,12 @@ func buildBaseURL(cfg *s3Config) string {
 	if endpoint == "" || cfg.Bucket == "" {
 		return ""
 	}
-	if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
+	switch {
+	case strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://"):
 		endpoint = strings.TrimRight(endpoint, "/")
-	} else if cfg.UseSSL {
+	case cfg.UseSSL:
 		endpoint = "https://" + strings.TrimRight(endpoint, "/")
-	} else {
+	default:
 		endpoint = "http://" + strings.TrimRight(endpoint, "/")
 	}
 	base := endpoint + "/" + strings.Trim(cfg.Bucket, "/")

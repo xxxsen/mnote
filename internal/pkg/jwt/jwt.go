@@ -2,11 +2,18 @@ package jwt
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	jwtlib "github.com/golang-jwt/jwt/v5"
 )
 
+var (
+	ErrUnexpectedSigningMethod = errors.New("unexpected signing method")
+	ErrInvalidToken            = errors.New("invalid token")
+)
+
+// Claims holds the custom JWT claims used throughout the application.
 type Claims struct {
 	UserID string `json:"user_id"`
 	Email  string `json:"email,omitempty"`
@@ -23,22 +30,29 @@ func GenerateToken(userID, email string, secret []byte, ttl time.Duration) (stri
 		},
 	}
 	token := jwtlib.NewWithClaims(jwtlib.SigningMethodHS256, claims)
-	return token.SignedString(secret)
+	signed, err := token.SignedString(secret)
+	if err != nil {
+		return "", fmt.Errorf("sign token: %w", err)
+	}
+	return signed, nil
 }
 
 func ParseToken(tokenString string, secret []byte) (*Claims, error) {
-	token, err := jwtlib.ParseWithClaims(tokenString, &Claims{}, func(token *jwtlib.Token) (interface{}, error) {
-		if token.Method.Alg() != jwtlib.SigningMethodHS256.Alg() {
-			return nil, errors.New("unexpected signing method")
-		}
-		return secret, nil
-	})
+	token, err := jwtlib.ParseWithClaims(
+		tokenString, &Claims{},
+		func(token *jwtlib.Token) (any, error) {
+			if token.Method.Alg() != jwtlib.SigningMethodHS256.Alg() {
+				return nil, ErrUnexpectedSigningMethod
+			}
+			return secret, nil
+		},
+	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse token: %w", err)
 	}
 	claims, ok := token.Claims.(*Claims)
 	if !ok || !token.Valid {
-		return nil, errors.New("invalid token")
+		return nil, ErrInvalidToken
 	}
 	return claims, nil
 }

@@ -345,7 +345,9 @@ export default function DocsPage() {
       await fetchTagsByIDs(Array.from(missingTagIDs));
       setDocs((prev) => {
         if (append) {
-          return [...prev, ...enrichedDocs];
+          const existingIds = new Set(prev.map(d => d.id));
+          const unique = enrichedDocs.filter(d => !existingIds.has(d.id));
+          return [...prev, ...unique];
         }
         return sortDocs(enrichedDocs);
       });

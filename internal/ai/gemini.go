@@ -21,7 +21,9 @@ func (p *geminiProvider) Name() string {
 	return "gemini"
 }
 
-func (p *geminiProvider) Generate(ctx context.Context, model string, prompt string) (string, error) {
+func (p *geminiProvider) Generate(
+	ctx context.Context, model, prompt string,
+) (string, error) {
 	if p.apiKey == "" {
 		return "", ErrUnavailable
 	}
@@ -30,21 +32,22 @@ func (p *geminiProvider) Generate(ctx context.Context, model string, prompt stri
 		Backend: genai.BackendGeminiAPI,
 	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create gemini client: %w", err)
 	}
 	resp, err := client.Models.GenerateContent(
-		ctx,
-		model,
+		ctx, model,
 		[]*genai.Content{{Parts: []*genai.Part{{Text: prompt}}}},
 		nil,
 	)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("gemini generate: %w", err)
 	}
 	return strings.TrimSpace(resp.Text()), nil
 }
 
-func (p *geminiProvider) Embed(ctx context.Context, model string, text string, taskType string) ([]float32, error) {
+func (p *geminiProvider) Embed(
+	ctx context.Context, model, text, taskType string,
+) ([]float32, error) {
 	if p.apiKey == "" {
 		return nil, ErrUnavailable
 	}
@@ -53,47 +56,41 @@ func (p *geminiProvider) Embed(ctx context.Context, model string, text string, t
 		Backend: genai.BackendGeminiAPI,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create gemini client: %w", err)
 	}
-	var config *genai.EmbedContentConfig
+	var cfg *genai.EmbedContentConfig
 	if taskType != "" {
-		config = &genai.EmbedContentConfig{
-			TaskType: taskType,
-		}
+		cfg = &genai.EmbedContentConfig{TaskType: taskType}
 	}
 	resp, err := client.Models.EmbedContent(
-		ctx,
-		model,
+		ctx, model,
 		[]*genai.Content{{Parts: []*genai.Part{{Text: text}}}},
-		config,
+		cfg,
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("gemini embed: %w", err)
 	}
 	if len(resp.Embeddings) == 0 {
-		return nil, fmt.Errorf("no embedding values returned")
+		return nil, ErrNoEmbeddings
 	}
 	return resp.Embeddings[0].Values, nil
 }
 
-func createGeminiFactory(args interface{}) (IProvider, error) {
+func createGeminiFactory(args any) (IProvider, error) {
 	cfg := &geminiConfig{}
 	if err := decodeConfig(args, cfg); err != nil {
 		return nil, err
 	}
-	provider := &geminiProvider{
-		apiKey: strings.TrimSpace(cfg.APIKey),
-	}
-	return provider, nil
+	return &geminiProvider{apiKey: strings.TrimSpace(cfg.APIKey)}, nil
 }
 
 func init() {
 	Register("gemini", createGeminiFactory)
 }
 
-func decodeConfig(args interface{}, dst interface{}) error {
+func decodeConfig(args, dst any) error {
 	if args == nil {
-		return fmt.Errorf("ai provider config is required")
+		return ErrConfigRequired
 	}
 	data, err := json.Marshal(args)
 	if err != nil {

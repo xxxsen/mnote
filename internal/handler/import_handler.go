@@ -1,31 +1,42 @@
 package handler
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
-	"github.com/xxxsen/mnote/internal/service"
 )
 
+type saveTempFileFunc func(name string, r io.Reader) (string, error)
+
 type ImportHandler struct {
-	imports       *service.ImportService
+	imports       IImportHandlerService
 	maxUploadSize int64
+	saveTempFile  saveTempFileFunc
 }
 
-func NewImportHandler(imports *service.ImportService, maxUploadSize int64) *ImportHandler {
-	return &ImportHandler{imports: imports, maxUploadSize: maxUploadSize}
+func NewImportHandler(
+	imports IImportHandlerService, maxUploadSize int64, saveTempFile saveTempFileFunc,
+) *ImportHandler {
+	return &ImportHandler{
+		imports: imports, maxUploadSize: maxUploadSize, saveTempFile: saveTempFile,
+	}
 }
 
 type importConfirmRequest struct {
 	Mode string `json:"mode"`
 }
 
-func (h *ImportHandler) HedgeDocUpload(c *gin.Context) {
+type createJobFunc func(ctx context.Context, userID, filePath string) (*model.ImportJob, error)
+
+func (h *ImportHandler) handleZipUpload(c *gin.Context, create createJobFunc) {
 	file, err := c.FormFile("file")
 	if err != nil {
 		response.Error(c, errcode.ErrInvalidFile, "file is required")
@@ -45,17 +56,13 @@ func (h *ImportHandler) HedgeDocUpload(c *gin.Context) {
 		return
 	}
 	defer func() { _ = opened.Close() }()
-
-	tmpPath, err := service.SaveTempFile(file.Filename, opened)
+	tmpPath, err := h.saveTempFile(file.Filename, opened)
 	if err != nil {
 		response.Error(c, errcode.ErrImportFailed, "failed to read file")
 		return
 	}
-	defer func() {
-		_ = removeFile(tmpPath)
-	}()
-
-	job, err := h.imports.CreateHedgeDocJob(c.Request.Context(), getUserID(c), tmpPath)
+	defer func() { _ = removeFile(tmpPath) }()
+	job, err := create(c.Request.Context(), getUserID(c), tmpPath)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -63,42 +70,12 @@ func (h *ImportHandler) HedgeDocUpload(c *gin.Context) {
 	response.Success(c, gin.H{"job_id": job.ID})
 }
 
+func (h *ImportHandler) HedgeDocUpload(c *gin.Context) {
+	h.handleZipUpload(c, h.imports.CreateHedgeDocJob)
+}
+
 func (h *ImportHandler) NotesUpload(c *gin.Context) {
-	file, err := c.FormFile("file")
-	if err != nil {
-		response.Error(c, errcode.ErrInvalidFile, "file is required")
-		return
-	}
-	if h.maxUploadSize > 0 && file.Size > h.maxUploadSize {
-		response.Error(c, errcode.ErrInvalidFile, "file too large (max "+formatUploadLimit(h.maxUploadSize)+")")
-		return
-	}
-	if strings.ToLower(filepath.Ext(file.Filename)) != ".zip" {
-		response.Error(c, errcode.ErrInvalidFile, "zip file required")
-		return
-	}
-	opened, err := file.Open()
-	if err != nil {
-		response.Error(c, errcode.ErrInvalidFile, "failed to open file")
-		return
-	}
-	defer func() { _ = opened.Close() }()
-
-	tmpPath, err := service.SaveTempFile(file.Filename, opened)
-	if err != nil {
-		response.Error(c, errcode.ErrImportFailed, "failed to read file")
-		return
-	}
-	defer func() {
-		_ = removeFile(tmpPath)
-	}()
-
-	job, err := h.imports.CreateNotesJob(c.Request.Context(), getUserID(c), tmpPath)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-	response.Success(c, gin.H{"job_id": job.ID})
+	h.handleZipUpload(c, h.imports.CreateNotesJob)
 }
 
 func (h *ImportHandler) NotesPreview(c *gin.Context) {
@@ -107,7 +84,7 @@ func (h *ImportHandler) NotesPreview(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalid, "job_id required")
 		return
 	}
-	preview, err := h.imports.Preview(getUserID(c), jobID)
+	preview, err := h.imports.Preview(c.Request.Context(), getUserID(c), jobID)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -134,27 +111,7 @@ func (h *ImportHandler) NotesConfirm(c *gin.Context) {
 }
 
 func (h *ImportHandler) NotesStatus(c *gin.Context) {
-	jobID := c.Param("job_id")
-	if jobID == "" {
-		response.Error(c, errcode.ErrInvalid, "job_id required")
-		return
-	}
-	job, err := h.imports.Status(getUserID(c), jobID)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-	progress := 0
-	if job.Total > 0 {
-		progress = int(float64(job.Processed) / float64(job.Total) * 100)
-	}
-	response.Success(c, gin.H{
-		"status":    job.Status,
-		"progress":  progress,
-		"processed": job.Processed,
-		"total":     job.Total,
-		"report":    job.Report,
-	})
+	h.handleJobStatus(c)
 }
 
 func (h *ImportHandler) HedgeDocPreview(c *gin.Context) {
@@ -163,7 +120,7 @@ func (h *ImportHandler) HedgeDocPreview(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalid, "job_id required")
 		return
 	}
-	preview, err := h.imports.Preview(getUserID(c), jobID)
+	preview, err := h.imports.Preview(c.Request.Context(), getUserID(c), jobID)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -190,12 +147,16 @@ func (h *ImportHandler) HedgeDocConfirm(c *gin.Context) {
 }
 
 func (h *ImportHandler) HedgeDocStatus(c *gin.Context) {
+	h.handleJobStatus(c)
+}
+
+func (h *ImportHandler) handleJobStatus(c *gin.Context) {
 	jobID := c.Param("job_id")
 	if jobID == "" {
 		response.Error(c, errcode.ErrInvalid, "job_id required")
 		return
 	}
-	job, err := h.imports.Status(getUserID(c), jobID)
+	job, err := h.imports.Status(c.Request.Context(), getUserID(c), jobID)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -220,6 +181,4 @@ func removeFile(path string) error {
 	return osRemove(path)
 }
 
-var osRemove = func(path string) error {
-	return os.Remove(path)
-}
+var osRemove = os.Remove

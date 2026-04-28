@@ -11,10 +11,10 @@ import (
 )
 
 type TemplateHandler struct {
-	templates *service.TemplateService
+	templates ITemplateHandlerService
 }
 
-func NewTemplateHandler(templates *service.TemplateService) *TemplateHandler {
+func NewTemplateHandler(templates ITemplateHandlerService) *TemplateHandler {
 	return &TemplateHandler{templates: templates}
 }
 
@@ -127,11 +127,12 @@ func (h *TemplateHandler) CreateDocument(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
-	doc, err := h.templates.CreateDocumentFromTemplate(c.Request.Context(), getUserID(c), service.CreateDocumentFromTemplateInput{
-		TemplateID: c.Param("id"),
-		Title:      req.Title,
-		Variables:  req.Variables,
-	})
+	doc, err := h.templates.CreateDocumentFromTemplate(c.Request.Context(), getUserID(c),
+		service.CreateDocumentFromTemplateInput{
+			TemplateID: c.Param("id"),
+			Title:      req.Title,
+			Variables:  req.Variables,
+		})
 	if err != nil {
 		handleError(c, err)
 		return

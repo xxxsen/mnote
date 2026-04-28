@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
@@ -20,20 +22,21 @@ func NewImportJobRepo(db *sql.DB) *ImportJobRepo {
 func (r *ImportJobRepo) Create(ctx context.Context, job *model.ImportJob) error {
 	tagsJSON, err := json.Marshal(job.Tags)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal: %w", err)
 	}
 	reportJSON := []byte("{}")
 	if job.Report != nil {
 		reportJSON, err = json.Marshal(job.Report)
 		if err != nil {
-			return err
+			return fmt.Errorf("marshal: %w", err)
 		}
 	}
 	const query = `
-		INSERT INTO import_jobs (id, user_id, source, status, require_content, processed, total, tags_json, report_json, ctime, mtime)
+		INSERT INTO import_jobs (id, user_id, source, status, require_content, processed, total, tags_json, report_json,
+			ctime, mtime)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
-	_, err = r.db.ExecContext(ctx, query,
+	_, err = conn(ctx, r.db).ExecContext(ctx, query,
 		job.ID,
 		job.UserID,
 		job.Source,
@@ -46,7 +49,10 @@ func (r *ImportJobRepo) Create(ctx context.Context, job *model.ImportJob) error 
 		job.Ctime,
 		job.Mtime,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("insert import job: %w", err)
+	}
+	return nil
 }
 
 func (r *ImportJobRepo) Get(ctx context.Context, userID, jobID string) (*model.ImportJob, error) {
@@ -55,7 +61,7 @@ func (r *ImportJobRepo) Get(ctx context.Context, userID, jobID string) (*model.I
 		FROM import_jobs
 		WHERE id = $1 AND user_id = $2
 	`
-	row := r.db.QueryRowContext(ctx, query, jobID, userID)
+	row := conn(ctx, r.db).QueryRowContext(ctx, query, jobID, userID)
 	var job model.ImportJob
 	var requireContent int
 	var tagsJSON string
@@ -73,10 +79,10 @@ func (r *ImportJobRepo) Get(ctx context.Context, userID, jobID string) (*model.I
 		&job.Ctime,
 		&job.Mtime,
 	); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, appErr.ErrNotFound
 		}
-		return nil, err
+		return nil, fmt.Errorf("repo: %w", err)
 	}
 	job.RequireContent = requireContent == 1
 	if tagsJSON != "" {
@@ -91,19 +97,27 @@ func (r *ImportJobRepo) Get(ctx context.Context, userID, jobID string) (*model.I
 	return &job, nil
 }
 
-func (r *ImportJobRepo) UpdateStatusIf(ctx context.Context, userID, jobID, fromStatus, toStatus string, mtime int64) (bool, error) {
+func (
+	r *ImportJobRepo) UpdateStatusIf(ctx context.Context,
+	userID,
+	jobID,
+	fromStatus,
+	toStatus string,
+	mtime int64) (bool,
+	error,
+) {
 	const query = `
 		UPDATE import_jobs
 		SET status = $1, mtime = $2
 		WHERE id = $3 AND user_id = $4 AND status = $5
 	`
-	res, err := r.db.ExecContext(ctx, query, toStatus, mtime, jobID, userID, fromStatus)
+	res, err := conn(ctx, r.db).ExecContext(ctx, query, toStatus, mtime, jobID, userID, fromStatus)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("exec: %w", err)
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("rows affected: %w", err)
 	}
 	return affected > 0, nil
 }
@@ -111,13 +125,13 @@ func (r *ImportJobRepo) UpdateStatusIf(ctx context.Context, userID, jobID, fromS
 func (r *ImportJobRepo) UpdateSummary(ctx context.Context, job *model.ImportJob) error {
 	tagsJSON, err := json.Marshal(job.Tags)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal: %w", err)
 	}
 	reportJSON := []byte("{}")
 	if job.Report != nil {
 		reportJSON, err = json.Marshal(job.Report)
 		if err != nil {
-			return err
+			return fmt.Errorf("marshal: %w", err)
 		}
 	}
 	const query = `
@@ -131,7 +145,7 @@ func (r *ImportJobRepo) UpdateSummary(ctx context.Context, job *model.ImportJob)
 			mtime = $7
 		WHERE id = $8 AND user_id = $9
 	`
-	res, err := r.db.ExecContext(ctx, query,
+	res, err := conn(ctx, r.db).ExecContext(ctx, query,
 		job.Status,
 		boolToInt(job.RequireContent),
 		job.Processed,
@@ -143,11 +157,11 @@ func (r *ImportJobRepo) UpdateSummary(ctx context.Context, job *model.ImportJob)
 		job.UserID,
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("repo: %w", err)
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("rows affected: %w", err)
 	}
 	if affected == 0 {
 		return appErr.ErrNotFound
@@ -155,13 +169,22 @@ func (r *ImportJobRepo) UpdateSummary(ctx context.Context, job *model.ImportJob)
 	return nil
 }
 
-func (r *ImportJobRepo) UpdateProgress(ctx context.Context, userID, jobID string, processed, total int, report *model.ImportReport, status string, mtime int64) error {
+func (
+	r *ImportJobRepo) UpdateProgress(ctx context.Context,
+	userID,
+	jobID string,
+	processed,
+	total int,
+	report *model.ImportReport,
+	status string,
+	mtime int64,
+) error {
 	reportJSON := []byte("{}")
 	if report != nil {
 		var err error
 		reportJSON, err = json.Marshal(report)
 		if err != nil {
-			return err
+			return fmt.Errorf("marshal: %w", err)
 		}
 	}
 	const query = `
@@ -173,13 +196,15 @@ func (r *ImportJobRepo) UpdateProgress(ctx context.Context, userID, jobID string
 			mtime = $5
 		WHERE id = $6 AND user_id = $7
 	`
-	res, err := r.db.ExecContext(ctx, query, processed, total, string(reportJSON), status, mtime, jobID, userID)
+	res, err := conn(ctx, r.db).ExecContext(
+		ctx, query, processed, total, string(reportJSON), status, mtime, jobID, userID,
+	)
 	if err != nil {
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	if affected == 0 {
 		return appErr.ErrNotFound
@@ -189,17 +214,24 @@ func (r *ImportJobRepo) UpdateProgress(ctx context.Context, userID, jobID string
 
 func (r *ImportJobRepo) DeleteBefore(ctx context.Context, cutoff int64) (int64, error) {
 	const query = `DELETE FROM import_jobs WHERE ctime < $1`
-	res, err := r.db.ExecContext(ctx, query, cutoff)
+	res, err := conn(ctx, r.db).ExecContext(ctx, query, cutoff)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("exec: %w", err)
 	}
-	return res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+	return n, nil
 }
 
 func (r *ImportJobRepo) Delete(ctx context.Context, userID, jobID string) error {
 	const query = `DELETE FROM import_jobs WHERE id = $1 AND user_id = $2`
-	_, err := r.db.ExecContext(ctx, query, jobID, userID)
-	return err
+	_, err := conn(ctx, r.db).ExecContext(ctx, query, jobID, userID)
+	if err != nil {
+		return fmt.Errorf("delete import job: %w", err)
+	}
+	return nil
 }
 
 func boolToInt(value bool) int {

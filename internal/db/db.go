@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"fmt"
@@ -8,38 +9,48 @@ import (
 	"sort"
 	"strings"
 
-	_ "github.com/lib/pq"
-
-	"github.com/xxxsen/mnote/internal/config"
+	_ "github.com/lib/pq" // PostgreSQL driver registration
 )
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-func Open(cfg config.DatabaseConfig) (*sql.DB, error) {
+type Config struct {
+	DSN      string
+	Host     string
+	Port     int
+	User     string
+	Password string
+	DBName   string
+	SSLMode  string
+}
+
+func Open(cfg Config) (*sql.DB, error) {
 	dsn := cfg.DSN
 	if dsn == "" {
 		sslmode := cfg.SSLMode
 		if sslmode == "" {
 			sslmode = "disable"
 		}
-		dsn = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-			cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, sslmode)
+		dsn = fmt.Sprintf(
+			"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+			cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, sslmode,
+		)
 	}
-	db, err := sql.Open("postgres", dsn)
+	conn, err := sql.Open("postgres", dsn)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open postgres: %w", err)
 	}
-	if err := db.Ping(); err != nil {
-		return nil, err
+	if err := conn.PingContext(context.Background()); err != nil {
+		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
-	return db, nil
+	return conn, nil
 }
 
-func ApplyMigrations(db *sql.DB) error {
+func ApplyMigrations(conn *sql.DB) error {
 	entries, err := fs.ReadDir(migrationsFS, "migrations")
 	if err != nil {
-		return err
+		return fmt.Errorf("read migrations dir: %w", err)
 	}
 	var files []string
 	for _, entry := range entries {
@@ -51,7 +62,7 @@ func ApplyMigrations(db *sql.DB) error {
 	for _, file := range files {
 		content, err := fs.ReadFile(migrationsFS, "migrations/"+file)
 		if err != nil {
-			return err
+			return fmt.Errorf("read migration %s: %w", file, err)
 		}
 		queries := strings.Split(string(content), ";")
 		for _, q := range queries {
@@ -59,7 +70,7 @@ func ApplyMigrations(db *sql.DB) error {
 			if q == "" {
 				continue
 			}
-			if _, err := db.Exec(q); err != nil {
+			if _, err := conn.ExecContext(context.Background(), q); err != nil {
 				if strings.Contains(err.Error(), "already exists") {
 					continue
 				}

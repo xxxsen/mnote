@@ -5,7 +5,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/xxxsen/mnote/internal/config"
 	"github.com/xxxsen/mnote/internal/db"
 )
 
@@ -15,7 +14,7 @@ func OpenTestDB(t *testing.T) (*sql.DB, func()) {
 	if host == "" {
 		t.Skip("TEST_DB_HOST not set, skipping postgres test")
 	}
-	conn, err := db.Open(config.DatabaseConfig{
+	conn, err := db.Open(db.Config{
 		Host:     host,
 		Port:     5432,
 		User:     "mnote",

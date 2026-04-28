@@ -2,17 +2,20 @@ package job
 
 import (
 	"context"
+	"fmt"
 	"time"
-
-	"github.com/xxxsen/mnote/internal/repo"
 )
 
+type expiryCleaner interface {
+	DeleteBefore(ctx context.Context, cutoff int64) (int64, error)
+}
+
 type EmbeddingCacheCleanupJob struct {
-	repo       *repo.EmbeddingCacheRepo
+	repo       expiryCleaner
 	maxAgeDays int
 }
 
-func NewEmbeddingCacheCleanupJob(repo *repo.EmbeddingCacheRepo, maxAgeDays int) *EmbeddingCacheCleanupJob {
+func NewEmbeddingCacheCleanupJob(repo expiryCleaner, maxAgeDays int) *EmbeddingCacheCleanupJob {
 	return &EmbeddingCacheCleanupJob{repo: repo, maxAgeDays: maxAgeDays}
 }
 
@@ -30,5 +33,8 @@ func (j *EmbeddingCacheCleanupJob) Run(ctx context.Context) error {
 	}
 	cutoff := time.Now().Add(-time.Duration(maxAgeDays) * 24 * time.Hour).Unix()
 	_, err := j.repo.DeleteBefore(ctx, cutoff)
-	return err
+	if err != nil {
+		return fmt.Errorf("delete expired cache: %w", err)
+	}
+	return nil
 }

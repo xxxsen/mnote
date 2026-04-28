@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 )
@@ -26,130 +25,53 @@ type openrouterProvider struct {
 	xTitle      string
 }
 
-type openrouterRequest struct {
-	Model    string          `json:"model"`
-	Messages []openrouterMsg `json:"messages"`
-	Stream   bool            `json:"stream"`
-}
-
-type openrouterMsg struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type openrouterResponse struct {
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
-}
-
-type openrouterEmbedRequest struct {
-	Model string `json:"model"`
-	Input string `json:"input"`
-}
-
-type openrouterEmbedResponse struct {
-	Data []struct {
-		Embedding []float32 `json:"embedding"`
-	} `json:"data"`
-}
-
 func (p *openrouterProvider) Name() string {
 	return "openrouter"
 }
 
-func (p *openrouterProvider) Generate(ctx context.Context, model string, prompt string) (string, error) {
+func (p *openrouterProvider) Generate(ctx context.Context, model, prompt string) (string, error) {
 	if p.apiKey == "" {
 		return "", ErrUnavailable
 	}
-	endpoint := strings.TrimRight(p.baseURL, "/") + "/chat/completions"
-	reqBody := openrouterRequest{
-		Model:    model,
-		Messages: []openrouterMsg{{Role: "user", Content: prompt}},
-		Stream:   false,
-	}
-	data, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(data))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-	if p.httpReferer != "" {
-		req.Header.Set("HTTP-Referer", p.httpReferer)
-	}
-	if p.xTitle != "" {
-		req.Header.Set("X-Title", p.xTitle)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("openrouter request failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	var out openrouterResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", err
-	}
-	if len(out.Choices) == 0 {
-		return "", fmt.Errorf("openrouter response has no choices")
-	}
-	return strings.TrimSpace(out.Choices[0].Message.Content), nil
+	return chatGenerate(ctx, p, p.baseURL, model, prompt)
 }
 
-func (p *openrouterProvider) Embed(ctx context.Context, model string, text string, taskType string) ([]float32, error) {
+func (p *openrouterProvider) Embed(ctx context.Context, model, text, _ string) ([]float32, error) {
 	if p.apiKey == "" {
 		return nil, ErrUnavailable
 	}
-	endpoint := strings.TrimRight(p.baseURL, "/") + "/embeddings"
-	reqBody := openrouterEmbedRequest{
-		Model: model,
-		Input: text,
-	}
-	data, err := json.Marshal(reqBody)
+	return embedText(ctx, p, p.baseURL, model, text)
+}
+
+func (p *openrouterProvider) doRequest(
+	ctx context.Context, endpoint string, body any,
+) (*http.Response, error) {
+	data, err := json.Marshal(body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, endpoint, bytes.NewReader(data),
+	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	if p.httpReferer != "" {
-		req.Header.Set("HTTP-Referer", p.httpReferer)
+		req.Header.Set("Http-Referer", p.httpReferer)
 	}
 	if p.xTitle != "" {
 		req.Header.Set("X-Title", p.xTitle)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("execute request: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("openrouter request failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	var out openrouterEmbedResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, err
-	}
-	if len(out.Data) == 0 {
-		return nil, fmt.Errorf("openrouter response has no embeddings")
-	}
-	return out.Data[0].Embedding, nil
+	return resp, nil
 }
 
-func createOpenRouterFactory(args interface{}) (IProvider, error) {
+func createOpenRouterFactory(args any) (IProvider, error) {
 	cfg := &openrouterConfig{}
 	if err := decodeConfig(args, cfg); err != nil {
 		return nil, err
@@ -158,13 +80,12 @@ func createOpenRouterFactory(args interface{}) (IProvider, error) {
 	if baseURL == "" {
 		baseURL = defaultOpenRouterBaseURL
 	}
-	provider := &openrouterProvider{
+	return &openrouterProvider{
 		apiKey:      strings.TrimSpace(cfg.APIKey),
 		baseURL:     baseURL,
 		httpReferer: strings.TrimSpace(cfg.HTTPReferer),
 		xTitle:      strings.TrimSpace(cfg.XTitle),
-	}
-	return provider, nil
+	}, nil
 }
 
 func init() {

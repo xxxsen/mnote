@@ -3,6 +3,8 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 
 	"github.com/didi/gendry/builder"
 
@@ -20,7 +22,7 @@ func NewTodoRepo(db *sql.DB) *TodoRepo {
 }
 
 func (r *TodoRepo) Create(ctx context.Context, todo *model.Todo) error {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"id":       todo.ID,
 		"user_id":  todo.UserID,
 		"content":  todo.Content,
@@ -29,26 +31,26 @@ func (r *TodoRepo) Create(ctx context.Context, todo *model.Todo) error {
 		"ctime":    todo.Ctime,
 		"mtime":    todo.Mtime,
 	}
-	sqlStr, args, err := builder.BuildInsert("todos", []map[string]interface{}{data})
+	sqlStr, args, err := builder.BuildInsert("todos", []map[string]any{data})
 	if err != nil {
-		return err
+		return fmt.Errorf("build insert: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	if _, err := r.db.ExecContext(ctx, sqlStr, args...); err != nil {
+	if _, err := conn(ctx, r.db).ExecContext(ctx, sqlStr, args...); err != nil {
 		if dbutil.IsConflict(err) {
 			return appErr.ErrConflict
 		}
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	return nil
 }
 
 func (r *TodoRepo) Update(ctx context.Context, todo *model.Todo) error {
-	where := map[string]interface{}{
+	where := map[string]any{
 		"id":      todo.ID,
 		"user_id": todo.UserID,
 	}
-	update := map[string]interface{}{
+	update := map[string]any{
 		"content":  todo.Content,
 		"due_date": todo.DueDate,
 		"done":     todo.Done,
@@ -56,16 +58,16 @@ func (r *TodoRepo) Update(ctx context.Context, todo *model.Todo) error {
 	}
 	sqlStr, args, err := builder.BuildUpdate("todos", where, update)
 	if err != nil {
-		return err
+		return fmt.Errorf("build update: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	result, err := r.db.ExecContext(ctx, sqlStr, args...)
+	result, err := conn(ctx, r.db).ExecContext(ctx, sqlStr, args...)
 	if err != nil {
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	if affected == 0 {
 		return appErr.ErrNotFound
@@ -74,26 +76,16 @@ func (r *TodoRepo) Update(ctx context.Context, todo *model.Todo) error {
 }
 
 func (r *TodoRepo) UpdateDone(ctx context.Context, userID, id string, done int, mtime int64) error {
-	where := map[string]interface{}{
-		"id":      id,
-		"user_id": userID,
-	}
-	update := map[string]interface{}{
-		"done":  done,
-		"mtime": mtime,
-	}
+	where := map[string]any{"id": id, "user_id": userID}
+	update := map[string]any{"done": done, "mtime": mtime}
 	sqlStr, args, err := builder.BuildUpdate("todos", where, update)
 	if err != nil {
-		return err
+		return fmt.Errorf("build update: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	result, err := r.db.ExecContext(ctx, sqlStr, args...)
+	affected, err := dbutil.ExecAffected(ctx, conn(ctx, r.db), sqlStr, args)
 	if err != nil {
-		return err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return err
+		return fmt.Errorf("update: %w", err)
 	}
 	if affected == 0 {
 		return appErr.ErrNotFound
@@ -102,7 +94,7 @@ func (r *TodoRepo) UpdateDone(ctx context.Context, userID, id string, done int, 
 }
 
 func (r *TodoRepo) GetByID(ctx context.Context, userID, id string) (*model.Todo, error) {
-	where := map[string]interface{}{
+	where := map[string]any{
 		"id":      id,
 		"user_id": userID,
 	}
@@ -110,22 +102,23 @@ func (r *TodoRepo) GetByID(ctx context.Context, userID, id string) (*model.Todo,
 		"id", "user_id", "content", "due_date", "done", "ctime", "mtime",
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build select: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	row := r.db.QueryRowContext(ctx, sqlStr, args...)
+	row := conn(ctx, r.db).QueryRowContext(ctx, sqlStr, args...)
 	var todo model.Todo
-	if err := row.Scan(&todo.ID, &todo.UserID, &todo.Content, &todo.DueDate, &todo.Done, &todo.Ctime, &todo.Mtime); err != nil {
-		if err == sql.ErrNoRows {
+	if err := row.Scan(&todo.ID, &todo.UserID, &todo.Content, &todo.DueDate, &todo.Done, &todo.Ctime,
+		&todo.Mtime); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, appErr.ErrNotFound
 		}
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	return &todo, nil
 }
 
 func (r *TodoRepo) ListByDateRange(ctx context.Context, userID, startDate, endDate string) ([]model.Todo, error) {
-	where := map[string]interface{}{
+	where := map[string]any{
 		"user_id":     userID,
 		"due_date >=": startDate,
 		"due_date <=": endDate,
@@ -135,42 +128,46 @@ func (r *TodoRepo) ListByDateRange(ctx context.Context, userID, startDate, endDa
 		"id", "user_id", "content", "due_date", "done", "ctime", "mtime",
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build select: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	items := make([]model.Todo, 0)
 	for rows.Next() {
 		var item model.Todo
-		if err := rows.Scan(&item.ID, &item.UserID, &item.Content, &item.DueDate, &item.Done, &item.Ctime, &item.Mtime); err != nil {
-			return nil, err
+		if err := rows.Scan(&item.ID, &item.UserID, &item.Content, &item.DueDate, &item.Done, &item.Ctime,
+			&item.Mtime); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
+	return items, nil
 }
 
 func (r *TodoRepo) Delete(ctx context.Context, userID, id string) error {
-	sqlStr, args, err := builder.BuildDelete("todos", map[string]interface{}{
+	sqlStr, args, err := builder.BuildDelete("todos", map[string]any{
 		"id":      id,
 		"user_id": userID,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("build delete: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	result, err := r.db.ExecContext(ctx, sqlStr, args...)
+	result, err := conn(ctx, r.db).ExecContext(ctx, sqlStr, args...)
 	if err != nil {
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	if affected == 0 {
 		return appErr.ErrNotFound

@@ -6,12 +6,13 @@ import (
 	"github.com/xxxsen/common/trace"
 	"go.uber.org/zap"
 
+	"github.com/xxxsen/mnote/internal/middleware"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/response"
 )
 
 func getUserID(c *gin.Context) string {
-	value, _ := c.Get("user_id")
+	value, _ := c.Get(middleware.ContextUserIDKey)
 	userID, _ := value.(string)
 	return userID
 }
@@ -22,8 +23,8 @@ func handleError(c *gin.Context, err error) {
 	}
 
 	requestID, _ := trace.GetTraceId(c.Request.Context())
-	userID, _ := c.Get("user_id")
-	userEmail, _ := c.Get("user_email")
+	userID, _ := c.Get(middleware.ContextUserIDKey)
+	userEmail, _ := c.Get(middleware.ContextUserEmailKey)
 	logutil.GetLogger(c.Request.Context()).Error(
 		"request error",
 		zap.Any("request_id", requestID),

@@ -1,6 +1,10 @@
 package dbutil
 
 import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -10,7 +14,7 @@ import (
 
 var limitRegex = regexp.MustCompile(`(?i)LIMIT\s+\?\s*,\s*\?`)
 
-func Finalize(query string, args []interface{}) (string, []interface{}) {
+func Finalize(query string, args []any) (string, []any) {
 	loc := limitRegex.FindStringIndex(query)
 	if loc != nil {
 		prefix := query[:loc[0]]
@@ -24,8 +28,39 @@ func Finalize(query string, args []interface{}) (string, []interface{}) {
 }
 
 func IsConflict(err error) bool {
-	if pgErr, ok := err.(*pq.Error); ok {
+	pgErr := &pq.Error{}
+	if errors.As(err, &pgErr) {
 		return pgErr.Code == "23505"
 	}
 	return false
+}
+
+type Executor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func ExecAffected(ctx context.Context, db Executor, sqlStr string, args []any) (int64, error) {
+	result, err := db.ExecContext(ctx, sqlStr, args...)
+	if err != nil {
+		return 0, fmt.Errorf("exec: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+	return affected, nil
+}
+
+func InsertWithConflictCheck(
+	ctx context.Context, db Executor, sqlStr string, args []any,
+	conflictErr error,
+) error {
+	_, err := db.ExecContext(ctx, sqlStr, args...)
+	if err != nil {
+		if IsConflict(err) {
+			return conflictErr
+		}
+		return fmt.Errorf("exec: %w", err)
+	}
+	return nil
 }

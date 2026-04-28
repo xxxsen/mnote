@@ -2,19 +2,19 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
-	"github.com/xxxsen/mnote/internal/repo"
 )
 
 type TodoService struct {
-	todos *repo.TodoRepo
+	todos todoRepo
 }
 
-func NewTodoService(todos *repo.TodoRepo) *TodoService {
+func NewTodoService(todos todoRepo) *TodoService {
 	return &TodoService{todos: todos}
 }
 
@@ -37,7 +37,7 @@ func (s *TodoService) CreateTodo(ctx context.Context, userID, content, dueDate s
 		Mtime:   now,
 	}
 	if err := s.todos.Create(ctx, todo); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create todo: %w", err)
 	}
 	return todo, nil
 }
@@ -48,7 +48,10 @@ func (s *TodoService) ToggleDone(ctx context.Context, userID, todoID string, don
 		doneVal = 1
 	}
 	now := timeutil.NowUnix()
-	return s.todos.UpdateDone(ctx, userID, todoID, doneVal, now)
+	if err := s.todos.UpdateDone(ctx, userID, todoID, doneVal, now); err != nil {
+		return fmt.Errorf("update done: %w", err)
+	}
+	return nil
 }
 
 func (s *TodoService) UpdateContent(ctx context.Context, userID, todoID, content string) (*model.Todo, error) {
@@ -59,7 +62,7 @@ func (s *TodoService) UpdateContent(ctx context.Context, userID, todoID, content
 
 	todo, err := s.todos.GetByID(ctx, userID, todoID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get todo: %w", err)
 	}
 
 	if todo.Content == newContent {
@@ -70,20 +73,31 @@ func (s *TodoService) UpdateContent(ctx context.Context, userID, todoID, content
 	todo.Content = newContent
 	todo.Mtime = now
 	if err := s.todos.Update(ctx, todo); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("update todo: %w", err)
 	}
 
 	return todo, nil
 }
 
 func (s *TodoService) ListByDateRange(ctx context.Context, userID, startDate, endDate string) ([]model.Todo, error) {
-	return s.todos.ListByDateRange(ctx, userID, startDate, endDate)
+	v0, err := s.todos.ListByDateRange(ctx, userID, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("list by date range: %w", err)
+	}
+	return v0, nil
 }
 
 func (s *TodoService) GetByID(ctx context.Context, userID, todoID string) (*model.Todo, error) {
-	return s.todos.GetByID(ctx, userID, todoID)
+	v0, err := s.todos.GetByID(ctx, userID, todoID)
+	if err != nil {
+		return nil, fmt.Errorf("get by id: %w", err)
+	}
+	return v0, nil
 }
 
 func (s *TodoService) DeleteTodo(ctx context.Context, userID, todoID string) error {
-	return s.todos.Delete(ctx, userID, todoID)
+	if err := s.todos.Delete(ctx, userID, todoID); err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	return nil
 }

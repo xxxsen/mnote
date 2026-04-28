@@ -6,14 +6,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/xxxsen/mnote/internal/pkg/response"
-	"github.com/xxxsen/mnote/internal/service"
 )
 
 type AssetHandler struct {
-	assets *service.AssetService
+	assets IAssetHandlerService
 }
 
-func NewAssetHandler(assets *service.AssetService) *AssetHandler {
+func NewAssetHandler(assets IAssetHandlerService) *AssetHandler {
 	return &AssetHandler{assets: assets}
 }
 

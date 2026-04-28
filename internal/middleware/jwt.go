@@ -10,7 +10,10 @@ import (
 	"github.com/xxxsen/mnote/internal/pkg/response"
 )
 
-const ContextUserIDKey = "user_id"
+const (
+	ContextUserIDKey    = "user_id"
+	ContextUserEmailKey = "user_email"
+)
 
 func JWTAuth(secret []byte) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -34,7 +37,7 @@ func JWTAuth(secret []byte) gin.HandlerFunc {
 		}
 		c.Set(ContextUserIDKey, claims.UserID)
 		if claims.Email != "" {
-			c.Set("user_email", claims.Email)
+			c.Set(ContextUserEmailKey, claims.Email)
 		}
 		c.Next()
 	}
@@ -59,7 +62,7 @@ func OptionalJWTAuth(secret []byte) gin.HandlerFunc {
 		}
 		c.Set(ContextUserIDKey, claims.UserID)
 		if claims.Email != "" {
-			c.Set("user_email", claims.Email)
+			c.Set(ContextUserEmailKey, claims.Email)
 		}
 		c.Next()
 	}

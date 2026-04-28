@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -13,16 +14,15 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/xxxsen/mnote/internal/filestore"
-	"github.com/xxxsen/mnote/internal/middleware"
+
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
-	"github.com/xxxsen/mnote/internal/service"
 )
 
 type FileHandler struct {
 	store         filestore.Store
 	maxUploadSize int64
-	assets        *service.AssetService
+	assets        IAssetHandlerService
 }
 
 type UploadResponse struct {
@@ -35,7 +35,7 @@ func NewFileHandler(store filestore.Store, maxUploadSize int64) *FileHandler {
 	return &FileHandler{store: store, maxUploadSize: maxUploadSize}
 }
 
-func (h *FileHandler) SetAssetService(assets *service.AssetService) {
+func (h *FileHandler) SetAssetService(assets IAssetHandlerService) {
 	h.assets = assets
 }
 
@@ -54,7 +54,6 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalidFile, "failed to open file")
 		return
 	}
-
 	reader, contentType, err := ensureReadSeekCloser(opened)
 	if err != nil {
 		_ = opened.Close()
@@ -62,47 +61,54 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		return
 	}
 	defer func() { _ = reader.Close() }()
-
-	if contentType == "application/octet-stream" {
-		if extType := mime.TypeByExtension(filepath.Ext(file.Filename)); extType != "" {
-			contentType = extType
-		}
-	}
-
-	userID := ""
-	if v, ok := c.Get(middleware.ContextUserIDKey); ok {
-		if id, ok := v.(string); ok {
-			userID = id
-		}
-	}
-
+	contentType = resolveContentType(contentType, file.Filename)
+	userID := getUserID(c)
 	key := h.store.GenerateFileRef(userID, file.Filename)
 	if err := h.store.Save(c.Request.Context(), key, reader, file.Size); err != nil {
 		response.Error(c, errcode.ErrUploadFailed, "failed to upload file")
 		return
 	}
-	fileURL := key
-	if !strings.HasPrefix(fileURL, "http://") && !strings.HasPrefix(fileURL, "https://") {
-		fileURL = "/api/v1/files/" + key
+	fileURL := resolveFileURL(key)
+	if err := h.recordAsset(c, userID, key, fileURL, file.Filename, contentType, file.Size); err != nil {
+		response.Error(c, errcode.ErrUploadFailed, "upload succeeded but failed to index asset")
+		return
 	}
-	if h.assets != nil && userID != "" {
-		if err := h.assets.RecordUpload(c.Request.Context(), userID, key, fileURL, file.Filename, contentType, file.Size); err != nil {
-			logutil.GetLogger(c.Request.Context()).Error(
-				"record asset upload failed",
-				zap.String("user_id", userID),
-				zap.String("file_key", key),
-				zap.String("file_name", file.Filename),
-				zap.Error(err),
-			)
-			response.Error(c, errcode.ErrUploadFailed, "upload succeeded but failed to index asset")
-			return
+	response.Success(c, UploadResponse{URL: fileURL, Name: file.Filename, ContentType: contentType})
+}
+
+func resolveContentType(contentType, filename string) string {
+	if contentType == "application/octet-stream" {
+		if extType := mime.TypeByExtension(filepath.Ext(filename)); extType != "" {
+			return extType
 		}
 	}
-	response.Success(c, UploadResponse{
-		URL:         fileURL,
-		Name:        file.Filename,
-		ContentType: contentType,
-	})
+	return contentType
+}
+
+func resolveFileURL(key string) string {
+	if strings.HasPrefix(key, "http://") || strings.HasPrefix(key, "https://") {
+		return key
+	}
+	return "/api/v1/files/" + key
+}
+
+func (h *FileHandler) recordAsset(
+	c *gin.Context, userID, key, fileURL, filename, contentType string, size int64,
+) error {
+	if h.assets == nil || userID == "" {
+		return nil
+	}
+	if err := h.assets.RecordUpload(c.Request.Context(), userID, key, fileURL, filename, contentType, size); err != nil {
+		logutil.GetLogger(c.Request.Context()).Error(
+			"record asset upload failed",
+			zap.String("user_id", userID),
+			zap.String("file_key", key),
+			zap.String("file_name", filename),
+			zap.Error(err),
+		)
+		return fmt.Errorf("record upload: %w", err)
+	}
+	return nil
 }
 
 func (h *FileHandler) Get(c *gin.Context) {
@@ -117,23 +123,7 @@ func (h *FileHandler) Get(c *gin.Context) {
 		return
 	}
 	defer func() { _ = file.Close() }()
-	contentType := mime.TypeByExtension(filepath.Ext(key))
-	if contentType == "" || contentType == "application/octet-stream" {
-		if seeker, ok := file.(io.ReadSeeker); ok {
-			buf := make([]byte, 512)
-			n, _ := seeker.Read(buf)
-			if n > 0 {
-				detected := http.DetectContentType(buf[:n])
-				if detected != "application/octet-stream" {
-					contentType = detected
-				}
-			}
-			_, _ = seeker.Seek(0, io.SeekStart)
-		}
-	}
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
+	contentType := detectContentType(key, file)
 	c.Header("Content-Type", contentType)
 	c.Header("X-Content-Type-Options", "nosniff")
 	isInline := contentType == "image/png" ||
@@ -144,20 +134,48 @@ func (h *FileHandler) Get(c *gin.Context) {
 		strings.HasPrefix(contentType, "audio/")
 
 	if !isInline {
-		c.Header("Content-Disposition", "attachment; filename="+key)
+		c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, key))
 	}
 	_, _ = io.Copy(c.Writer, file)
+}
+
+func detectContentType(key string, file io.ReadCloser) string {
+	ct := mime.TypeByExtension(filepath.Ext(key))
+	if ct != "" && ct != "application/octet-stream" {
+		return ct
+	}
+	seeker, ok := file.(io.ReadSeeker)
+	if !ok {
+		return fallbackContentType(ct)
+	}
+	buf := make([]byte, 512)
+	n, _ := seeker.Read(buf)
+	_, _ = seeker.Seek(0, io.SeekStart)
+	if n > 0 {
+		detected := http.DetectContentType(buf[:n])
+		if detected != "application/octet-stream" {
+			return detected
+		}
+	}
+	return fallbackContentType(ct)
+}
+
+func fallbackContentType(ct string) string {
+	if ct == "" {
+		return "application/octet-stream"
+	}
+	return ct
 }
 
 func ensureReadSeekCloser(file filestore.ReadSeekCloser) (filestore.ReadSeekCloser, string, error) {
 	buf := make([]byte, 512)
 	read, err := file.Read(buf)
 	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, "", err
+		return nil, "", fmt.Errorf("read header: %w", err)
 	}
 	contentType := http.DetectContentType(buf[:read])
 	if _, err := file.Seek(0, 0); err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("seek: %w", err)
 	}
 	return file, contentType, nil
 }

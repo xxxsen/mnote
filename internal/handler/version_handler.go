@@ -7,14 +7,13 @@ import (
 
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
-	"github.com/xxxsen/mnote/internal/service"
 )
 
 type VersionHandler struct {
-	documents *service.DocumentService
+	documents IDocumentService
 }
 
-func NewVersionHandler(documents *service.DocumentService) *VersionHandler {
+func NewVersionHandler(documents IDocumentService) *VersionHandler {
 	return &VersionHandler{documents: documents}
 }
 

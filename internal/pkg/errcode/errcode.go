@@ -1,7 +1,7 @@
 package errcode
 
 const (
-	ErrUnknown = 10000000 + iota
+	ErrUnknown uint32 = 10000000 + iota
 	ErrUnauthorized
 	ErrForbidden
 	ErrNotFound

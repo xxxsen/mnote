@@ -2,18 +2,21 @@ package job
 
 import (
 	"context"
+	"fmt"
 	"time"
-
-	"github.com/xxxsen/mnote/internal/repo"
 )
 
 type ImportCleanupJob struct {
-	jobRepo  *repo.ImportJobRepo
-	noteRepo *repo.ImportJobNoteRepo
+	jobRepo  expiryCleaner
+	noteRepo expiryCleaner
 	maxAge   time.Duration
 }
 
-func NewImportCleanupJob(jobRepo *repo.ImportJobRepo, noteRepo *repo.ImportJobNoteRepo, maxAge time.Duration) *ImportCleanupJob {
+func NewImportCleanupJob(
+	jobRepo expiryCleaner,
+	noteRepo expiryCleaner,
+	maxAge time.Duration,
+) *ImportCleanupJob {
 	return &ImportCleanupJob{jobRepo: jobRepo, noteRepo: noteRepo, maxAge: maxAge}
 }
 
@@ -32,8 +35,11 @@ func (j *ImportCleanupJob) Run(ctx context.Context) error {
 	cutoff := time.Now().Add(-maxAge).Unix()
 	_, err := j.noteRepo.DeleteBefore(ctx, cutoff)
 	if err != nil {
-		return err
+		return fmt.Errorf("delete expired notes: %w", err)
 	}
 	_, err = j.jobRepo.DeleteBefore(ctx, cutoff)
-	return err
+	if err != nil {
+		return fmt.Errorf("delete expired jobs: %w", err)
+	}
+	return nil
 }

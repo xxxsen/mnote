@@ -2,6 +2,7 @@ package schedule
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -28,7 +29,9 @@ type CronScheduler struct {
 }
 
 func NewCronScheduler() *CronScheduler {
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	parser := cron.NewParser(
+		cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow,
+	)
 	return &CronScheduler{
 		cron:    cron.New(cron.WithParser(parser)),
 		entries: make(map[string]cron.EntryID),
@@ -37,11 +40,13 @@ func NewCronScheduler() *CronScheduler {
 
 func (c *CronScheduler) AddJob(job Job, spec string) error {
 	name := job.Name()
-	logger := logutil.GetLogger(context.Background()).With(zap.String("job", name), zap.String("spec", spec))
+	logger := logutil.GetLogger(context.Background()).With(
+		zap.String("job", name), zap.String("spec", spec),
+	)
 	entryID, err := c.cron.AddFunc(spec, c.wrap(job, spec))
 	if err != nil {
 		logger.Error("schedule job failed", zap.Error(err))
-		return err
+		return fmt.Errorf("add cron job %s: %w", name, err)
 	}
 	c.entries[name] = entryID
 	logger.Info("job scheduled")
@@ -49,9 +54,6 @@ func (c *CronScheduler) AddJob(job Job, spec string) error {
 }
 
 func (c *CronScheduler) Start(ctx context.Context) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	c.ctx = ctx
 	c.cron.Start()
 }

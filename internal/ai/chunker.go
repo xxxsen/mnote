@@ -6,11 +6,12 @@ import (
 	"strings"
 
 	"github.com/xxxsen/common/logutil"
-	"github.com/xxxsen/mnote/internal/model"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/text"
 	"go.uber.org/zap"
+
+	"github.com/xxxsen/mnote/internal/model"
 )
 
 type Chunker struct {
@@ -21,163 +22,258 @@ func NewChunker(gen IGenerator) *Chunker {
 	return &Chunker{gen: gen}
 }
 
-func (c *Chunker) Chunk(ctx context.Context, markdown string) ([]*model.ChunkEmbedding, error) {
+type chunkState struct {
+	chunks         []*model.ChunkEmbedding
+	currentChunk   []string
+	currentTokens  int
+	currentType    model.ChunkType
+	currentHeading string
+	currentLang    string
+	position       int
+}
+
+func newChunkState() *chunkState {
+	return &chunkState{
+		currentType: model.ChunkTypeText,
+		currentLang: "null",
+	}
+}
+
+func (s *chunkState) flush(logger *zap.Logger) {
+	if len(s.currentChunk) == 0 {
+		return
+	}
+	content := strings.Join(s.currentChunk, "\n\n")
+	if s.currentHeading != "" {
+		content = "Heading: " + s.currentHeading + "\n" + content
+	}
+
+	finalContent := fmt.Sprintf(
+		"[chunk_type=%s]\n[language=%s]\n%s",
+		s.currentType, s.currentLang, content,
+	)
+	tokenCount := estimateTokens(finalContent)
+
+	logger.Debug("flushing chunk",
+		zap.Int("position", s.position),
+		zap.String("type", string(s.currentType)),
+		zap.String("lang", s.currentLang),
+		zap.Int("tokens", tokenCount),
+	)
+
+	s.chunks = append(s.chunks, &model.ChunkEmbedding{
+		Content:    finalContent,
+		TokenCount: tokenCount,
+		ChunkType:  s.currentType,
+		Position:   s.position,
+	})
+
+	s.preserveOverlap(logger)
+}
+
+func (s *chunkState) preserveOverlap(logger *zap.Logger) {
+	if s.currentType == model.ChunkTypeText && len(s.currentChunk) > 1 {
+		overlapTokens := 0
+		var overlapParts []string
+		for i := len(s.currentChunk) - 1; i >= 0; i-- {
+			t := estimateTokens(s.currentChunk[i])
+			if overlapTokens+t > 80 {
+				break
+			}
+			overlapTokens += t
+			overlapParts = append([]string{s.currentChunk[i]}, overlapParts...)
+		}
+		logger.Debug("overlap preserved",
+			zap.Int("parts", len(overlapParts)),
+			zap.Int("tokens", overlapTokens),
+		)
+		s.currentChunk = overlapParts
+		s.currentTokens = overlapTokens
+	} else {
+		s.currentChunk = nil
+		s.currentTokens = 0
+	}
+	s.currentType = model.ChunkTypeText
+	s.currentLang = "null"
+	s.position++
+}
+
+func (c *Chunker) Chunk(
+	ctx context.Context, markdown string,
+) ([]*model.ChunkEmbedding, error) {
 	logger := logutil.GetLogger(ctx)
 	md := goldmark.New()
-	reader := text.NewReader([]byte(markdown))
+	source := []byte(markdown)
+	reader := text.NewReader(source)
 	doc := md.Parser().Parse(reader)
-
-	var chunks []*model.ChunkEmbedding
-	var currentChunk []string
-	var currentTokens int
-	var currentType model.ChunkType = model.ChunkTypeText
-	var currentHeading string
-	var currentLang string = "null"
-	position := 0
-
-	flush := func() {
-		if len(currentChunk) == 0 {
-			return
-		}
-		content := strings.Join(currentChunk, "\n\n")
-		// Heading context is important for all chunks
-		if currentHeading != "" {
-			content = "Heading: " + currentHeading + "\n" + content
-		}
-
-		finalContent := fmt.Sprintf("[chunk_type=%s]\n[language=%s]\n%s", currentType, currentLang, content)
-		tokenCount := estimateTokens(finalContent)
-
-		logger.Debug("flushing chunk",
-			zap.Int("position", position),
-			zap.String("type", string(currentType)),
-			zap.String("lang", currentLang),
-			zap.Int("tokens", tokenCount),
-		)
-
-		chunks = append(chunks, &model.ChunkEmbedding{
-			Content:    finalContent,
-			TokenCount: tokenCount,
-			ChunkType:  currentType,
-			Position:   position,
-		})
-
-		if currentType == model.ChunkTypeText && len(currentChunk) > 1 {
-			overlapTokens := 0
-			var overlapParts []string
-			for i := len(currentChunk) - 1; i >= 0; i-- {
-				t := estimateTokens(currentChunk[i])
-				if overlapTokens+t > 80 {
-					break
-				}
-				overlapTokens += t
-				overlapParts = append([]string{currentChunk[i]}, overlapParts...)
-			}
-			logger.Debug("overlap preserved", zap.Int("parts", len(overlapParts)), zap.Int("tokens", overlapTokens))
-			currentChunk = overlapParts
-			currentTokens = overlapTokens
-		} else {
-			currentChunk = nil
-			currentTokens = 0
-		}
-		currentType = model.ChunkTypeText
-		currentLang = "null"
-		position++
-	}
+	state := newChunkState()
 
 	logger.Info("starting markdown chunking", zap.Int("size", len(markdown)))
 
 	for node := doc.FirstChild(); node != nil; node = node.NextSibling() {
-		switch n := node.(type) {
-		case *ast.Heading:
-			headingText, err := extractText(n, reader.Source())
-			if err != nil {
-				return nil, err
-			}
-			if n.Level == 1 || n.Level == 2 {
-				logger.Debug("new heading detected, flushing", zap.Int("level", n.Level), zap.String("heading", headingText))
-				flush()
-				currentHeading = headingText
-			} else {
-				currentChunk = append(currentChunk, headingText)
-				currentTokens += estimateTokens(headingText)
-			}
-		case *ast.FencedCodeBlock:
-			lang := string(n.Language(reader.Source()))
-			if lang == "" {
-				lang = "null"
-			}
-			code := ""
-			for i := 0; i < n.Lines().Len(); i++ {
-				line := n.Lines().At(i)
-				code += string(line.Value(reader.Source()))
-			}
-			tokens := estimateTokens(code)
-			logger.Debug("code block detected", zap.String("lang", lang), zap.Int("tokens", tokens))
-			if tokens > 300 {
-				logger.Info("long code block, generating summary", zap.Int("tokens", tokens))
-				summary, err := c.summarizeCode(ctx, code)
-				if err == nil {
-					flush()
-					chunks = append(chunks, &model.ChunkEmbedding{
-						Content:    fmt.Sprintf("[chunk_type=code]\n[language=%s]\n[code_summary]\n%s", lang, summary),
-						TokenCount: estimateTokens(summary),
-						ChunkType:  model.ChunkTypeCode,
-						Position:   position,
-					})
-					position++
-					continue
-				}
-				logger.Warn("failed to summarize code block, falling back to original code", zap.Error(err))
-			}
-
-			// Try to merge with previous text if it's small
-			if currentTokens > 0 && currentTokens+tokens <= 400 {
-				currentChunk = append(currentChunk, "```"+lang+"\n"+code+"\n```")
-				currentTokens += tokens
-				currentType = model.ChunkTypeMixed
-				currentLang = lang
-			} else {
-				flush()
-				currentChunk = append(currentChunk, "```"+lang+"\n"+code+"\n```")
-				currentTokens = tokens
-				currentType = model.ChunkTypeCode
-				currentLang = lang
-				flush()
-			}
-
-		default:
-			txt, err := extractText(n, reader.Source())
-			if err != nil {
-				return nil, err
-			}
-			if txt == "" {
-				continue
-			}
-			tokens := estimateTokens(txt)
-			if currentTokens+tokens > 400 {
-				flush()
-			}
-			currentChunk = append(currentChunk, txt)
-			currentTokens += tokens
+		if err := c.processNode(ctx, node, source, state, logger); err != nil {
+			return nil, err
 		}
 	}
-	flush()
-	logger.Info("chunking completed", zap.Int("total_chunks", len(chunks)))
-	return chunks, nil
+	state.flush(logger)
+	logger.Info("chunking completed", zap.Int("total_chunks", len(state.chunks)))
+	return state.chunks, nil
 }
 
-func (c *Chunker) summarizeCode(ctx context.Context, code string) (string, error) {
-	if c.gen == nil {
-		return "", fmt.Errorf("no generator for code summary")
+func (c *Chunker) processNode(
+	ctx context.Context,
+	node ast.Node,
+	source []byte,
+	state *chunkState,
+	logger *zap.Logger,
+) error {
+	switch n := node.(type) {
+	case *ast.Heading:
+		return c.processHeading(n, source, state, logger)
+	case *ast.FencedCodeBlock:
+		return c.processCodeBlock(ctx, n, source, state, logger)
+	default:
+		return c.processTextBlock(n, source, state, logger)
 	}
-	prompt := fmt.Sprintf("Summarize the following code block in 1-2 sentences. Focus on its purpose and key logic.\n\nCODE:\n%s", code)
-	return c.gen.Generate(ctx, prompt)
+}
+
+func (c *Chunker) processHeading(
+	n *ast.Heading,
+	source []byte,
+	state *chunkState,
+	logger *zap.Logger,
+) error {
+	headingText, err := extractText(n, source)
+	if err != nil {
+		return err
+	}
+	if n.Level <= 2 {
+		logger.Debug("new heading detected, flushing",
+			zap.Int("level", n.Level),
+			zap.String("heading", headingText),
+		)
+		state.flush(logger)
+		state.currentHeading = headingText
+	} else {
+		state.currentChunk = append(state.currentChunk, headingText)
+		state.currentTokens += estimateTokens(headingText)
+	}
+	return nil
+}
+
+func (c *Chunker) processCodeBlock(
+	ctx context.Context,
+	n *ast.FencedCodeBlock,
+	source []byte,
+	state *chunkState,
+	logger *zap.Logger,
+) error {
+	lang := string(n.Language(source))
+	if lang == "" {
+		lang = "null"
+	}
+	code := extractCodeLines(n, source)
+	tokens := estimateTokens(code)
+	logger.Debug("code block detected",
+		zap.String("lang", lang), zap.Int("tokens", tokens),
+	)
+
+	if tokens > 300 {
+		if handled := c.tryCodeSummary(ctx, code, lang, tokens, state, logger); handled {
+			return nil
+		}
+	}
+
+	if state.currentTokens > 0 && state.currentTokens+tokens <= 400 {
+		state.currentChunk = append(state.currentChunk, "```"+lang+"\n"+code+"\n```")
+		state.currentTokens += tokens
+		state.currentType = model.ChunkTypeMixed
+		state.currentLang = lang
+	} else {
+		state.flush(logger)
+		state.currentChunk = append(state.currentChunk, "```"+lang+"\n"+code+"\n```")
+		state.currentTokens = tokens
+		state.currentType = model.ChunkTypeCode
+		state.currentLang = lang
+		state.flush(logger)
+	}
+	return nil
+}
+
+func (c *Chunker) tryCodeSummary(
+	ctx context.Context,
+	code, lang string,
+	tokens int,
+	state *chunkState,
+	logger *zap.Logger,
+) bool {
+	logger.Info("long code block, generating summary", zap.Int("tokens", tokens))
+	summary, err := c.summarizeCode(ctx, code)
+	if err != nil {
+		logger.Warn("failed to summarize code block", zap.Error(err))
+		return false
+	}
+	state.flush(logger)
+	state.chunks = append(state.chunks, &model.ChunkEmbedding{
+		Content: fmt.Sprintf(
+			"[chunk_type=code]\n[language=%s]\n[code_summary]\n%s",
+			lang, summary,
+		),
+		TokenCount: estimateTokens(summary),
+		ChunkType:  model.ChunkTypeCode,
+		Position:   state.position,
+	})
+	state.position++
+	return true
+}
+
+func (*Chunker) processTextBlock(
+	n ast.Node,
+	source []byte,
+	state *chunkState,
+	logger *zap.Logger,
+) error {
+	txt, err := extractText(n, source)
+	if err != nil {
+		return err
+	}
+	if txt == "" {
+		return nil
+	}
+	tokens := estimateTokens(txt)
+	if state.currentTokens+tokens > 400 {
+		state.flush(logger)
+	}
+	state.currentChunk = append(state.currentChunk, txt)
+	state.currentTokens += tokens
+	return nil
+}
+
+func extractCodeLines(n *ast.FencedCodeBlock, source []byte) string {
+	var code string
+	for i := 0; i < n.Lines().Len(); i++ {
+		line := n.Lines().At(i)
+		code += string(line.Value(source))
+	}
+	return code
+}
+
+func (c *Chunker) summarizeCode(
+	ctx context.Context, code string,
+) (string, error) {
+	if c.gen == nil {
+		return "", ErrNotConfigured
+	}
+	prompt := "Summarize the following code block in 1-2 sentences. " +
+		"Focus on its purpose and key logic.\n\nCODE:\n" + code
+	res, err := c.gen.Generate(ctx, prompt)
+	if err != nil {
+		return "", fmt.Errorf("summarize code: %w", err)
+	}
+	return res, nil
 }
 
 func estimateTokens(text string) int {
-	// Simple heuristic: 1 token per 4 characters for English, 1 per character for CJK
-	// We'll use a slightly safer one: count words for English, characters for CJK
 	count := 0
 	for _, r := range text {
 		if r > 127 {
@@ -198,18 +294,16 @@ func extractText(n ast.Node, source []byte) (string, error) {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
-		if node.Type() == ast.TypeBlock || node.Type() == ast.TypeInline {
-			if node.Kind() == ast.KindText {
-				textNode, ok := node.(*ast.Text)
-				if !ok {
-					return ast.WalkContinue, nil
-				}
+		if (node.Type() == ast.TypeBlock || node.Type() == ast.TypeInline) &&
+			node.Kind() == ast.KindText {
+			textNode, ok := node.(*ast.Text)
+			if ok {
 				buf = append(buf, textNode.Segment.Value(source)...)
 			}
 		}
 		return ast.WalkContinue, nil
 	}); err != nil {
-		return "", err
+		return "", fmt.Errorf("walk ast: %w", err)
 	}
 	return strings.TrimSpace(string(buf)), nil
 }
