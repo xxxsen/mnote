@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/didi/gendry/builder"
 
@@ -31,7 +32,7 @@ func (r *AssetRepo) UpsertByFileKey(ctx context.Context, asset *model.Asset) err
 			size = EXCLUDED.size,
 			mtime = EXCLUDED.mtime
 	`
-	args := []interface{}{
+	args := []any{
 		asset.ID,
 		asset.UserID,
 		asset.FileKey,
@@ -43,8 +44,11 @@ func (r *AssetRepo) UpsertByFileKey(ctx context.Context, asset *model.Asset) err
 		asset.Mtime,
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	_, err := r.db.ExecContext(ctx, sqlStr, args...)
-	return err
+	_, err := conn(ctx, r.db).ExecContext(ctx, sqlStr, args...)
+	if err != nil {
+		return fmt.Errorf("exec: %w", err)
+	}
+	return nil
 }
 
 func (r *AssetRepo) ListByUser(ctx context.Context, userID, query string, limit, offset uint) ([]model.Asset, error) {
@@ -53,7 +57,7 @@ func (r *AssetRepo) ListByUser(ctx context.Context, userID, query string, limit,
 		FROM assets
 		WHERE user_id = ?
 	`
-	args := []interface{}{userID}
+	args := []any{userID}
 	if query != "" {
 		sqlStr += ` AND (name LIKE ? OR content_type LIKE ?)`
 		like := "%" + query + "%"
@@ -65,95 +69,96 @@ func (r *AssetRepo) ListByUser(ctx context.Context, userID, query string, limit,
 		args = append(args, limit, offset)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	items := make([]model.Asset, 0)
 	for rows.Next() {
 		var item model.Asset
-		if err := rows.Scan(&item.ID, &item.UserID, &item.FileKey, &item.URL, &item.Name, &item.ContentType, &item.Size, &item.Ctime, &item.Mtime); err != nil {
-			return nil, err
+		if err := rows.Scan(&item.ID, &item.UserID, &item.FileKey, &item.URL, &item.Name, &item.ContentType, &item.Size,
+			&item.Ctime, &item.Mtime); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
+	return items, nil
 }
 
 func (r *AssetRepo) GetByID(ctx context.Context, userID, assetID string) (*model.Asset, error) {
-	sqlStr, args, err := builder.BuildSelect("assets", map[string]interface{}{"id": assetID, "user_id": userID}, []string{
+	sqlStr, args, err := builder.BuildSelect("assets", map[string]any{"id": assetID, "user_id": userID}, []string{
 		"id", "user_id", "file_key", "url", "name", "content_type", "size", "ctime", "mtime",
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build select: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("query: %w", err)
+		}
 		return nil, appErr.ErrNotFound
 	}
 	var item model.Asset
-	if err := rows.Scan(&item.ID, &item.UserID, &item.FileKey, &item.URL, &item.Name, &item.ContentType, &item.Size, &item.Ctime, &item.Mtime); err != nil {
-		return nil, err
+	if err := rows.Scan(&item.ID, &item.UserID, &item.FileKey, &item.URL, &item.Name, &item.ContentType, &item.Size,
+		&item.Ctime, &item.Mtime); err != nil {
+		return nil, fmt.Errorf("scan: %w", err)
 	}
 	return &item, nil
+}
+
+func (r *AssetRepo) queryAssets(ctx context.Context, where map[string]any) ([]model.Asset, error) {
+	cols := []string{
+		"id", "user_id", "file_key", "url", "name",
+		"content_type", "size", "ctime", "mtime",
+	}
+	sqlStr, args, err := builder.BuildSelect("assets", where, cols)
+	if err != nil {
+		return nil, fmt.Errorf("build select: %w", err)
+	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	items := make([]model.Asset, 0)
+	for rows.Next() {
+		var item model.Asset
+		if err := rows.Scan(
+			&item.ID, &item.UserID, &item.FileKey, &item.URL,
+			&item.Name, &item.ContentType, &item.Size,
+			&item.Ctime, &item.Mtime,
+		); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
+	return items, nil
 }
 
 func (r *AssetRepo) ListByFileKeys(ctx context.Context, userID string, fileKeys []string) ([]model.Asset, error) {
 	if len(fileKeys) == 0 {
 		return []model.Asset{}, nil
 	}
-	sqlStr, args, err := builder.BuildSelect("assets", map[string]interface{}{"user_id": userID, "file_key in": fileKeys}, []string{
-		"id", "user_id", "file_key", "url", "name", "content_type", "size", "ctime", "mtime",
-	})
-	if err != nil {
-		return nil, err
-	}
-	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	items := make([]model.Asset, 0)
-	for rows.Next() {
-		var item model.Asset
-		if err := rows.Scan(&item.ID, &item.UserID, &item.FileKey, &item.URL, &item.Name, &item.ContentType, &item.Size, &item.Ctime, &item.Mtime); err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
+	return r.queryAssets(ctx, map[string]any{"user_id": userID, "file_key in": fileKeys})
 }
 
 func (r *AssetRepo) ListByURLs(ctx context.Context, userID string, urls []string) ([]model.Asset, error) {
 	if len(urls) == 0 {
 		return []model.Asset{}, nil
 	}
-	sqlStr, args, err := builder.BuildSelect("assets", map[string]interface{}{"user_id": userID, "url in": urls}, []string{
-		"id", "user_id", "file_key", "url", "name", "content_type", "size", "ctime", "mtime",
-	})
-	if err != nil {
-		return nil, err
-	}
-	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	items := make([]model.Asset, 0)
-	for rows.Next() {
-		var item model.Asset
-		if err := rows.Scan(&item.ID, &item.UserID, &item.FileKey, &item.URL, &item.Name, &item.ContentType, &item.Size, &item.Ctime, &item.Mtime); err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
+	return r.queryAssets(ctx, map[string]any{"user_id": userID, "url in": urls})
 }

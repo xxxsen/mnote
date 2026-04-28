@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 
 	"github.com/didi/gendry/builder"
@@ -31,7 +32,7 @@ func NewShareRepo(db *sql.DB) *ShareRepo {
 }
 
 func (r *ShareRepo) Create(ctx context.Context, share *model.Share) error {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"id":             share.ID,
 		"user_id":        share.UserID,
 		"document_id":    share.DocumentID,
@@ -44,24 +45,33 @@ func (r *ShareRepo) Create(ctx context.Context, share *model.Share) error {
 		"ctime":          share.Ctime,
 		"mtime":          share.Mtime,
 	}
-	sqlStr, args, err := builder.BuildInsert("shares", []map[string]interface{}{data})
+	sqlStr, args, err := builder.BuildInsert("shares", []map[string]any{data})
 	if err != nil {
-		return err
+		return fmt.Errorf("build insert: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	_, err = r.db.ExecContext(ctx, sqlStr, args...)
+	_, err = conn(ctx, r.db).ExecContext(ctx, sqlStr, args...)
 	if err != nil {
 		if dbutil.IsConflict(err) {
 			return appErr.ErrConflict
 		}
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	return nil
 }
 
-func (r *ShareRepo) UpdateConfigByDocument(ctx context.Context, userID, docID string, expiresAt int64, passwordHash string, permission int, allowDownload int, mtime int64) error {
-	where := map[string]interface{}{"user_id": userID, "document_id": docID, "state": ShareStateActive}
-	update := map[string]interface{}{
+func (
+	r *ShareRepo) UpdateConfigByDocument(ctx context.Context,
+	userID,
+	docID string,
+	expiresAt int64,
+	passwordHash string,
+	permission,
+	allowDownload int,
+	mtime int64,
+) error {
+	where := map[string]any{"user_id": userID, "document_id": docID, "state": ShareStateActive}
+	update := map[string]any{
 		"expires_at":     expiresAt,
 		"password_hash":  passwordHash,
 		"permission":     permission,
@@ -70,16 +80,16 @@ func (r *ShareRepo) UpdateConfigByDocument(ctx context.Context, userID, docID st
 	}
 	sqlStr, args, err := builder.BuildUpdate("shares", where, update)
 	if err != nil {
-		return err
+		return fmt.Errorf("build update: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	res, err := r.db.ExecContext(ctx, sqlStr, args...)
+	res, err := conn(ctx, r.db).ExecContext(ctx, sqlStr, args...)
 	if err != nil {
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	if affected == 0 {
 		return appErr.ErrNotFound
@@ -88,65 +98,80 @@ func (r *ShareRepo) UpdateConfigByDocument(ctx context.Context, userID, docID st
 }
 
 func (r *ShareRepo) RevokeByDocument(ctx context.Context, userID, docID string, mtime int64) error {
-	where := map[string]interface{}{"user_id": userID, "document_id": docID, "state": ShareStateActive}
-	update := map[string]interface{}{"state": ShareStateRevoked, "mtime": mtime}
+	where := map[string]any{"user_id": userID, "document_id": docID, "state": ShareStateActive}
+	update := map[string]any{"state": ShareStateRevoked, "mtime": mtime}
 	sqlStr, args, err := builder.BuildUpdate("shares", where, update)
 	if err != nil {
-		return err
+		return fmt.Errorf("build update: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	_, err = r.db.ExecContext(ctx, sqlStr, args...)
-	return err
+	_, err = conn(ctx, r.db).ExecContext(ctx, sqlStr, args...)
+	if err != nil {
+		return fmt.Errorf("exec: %w", err)
+	}
+	return nil
 }
 
 func (r *ShareRepo) GetByToken(ctx context.Context, token string) (*model.Share, error) {
-	where := map[string]interface{}{"token": token}
-	sqlStr, args, err := builder.BuildSelect("shares", where, []string{"id", "user_id", "document_id", "token", "state", "expires_at", "password_hash", "permission", "allow_download", "ctime", "mtime"})
+	where := map[string]any{"token": token}
+	sqlStr, args, err := builder.BuildSelect("shares", where, []string{
+		"id", "user_id", "document_id", "token",
+		"state", "expires_at", "password_hash", "permission", "allow_download", "ctime", "mtime",
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build select: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("query: %w", err)
+		}
 		return nil, appErr.ErrNotFound
 	}
 	var share model.Share
-	if err := rows.Scan(&share.ID, &share.UserID, &share.DocumentID, &share.Token, &share.State, &share.ExpiresAt, &share.PasswordHash, &share.Permission, &share.AllowDownload, &share.Ctime, &share.Mtime); err != nil {
-		return nil, err
+	if err := rows.Scan(&share.ID, &share.UserID, &share.DocumentID, &share.Token, &share.State, &share.ExpiresAt,
+		&share.PasswordHash, &share.Permission, &share.AllowDownload, &share.Ctime, &share.Mtime); err != nil {
+		return nil, fmt.Errorf("scan: %w", err)
 	}
-	share.Password = share.PasswordHash
 	share.HasPassword = strings.TrimSpace(share.PasswordHash) != ""
 	return &share, nil
 }
 
 func (r *ShareRepo) GetActiveByDocument(ctx context.Context, userID, docID string) (*model.Share, error) {
-	where := map[string]interface{}{
+	where := map[string]any{
 		"user_id":     userID,
 		"document_id": docID,
 		"state":       ShareStateActive,
 	}
-	sqlStr, args, err := builder.BuildSelect("shares", where, []string{"id", "user_id", "document_id", "token", "state", "expires_at", "password_hash", "permission", "allow_download", "ctime", "mtime"})
+	sqlStr, args, err := builder.BuildSelect("shares", where, []string{
+		"id", "user_id", "document_id", "token",
+		"state", "expires_at", "password_hash", "permission", "allow_download", "ctime", "mtime",
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build select: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("query: %w", err)
+		}
 		return nil, appErr.ErrNotFound
 	}
 	var share model.Share
-	if err := rows.Scan(&share.ID, &share.UserID, &share.DocumentID, &share.Token, &share.State, &share.ExpiresAt, &share.PasswordHash, &share.Permission, &share.AllowDownload, &share.Ctime, &share.Mtime); err != nil {
-		return nil, err
+	if err := rows.Scan(&share.ID, &share.UserID, &share.DocumentID, &share.Token, &share.State, &share.ExpiresAt,
+		&share.PasswordHash, &share.Permission, &share.AllowDownload, &share.Ctime, &share.Mtime); err != nil {
+		return nil, fmt.Errorf("scan: %w", err)
 	}
-	share.Password = share.PasswordHash
 	share.HasPassword = strings.TrimSpace(share.PasswordHash) != ""
 	return &share, nil
 }
@@ -162,15 +187,16 @@ type SharedDocument struct {
 	AllowDownload int
 }
 
-func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID string, query string) ([]SharedDocument, error) {
+func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID, query string) ([]SharedDocument, error) {
 	sqlStr := `
-		SELECT d.id, d.title, COALESCE(ds.summary, '') AS summary, d.mtime, s.token, s.expires_at, s.permission, s.allow_download
+		SELECT d.id, d.title, COALESCE(ds.summary,
+			'') AS summary, d.mtime, s.token, s.expires_at, s.permission, s.allow_download
 		FROM shares s
 		JOIN documents d ON d.id = s.document_id AND d.user_id = s.user_id
 		LEFT JOIN document_summaries ds ON ds.document_id = d.id AND ds.user_id = d.user_id
 		WHERE s.user_id = ? AND s.state = ? AND d.state = ?
 	`
-	args := []interface{}{userID, ShareStateActive, 1}
+	args := []any{userID, ShareStateActive, DocumentStateNormal}
 	if query != "" {
 		sqlStr += " AND (d.title LIKE ? OR d.content LIKE ?)"
 		like := "%" + query + "%"
@@ -179,24 +205,28 @@ func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID string, quer
 	sqlStr += " ORDER BY d.mtime DESC"
 
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	items := make([]SharedDocument, 0)
 	for rows.Next() {
 		var item SharedDocument
-		if err := rows.Scan(&item.ID, &item.Title, &item.Summary, &item.Mtime, &item.Token, &item.ExpiresAt, &item.Permission, &item.AllowDownload); err != nil {
-			return nil, err
+		if err := rows.Scan(&item.ID, &item.Title, &item.Summary, &item.Mtime, &item.Token, &item.ExpiresAt,
+			&item.Permission, &item.AllowDownload); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
+	return items, nil
 }
 
 func (r *ShareRepo) CreateComment(ctx context.Context, comment *model.ShareComment) error {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"id":          comment.ID,
 		"share_id":    comment.ShareID,
 		"document_id": comment.DocumentID,
@@ -208,23 +238,31 @@ func (r *ShareRepo) CreateComment(ctx context.Context, comment *model.ShareComme
 		"ctime":       comment.Ctime,
 		"mtime":       comment.Mtime,
 	}
-	sqlStr, args, err := builder.BuildInsert("share_comments", []map[string]interface{}{data})
+	sqlStr, args, err := builder.BuildInsert("share_comments", []map[string]any{data})
 	if err != nil {
-		return err
+		return fmt.Errorf("build insert: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	_, err = r.db.ExecContext(ctx, sqlStr, args...)
-	return err
+	if _, err = conn(ctx, r.db).ExecContext(ctx, sqlStr, args...); err != nil {
+		return fmt.Errorf("create comment: %w", err)
+	}
+	return nil
 }
 
-func (r *ShareRepo) ListCommentsByShare(ctx context.Context, shareID string, limit, offset int) ([]model.ShareComment, error) {
+func (
+	r *ShareRepo) ListCommentsByShare(ctx context.Context,
+	shareID string,
+	limit,
+	offset int) ([]model.ShareComment,
+	error,
+) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	where := map[string]interface{}{
+	where := map[string]any{
 		"share_id": shareID,
 		"state":    ShareCommentStateNormal,
 		"root_id":  "",
@@ -235,12 +273,12 @@ func (r *ShareRepo) ListCommentsByShare(ctx context.Context, shareID string, lim
 		"id", "share_id", "document_id", "root_id", "reply_to_id", "author", "content", "state", "ctime", "mtime",
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build select: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	items := make([]model.ShareComment, 0)
@@ -258,15 +296,18 @@ func (r *ShareRepo) ListCommentsByShare(ctx context.Context, shareID string, lim
 			&item.Ctime,
 			&item.Mtime,
 		); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("repo: %w", err)
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
+	return items, nil
 }
 
 func (r *ShareRepo) GetCommentByID(ctx context.Context, commentID string) (*model.ShareComment, error) {
-	where := map[string]interface{}{
+	where := map[string]any{
 		"id":    commentID,
 		"state": ShareCommentStateNormal,
 	}
@@ -274,15 +315,18 @@ func (r *ShareRepo) GetCommentByID(ctx context.Context, commentID string) (*mode
 		"id", "share_id", "document_id", "root_id", "reply_to_id", "author", "content", "state", "ctime", "mtime",
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build select: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("query: %w", err)
+		}
 		return nil, appErr.ErrNotFound
 	}
 	var item model.ShareComment
@@ -298,16 +342,21 @@ func (r *ShareRepo) GetCommentByID(ctx context.Context, commentID string) (*mode
 		&item.Ctime,
 		&item.Mtime,
 	); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("repo: %w", err)
 	}
 	return &item, nil
 }
 
-func (r *ShareRepo) ListRepliesByRootIDs(ctx context.Context, shareID string, rootIDs []string) ([]model.ShareComment, error) {
+func (
+	r *ShareRepo) ListRepliesByRootIDs(ctx context.Context,
+	shareID string,
+	rootIDs []string) ([]model.ShareComment,
+	error,
+) {
 	if len(rootIDs) == 0 {
 		return []model.ShareComment{}, nil
 	}
-	where := map[string]interface{}{
+	where := map[string]any{
 		"share_id":   shareID,
 		"state":      ShareCommentStateNormal,
 		"root_id in": rootIDs,
@@ -317,12 +366,12 @@ func (r *ShareRepo) ListRepliesByRootIDs(ctx context.Context, shareID string, ro
 		"id", "share_id", "document_id", "root_id", "reply_to_id", "author", "content", "state", "ctime", "mtime",
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build select: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	items := make([]model.ShareComment, 0)
@@ -340,19 +389,27 @@ func (r *ShareRepo) ListRepliesByRootIDs(ctx context.Context, shareID string, ro
 			&item.Ctime,
 			&item.Mtime,
 		); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("repo: %w", err)
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
+	return items, nil
 }
 
-func (r *ShareRepo) CountRepliesByRootIDs(ctx context.Context, shareID string, rootIDs []string) (map[string]int, error) {
+func (
+	r *ShareRepo) CountRepliesByRootIDs(ctx context.Context,
+	shareID string,
+	rootIDs []string) (map[string]int,
+	error,
+) {
 	if len(rootIDs) == 0 {
 		return map[string]int{}, nil
 	}
 	query := `SELECT root_id, COUNT(*) FROM share_comments WHERE share_id = ? AND state = ? AND root_id IN (`
-	args := []interface{}{shareID, ShareCommentStateNormal}
+	args := []any{shareID, ShareCommentStateNormal}
 	for i, id := range rootIDs {
 		if i > 0 {
 			query += ","
@@ -363,9 +420,9 @@ func (r *ShareRepo) CountRepliesByRootIDs(ctx context.Context, shareID string, r
 	query += ") GROUP BY root_id"
 
 	query, args = dbutil.Finalize(query, args)
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -374,33 +431,43 @@ func (r *ShareRepo) CountRepliesByRootIDs(ctx context.Context, shareID string, r
 		var rootID string
 		var count int
 		if err := rows.Scan(&rootID, &count); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan: %w", err)
 		}
 		counts[rootID] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
 	}
 	return counts, nil
 }
 
 func (r *ShareRepo) CountRootCommentsByShare(ctx context.Context, shareID string) (int, error) {
 	query := `SELECT COUNT(*) FROM share_comments WHERE share_id = ? AND state = ? AND root_id = ?`
-	args := []interface{}{shareID, ShareCommentStateNormal, ""}
+	args := []any{shareID, ShareCommentStateNormal, ""}
 	query, args = dbutil.Finalize(query, args)
-	row := r.db.QueryRowContext(ctx, query, args...)
+	row := conn(ctx, r.db).QueryRowContext(ctx, query, args...)
 	var count int
 	if err := row.Scan(&count); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("scan: %w", err)
 	}
 	return count, nil
 }
 
-func (r *ShareRepo) ListRepliesByRootID(ctx context.Context, shareID, rootID string, limit, offset int) ([]model.ShareComment, error) {
+func (
+	r *ShareRepo) ListRepliesByRootID(ctx context.Context,
+	shareID,
+	rootID string,
+	limit,
+	offset int) ([]model.ShareComment,
+	error,
+) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	where := map[string]interface{}{
+	where := map[string]any{
 		"share_id": shareID,
 		"root_id":  rootID,
 		"state":    ShareCommentStateNormal,
@@ -411,12 +478,12 @@ func (r *ShareRepo) ListRepliesByRootID(ctx context.Context, shareID, rootID str
 		"id", "share_id", "document_id", "root_id", "reply_to_id", "author", "content", "state", "ctime", "mtime",
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build select: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	items := make([]model.ShareComment, 0)
@@ -434,9 +501,12 @@ func (r *ShareRepo) ListRepliesByRootID(ctx context.Context, shareID, rootID str
 			&item.Ctime,
 			&item.Mtime,
 		); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("repo: %w", err)
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
+	return items, nil
 }

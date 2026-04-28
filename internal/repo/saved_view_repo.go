@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/didi/gendry/builder"
 
@@ -20,7 +21,7 @@ func NewSavedViewRepo(db *sql.DB) *SavedViewRepo {
 }
 
 func (r *SavedViewRepo) List(ctx context.Context, userID string) ([]model.SavedView, error) {
-	where := map[string]interface{}{
+	where := map[string]any{
 		"user_id":  userID,
 		"_orderby": "mtime desc",
 	}
@@ -28,12 +29,12 @@ func (r *SavedViewRepo) List(ctx context.Context, userID string) ([]model.SavedV
 		"id", "user_id", "name", "search", "tag_id", "show_starred", "show_shared", "ctime", "mtime",
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build select: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := r.db.QueryContext(ctx, sqlStr, args...)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -44,15 +45,18 @@ func (r *SavedViewRepo) List(ctx context.Context, userID string) ([]model.SavedV
 			&item.ID, &item.UserID, &item.Name, &item.Search, &item.TagID,
 			&item.ShowStarred, &item.ShowShared, &item.Ctime, &item.Mtime,
 		); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan: %w", err)
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
+	return items, nil
 }
 
 func (r *SavedViewRepo) Create(ctx context.Context, item *model.SavedView) error {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"id":           item.ID,
 		"user_id":      item.UserID,
 		"name":         item.Name,
@@ -63,36 +67,36 @@ func (r *SavedViewRepo) Create(ctx context.Context, item *model.SavedView) error
 		"ctime":        item.Ctime,
 		"mtime":        item.Mtime,
 	}
-	sqlStr, args, err := builder.BuildInsert("saved_views", []map[string]interface{}{data})
+	sqlStr, args, err := builder.BuildInsert("saved_views", []map[string]any{data})
 	if err != nil {
-		return err
+		return fmt.Errorf("build insert: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	if _, err := r.db.ExecContext(ctx, sqlStr, args...); err != nil {
+	if _, err := conn(ctx, r.db).ExecContext(ctx, sqlStr, args...); err != nil {
 		if dbutil.IsConflict(err) {
 			return appErr.ErrConflict
 		}
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	return nil
 }
 
 func (r *SavedViewRepo) Delete(ctx context.Context, userID, id string) error {
-	sqlStr, args, err := builder.BuildDelete("saved_views", map[string]interface{}{
+	sqlStr, args, err := builder.BuildDelete("saved_views", map[string]any{
 		"id":      id,
 		"user_id": userID,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("build delete: %w", err)
 	}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	result, err := r.db.ExecContext(ctx, sqlStr, args...)
+	result, err := conn(ctx, r.db).ExecContext(ctx, sqlStr, args...)
 	if err != nil {
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	if affected == 0 {
 		return appErr.ErrNotFound
