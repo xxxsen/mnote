@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -13,27 +16,57 @@ import (
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/password"
+	"github.com/xxxsen/mnote/internal/pkg/safeconv"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
 	"github.com/xxxsen/mnote/internal/repo"
 )
 
 type DocumentService struct {
-	docs           *repo.DocumentRepo
-	summaries      *repo.DocumentSummaryRepo
-	versions       *repo.VersionRepo
-	tags           *repo.DocumentTagRepo
-	shares         *repo.ShareRepo
-	tagRepo        *repo.TagRepo
-	userRepo       *repo.UserRepo
+	db             *sql.DB
+	docs           documentRepo
+	summaries      documentSummaryRepo
+	versions       versionRepo
+	tags           documentTagRepo
+	shares         shareRepo
+	tagRepo        tagRepo
+	userRepo       userRepo
 	ai             *AIService
 	assets         *AssetService
 	versionMaxKeep int
 }
 
-const minSummaryChars = 100
+const (
+	minSummaryChars        = 100
+	semanticSearchMinScore = 0.7
+)
 
-func NewDocumentService(docs *repo.DocumentRepo, summaries *repo.DocumentSummaryRepo, versions *repo.VersionRepo, tags *repo.DocumentTagRepo, shares *repo.ShareRepo, tagRepo *repo.TagRepo, userRepo *repo.UserRepo, ai *AIService, versionMaxKeep int) *DocumentService {
-	return &DocumentService{docs: docs, summaries: summaries, versions: versions, tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo, ai: ai, versionMaxKeep: versionMaxKeep}
+func NewDocumentService(
+	db *sql.DB,
+	docs documentRepo,
+	summaries documentSummaryRepo,
+	versions versionRepo,
+	tags documentTagRepo,
+	shares shareRepo,
+	tagRepo tagRepo,
+	userRepo userRepo,
+	ai *AIService,
+	versionMaxKeep int,
+) *DocumentService {
+	return &DocumentService{
+		db: db, docs: docs, summaries: summaries, versions: versions,
+		tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo,
+		ai: ai, versionMaxKeep: versionMaxKeep,
+	}
+}
+
+func (s *DocumentService) runInTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	if s.db == nil {
+		return fn(ctx)
+	}
+	if err := repo.RunInTx(ctx, s.db, fn); err != nil {
+		return fmt.Errorf("run in tx: %w", err)
+	}
+	return nil
 }
 
 func (s *DocumentService) SetAssetService(assets *AssetService) {
@@ -56,28 +89,45 @@ type PublicShareDetail struct {
 	ExpiresAt     int64           `json:"expires_at"`
 }
 
-func (s *DocumentService) Search(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error) {
+func (
+	s *DocumentService) Search(ctx context.Context,
+	userID,
+	query,
+	tagID string,
+	starred *int,
+	limit,
+	offset uint,
+	orderBy string) ([]model.Document,
+	error,
+) {
 	if query == "" && tagID == "" {
 		docs, err := s.docs.List(ctx, userID, starred, limit, offset, orderBy)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("list documents: %w", err)
 		}
 		return s.attachSummaries(ctx, userID, docs)
 	}
 	docs, err := s.docs.SearchLike(ctx, userID, query, tagID, starred, limit, offset, orderBy)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("search documents: %w", err)
 	}
 	return s.attachSummaries(ctx, userID, docs)
 }
 
-func (s *DocumentService) SemanticSearch(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string, excludeID string) ([]model.Document, []float32, error) {
+func (s *DocumentService) SemanticSearch(
+	ctx context.Context,
+	userID, query, _ string,
+	_ *int,
+	limit, offset uint,
+	_, excludeID string,
+) ([]model.Document, []float32, error) {
 	if query == "" || s.ai == nil {
 		return []model.Document{}, []float32{}, nil
 	}
-	ids, scores, err := s.ai.SemanticSearch(ctx, userID, query, int(limit+offset), excludeID)
+	topN := safeconv.UintToInt(limit + offset)
+	ids, scores, err := s.ai.SemanticSearch(ctx, userID, query, topN, excludeID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("semantic search: %w", err)
 	}
 	if len(ids) == 0 {
 		return []model.Document{}, []float32{}, nil
@@ -85,11 +135,11 @@ func (s *DocumentService) SemanticSearch(ctx context.Context, userID, query, tag
 
 	docs, err := s.docs.ListByIDs(ctx, userID, ids)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("list documents by ids: %w", err)
 	}
 	docs, err = s.attachSummaries(ctx, userID, docs)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("attach summaries: %w", err)
 	}
 	idMap := make(map[string]model.Document)
 	for _, d := range docs {
@@ -99,19 +149,21 @@ func (s *DocumentService) SemanticSearch(ctx context.Context, userID, query, tag
 	sortedScores := make([]float32, 0, len(ids))
 	for i, id := range ids {
 		if d, ok := idMap[id]; ok {
-			if scores[i] < 0.7 {
+			if scores[i] < semanticSearchMinScore {
 				continue
 			}
 			sortedDocs = append(sortedDocs, d)
 			sortedScores = append(sortedScores, scores[i])
 		}
 	}
-	if int(offset) < len(sortedDocs) {
-		end := int(offset + limit)
-		if end > len(sortedDocs) || limit == 0 {
+	off := safeconv.UintToInt(offset)
+	lim := safeconv.UintToInt(limit)
+	if off < len(sortedDocs) {
+		end := off + lim
+		if end > len(sortedDocs) || lim == 0 {
 			end = len(sortedDocs)
 		}
-		return sortedDocs[offset:end], sortedScores[offset:end], nil
+		return sortedDocs[off:end], sortedScores[off:end], nil
 	}
 	return []model.Document{}, []float32{}, nil
 }
@@ -119,58 +171,75 @@ func (s *DocumentService) SemanticSearch(ctx context.Context, userID, query, tag
 func (s *DocumentService) Get(ctx context.Context, userID, docID string) (*model.Document, error) {
 	doc, err := s.docs.GetByID(ctx, userID, docID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get by id: %w", err)
 	}
 	if err := s.attachSummary(ctx, userID, doc); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("attach summary: %w", err)
 	}
 	return doc, nil
 }
 
 func (s *DocumentService) UpdateTags(ctx context.Context, userID, docID string, tagIDs []string) error {
 	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
-		return err
+		return fmt.Errorf("get by id: %w", err)
 	}
-	if err := s.tags.DeleteByDoc(ctx, userID, docID); err != nil {
-		return err
-	}
-	for _, tagID := range tagIDs {
-		if err := s.tags.Add(ctx, &model.DocumentTag{UserID: userID, DocumentID: docID, TagID: tagID}); err != nil {
-			return err
+	return s.runInTx(ctx, func(txCtx context.Context) error {
+		if err := s.tags.DeleteByDoc(txCtx, userID, docID); err != nil {
+			return fmt.Errorf("delete by doc: %w", err)
 		}
-	}
-	return nil
+		for _, tagID := range tagIDs {
+			dt := &model.DocumentTag{UserID: userID, DocumentID: docID, TagID: tagID}
+			if err := s.tags.Add(txCtx, dt); err != nil {
+				return fmt.Errorf("add: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 func (s *DocumentService) UpdateSummary(ctx context.Context, userID, docID, summary string) error {
 	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
-		return err
+		return fmt.Errorf("get by id: %w", err)
 	}
 	now := timeutil.NowUnix()
 	if err := s.summaries.Upsert(ctx, userID, docID, summary, now); err != nil {
-		return err
+		return fmt.Errorf("upsert: %w", err)
 	}
-	return s.docs.TouchMtime(ctx, userID, docID, now)
+	if err := s.docs.TouchMtime(ctx, userID, docID, now); err != nil {
+		return fmt.Errorf("touch mtime: %w", err)
+	}
+	return nil
 }
 
 func (s *DocumentService) UpdatePinned(ctx context.Context, userID, docID string, pinned int) error {
 	if pinned != 0 && pinned != 1 {
 		return appErr.ErrInvalid
 	}
-	return s.docs.UpdatePinned(ctx, userID, docID, pinned)
+	if err := s.docs.UpdatePinned(ctx, userID, docID, pinned); err != nil {
+		return fmt.Errorf("update pinned: %w", err)
+	}
+	return nil
 }
 
 func (s *DocumentService) UpdateStarred(ctx context.Context, userID, docID string, starred int) error {
 	if starred != 0 && starred != 1 {
 		return appErr.ErrInvalid
 	}
-	return s.docs.UpdateStarred(ctx, userID, docID, starred)
+	if err := s.docs.UpdateStarred(ctx, userID, docID, starred); err != nil {
+		return fmt.Errorf("update starred: %w", err)
+	}
+	return nil
 }
 
-func (s *DocumentService) ListSharedDocuments(ctx context.Context, userID string, query string) ([]SharedDocumentSummary, error) {
+func (
+	s *DocumentService) ListSharedDocuments(ctx context.Context,
+	userID,
+	query string) ([]SharedDocumentSummary,
+	error,
+) {
 	items, err := s.shares.ListActiveDocuments(ctx, userID, query)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list active documents: %w", err)
 	}
 	docIDs := make([]string, 0, len(items))
 	for _, item := range items {
@@ -178,7 +247,7 @@ func (s *DocumentService) ListSharedDocuments(ctx context.Context, userID string
 	}
 	tagIDsByDoc, err := s.tags.ListTagIDsByDocIDs(ctx, userID, docIDs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list tag ids by doc ids: %w", err)
 	}
 	results := make([]SharedDocumentSummary, 0, len(items))
 	for _, item := range items {
@@ -200,10 +269,10 @@ func (s *DocumentService) ListSharedDocuments(ctx context.Context, userID string
 func (s *DocumentService) GetByTitle(ctx context.Context, userID, title string) (*model.Document, error) {
 	doc, err := s.docs.GetByTitle(ctx, userID, title)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get by title: %w", err)
 	}
 	if err := s.attachSummary(ctx, userID, doc); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("attach summary: %w", err)
 	}
 	return doc, nil
 }
@@ -211,24 +280,23 @@ func (s *DocumentService) GetByTitle(ctx context.Context, userID, title string) 
 func (s *DocumentService) ListByIDs(ctx context.Context, userID string, docIDs []string) ([]model.Document, error) {
 	docs, err := s.docs.ListByIDs(ctx, userID, docIDs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list by ids: %w", err)
 	}
 	return s.attachSummaries(ctx, userID, docs)
 }
 
 func (s *DocumentService) Summary(ctx context.Context, userID string, recentLimit uint) (*DocumentSummary, error) {
-
 	recent, err := s.docs.List(ctx, userID, nil, recentLimit, 0, "mtime desc")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list: %w", err)
 	}
 	recent, err = s.attachSummaries(ctx, userID, recent)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("attach summaries: %w", err)
 	}
 	items, err := s.tags.ListByUser(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list by user: %w", err)
 	}
 	counts := make(map[string]int)
 	for _, item := range items {
@@ -236,12 +304,12 @@ func (s *DocumentService) Summary(ctx context.Context, userID string, recentLimi
 	}
 	count, err := s.docs.Count(ctx, userID, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("count total: %w", err)
 	}
 	starredVal := 1
 	starredCount, err := s.docs.Count(ctx, userID, &starredVal)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("count starred: %w", err)
 	}
 	return &DocumentSummary{Recent: recent, TagCounts: counts, Total: count, StarredTotal: starredCount}, nil
 }
@@ -249,88 +317,131 @@ func (s *DocumentService) Summary(ctx context.Context, userID string, recentLimi
 func (s *DocumentService) ListByTag(ctx context.Context, userID, tagID string) ([]model.Document, error) {
 	ids, err := s.tags.ListDocIDsByTag(ctx, userID, tagID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list doc ids by tag: %w", err)
 	}
-	return s.docs.ListByIDs(ctx, userID, ids)
+	v0, err := s.docs.ListByIDs(ctx, userID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list by ids: %w", err)
+	}
+	return s.attachSummaries(ctx, userID, v0)
 }
 
 func (s *DocumentService) ListTagIDs(ctx context.Context, userID, docID string) ([]string, error) {
 	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get by id: %w", err)
 	}
-	return s.tags.ListTagIDs(ctx, userID, docID)
+	v0, err := s.tags.ListTagIDs(ctx, userID, docID)
+	if err != nil {
+		return nil, fmt.Errorf("list tag ids: %w", err)
+	}
+	return v0, nil
 }
 
-func (s *DocumentService) ListTagIDsByDocIDs(ctx context.Context, userID string, docIDs []string) (map[string][]string, error) {
-	return s.tags.ListTagIDsByDocIDs(ctx, userID, docIDs)
+func (
+	s *DocumentService) ListTagIDsByDocIDs(ctx context.Context,
+	userID string,
+	docIDs []string) (map[string][]string,
+	error,
+) {
+	v0, err := s.tags.ListTagIDsByDocIDs(ctx, userID, docIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list tag ids by doc ids: %w", err)
+	}
+	return v0, nil
 }
 
 func (s *DocumentService) ListTagsByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error) {
-	return s.tagRepo.ListByIDs(ctx, userID, ids)
+	v0, err := s.tagRepo.ListByIDs(ctx, userID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list by ids: %w", err)
+	}
+	return v0, nil
 }
 
 func (s *DocumentService) Delete(ctx context.Context, userID, docID string) error {
-	now := timeutil.NowUnix()
-	if err := s.docs.Delete(ctx, userID, docID, now); err != nil {
-		return err
-	}
-	if err := s.shares.RevokeByDocument(ctx, userID, docID, now); err != nil {
-		return err
-	}
-	if err := s.tags.DeleteByDoc(ctx, userID, docID); err != nil {
-		return err
-	}
-	if s.assets != nil {
-		if err := s.assets.RemoveDocumentReferences(ctx, userID, docID); err != nil {
-			return err
+	return s.runInTx(ctx, func(txCtx context.Context) error {
+		now := timeutil.NowUnix()
+		if err := s.docs.Delete(txCtx, userID, docID, now); err != nil {
+			return fmt.Errorf("delete: %w", err)
 		}
-	}
-
-	return nil
+		if err := s.shares.RevokeByDocument(txCtx, userID, docID, now); err != nil {
+			return fmt.Errorf("revoke by document: %w", err)
+		}
+		if err := s.tags.DeleteByDoc(txCtx, userID, docID); err != nil {
+			return fmt.Errorf("delete by doc: %w", err)
+		}
+		if s.assets != nil {
+			if err := s.assets.RemoveDocumentReferences(txCtx, userID, docID); err != nil {
+				return fmt.Errorf("remove document references: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
-func (s *DocumentService) ListVersions(ctx context.Context, userID, docID string) ([]model.DocumentVersionSummary, error) {
+func (
+	s *DocumentService) ListVersions(ctx context.Context,
+	userID,
+	docID string) ([]model.DocumentVersionSummary,
+	error,
+) {
 	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get by id: %w", err)
 	}
-	return s.versions.ListSummaries(ctx, userID, docID)
+	v0, err := s.versions.ListSummaries(ctx, userID, docID)
+	if err != nil {
+		return nil, fmt.Errorf("list summaries: %w", err)
+	}
+	return v0, nil
 }
 
-func (s *DocumentService) GetVersion(ctx context.Context, userID, docID string, version int) (*model.DocumentVersion, error) {
+func (
+	s *DocumentService) GetVersion(ctx context.Context,
+	userID,
+	docID string,
+	version int) (*model.DocumentVersion,
+	error,
+) {
 	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get by id: %w", err)
 	}
-	return s.versions.GetByVersion(ctx, userID, docID, version)
+	v0, err := s.versions.GetByVersion(ctx, userID, docID, version)
+	if err != nil {
+		return nil, fmt.Errorf("get by version: %w", err)
+	}
+	return v0, nil
 }
 
 func (s *DocumentService) pruneVersions(ctx context.Context, userID, docID string) error {
 	if s.versionMaxKeep <= 0 {
 		return nil
 	}
-	return s.versions.DeleteOldVersions(ctx, userID, docID, s.versionMaxKeep)
+	if err := s.versions.DeleteOldVersions(ctx, userID, docID, s.versionMaxKeep); err != nil {
+		return fmt.Errorf("delete old versions: %w", err)
+	}
+	return nil
 }
 
 func (s *DocumentService) CreateShare(ctx context.Context, userID, docID string) (*model.Share, error) {
 	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get by id: %w", err)
 	}
 	now := timeutil.NowUnix()
-	if err := s.shares.RevokeByDocument(ctx, userID, docID, now); err != nil {
-		return nil, err
-	}
 	share := &model.Share{
-		ID:            newID(),
-		UserID:        userID,
-		DocumentID:    docID,
-		Token:         newToken(),
-		State:         repo.ShareStateActive,
-		ExpiresAt:     0,
-		Permission:    repo.SharePermissionView,
-		AllowDownload: 1,
-		Ctime:         now,
-		Mtime:         now,
+		ID: newID(), UserID: userID, DocumentID: docID,
+		Token: newToken(), State: repo.ShareStateActive,
+		ExpiresAt: 0, Permission: repo.SharePermissionView,
+		AllowDownload: 1, Ctime: now, Mtime: now,
 	}
-	if err := s.shares.Create(ctx, share); err != nil {
+	if err := s.runInTx(ctx, func(txCtx context.Context) error {
+		if err := s.shares.RevokeByDocument(txCtx, userID, docID, now); err != nil {
+			return fmt.Errorf("revoke by document: %w", err)
+		}
+		if err := s.shares.Create(txCtx, share); err != nil {
+			return fmt.Errorf("create share: %w", err)
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	return share, nil
@@ -352,10 +463,16 @@ type CreateShareCommentInput struct {
 	Content   string
 }
 
-func (s *DocumentService) UpdateShareConfig(ctx context.Context, userID, docID string, input ShareConfigInput) (*model.Share, error) {
+func (
+	s *DocumentService) UpdateShareConfig(ctx context.Context,
+	userID,
+	docID string,
+	input ShareConfigInput) (*model.Share,
+	error,
+) {
 	share, err := s.GetActiveShare(ctx, userID, docID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get active share: %w", err)
 	}
 	if input.Permission != repo.SharePermissionView && input.Permission != repo.SharePermissionComment {
 		return nil, appErr.ErrInvalid
@@ -365,7 +482,11 @@ func (s *DocumentService) UpdateShareConfig(ctx context.Context, userID, docID s
 	}
 	passwordHash := share.PasswordHash
 	if strings.TrimSpace(input.Password) != "" {
-		passwordHash = strings.TrimSpace(input.Password)
+		hashed, err := password.Hash(strings.TrimSpace(input.Password))
+		if err != nil {
+			return nil, fmt.Errorf("hash share password: %w", err)
+		}
+		passwordHash = hashed
 	}
 	if input.ClearPassword {
 		passwordHash = ""
@@ -375,37 +496,46 @@ func (s *DocumentService) UpdateShareConfig(ctx context.Context, userID, docID s
 		allowDownload = 1
 	}
 	now := timeutil.NowUnix()
-	if err := s.shares.UpdateConfigByDocument(ctx, userID, docID, input.ExpiresAt, passwordHash, input.Permission, allowDownload, now); err != nil {
-		return nil, err
+	if err := s.shares.UpdateConfigByDocument(ctx, userID, docID, input.ExpiresAt, passwordHash, input.Permission,
+		allowDownload, now); err != nil {
+		return nil, fmt.Errorf("update config by document: %w", err)
 	}
 	return s.GetActiveShare(ctx, userID, docID)
 }
 
 func (s *DocumentService) RevokeShare(ctx context.Context, userID, docID string) error {
 	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
-		return err
+		return fmt.Errorf("get by id: %w", err)
 	}
-	return s.shares.RevokeByDocument(ctx, userID, docID, timeutil.NowUnix())
+	if err := s.shares.RevokeByDocument(ctx, userID, docID, timeutil.NowUnix()); err != nil {
+		return fmt.Errorf("revoke by document: %w", err)
+	}
+	return nil
 }
 
 func (s *DocumentService) GetActiveShare(ctx context.Context, userID, docID string) (*model.Share, error) {
 	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get by id: %w", err)
 	}
 	share, err := s.shares.GetActiveByDocument(ctx, userID, docID)
-	if err == appErr.ErrNotFound {
-		return nil, nil
+	if errors.Is(err, appErr.ErrNotFound) {
+		return nil, nil //nolint:nilnil // nil share with nil error means "no active share"
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get active share: %w", err)
 	}
 	return share, nil
 }
 
-func (s *DocumentService) resolveAccessibleShareByToken(ctx context.Context, token, sharePassword string) (*model.Share, error) {
+func (
+	s *DocumentService) resolveAccessibleShareByToken(ctx context.Context,
+	token,
+	sharePassword string) (*model.Share,
+	error,
+) {
 	share, err := s.shares.GetByToken(ctx, token)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get by token: %w", err)
 	}
 	if share.State != repo.ShareStateActive {
 		return nil, appErr.ErrNotFound
@@ -414,40 +544,51 @@ func (s *DocumentService) resolveAccessibleShareByToken(ctx context.Context, tok
 	if share.ExpiresAt > 0 && share.ExpiresAt < now {
 		return nil, appErr.ErrNotFound
 	}
-	if share.PasswordHash != "" {
-		if strings.TrimSpace(sharePassword) == "" {
-			return nil, appErr.ErrForbidden
-		}
-		trimmed := strings.TrimSpace(sharePassword)
-		if share.PasswordHash != trimmed {
-			if err := password.Compare(share.PasswordHash, trimmed); err != nil {
-				return nil, appErr.ErrForbidden
-			}
-		}
+	if err := s.verifySharePassword(share, sharePassword); err != nil {
+		return nil, err
 	}
 	return share, nil
 }
 
-func (s *DocumentService) GetShareByToken(ctx context.Context, token, sharePassword string) (*PublicShareDetail, error) {
+func (s *DocumentService) verifySharePassword(share *model.Share, sharePassword string) error {
+	if share.PasswordHash == "" {
+		return nil
+	}
+	trimmed := strings.TrimSpace(sharePassword)
+	if trimmed == "" {
+		return appErr.ErrForbidden
+	}
+	if err := password.Compare(share.PasswordHash, trimmed); err != nil {
+		return appErr.ErrForbidden
+	}
+	return nil
+}
+
+func (
+	s *DocumentService) GetShareByToken(ctx context.Context,
+	token,
+	sharePassword string) (*PublicShareDetail,
+	error,
+) {
 	share, err := s.resolveAccessibleShareByToken(ctx, token, sharePassword)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve accessible share by token: %w", err)
 	}
 	doc, err := s.docs.GetByID(ctx, share.UserID, share.DocumentID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get document by id: %w", err)
 	}
 	user, err := s.userRepo.GetByID(ctx, share.UserID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get user by id: %w", err)
 	}
 	tagIDs, err := s.tags.ListTagIDs(ctx, share.UserID, share.DocumentID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list tag ids: %w", err)
 	}
 	tags, err := s.tagRepo.ListByIDs(ctx, share.UserID, tagIDs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list by ids: %w", err)
 	}
 	return &PublicShareDetail{
 		Document:      doc,
@@ -469,18 +610,25 @@ type ShareCommentListResult struct {
 	Total int                       `json:"total"`
 }
 
-func (s *DocumentService) ListShareCommentsByToken(ctx context.Context, token, sharePassword string, limit, offset int) (*ShareCommentListResult, error) {
+func (
+	s *DocumentService) ListShareCommentsByToken(ctx context.Context,
+	token,
+	sharePassword string,
+	limit,
+	offset int) (*ShareCommentListResult,
+	error,
+) {
 	share, err := s.resolveAccessibleShareByToken(ctx, token, sharePassword)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve accessible share by token: %w", err)
 	}
 	total, err := s.shares.CountRootCommentsByShare(ctx, share.ID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("count root comments by share: %w", err)
 	}
 	roots, err := s.shares.ListCommentsByShare(ctx, share.ID, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list comments by share: %w", err)
 	}
 	if len(roots) == 0 {
 		return &ShareCommentListResult{
@@ -496,24 +644,32 @@ func (s *DocumentService) ListShareCommentsByToken(ctx context.Context, token, s
 
 	counts, err := s.shares.CountRepliesByRootIDs(ctx, share.ID, rootIDs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("count replies by root ids: %w", err)
 	}
 
+	allReplies, err := s.shares.ListRepliesByRootIDs(ctx, share.ID, rootIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list replies by root ids: %w", err)
+	}
+	repliesByRoot := make(map[string][]model.ShareComment)
+	for _, reply := range allReplies {
+		repliesByRoot[reply.RootID] = append(repliesByRoot[reply.RootID], reply)
+	}
+
+	const previewLimit = 5
 	var result []ShareCommentWithReplies
 	for _, r := range roots {
 		r.ReplyCount = counts[r.ID]
-		previewReplies, err := s.shares.ListRepliesByRootID(ctx, share.ID, r.ID, 5, 0)
-		if err != nil {
-			return nil, err
+		preview := repliesByRoot[r.ID]
+		if preview == nil {
+			preview = []model.ShareComment{}
+		} else if len(preview) > previewLimit {
+			preview = preview[:previewLimit]
 		}
-		if previewReplies == nil {
-			previewReplies = []model.ShareComment{}
-		}
-		node := ShareCommentWithReplies{
+		result = append(result, ShareCommentWithReplies{
 			ShareComment: r,
-			Replies:      previewReplies,
-		}
-		result = append(result, node)
+			Replies:      preview,
+		})
 	}
 
 	return &ShareCommentListResult{
@@ -522,16 +678,24 @@ func (s *DocumentService) ListShareCommentsByToken(ctx context.Context, token, s
 	}, nil
 }
 
-func (s *DocumentService) ListShareCommentRepliesByToken(ctx context.Context, token, sharePassword string, rootID string, limit, offset int) ([]model.ShareComment, error) {
+func (
+	s *DocumentService) ListShareCommentRepliesByToken(ctx context.Context,
+	token,
+	sharePassword,
+	rootID string,
+	limit,
+	offset int) ([]model.ShareComment,
+	error,
+) {
 	share, err := s.resolveAccessibleShareByToken(ctx, token, sharePassword)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve accessible share by token: %w", err)
 	}
 
 	// Verify the root comment exists and belongs to this share
 	root, err := s.shares.GetCommentByID(ctx, rootID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get comment by id: %w", err)
 	}
 	if root.ShareID != share.ID {
 		return nil, appErr.ErrNotFound
@@ -539,7 +703,7 @@ func (s *DocumentService) ListShareCommentRepliesByToken(ctx context.Context, to
 
 	replies, err := s.shares.ListRepliesByRootID(ctx, share.ID, rootID, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list replies by root id: %w", err)
 	}
 	if replies == nil {
 		return []model.ShareComment{}, nil
@@ -547,10 +711,14 @@ func (s *DocumentService) ListShareCommentRepliesByToken(ctx context.Context, to
 	return replies, nil
 }
 
-func (s *DocumentService) CreateShareCommentByToken(ctx context.Context, input CreateShareCommentInput) (*model.ShareComment, error) {
+func (
+	s *DocumentService) CreateShareCommentByToken(ctx context.Context,
+	input CreateShareCommentInput) (*model.ShareComment,
+	error,
+) {
 	share, err := s.resolveAccessibleShareByToken(ctx, input.Token, input.Password)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve accessible share by token: %w", err)
 	}
 	if share.Permission != repo.SharePermissionComment {
 		return nil, appErr.ErrForbidden
@@ -567,20 +735,7 @@ func (s *DocumentService) CreateShareCommentByToken(ctx context.Context, input C
 		author = string([]rune(author)[:40])
 	}
 
-	rootID := ""
-	replyToID := strings.TrimSpace(input.ReplyToID)
-	if replyToID != "" {
-		target, err := s.shares.GetCommentByID(ctx, replyToID)
-		if err == nil && target.ShareID == share.ID {
-			if target.RootID == "" {
-				rootID = target.ID
-			} else {
-				rootID = target.RootID
-			}
-		} else {
-			replyToID = ""
-		}
-	}
+	rootID, replyToID := s.resolveCommentThread(ctx, share.ID, strings.TrimSpace(input.ReplyToID))
 
 	now := timeutil.NowUnix()
 	comment := &model.ShareComment{
@@ -596,9 +751,25 @@ func (s *DocumentService) CreateShareCommentByToken(ctx context.Context, input C
 		Mtime:      now,
 	}
 	if err := s.shares.CreateComment(ctx, comment); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create comment: %w", err)
 	}
 	return comment, nil
+}
+
+func (s *DocumentService) resolveCommentThread(
+	ctx context.Context, shareID, replyToID string,
+) (string, string) {
+	if replyToID == "" {
+		return "", ""
+	}
+	target, err := s.shares.GetCommentByID(ctx, replyToID)
+	if err != nil || target.ShareID != shareID {
+		return "", ""
+	}
+	if target.RootID == "" {
+		return target.ID, replyToID
+	}
+	return target.RootID, replyToID
 }
 
 type SharedDocumentSummary struct {
@@ -643,197 +814,191 @@ func extractLinkIDs(content string) []string {
 var linkRegex = regexp.MustCompile(`\/docs\/([a-zA-Z0-9_\-]+)`)
 
 func (s *DocumentService) Update(ctx context.Context, userID, docID string, input DocumentUpdateInput) error {
+	return s.runInTx(ctx, func(txCtx context.Context) error {
+		return s.updateImpl(txCtx, userID, docID, input)
+	})
+}
+
+func (s *DocumentService) updateImpl(ctx context.Context, userID, docID string, input DocumentUpdateInput) error {
 	now := timeutil.NowUnix()
 	doc := &model.Document{
-		ID:      docID,
-		UserID:  userID,
-		Title:   input.Title,
-		Content: input.Content,
-		Mtime:   now,
+		ID: docID, UserID: userID, Title: input.Title,
+		Content: input.Content, Mtime: now,
 	}
 	if err := s.docs.Update(ctx, doc); err != nil {
-		return err
+		return fmt.Errorf("update: %w", err)
 	}
 	if input.Summary != nil {
 		if err := s.summaries.Upsert(ctx, userID, docID, *input.Summary, now); err != nil {
-			return err
+			return fmt.Errorf("upsert: %w", err)
 		}
 	}
-
 	versionNumber := 1
 	if latest, err := s.versions.GetLatestVersion(ctx, userID, docID); err == nil {
 		versionNumber = latest + 1
 	}
 	version := &model.DocumentVersion{
-		ID:         newID(),
-		UserID:     userID,
-		DocumentID: docID,
-		Version:    versionNumber,
-		Title:      input.Title,
-		Content:    input.Content,
-		Ctime:      now,
+		ID: newID(), UserID: userID, DocumentID: docID,
+		Version: versionNumber, Title: input.Title,
+		Content: input.Content, Ctime: now,
 	}
 	if err := s.versions.Create(ctx, version); err != nil {
-		return err
+		return fmt.Errorf("create version: %w", err)
 	}
 	if err := s.pruneVersions(ctx, userID, docID); err != nil {
-		return err
+		return fmt.Errorf("prune versions: %w", err)
 	}
 	if input.TagIDs != nil {
 		if err := s.tags.DeleteByDoc(ctx, userID, docID); err != nil {
-			return err
+			return fmt.Errorf("delete by doc: %w", err)
 		}
 		for _, tagID := range input.TagIDs {
-			if err := s.tags.Add(ctx, &model.DocumentTag{UserID: userID, DocumentID: docID, TagID: tagID}); err != nil {
-				return err
+			dt := &model.DocumentTag{UserID: userID, DocumentID: docID, TagID: tagID}
+			if err := s.tags.Add(ctx, dt); err != nil {
+				return fmt.Errorf("add: %w", err)
 			}
 		}
 	}
-
-	// Extract and update bidirectional links
 	linkIDs := extractLinkIDs(input.Content)
 	if err := s.docs.UpdateLinks(ctx, userID, docID, linkIDs, now); err != nil {
-		return err
+		return fmt.Errorf("update links: %w", err)
 	}
 	if s.assets != nil {
 		if err := s.assets.SyncDocumentReferences(ctx, userID, docID, input.Content); err != nil {
-			return err
+			return fmt.Errorf("sync document references: %w", err)
 		}
 	}
-
 	return nil
 }
 
-func (s *DocumentService) Create(ctx context.Context, userID string, input DocumentCreateInput) (*model.Document, error) {
+func (
+	s *DocumentService) Create(ctx context.Context,
+	userID string,
+	input DocumentCreateInput) (*model.Document,
+	error,
+) {
 	now := timeutil.NowUnix()
 	doc := &model.Document{
-		ID:      newID(),
-		UserID:  userID,
-		Title:   input.Title,
-		Content: input.Content,
-		State:   repo.DocumentStateNormal,
-		Pinned:  0,
-		Ctime:   now,
-		Mtime:   now,
+		ID: newID(), UserID: userID, Title: input.Title,
+		Content: input.Content, State: repo.DocumentStateNormal,
+		Pinned: 0, Ctime: now, Mtime: now,
 	}
-	if err := s.docs.Create(ctx, doc); err != nil {
+	if err := s.runInTx(ctx, func(txCtx context.Context) error {
+		return s.createImpl(txCtx, userID, doc, input)
+	}); err != nil {
 		return nil, err
 	}
+	return doc, nil
+}
+
+func (s *DocumentService) createImpl(
+	ctx context.Context, userID string, doc *model.Document, input DocumentCreateInput,
+) error {
+	if err := s.docs.Create(ctx, doc); err != nil {
+		return fmt.Errorf("create document: %w", err)
+	}
 	if input.Summary != "" {
-		if err := s.summaries.Upsert(ctx, userID, doc.ID, input.Summary, now); err != nil {
-			return nil, err
+		if err := s.summaries.Upsert(ctx, userID, doc.ID, input.Summary, doc.Mtime); err != nil {
+			return fmt.Errorf("upsert: %w", err)
 		}
 		doc.Summary = input.Summary
 	}
-
 	version := &model.DocumentVersion{
-		ID:         newID(),
-		UserID:     userID,
-		DocumentID: doc.ID,
-		Version:    1,
-		Title:      doc.Title,
-		Content:    doc.Content,
-		Ctime:      now,
+		ID: newID(), UserID: userID, DocumentID: doc.ID,
+		Version: 1, Title: doc.Title, Content: doc.Content, Ctime: doc.Mtime,
 	}
 	if err := s.versions.Create(ctx, version); err != nil {
-		return nil, err
+		return fmt.Errorf("create version: %w", err)
 	}
 	if err := s.pruneVersions(ctx, userID, doc.ID); err != nil {
-		return nil, err
+		return fmt.Errorf("prune versions: %w", err)
 	}
 	if input.TagIDs != nil {
 		if err := s.tags.DeleteByDoc(ctx, userID, doc.ID); err != nil {
-			return nil, err
+			return fmt.Errorf("delete by doc: %w", err)
 		}
 		for _, tagID := range input.TagIDs {
-			if err := s.tags.Add(ctx, &model.DocumentTag{UserID: userID, DocumentID: doc.ID, TagID: tagID}); err != nil {
-				return nil, err
+			dt := &model.DocumentTag{UserID: userID, DocumentID: doc.ID, TagID: tagID}
+			if err := s.tags.Add(ctx, dt); err != nil {
+				return fmt.Errorf("add: %w", err)
 			}
 		}
 	}
-
-	// Extract and update bidirectional links
 	linkIDs := extractLinkIDs(input.Content)
-	if err := s.docs.UpdateLinks(ctx, userID, doc.ID, linkIDs, now); err != nil {
-		return nil, err
+	if err := s.docs.UpdateLinks(ctx, userID, doc.ID, linkIDs, doc.Mtime); err != nil {
+		return fmt.Errorf("update links: %w", err)
 	}
 	if s.assets != nil {
 		if err := s.assets.SyncDocumentReferences(ctx, userID, doc.ID, input.Content); err != nil {
-			return nil, err
+			return fmt.Errorf("sync document references: %w", err)
 		}
 	}
-
-	return doc, nil
+	return nil
 }
 
 func (s *DocumentService) GetBacklinks(ctx context.Context, userID, docID string) ([]model.Document, error) {
 	docs, err := s.docs.GetBacklinks(ctx, userID, docID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get backlinks: %w", err)
 	}
 	return s.attachSummaries(ctx, userID, docs)
 }
 
 func (s *DocumentService) ProcessPendingSummaries(ctx context.Context, delaySeconds int64) error {
-	if s.ai == nil {
-		return nil
-	}
-	if s.summaries == nil {
+	if s.ai == nil || s.summaries == nil {
 		return nil
 	}
 	logger := logutil.GetLogger(ctx)
-	if delaySeconds < 0 {
-		delaySeconds = 0
-	}
-	cutoff := time.Now().Unix() - delaySeconds
+	cutoff := timeutil.NowUnix() - clampDelay(delaySeconds)
 	docs, err := s.summaries.ListPendingDocuments(ctx, 50, cutoff)
 	if err != nil {
 		logger.Error("failed to list pending summaries", zap.Error(err))
-		return err
+		return fmt.Errorf("list pending documents: %w", err)
 	}
 	if len(docs) == 0 {
 		return nil
 	}
 	logger.Info("processing pending summaries", zap.Int("count", len(docs)))
 	for _, doc := range docs {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+		if err := checkCtx(ctx); err != nil {
+			return err
 		}
-		if utf8.RuneCountInString(doc.Content) < minSummaryChars {
-			now := timeutil.NowUnix()
-			if err := s.summaries.Upsert(ctx, doc.UserID, doc.ID, "", now); err != nil {
-				logger.Error("failed to mark empty summary", zap.String("doc_id", doc.ID), zap.Error(err))
-			}
-			continue
-		}
-		summary, err := s.ai.Summarize(ctx, doc.Content)
-		if err != nil {
-			errMsg := strings.ToLower(err.Error())
-			if strings.Contains(errMsg, "rate") || strings.Contains(errMsg, "limit") || strings.Contains(errMsg, "429") {
-				logger.Warn("ai rate limit triggered, cooling down...", zap.Error(err))
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-time.After(10 * time.Second):
-				}
-				continue
-			}
-			logger.Error("failed to summarize document", zap.String("doc_id", doc.ID), zap.Error(err))
-			continue
-		}
-		now := timeutil.NowUnix()
-		if err := s.summaries.Upsert(ctx, doc.UserID, doc.ID, summary, now); err != nil {
-			logger.Error("failed to save summary", zap.String("doc_id", doc.ID), zap.Error(err))
-			continue
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+		if err := s.processOneSummary(ctx, logger, doc); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+func (s *DocumentService) processOneSummary(
+	ctx context.Context, logger *zap.Logger, doc model.Document,
+) error {
+	if utf8.RuneCountInString(doc.Content) < minSummaryChars {
+		now := timeutil.NowUnix()
+		if err := s.summaries.Upsert(ctx, doc.UserID, doc.ID, "", now); err != nil {
+			logger.Error("failed to mark empty summary", zap.String("doc_id", doc.ID), zap.Error(err))
+		}
+		return nil
+	}
+	summary, err := s.ai.Summarize(ctx, doc.Content)
+	if err != nil {
+		return s.handleSummaryError(ctx, logger, doc.ID, err)
+	}
+	now := timeutil.NowUnix()
+	if err := s.summaries.Upsert(ctx, doc.UserID, doc.ID, summary, now); err != nil {
+		logger.Error("failed to save summary", zap.String("doc_id", doc.ID), zap.Error(err))
+	}
+	return waitCtx(ctx, 100*time.Millisecond)
+}
+
+func (s *DocumentService) handleSummaryError(
+	ctx context.Context, logger *zap.Logger, docID string, err error,
+) error {
+	if isRateLimitErr(err) {
+		logger.Warn("ai rate limit triggered, cooling down...", zap.Error(err))
+		return waitCtx(ctx, 10*time.Second)
+	}
+	logger.Error("failed to summarize document", zap.String("doc_id", docID), zap.Error(err))
 	return nil
 }
 
@@ -846,27 +1011,21 @@ func (s *DocumentService) attachSummary(ctx context.Context, userID string, doc 
 		doc.Summary = summary
 		return nil
 	}
-	if err == appErr.ErrNotFound {
+	if errors.Is(err, appErr.ErrNotFound) {
 		doc.Summary = ""
 		return nil
 	}
-	return err
+	return fmt.Errorf("get summary: %w", err)
 }
 
-func (s *DocumentService) attachSummaries(ctx context.Context, userID string, docs []model.Document) ([]model.Document, error) {
-	if len(docs) == 0 {
-		return docs, nil
-	}
-	ids := make([]string, 0, len(docs))
-	for _, doc := range docs {
-		ids = append(ids, doc.ID)
-	}
-	summaries, err := s.summaries.ListByDocIDs(ctx, userID, ids)
-	if err != nil {
+func (
+	s *DocumentService) attachSummaries(ctx context.Context,
+	userID string,
+	docs []model.Document) ([]model.Document,
+	error,
+) {
+	if err := populateDocSummaries(ctx, s.summaries, userID, docs); err != nil {
 		return nil, err
-	}
-	for i := range docs {
-		docs[i].Summary = summaries[docs[i].ID]
 	}
 	return docs, nil
 }

@@ -2,18 +2,18 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
-	"github.com/xxxsen/mnote/internal/repo"
 )
 
 type AssetService struct {
-	assets    *repo.AssetRepo
-	docAssets *repo.DocumentAssetRepo
+	assets    assetRepo
+	docAssets documentAssetRepo
 }
 
 type AssetListItem struct {
@@ -27,11 +27,19 @@ type AssetReference struct {
 	Mtime      int64  `json:"mtime"`
 }
 
-func NewAssetService(assets *repo.AssetRepo, docAssets *repo.DocumentAssetRepo) *AssetService {
+func NewAssetService(assets assetRepo, docAssets documentAssetRepo) *AssetService {
 	return &AssetService{assets: assets, docAssets: docAssets}
 }
 
-func (s *AssetService) RecordUpload(ctx context.Context, userID, fileKey, url, name, contentType string, size int64) error {
+func (
+	s *AssetService) RecordUpload(ctx context.Context,
+	userID,
+	fileKey,
+	url,
+	name,
+	contentType string,
+	size int64,
+) error {
 	if userID == "" || fileKey == "" {
 		return nil
 	}
@@ -47,7 +55,10 @@ func (s *AssetService) RecordUpload(ctx context.Context, userID, fileKey, url, n
 		Ctime:       now,
 		Mtime:       now,
 	}
-	return s.assets.UpsertByFileKey(ctx, asset)
+	if err := s.assets.UpsertByFileKey(ctx, asset); err != nil {
+		return fmt.Errorf("upsert by file key: %w", err)
+	}
+	return nil
 }
 
 func (s *AssetService) SyncDocumentReferences(ctx context.Context, userID, docID, content string) error {
@@ -57,20 +68,23 @@ func (s *AssetService) SyncDocumentReferences(ctx context.Context, userID, docID
 	keys := extractFileKeys(content)
 	urls := extractAssetURLs(content)
 	if len(keys) == 0 && len(urls) == 0 {
-		return s.docAssets.ReplaceByDocument(ctx, userID, docID, []string{}, timeutil.NowUnix())
+		if err := s.docAssets.ReplaceByDocument(ctx, userID, docID, []string{}, timeutil.NowUnix()); err != nil {
+			return fmt.Errorf("replace by document: %w", err)
+		}
+		return nil
 	}
 	assets := make([]model.Asset, 0)
 	if len(keys) > 0 {
 		items, err := s.assets.ListByFileKeys(ctx, userID, keys)
 		if err != nil {
-			return err
+			return fmt.Errorf("list by file keys: %w", err)
 		}
 		assets = append(assets, items...)
 	}
 	if len(urls) > 0 {
 		items, err := s.assets.ListByURLs(ctx, userID, urls)
 		if err != nil {
-			return err
+			return fmt.Errorf("list by urls: %w", err)
 		}
 		assets = append(assets, items...)
 	}
@@ -84,13 +98,16 @@ func (s *AssetService) SyncDocumentReferences(ctx context.Context, userID, docID
 		assetIDs = append(assetIDs, item.ID)
 	}
 	sort.Strings(assetIDs)
-	return s.docAssets.ReplaceByDocument(ctx, userID, docID, assetIDs, timeutil.NowUnix())
+	if err := s.docAssets.ReplaceByDocument(ctx, userID, docID, assetIDs, timeutil.NowUnix()); err != nil {
+		return fmt.Errorf("replace by document: %w", err)
+	}
+	return nil
 }
 
 func (s *AssetService) List(ctx context.Context, userID, query string, limit, offset uint) ([]AssetListItem, error) {
 	items, err := s.assets.ListByUser(ctx, userID, strings.TrimSpace(query), limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list by user: %w", err)
 	}
 	ids := make([]string, 0, len(items))
 	for _, item := range items {
@@ -98,7 +115,7 @@ func (s *AssetService) List(ctx context.Context, userID, query string, limit, of
 	}
 	counts, err := s.docAssets.CountByAssets(ctx, userID, ids)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("count by assets: %w", err)
 	}
 	result := make([]AssetListItem, 0, len(items))
 	for _, item := range items {
@@ -109,11 +126,11 @@ func (s *AssetService) List(ctx context.Context, userID, query string, limit, of
 
 func (s *AssetService) ListReferences(ctx context.Context, userID, assetID string) ([]AssetReference, error) {
 	if _, err := s.assets.GetByID(ctx, userID, assetID); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get by id: %w", err)
 	}
 	items, err := s.docAssets.ListReferences(ctx, userID, assetID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list references: %w", err)
 	}
 	result := make([]AssetReference, 0, len(items))
 	for _, item := range items {
@@ -126,11 +143,16 @@ func (s *AssetService) RemoveDocumentReferences(ctx context.Context, userID, doc
 	if s == nil || s.docAssets == nil {
 		return nil
 	}
-	return s.docAssets.DeleteByDocument(ctx, userID, docID)
+	if err := s.docAssets.DeleteByDocument(ctx, userID, docID); err != nil {
+		return fmt.Errorf("delete by document: %w", err)
+	}
+	return nil
 }
 
-var fileKeyRegex = regexp.MustCompile(`(?:https?://[^\s)]+)?/api/v1/files/([a-zA-Z0-9._\-]+)`)
-var assetURLRegex = regexp.MustCompile(`https?://[^\s)"'>]+`)
+var (
+	fileKeyRegex  = regexp.MustCompile(`(?:https?://[^\s)]+)?/api/v1/files/([a-zA-Z0-9._\-]+)`)
+	assetURLRegex = regexp.MustCompile(`https?://[^\s)"'>]+\.(?:jpg|jpeg|png|gif|webp|svg|bmp|ico|pdf|mp4|mp3|wav|ogg|webm|zip|tar|gz|doc|docx|xls|xlsx|ppt|pptx)(?:[?#][^\s)"'>]*)?`) //nolint:lll // long regex for supported asset file extensions
+)
 
 func extractFileKeys(content string) []string {
 	matches := fileKeyRegex.FindAllStringSubmatch(content, -1)

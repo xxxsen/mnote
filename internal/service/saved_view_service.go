@@ -2,24 +2,28 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
-	"github.com/xxxsen/mnote/internal/repo"
 )
 
 type SavedViewService struct {
-	repo *repo.SavedViewRepo
+	repo savedViewRepo
 }
 
-func NewSavedViewService(repo *repo.SavedViewRepo) *SavedViewService {
+func NewSavedViewService(repo savedViewRepo) *SavedViewService {
 	return &SavedViewService{repo: repo}
 }
 
 func (s *SavedViewService) List(ctx context.Context, userID string) ([]model.SavedView, error) {
-	return s.repo.List(ctx, userID)
+	v0, err := s.repo.List(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list: %w", err)
+	}
+	return v0, nil
 }
 
 type SavedViewCreateInput struct {
@@ -30,7 +34,12 @@ type SavedViewCreateInput struct {
 	ShowShared  int
 }
 
-func (s *SavedViewService) Create(ctx context.Context, userID string, input SavedViewCreateInput) (*model.SavedView, error) {
+func (
+	s *SavedViewService) Create(ctx context.Context,
+	userID string,
+	input SavedViewCreateInput) (*model.SavedView,
+	error,
+) {
 	name := strings.TrimSpace(input.Name)
 	if name == "" || len([]rune(name)) > 32 {
 		return nil, appErr.ErrInvalid
@@ -54,7 +63,7 @@ func (s *SavedViewService) Create(ctx context.Context, userID string, input Save
 		Mtime:       now,
 	}
 	if err := s.repo.Create(ctx, item); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create saved view: %w", err)
 	}
 	return item, nil
 }
@@ -63,5 +72,8 @@ func (s *SavedViewService) Delete(ctx context.Context, userID, id string) error 
 	if strings.TrimSpace(id) == "" {
 		return appErr.ErrInvalid
 	}
-	return s.repo.Delete(ctx, userID, id)
+	if err := s.repo.Delete(ctx, userID, id); err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	return nil
 }

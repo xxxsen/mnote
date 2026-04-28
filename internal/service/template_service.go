@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -9,13 +10,12 @@ import (
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
-	"github.com/xxxsen/mnote/internal/repo"
 )
 
 type TemplateService struct {
-	templates *repo.TemplateRepo
+	templates templateRepo
 	documents *DocumentService
-	tags      *repo.TagRepo
+	tags      tagRepo
 }
 
 type CreateTemplateInput struct {
@@ -43,15 +43,25 @@ type TemplateMetaListResult struct {
 	Total int                  `json:"total"`
 }
 
-func NewTemplateService(templates *repo.TemplateRepo, documents *DocumentService, tags *repo.TagRepo) *TemplateService {
+func NewTemplateService(templates templateRepo, documents *DocumentService, tags tagRepo) *TemplateService {
 	return &TemplateService{templates: templates, documents: documents, tags: tags}
 }
 
 func (s *TemplateService) List(ctx context.Context, userID string) ([]model.Template, error) {
-	return s.templates.ListByUser(ctx, userID)
+	v0, err := s.templates.ListByUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list by user: %w", err)
+	}
+	return v0, nil
 }
 
-func (s *TemplateService) ListMeta(ctx context.Context, userID string, limit, offset int) (*TemplateMetaListResult, error) {
+func (
+	s *TemplateService) ListMeta(ctx context.Context,
+	userID string,
+	limit,
+	offset int) (*TemplateMetaListResult,
+	error,
+) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -63,11 +73,11 @@ func (s *TemplateService) ListMeta(ctx context.Context, userID string, limit, of
 	}
 	total, err := s.templates.CountByUser(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("count by user: %w", err)
 	}
 	items, err := s.templates.ListMetaByUser(ctx, userID, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list meta by user: %w", err)
 	}
 	return &TemplateMetaListResult{
 		Items: items,
@@ -76,10 +86,19 @@ func (s *TemplateService) ListMeta(ctx context.Context, userID string, limit, of
 }
 
 func (s *TemplateService) Get(ctx context.Context, userID, templateID string) (*model.Template, error) {
-	return s.templates.GetByID(ctx, userID, templateID)
+	v0, err := s.templates.GetByID(ctx, userID, templateID)
+	if err != nil {
+		return nil, fmt.Errorf("get by id: %w", err)
+	}
+	return v0, nil
 }
 
-func (s *TemplateService) Create(ctx context.Context, userID string, input CreateTemplateInput) (*model.Template, error) {
+func (
+	s *TemplateService) Create(ctx context.Context,
+	userID string,
+	input CreateTemplateInput) (*model.Template,
+	error,
+) {
 	if strings.TrimSpace(input.Name) == "" || strings.TrimSpace(input.Content) == "" {
 		return nil, appErr.ErrInvalid
 	}
@@ -97,7 +116,7 @@ func (s *TemplateService) Create(ctx context.Context, userID string, input Creat
 		Mtime:         now,
 	}
 	if err := s.templates.Create(ctx, tpl); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create: %w", err)
 	}
 	return tpl, nil
 }
@@ -116,17 +135,28 @@ func (s *TemplateService) Update(ctx context.Context, userID, templateID string,
 		DefaultTagIDs: uniqueStringSlice(input.DefaultTagIDs),
 		Mtime:         timeutil.NowUnix(),
 	}
-	return s.templates.Update(ctx, tpl)
+	if err := s.templates.Update(ctx, tpl); err != nil {
+		return fmt.Errorf("update: %w", err)
+	}
+	return nil
 }
 
 func (s *TemplateService) Delete(ctx context.Context, userID, templateID string) error {
-	return s.templates.Delete(ctx, userID, templateID)
+	if err := s.templates.Delete(ctx, userID, templateID); err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	return nil
 }
 
-func (s *TemplateService) CreateDocumentFromTemplate(ctx context.Context, userID string, input CreateDocumentFromTemplateInput) (*model.Document, error) {
+func (
+	s *TemplateService) CreateDocumentFromTemplate(ctx context.Context,
+	userID string,
+	input CreateDocumentFromTemplateInput) (*model.Document,
+	error,
+) {
 	tpl, err := s.templates.GetByID(ctx, userID, input.TemplateID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get by id: %w", err)
 	}
 	variables := map[string]string{}
 	for k, v := range input.Variables {

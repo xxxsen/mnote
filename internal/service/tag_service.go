@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"strings"
 
 	"github.com/xxxsen/mnote/internal/model"
@@ -11,12 +13,23 @@ import (
 )
 
 type TagService struct {
-	tags    *repo.TagRepo
-	docTags *repo.DocumentTagRepo
+	db      *sql.DB
+	tags    tagRepo
+	docTags documentTagRepo
 }
 
-func NewTagService(tags *repo.TagRepo, docTags *repo.DocumentTagRepo) *TagService {
-	return &TagService{tags: tags, docTags: docTags}
+func NewTagService(db *sql.DB, tags tagRepo, docTags documentTagRepo) *TagService {
+	return &TagService{db: db, tags: tags, docTags: docTags}
+}
+
+func (s *TagService) runInTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	if s.db == nil {
+		return fn(ctx)
+	}
+	if err := repo.RunInTx(ctx, s.db, fn); err != nil {
+		return fmt.Errorf("run in tx: %w", err)
+	}
+	return nil
 }
 
 func (s *TagService) Create(ctx context.Context, userID, name string) (*model.Tag, error) {
@@ -36,7 +49,7 @@ func (s *TagService) Create(ctx context.Context, userID, name string) (*model.Ta
 			}
 			return nil, appErr.ErrConflict
 		}
-		return nil, err
+		return nil, fmt.Errorf("create tag: %w", err)
 	}
 	return tag, nil
 }
@@ -77,41 +90,76 @@ func (s *TagService) CreateBatch(ctx context.Context, userID string, names []str
 		if appErr.IsConflict(err) {
 			return nil, appErr.ErrConflict
 		}
-		return nil, err
+		return nil, fmt.Errorf("batch insert tags: %w", err)
 	}
 	return newTags, nil
 }
 
 func (s *TagService) List(ctx context.Context, userID string) ([]model.Tag, error) {
-	return s.tags.List(ctx, userID)
+	v0, err := s.tags.List(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list: %w", err)
+	}
+	return v0, nil
 }
 
 func (s *TagService) ListPage(ctx context.Context, userID, query string, limit, offset int) ([]model.Tag, error) {
-	return s.tags.ListPage(ctx, userID, query, limit, offset)
+	v0, err := s.tags.ListPage(ctx, userID, query, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list page: %w", err)
+	}
+	return v0, nil
 }
 
-func (s *TagService) ListSummary(ctx context.Context, userID, query string, limit, offset int) ([]model.TagSummary, error) {
-	return s.tags.ListSummary(ctx, userID, query, limit, offset)
+func (
+	s *TagService) ListSummary(ctx context.Context,
+	userID,
+	query string,
+	limit,
+	offset int) ([]model.TagSummary,
+	error,
+) {
+	v0, err := s.tags.ListSummary(ctx, userID, query, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list summary: %w", err)
+	}
+	return v0, nil
 }
 
 func (s *TagService) ListByNames(ctx context.Context, userID string, names []string) ([]model.Tag, error) {
-	return s.tags.ListByNames(ctx, userID, names)
+	v0, err := s.tags.ListByNames(ctx, userID, names)
+	if err != nil {
+		return nil, fmt.Errorf("list by names: %w", err)
+	}
+	return v0, nil
 }
 
 func (s *TagService) ListByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error) {
-	return s.tags.ListByIDs(ctx, userID, ids)
+	v0, err := s.tags.ListByIDs(ctx, userID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list by ids: %w", err)
+	}
+	return v0, nil
 }
 
 func (s *TagService) Delete(ctx context.Context, userID, tagID string) error {
-	if err := s.docTags.DeleteByTag(ctx, userID, tagID); err != nil {
-		return err
-	}
-	return s.tags.Delete(ctx, userID, tagID)
+	return s.runInTx(ctx, func(txCtx context.Context) error {
+		if err := s.docTags.DeleteByTag(txCtx, userID, tagID); err != nil {
+			return fmt.Errorf("delete by tag: %w", err)
+		}
+		if err := s.tags.Delete(txCtx, userID, tagID); err != nil {
+			return fmt.Errorf("delete: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *TagService) UpdatePinned(ctx context.Context, userID, tagID string, pinned int) error {
 	if pinned != 0 && pinned != 1 {
 		return appErr.ErrInvalid
 	}
-	return s.tags.UpdatePinned(ctx, userID, tagID, pinned, timeutil.NowUnix())
+	if err := s.tags.UpdatePinned(ctx, userID, tagID, pinned, timeutil.NowUnix()); err != nil {
+		return fmt.Errorf("update pinned: %w", err)
+	}
+	return nil
 }
