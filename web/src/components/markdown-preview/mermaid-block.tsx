@@ -169,6 +169,7 @@ const MermaidModal = memo(({
   const [isDragging, setIsDragging] = React.useState(false);
   const normalized = chart.trim();
 
+  /* v8 ignore start -- SVG measurement requires real browser rendering */
   const updateBaseScale = React.useCallback(() => {
     const container = modalBodyRef.current;
     if (!container) return;
@@ -203,6 +204,7 @@ const MermaidModal = memo(({
     schedule();
     return () => { if (raf) cancelAnimationFrame(raf); resizeObserver.disconnect(); };
   }, [updateBaseScale]);
+  /* v8 ignore stop */
 
   const handleZoomWheel = React.useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();

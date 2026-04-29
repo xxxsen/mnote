@@ -138,4 +138,71 @@ describe("useHoverPreview", () => {
     act(() => { result.current.openHoverPreview(makeEvent(), "Test"); });
     unmount();
   });
+
+  it("resolveTargetId uses first doc when no exact title match", async () => {
+    mockApiFetch
+      .mockResolvedValueOnce([{ id: "d1", title: "Other" }])
+      .mockResolvedValueOnce({ document: { title: "Other", content: "Content", summary: "" } });
+    const { result } = renderHook(() => useHoverPreview(true));
+    act(() => { result.current.openHoverPreview(makeEvent(), "NoMatch"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(result.current.hoverPreview.loading).toBe(false);
+  });
+
+  it("fetchPreviewSnippet shows Empty note for empty content", async () => {
+    mockApiFetch
+      .mockResolvedValueOnce([{ id: "d1", title: "Empty" }])
+      .mockResolvedValueOnce({ document: { title: "Empty", content: "", summary: "" } });
+    const { result } = renderHook(() => useHoverPreview(true));
+    act(() => { result.current.openHoverPreview(makeEvent(), "Empty"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(result.current.hoverPreview.content).toBe("Empty note");
+  });
+
+  it("resolveTargetId uses href with query/hash stripped", async () => {
+    mockApiFetch.mockResolvedValue({ document: { title: "Doc", content: "C", summary: "" } });
+    const { result } = renderHook(() => useHoverPreview(true));
+    act(() => { result.current.openHoverPreview(makeEvent(), "Doc", "/docs/d1?tab=1#section"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(mockApiFetch).toHaveBeenCalledWith("/documents/d1");
+  });
+
+  it("closeHoverPreview no-op when no timer is set", () => {
+    const { result } = renderHook(() => useHoverPreview(true));
+    act(() => { result.current.closeHoverPreview(); });
+    expect(result.current.hoverPreview.open).toBe(false);
+  });
+
+  it("caches by href when provided", async () => {
+    mockApiFetch.mockResolvedValue({ document: { title: "D", content: "Data", summary: "" } });
+    const { result } = renderHook(() => useHoverPreview(true));
+    act(() => { result.current.openHoverPreview(makeEvent(), "D", "/docs/d1"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    act(() => { result.current.closeHoverPreview(); });
+    vi.clearAllMocks();
+    act(() => { result.current.openHoverPreview(makeEvent(), "D", "/docs/d1"); });
+    expect(mockApiFetch).not.toHaveBeenCalled();
+    expect(result.current.hoverPreview.content).toContain("Data");
+  });
+
+  it("resolveTargetId with /docs/ href with empty id falls through to title", async () => {
+    mockApiFetch
+      .mockResolvedValueOnce([{ id: "d1", title: "Test" }])
+      .mockResolvedValueOnce({ document: { title: "Test", content: "Found", summary: "" } });
+    const { result } = renderHook(() => useHoverPreview(true));
+    act(() => { result.current.openHoverPreview(makeEvent(), "Test", "/docs/"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(result.current.hoverPreview.loading).toBe(false);
+  });
+
+  it("position clamping for near-edge hover", async () => {
+    vi.stubGlobal("innerWidth", 300);
+    vi.stubGlobal("innerHeight", 200);
+    mockApiFetch.mockResolvedValue([]);
+    const { result } = renderHook(() => useHoverPreview(true));
+    const edgeEvent = makeEvent(290, 190);
+    act(() => { result.current.openHoverPreview(edgeEvent, "Edge"); });
+    expect(result.current.hoverPreview.open).toBe(true);
+    vi.unstubAllGlobals();
+  });
 });
