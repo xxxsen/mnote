@@ -120,4 +120,50 @@ describe("useInlineTag", () => {
     expect(result.current.inlineTagInputRef).toBeDefined();
     expect(result.current.inlineTagComposeRef).toBeDefined();
   });
+
+  it("handleInlineAddTag creates new tag when not found", async () => {
+    stableFindExisting.mockResolvedValue(null);
+    mockApiFetch.mockResolvedValue({ id: "t5", name: "newtag" });
+    const { result } = renderHook(() => useInlineTag(makeOpts()));
+    await act(async () => { await result.current.handleInlineAddTag("newtag"); });
+    expect(stableSaveTagIDs).toHaveBeenCalledWith(expect.arrayContaining(["t5"]));
+    expect(stableMergeTags).toHaveBeenCalledWith([{ id: "t5", name: "newtag" }]);
+  });
+
+  it("handleInlineAddTag with empty name closes mode", async () => {
+    const { result } = renderHook(() => useInlineTag(makeOpts()));
+    await act(async () => { await result.current.handleInlineAddTag(""); });
+    expect(result.current.inlineTagMode).toBe(false);
+  });
+
+  it("handleInlineTagSelect with create type delegates to handleInlineAddTag", async () => {
+    stableFindExisting.mockResolvedValue(null);
+    mockApiFetch.mockResolvedValue({ id: "t5", name: "newtag" });
+    const { result } = renderHook(() => useInlineTag(makeOpts()));
+    await act(async () => {
+      await result.current.handleInlineTagSelect({ key: "create-newtag", type: "create", name: "newtag" });
+    });
+    expect(stableSaveTagIDs).toHaveBeenCalled();
+  });
+
+  it("handleInlineTagSelect respects max tags", async () => {
+    const opts = makeOpts();
+    opts.selectedTagIDs = Array.from({ length: 7 }, (_, i) => `t${i}`);
+    const { result } = renderHook(() => useInlineTag(opts));
+    await act(async () => {
+      await result.current.handleInlineTagSelect({ key: "use-t99", type: "use", tag: tag("t99", "overflow") });
+    });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining("7") }));
+  });
+
+  it("search populates dropdown items after debounce", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    stableSearchTags.mockResolvedValue([tag("t5", "react")]);
+    const { result } = renderHook(() => useInlineTag(makeOpts()));
+    act(() => { result.current.setInlineTagMode(true); });
+    act(() => { result.current.setInlineTagValue("react"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(result.current.inlineTagDropdownItems.length).toBeGreaterThan(0);
+    vi.useRealTimers();
+  });
 });
