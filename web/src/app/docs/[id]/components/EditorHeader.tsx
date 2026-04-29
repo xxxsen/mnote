@@ -1,6 +1,5 @@
 "use client";
 
-import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, Columns, Folder, Home, RefreshCw, Save, Star } from "lucide-react";
@@ -18,12 +17,11 @@ type EditorHeaderProps = {
   lastSavedAt: number | null;
   showDetails: boolean;
   setShowDetails: (v: boolean) => void;
-  loadVersions: () => void;
   starred: number;
   handleStarToggle: () => void;
 };
 
-export const EditorHeader = memo(function EditorHeader({
+export function EditorHeader({
   router,
   title,
   handleSave,
@@ -32,7 +30,6 @@ export const EditorHeader = memo(function EditorHeader({
   lastSavedAt,
   showDetails,
   setShowDetails,
-  loadVersions,
   starred,
   handleStarToggle,
 }: EditorHeaderProps) {
@@ -82,10 +79,7 @@ export const EditorHeader = memo(function EditorHeader({
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => {
-            setShowDetails(!showDetails);
-            if (!showDetails) loadVersions();
-          }}
+          onClick={() => { setShowDetails(!showDetails); }}
           className={`h-8 w-8 ${showDetails ? "bg-accent text-foreground" : "text-muted-foreground"}`}
         >
           <Columns className="h-4 w-4 rotate-90" />
@@ -93,4 +87,4 @@ export const EditorHeader = memo(function EditorHeader({
       </div>
     </header>
   );
-});
+}

@@ -71,21 +71,7 @@ export type EditorPageLayoutProps = {
 export function EditorPageLayout(p: EditorPageLayoutProps) {
   return (
     <div className="flex flex-col h-screen bg-background relative">
-      <style jsx global>{`
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
-        .cm-editor { font-family: 'JetBrains Mono', 'Fira Code', monospace !important; }
-        .cm-editor * { transition: none !important; }
-        .prose h1, .prose h2, .prose h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
-        .prose p { margin-bottom: 1em; line-height: 1.7; }
-        #mermaid-error-box, .mermaid-error-overlay, [id^="mermaid-error"] { display: none !important; }
-        .mermaid-container > svg[id^="mermaid-"] { max-width: 100%; height: auto; }
-      `}</style>
-      <EditorHeader router={p.router} title={p.title} handleSave={p.handleSave} saving={p.saving} hasUnsavedChanges={p.ec.hasUnsavedChanges} lastSavedAt={p.lastSavedAt} showDetails={p.showDetails} setShowDetails={p.setShowDetails} loadVersions={() => void p.documentActions.listVersions()} starred={p.starred} handleStarToggle={p.handleStarToggle} />
+      <EditorHeader router={p.router} title={p.title} handleSave={p.handleSave} saving={p.saving} hasUnsavedChanges={p.ec.hasUnsavedChanges} lastSavedAt={p.lastSavedAt} showDetails={p.showDetails} setShowDetails={p.setShowDetails} starred={p.starred} handleStarToggle={p.handleStarToggle} />
       <EditorMainArea p={p} />
       <EditorFooter cursorPos={p.ec.cursorPos} wordCount={p.ec.wordCount} charCount={p.ec.charCount} hasUnsavedChanges={p.ec.hasUnsavedChanges} />
       <EditorOverlays p={p} />

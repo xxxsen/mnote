@@ -1,3 +1,14 @@
+#mermaid-error-box,
+.mermaid-error-overlay,
+[id^="mermaid-error"] {
+  display: none !important;
+}
+
+.mermaid-container > svg[id^="mermaid-"] {
+  max-width: 100%;
+  height: auto;
+}
+
 .mermaid {
   background: #fff7ed;
   display: flex;

@@ -5,6 +5,10 @@
   font-size: 16px;
 }
 
+.cm-editor * {
+  transition: none !important;
+}
+
 .cm-scroller {
   font-family: var(--font-mono) !important;
   padding: 0.5rem 0.75rem;

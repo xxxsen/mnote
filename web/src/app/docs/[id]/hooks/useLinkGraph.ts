@@ -23,6 +23,7 @@ export function useLinkGraph(opts: {
     }
   }, [docId]);
 
+  // TODO: replace N+1 per-doc fetches with batch API (e.g. POST /documents/batch) to reduce request volume
   const loadOutboundLinks = useCallback(async (value: string) => {
     const linkIDs = extractLinkedDocIDs(value, docId);
     if (linkIDs.length === 0) { setOutboundLinks([]); return; }

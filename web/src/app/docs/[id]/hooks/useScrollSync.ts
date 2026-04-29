@@ -11,6 +11,7 @@ export function useScrollSync(opts: {
   const scrollSyncTimerRef = useRef<number | null>(null);
   const forcePreviewSyncRef = useRef(false);
 
+  // TODO: extract percentage/threshold math into pure testable functions
   /* v8 ignore start -- scroll sync requires real DOM viewport measurements */
   const handleEditorScroll = useCallback(() => {
     if (scrollingSource.current === "preview" || loading) return;

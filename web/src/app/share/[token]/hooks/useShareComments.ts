@@ -112,7 +112,7 @@ export function useShareComments(opts: UseShareCommentsOptions) {
   }, [commentsLoading, commentsAppending, commentsHasMore, comments.length, handleLoadMoreComments]);
   /* v8 ignore stop */
 
-  const handleSubmitComment = async () => {
+  const handleSubmitComment = useCallback(async () => {
     if (!detail || !canAnnotate || annotationSubmitting) return;
     const content = annotationContent.trim();
     if (!content) { showToast("Please enter comment content."); return; }
@@ -133,7 +133,7 @@ export function useShareComments(opts: UseShareCommentsOptions) {
     } finally {
       setAnnotationSubmitting(false);
     }
-  };
+  }, [detail, canAnnotate, annotationSubmitting, annotationContent, token, accessPassword, guestAuthor, showToast, fetchComments]);
 
   return {
     comments, commentsTotal, commentsLoading,
