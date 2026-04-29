@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
 
 const stableToast = vi.fn();
 vi.mock("@/lib/api", () => ({
@@ -26,6 +26,10 @@ const makeDetail = (overrides = {}) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe("useSharePage", () => {
