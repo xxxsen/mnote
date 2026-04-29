@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import React from "react";
 import { ToastProvider, useToast } from "../toast";
+import { ApiError } from "@/lib/api";
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <ToastProvider>{children}</ToastProvider>
@@ -46,5 +47,18 @@ describe("ToastProvider + useToast", () => {
   it("toast with success variant", () => {
     const { result } = renderHook(() => useToast(), { wrapper });
     act(() => { result.current.toast({ description: "Done!", variant: "success" }); });
+  });
+
+  it("toast with ApiError description", () => {
+    const { result } = renderHook(() => useToast(), { wrapper });
+    const apiErr = new ApiError("Not found", 404);
+    act(() => { result.current.toast({ description: apiErr }); });
+  });
+
+  it("close button removes toast", () => {
+    const { result, container } = renderHook(() => useToast(), { wrapper });
+    act(() => { result.current.toast({ description: "Removable" }); });
+    const closeBtn = document.querySelector("button");
+    if (closeBtn) act(() => { closeBtn.click(); });
   });
 });

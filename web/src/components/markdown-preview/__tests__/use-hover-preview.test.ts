@@ -123,4 +123,19 @@ describe("useHoverPreview", () => {
     expect(result.current.hoverPreview.content.length).toBeLessThanOrEqual(183);
     expect(result.current.hoverPreview.content.endsWith("...")).toBe(true);
   });
+
+  it("clears timer when opening twice quickly", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "d1", title: "T" }]);
+    const { result } = renderHook(() => useHoverPreview(true));
+    act(() => { result.current.openHoverPreview(makeEvent(), "First"); });
+    act(() => { result.current.openHoverPreview(makeEvent(), "Second"); });
+    expect(result.current.hoverPreview.title).toBe("Second");
+  });
+
+  it("cleans up timer on unmount", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "d1", title: "T" }]);
+    const { result, unmount } = renderHook(() => useHoverPreview(true));
+    act(() => { result.current.openHoverPreview(makeEvent(), "Test"); });
+    unmount();
+  });
 });

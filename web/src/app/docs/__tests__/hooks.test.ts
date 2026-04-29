@@ -151,6 +151,17 @@ describe("useSavedViews", () => {
     expect(mockApiFetch).toHaveBeenCalledWith("/saved-views/v1", { method: "DELETE" });
   });
 
+  it("handleSaveCurrentView handles API error", async () => {
+    vi.stubGlobal("prompt", vi.fn().mockReturnValue("My View"));
+    mockApiFetch.mockRejectedValue(new Error("save fail"));
+    const { result } = renderHook(() => useSavedViews({ toast: toastFn }));
+    await act(async () => {
+      await result.current.handleSaveCurrentView({ search: "go", selectedTag: "", showStarred: false, showShared: false });
+    });
+    expect(toastFn).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+    vi.unstubAllGlobals();
+  });
+
   it("removeSavedView toasts on error", async () => {
     mockApiFetch.mockRejectedValue(new Error("fail"));
     const { result } = renderHook(() => useSavedViews({ toast: toastFn }));

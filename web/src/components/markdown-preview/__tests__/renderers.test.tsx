@@ -248,4 +248,27 @@ describe("buildMarkdownComponents", () => {
     const { container } = render(<A href="/docs/doc1">My Doc</A>);
     expect(container.querySelector("[data-testid='wikilink']")).toBeTruthy();
   });
+
+  it("pre unwraps fenced code with numeric-prefix language", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Pre = comps.pre as React.FC<{ children: React.ReactNode }>;
+    const child = React.createElement("code", { className: "language-1:5:src/main.go" }, "code");
+    const { container } = render(<Pre>{child}</Pre>);
+    expect(container.querySelector("pre")).toBeNull();
+  });
+
+  it("pre unwraps fenced code with simple colon language", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Pre = comps.pre as React.FC<{ children: React.ReactNode }>;
+    const child = React.createElement("code", { className: "language-go:main.go" }, "code");
+    const { container } = render(<Pre>{child}</Pre>);
+    expect(container.querySelector("pre")).toBeNull();
+  });
+
+  it("img handles missing src gracefully", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Img = comps.img as React.FC<{ src?: string; alt?: string }>;
+    const { container } = render(<Img alt="no src" />);
+    expect(container.querySelector("img")).toBeTruthy();
+  });
 });

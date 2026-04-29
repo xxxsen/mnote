@@ -109,4 +109,38 @@ describe("useSidebarTags", () => {
       body: JSON.stringify({ pinned: false }),
     }));
   });
+
+  it("maybeAutoLoadTags loads when near bottom of scroll", async () => {
+    const tags20 = Array.from({ length: 20 }, (_, i) => ({ id: `t${i}`, name: `tag${i}`, doc_count: 1, pinned: 0 }));
+    mockApiFetch.mockResolvedValue(tags20);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    await waitFor(() => { expect(result.current.sidebarHasMore).toBe(true); });
+
+    const container = document.createElement("div");
+    Object.defineProperty(container, "scrollTop", { value: 950, writable: true });
+    Object.defineProperty(container, "clientHeight", { value: 100, writable: true });
+    Object.defineProperty(container, "scrollHeight", { value: 1000, writable: true });
+    (result.current.sidebarScrollRef as React.MutableRefObject<HTMLDivElement | null>).current = container;
+
+    mockApiFetch.mockResolvedValue([{ id: "t20", name: "tag20", doc_count: 1, pinned: 0 }]);
+    act(() => { result.current.maybeAutoLoadTags(); });
+    expect(mockApiFetch).toHaveBeenCalled();
+  });
+
+  it("maybeAutoLoadTags loads when not scrollable", async () => {
+    const tags20 = Array.from({ length: 20 }, (_, i) => ({ id: `t${i}`, name: `tag${i}`, doc_count: 1, pinned: 0 }));
+    mockApiFetch.mockResolvedValue(tags20);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    await waitFor(() => { expect(result.current.sidebarHasMore).toBe(true); });
+
+    const container = document.createElement("div");
+    Object.defineProperty(container, "scrollTop", { value: 0, writable: true });
+    Object.defineProperty(container, "clientHeight", { value: 500, writable: true });
+    Object.defineProperty(container, "scrollHeight", { value: 500, writable: true });
+    (result.current.sidebarScrollRef as React.MutableRefObject<HTMLDivElement | null>).current = container;
+
+    mockApiFetch.mockResolvedValue([{ id: "t20", name: "tag20", doc_count: 1, pinned: 0 }]);
+    act(() => { result.current.maybeAutoLoadTags(); });
+    expect(mockApiFetch).toHaveBeenCalled();
+  });
 });

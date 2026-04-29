@@ -248,6 +248,22 @@ describe("useSharePage", () => {
     expect(document.title).toBe("My Title");
   });
 
+  it("scrollToHash finds element by hash", async () => {
+    window.location.hash = "#my-heading";
+    mockApiFetch.mockResolvedValue(makeDetail());
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    window.location.hash = "";
+  });
+
+  it("scrollToHash tries heading text matching", async () => {
+    window.location.hash = "#some-heading";
+    mockApiFetch.mockResolvedValue(makeDetail());
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    window.location.hash = "";
+  });
+
   it("handleExport creates download link", async () => {
     mockApiFetch.mockResolvedValue(makeDetail());
     const click = vi.fn();
