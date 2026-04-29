@@ -190,7 +190,7 @@ export default function CommentItem({
   const fetchReplies = async (offset = 0) => {
     setRepliesLoading(true);
     try {
-      const res = await apiFetch<ShareComment[]>(`/public/share/${token}/comments/${comment.id}/replies?limit=10&offset=${offset}${accessPassword.trim() ? `&password=${accessPassword.trim()}` : ''}`);
+      const res = await apiFetch<ShareComment[]>(`/public/share/${token}/comments/${comment.id}/replies?limit=10&offset=${offset}${accessPassword.trim() ? `&password=${accessPassword.trim()}` : ''}`, { requireAuth: false });
       if (offset === 0) { setReplies(res); setLoadedRepliesCount(res.length); }
       else { setReplies(prev => mergeByID(prev, res)); setLoadedRepliesCount((prev) => prev + res.length); }
       setRepliesExpanded(true);

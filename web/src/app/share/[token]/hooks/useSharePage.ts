@@ -117,10 +117,32 @@ export function useSharePage() {
   /* v8 ignore start -- clipboard interaction requires secure context */
   const handleCopyLink = () => {
     const value = window.location.href;
-    void navigator.clipboard.writeText(value)
-      .then(() => { setToast("Link copied to clipboard!"); })
-      .catch(() => { setToast("Failed to copy link"); })
-      .finally(() => { setTimeout(() => setToast(null), 3000); });
+    const fallbackCopy = () => {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = value;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "absolute";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        // eslint-disable-next-line @typescript-eslint/no-deprecated
+        const ok = document.execCommand("copy");
+        document.body.removeChild(textarea);
+        return ok;
+      } catch { return false; }
+    };
+    try {
+      void navigator.clipboard.writeText(value)
+        .then(() => { setToast("Link copied to clipboard!"); })
+        .catch(() => {
+          setToast(fallbackCopy() ? "Link copied to clipboard!" : "Failed to copy link");
+        })
+        .finally(() => { setTimeout(() => setToast(null), 3000); });
+    } catch {
+      setToast(fallbackCopy() ? "Link copied to clipboard!" : "Failed to copy link");
+      setTimeout(() => setToast(null), 3000);
+    }
   };
   /* v8 ignore stop */
 
