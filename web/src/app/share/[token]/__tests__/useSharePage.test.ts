@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
 
-const stableToast = vi.fn();
 vi.mock("@/lib/api", () => ({
   apiFetch: vi.fn(),
   ApiError: class ApiError extends Error { code: number; constructor(m: string, c: number) { super(m); this.code = c; } },

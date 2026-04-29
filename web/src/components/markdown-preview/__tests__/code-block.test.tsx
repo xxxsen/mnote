@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 vi.mock("react-syntax-highlighter", () => ({
@@ -19,12 +18,12 @@ beforeEach(() => { vi.clearAllMocks(); });
 
 describe("CodeBlock", () => {
   it("renders with language label", () => {
-    render(<CodeBlock language="javascript" rawCode="console.log('hi')" />);
+    render(<CodeBlock language="javascript" fileName="" rawCode="console.log('hi')" />);
     expect(screen.getByText("JAVASCRIPT")).toBeTruthy();
   });
 
   it("renders code content", () => {
-    render(<CodeBlock language="go" rawCode="fmt.Println" />);
+    render(<CodeBlock language="go" fileName="" rawCode="fmt.Println" />);
     expect(screen.getByText("fmt.Println")).toBeTruthy();
   });
 
@@ -34,13 +33,13 @@ describe("CodeBlock", () => {
   });
 
   it("has copy button", () => {
-    const { container } = render(<CodeBlock language="js" rawCode="code" />);
+    const { container } = render(<CodeBlock language="js" fileName="" rawCode="code" />);
     const btn = container.querySelector("button[title='Copy']");
     expect(btn).toBeTruthy();
   });
 
   it("copy button triggers clipboard", async () => {
-    const { container } = render(<CodeBlock language="js" rawCode="code" />);
+    const { container } = render(<CodeBlock language="js" fileName="" rawCode="code" />);
     const btn = container.querySelector("button[title='Copy']")!;
     fireEvent.click(btn);
     expect(copyToClipboard).toHaveBeenCalledWith("code");

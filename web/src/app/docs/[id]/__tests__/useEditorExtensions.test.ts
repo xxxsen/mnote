@@ -12,7 +12,7 @@ import { useEditorExtensions, handleListContinuation } from "../hooks/useEditorE
 beforeEach(() => { vi.clearAllMocks(); });
 
 const makeOpts = () => ({
-  currentThemeId: "default" as const,
+  currentThemeId: "dark-plus" as const,
   updateCursorInfo: vi.fn(),
   startTransition: (cb: () => void) => cb(),
   setSlashMenu: vi.fn(),

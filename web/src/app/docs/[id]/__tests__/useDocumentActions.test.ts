@@ -42,7 +42,7 @@ describe("useDocumentActions", () => {
   });
 
   it("saveDocument calls service with docId and params", async () => {
-    mockService.saveDocument.mockResolvedValue(undefined as never);
+    mockService.saveDocument.mockResolvedValue(undefined);
     const { result } = renderHook(() => useDocumentActions("d1"));
     await result.current.saveDocument("Title", "Content");
     expect(mockService.saveDocument).toHaveBeenCalledWith("d1", { title: "Title", content: "Content" });
@@ -56,7 +56,7 @@ describe("useDocumentActions", () => {
   });
 
   it("deleteDocument calls service", async () => {
-    mockService.deleteDocument.mockResolvedValue(undefined as never);
+    mockService.deleteDocument.mockResolvedValue(undefined);
     const { result } = renderHook(() => useDocumentActions("d1"));
     await result.current.deleteDocument();
     expect(mockService.deleteDocument).toHaveBeenCalledWith("d1");
@@ -92,7 +92,7 @@ describe("useDocumentActions", () => {
   });
 
   it("revokeShare calls service", async () => {
-    mockService.revokeShare.mockResolvedValue(undefined as never);
+    mockService.revokeShare.mockResolvedValue(undefined);
     const { result } = renderHook(() => useDocumentActions("d1"));
     await result.current.revokeShare();
     expect(mockService.revokeShare).toHaveBeenCalledWith("d1");

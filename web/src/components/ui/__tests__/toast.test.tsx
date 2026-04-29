@@ -56,7 +56,7 @@ describe("ToastProvider + useToast", () => {
   });
 
   it("close button removes toast", () => {
-    const { result, container } = renderHook(() => useToast(), { wrapper });
+    const { result } = renderHook(() => useToast(), { wrapper });
     act(() => { result.current.toast({ description: "Removable" }); });
     const closeBtn = document.querySelector("button");
     if (closeBtn) act(() => { closeBtn.click(); });

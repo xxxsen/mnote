@@ -193,7 +193,7 @@ describe("useDocsData", () => {
     mockApiFetch.mockImplementation(((url: string) => {
       if (url.startsWith("/ai/search")) return Promise.resolve({ items: [{ id: "a1" }] });
       return Promise.resolve([]);
-    }) as typeof apiFetch);
+    }));
     const { result } = renderHook(() => useDocsData(makeDeps({ search: "hello" })));
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     expect(result.current.aiSearchDocs).toHaveLength(1);
@@ -232,7 +232,7 @@ describe("useDocsData", () => {
     const { result } = renderHook(() => useDocsData(makeDeps()));
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     const div = document.createElement("div");
-    (result.current.loadMoreRef as React.MutableRefObject<HTMLDivElement | null>).current = div;
+    (result.current.loadMoreRef).current = div;
     vi.unstubAllGlobals();
   });
 });

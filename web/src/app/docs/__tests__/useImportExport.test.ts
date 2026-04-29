@@ -188,16 +188,14 @@ describe("useImportExport", () => {
       status: 200,
       json: () => Promise.resolve({ data: { job_id: "job1" } }),
     }));
-    let statusCallCount = 0;
-    mockApiFetch.mockImplementation(((url: string, opts?: { method?: string }) => {
+    mockApiFetch.mockImplementation(((url: string, _opts?: { method?: string }) => {
       if (url.includes("/preview")) return Promise.resolve({ files: [], total: 0 });
       if (url.includes("/confirm")) return Promise.resolve({ ok: true });
       if (url.includes("/status")) {
-        statusCallCount++;
         return Promise.resolve({ status: "done", progress: 100, report: { imported: 1, skipped: 0, failed: 0 } });
       }
       return Promise.resolve({});
-    }) as typeof apiFetch);
+    }));
 
     const deps = makeDeps();
     const { result } = renderHook(() => useImportExport(deps));
@@ -214,11 +212,11 @@ describe("useImportExport", () => {
       status: 200,
       json: () => Promise.resolve({ data: { job_id: "job1" } }),
     }));
-    mockApiFetch.mockImplementation(((url: string, opts?: { method?: string }) => {
+    mockApiFetch.mockImplementation(((url: string, _opts?: { method?: string }) => {
       if (url.includes("/preview")) return Promise.resolve({ files: [], total: 0 });
       if (url.includes("/confirm")) return Promise.reject(new Error("confirm fail"));
       return Promise.resolve({});
-    }) as typeof apiFetch);
+    }));
 
     const { result } = renderHook(() => useImportExport(makeDeps()));
     act(() => { result.current.openImportModal("hedgedoc"); });

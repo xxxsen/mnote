@@ -46,7 +46,7 @@ describe("useLinkGraph", () => {
       if (url.includes("/o1")) return Promise.resolve({ document: { id: "o1", title: "Out1" } });
       if (url.includes("/o2")) return Promise.resolve({ document: { id: "o2", title: "Out2" } });
       return Promise.resolve([]);
-    }) as typeof apiFetch);
+    }));
 
     const { result } = renderHook(() => useLinkGraph({ docId: "d1", title: "Title", previewContent: "[[Out1]] [[Out2]]" }));
     await waitFor(() => { expect(result.current.outboundLinks).toHaveLength(2); });
@@ -75,7 +75,7 @@ describe("useLinkGraph", () => {
     mockApiFetch.mockImplementation(((url: string) => {
       if (url.includes("/backlinks")) return Promise.resolve([]);
       return Promise.resolve({ document: { id: "o1", title: "Out1" } });
-    }) as typeof apiFetch);
+    }));
 
     const { result } = renderHook(() => useLinkGraph({ docId: "d1", title: "Title", previewContent: "[[Out1]]" }));
     await waitFor(() => {
@@ -89,7 +89,7 @@ describe("useLinkGraph", () => {
     mockApiFetch.mockImplementation(((url: string) => {
       if (url.includes("/backlinks")) return Promise.resolve([{ id: "b1", title: "Both" }]);
       return Promise.resolve({ document: { id: "b1", title: "Both" } });
-    }) as typeof apiFetch);
+    }));
 
     const { result } = renderHook(() => useLinkGraph({ docId: "d1", title: "Title", previewContent: "[[Both]]" }));
     await waitFor(() => {

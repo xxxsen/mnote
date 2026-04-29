@@ -70,7 +70,7 @@ describe("useDocumentActions", () => {
   });
 
   it("saveDocument passes title and content", async () => {
-    mockDocService.saveDocument.mockResolvedValue(undefined as never);
+    mockDocService.saveDocument.mockResolvedValue(undefined);
     const { result } = renderHook(() => useDocumentActions("doc1"));
     await result.current.saveDocument("T", "C");
     expect(mockDocService.saveDocument).toHaveBeenCalledWith("doc1", { title: "T", content: "C" });
@@ -416,7 +416,7 @@ describe("useShareLink", () => {
   });
 
   it("loadShare handles null share", async () => {
-    mockDocService.getShare.mockResolvedValue({ share: null } as never);
+    mockDocService.getShare.mockResolvedValue({ share: null });
     const { result } = renderHook(() => useShareLink({ docId: "d1" }));
     await act(async () => { await result.current.loadShare(); });
     expect(result.current.activeShare).toBeNull();
@@ -433,7 +433,7 @@ describe("useShareLink", () => {
   });
 
   it("handleRevokeShare clears share state", async () => {
-    mockDocService.revokeShare.mockResolvedValue(undefined as never);
+    mockDocService.revokeShare.mockResolvedValue(undefined);
     const { result } = renderHook(() => useShareLink({ docId: "d1" }));
     await act(async () => { await result.current.handleRevokeShare(); });
     expect(result.current.activeShare).toBeNull();

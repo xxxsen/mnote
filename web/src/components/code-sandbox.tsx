@@ -113,7 +113,7 @@ export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
           setError(msg.content || "Unknown error");
           setIsRunning(false);
         } else {
-          const lineType = msg.type as OutputLine["type"];
+          const lineType = msg.type;
           setOutput((prev) => [...prev, { type: lineType, content: msg.content || "" }]);
         }
       }

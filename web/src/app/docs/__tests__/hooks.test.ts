@@ -79,12 +79,12 @@ describe("useTagIndex", () => {
   });
 
   it("fetchTags skips if already in flight", async () => {
-    let resolveFirst: (() => void) | null = null;
-    mockApiFetch.mockImplementation(() => new Promise<never[]>((r) => { resolveFirst = () => r([]); }));
+    const holder: { resolve: (() => void) | null } = { resolve: null };
+    mockApiFetch.mockImplementation(() => new Promise<unknown[]>((r) => { holder.resolve = () => r([]); }));
     const { result } = renderHook(() => useTagIndex());
     const p1 = act(async () => { void result.current.fetchTags("a"); });
     await act(async () => { void result.current.fetchTags("b"); });
-    if (resolveFirst) resolveFirst();
+    if (holder.resolve) holder.resolve();
     await p1;
     expect(mockApiFetch).toHaveBeenCalledTimes(1);
   });

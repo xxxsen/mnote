@@ -45,7 +45,7 @@ describe("useSidebarTags", () => {
     mockApiFetch.mockImplementation(((url: string) => {
       if (url.includes("/pin")) return Promise.reject(new Error("fail"));
       return Promise.resolve([]);
-    }) as typeof apiFetch);
+    }));
     const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
     await waitFor(() => { expect(result.current.sidebarLoading).toBe(false); });
     const tag = { id: "t1", name: "go", doc_count: 5, pinned: 0 };
@@ -120,7 +120,7 @@ describe("useSidebarTags", () => {
     Object.defineProperty(container, "scrollTop", { value: 950, writable: true });
     Object.defineProperty(container, "clientHeight", { value: 100, writable: true });
     Object.defineProperty(container, "scrollHeight", { value: 1000, writable: true });
-    (result.current.sidebarScrollRef as React.MutableRefObject<HTMLDivElement | null>).current = container;
+    (result.current.sidebarScrollRef).current = container;
 
     mockApiFetch.mockResolvedValue([{ id: "t20", name: "tag20", doc_count: 1, pinned: 0 }]);
     act(() => { result.current.maybeAutoLoadTags(); });
@@ -137,7 +137,7 @@ describe("useSidebarTags", () => {
     Object.defineProperty(container, "scrollTop", { value: 0, writable: true });
     Object.defineProperty(container, "clientHeight", { value: 500, writable: true });
     Object.defineProperty(container, "scrollHeight", { value: 500, writable: true });
-    (result.current.sidebarScrollRef as React.MutableRefObject<HTMLDivElement | null>).current = container;
+    (result.current.sidebarScrollRef).current = container;
 
     mockApiFetch.mockResolvedValue([{ id: "t20", name: "tag20", doc_count: 1, pinned: 0 }]);
     act(() => { result.current.maybeAutoLoadTags(); });

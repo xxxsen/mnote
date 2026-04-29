@@ -89,6 +89,8 @@ const eslintConfig = defineConfig([
       "@typescript-eslint/no-shadow": "off",
       "@typescript-eslint/consistent-type-imports": "off",
       "@typescript-eslint/no-non-null-assertion": "off",
+      "@typescript-eslint/unbound-method": "off",
+      "@typescript-eslint/no-deprecated": "off",
       "complexity": "off",
       "max-depth": "off",
       "max-lines-per-function": "off",

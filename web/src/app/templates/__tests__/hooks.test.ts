@@ -160,7 +160,7 @@ function setupApiRouter(responses: Record<string, unknown>) {
       if (url.startsWith(pattern)) return Promise.resolve(value);
     }
     return Promise.resolve(undefined);
-  }) as typeof apiFetch);
+  }));
 }
 
 describe("useTemplates", () => {
@@ -207,7 +207,7 @@ describe("useTemplates", () => {
       if (url.startsWith("/templates/")) return Promise.resolve(fullTemplate("new1", "New Template"));
       if (url === "/tags/ids") return Promise.resolve([]);
       return Promise.resolve(undefined);
-    }) as typeof apiFetch);
+    }));
 
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
@@ -223,7 +223,7 @@ describe("useTemplates", () => {
       if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "T1"));
       if (url === "/tags/ids") return Promise.resolve([]);
       return Promise.resolve(undefined);
-    }) as typeof apiFetch);
+    }));
 
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
@@ -250,7 +250,7 @@ describe("useTemplates", () => {
       if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "T1"));
       if (url === "/tags/ids") return Promise.resolve([]);
       return Promise.resolve(undefined);
-    }) as typeof apiFetch);
+    }));
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     act(() => { result.current.setDraft({ name: "Changed", description: "", content: "# X" }); });
@@ -265,7 +265,7 @@ describe("useTemplates", () => {
       if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "T1"));
       if (url === "/tags/ids") return Promise.resolve([]);
       return Promise.resolve(undefined);
-    }) as typeof apiFetch);
+    }));
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     act(() => { result.current.setDraft({ name: "X", description: "", content: "# X" }); });
@@ -314,7 +314,7 @@ describe("useTemplates", () => {
       if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "T1"));
       if (url === "/tags/ids") return Promise.resolve([]);
       return Promise.resolve(undefined);
-    }) as typeof apiFetch);
+    }));
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     await act(async () => { await result.current.createFromTemplate({ NAME: "Test" }); });
@@ -328,7 +328,7 @@ describe("useTemplates", () => {
       if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "T1"));
       if (url === "/tags/ids") return Promise.resolve([]);
       return Promise.resolve(undefined);
-    }) as typeof apiFetch);
+    }));
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     await act(async () => { await result.current.createFromTemplate({ NAME: "Test" }); });
@@ -367,7 +367,7 @@ describe("useTemplates", () => {
       if (url.startsWith("/templates/t0")) return Promise.resolve(fullTemplate("t0", "T0"));
       if (url === "/tags/ids") return Promise.resolve([]);
       return Promise.resolve(undefined);
-    }) as typeof apiFetch);
+    }));
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     const scrollEvent = { currentTarget: { scrollTop: 900, clientHeight: 100, scrollHeight: 1000 } };

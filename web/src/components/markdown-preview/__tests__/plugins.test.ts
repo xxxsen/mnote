@@ -91,7 +91,7 @@ describe("rehypeCodeMeta", () => {
     const tree = {
       type: "element",
       tagName: "code",
-      properties: {},
+      properties: {} as Record<string, unknown>,
       data: { meta: "runnable" },
       children: [],
     };

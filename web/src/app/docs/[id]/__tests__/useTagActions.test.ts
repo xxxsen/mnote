@@ -30,7 +30,7 @@ describe("useTagActions", () => {
   });
 
   it("saveTags calls service with docId and tagIDs", async () => {
-    mockService.saveTags.mockResolvedValue(undefined as never);
+    mockService.saveTags.mockResolvedValue(undefined);
     const { result } = renderHook(() => useTagActions("d1"));
     await result.current.saveTags(["t1", "t2"]);
     expect(mockService.saveTags).toHaveBeenCalledWith("d1", ["t1", "t2"]);
