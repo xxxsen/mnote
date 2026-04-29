@@ -226,6 +226,12 @@ describe("useEditorLifecycle", () => {
     vi.useRealTimers();
   });
 
+  it("skips fetch when id is empty", () => {
+    const opts = makeOpts({ id: "" });
+    renderHook(() => useEditorLifecycle(opts));
+    expect(opts.documentActions.getDocument).not.toHaveBeenCalled();
+  });
+
   it("saves draft on unmount when hasUnsavedChanges", async () => {
     const opts = makeOpts({ hasUnsavedChanges: true });
     const { unmount } = renderHook(() => useEditorLifecycle(opts));

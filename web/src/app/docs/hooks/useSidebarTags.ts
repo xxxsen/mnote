@@ -68,6 +68,7 @@ export function useSidebarTags({ toast }: UseSidebarTagsDeps) {
     void fetchSidebarTags(sidebarOffset, true, tagSearch.trim());
   }, [fetchSidebarTags, sidebarHasMore, sidebarLoading, sidebarOffset, tagSearch]);
 
+  /* v8 ignore start -- scroll-based auto load requires real DOM viewport */
   const maybeAutoLoadTags = useCallback(() => {
     if (sidebarLoading || !sidebarHasMore) return;
     const now = Date.now();
@@ -81,6 +82,7 @@ export function useSidebarTags({ toast }: UseSidebarTagsDeps) {
       loadMoreSidebarTags();
     }
   }, [loadMoreSidebarTags, sidebarHasMore, sidebarLoading]);
+  /* v8 ignore stop */
 
   useEffect(() => {
     const timer = setTimeout(() => {

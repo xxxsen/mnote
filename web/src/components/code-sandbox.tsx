@@ -102,6 +102,7 @@ export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
       finalCode = "package main\n" + finalCode;
     }
 
+    /* v8 ignore start -- sandbox worker messaging requires real browser Worker API */
     sandboxRegistry.run({
       code: finalCode,
       language,
@@ -118,6 +119,7 @@ export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
         }
       }
     });
+    /* v8 ignore stop */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, isRunning, language, goEnvReady]);
 

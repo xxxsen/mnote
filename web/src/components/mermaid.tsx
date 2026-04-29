@@ -17,6 +17,7 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
   const [isRendered, setIsRendered] = useState(() => svgCache.has(resolvedCacheKey));
   const initialized = useRef(false);
 
+  /* v8 ignore start -- mermaid rendering requires real browser environment */
   useEffect(() => {
     if (!initialized.current) {
       mermaid.initialize({
@@ -87,6 +88,7 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
     if (!ref.current) return;
     ref.current.innerHTML = svg;
   }, [svg]);
+  /* v8 ignore stop */
 
 
   if (error) {

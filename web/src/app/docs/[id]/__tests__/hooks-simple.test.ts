@@ -674,4 +674,29 @@ describe("useTagState", () => {
     const found = await act(async () => result.current.findExistingTagByName(""));
     expect(found).toBeNull();
   });
+
+  it("findExistingTagByName returns null when search throws", async () => {
+    const opts = makeOpts();
+    opts.tagActions.searchTags.mockRejectedValue(new Error("search fail"));
+    const { result } = renderHook(() => useTagState(opts));
+    const found = await act(async () => result.current.findExistingTagByName("test"));
+    expect(found).toBeNull();
+  });
+
+  it("findExistingTagByName returns null when search finds no exact match", async () => {
+    const opts = makeOpts();
+    opts.tagActions.searchTags.mockResolvedValue([{ id: "t5", name: "other" }]);
+    const { result } = renderHook(() => useTagState(opts));
+    const found = await act(async () => result.current.findExistingTagByName("test"));
+    expect(found).toBeNull();
+  });
+
+  it("saveTagIDs non-Error shows generic message", async () => {
+    const opts = makeOpts();
+    opts.tagActions.saveTags.mockRejectedValue("string error");
+    const { result } = renderHook(() => useTagState(opts));
+    await act(async () => { await result.current.saveTagIDs(["t1"]); });
+    expect(result.current.selectedTagIDs).toEqual([]);
+    expect(opts.toast).toHaveBeenCalledWith(expect.objectContaining({ description: "Failed to save tags" }));
+  });
 });

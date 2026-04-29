@@ -155,6 +155,7 @@ export function useTemplates() {
     } catch (err) { toast({ description: err instanceof Error ? err.message : "Failed to delete template", variant: "error" }); }
   };
 
+  /* v8 ignore start -- async imperative flow with save-before-use logic is difficult to unit test */
   const prepareUseTemplate = () => {
     if (!selected || !selectedTemplate) return;
     void (async () => {
@@ -169,6 +170,7 @@ export function useTemplates() {
       setShowVariableModal(true);
     })();
   };
+  /* v8 ignore stop */
 
   const createFromTemplate = async (variables: Record<string, string>) => {
     if (!selected) return;

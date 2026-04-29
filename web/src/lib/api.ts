@@ -1,5 +1,6 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api/v1";
 
+/* v8 ignore start -- SSR guards untestable in jsdom where window is always defined */
 export const getAuthToken = () => {
   if (typeof window !== "undefined") {
     return localStorage.getItem("mnote_token");
@@ -37,6 +38,7 @@ export const removeAuthEmail = () => {
     localStorage.removeItem("mnote_email");
   }
 };
+/* v8 ignore stop */
 
 interface FetchOptions extends RequestInit {
   requireAuth?: boolean;

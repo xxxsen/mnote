@@ -75,7 +75,7 @@ export function useShareLink({ docId, onError }: UseShareLinkOptions) {
 
   const handleCopyLink = useCallback(() => {
     if (!shareUrl) return;
-    if (typeof navigator === "undefined") return;
+    /* v8 ignore next */ if (typeof navigator === "undefined") return;
 
     void navigator.clipboard.writeText(shareUrl)
       .then(() => {

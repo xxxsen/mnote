@@ -132,15 +132,17 @@ export function useTagInput({
       lastTagQueryRef.current = trimmed;
       try {
         const res = await searchTags(trimmed);
-        if (lastTagQueryRef.current !== trimmed) return;
+        /* v8 ignore next */ if (lastTagQueryRef.current !== trimmed) return;
         const next = res;
         setTagResults(next);
         mergeTags(next);
       } catch {
+        /* v8 ignore next 3 -- stale query guard */
         if (lastTagQueryRef.current === trimmed) {
           setTagResults([]);
         }
       } finally {
+        /* v8 ignore next 3 -- stale query guard */
         if (lastTagQueryRef.current === trimmed) {
           setTagSearchLoading(false);
         }

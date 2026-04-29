@@ -87,4 +87,26 @@ describe("useFloatingPanel", () => {
     act(() => { result.current.setFloatingPanelTab("mentions"); result.current.setFloatingPanelTouched(true); });
     expect(result.current.floatingPanelTab).toBe("mentions");
   });
+
+  it("resets tab when docId changes", () => {
+    const { result, rerender } = renderHook(
+      ({ docId }) => useFloatingPanel({ ...baseOpts, docId }),
+      { initialProps: { docId: "d1" } }
+    );
+    act(() => { result.current.setFloatingPanelTab("mentions"); result.current.setFloatingPanelTouched(true); });
+    rerender({ docId: "d2" });
+    expect(result.current.floatingPanelTouched).toBe(false);
+  });
+
+  it("falls back to first available tab when active tab removed", () => {
+    const { result, rerender } = renderHook(
+      ({ backlinks }) => useFloatingPanel({ ...baseOpts, backlinks, summary: "s", previewContent: "[toc]\n# H" }),
+      { initialProps: { backlinks: [{ id: "b1" }] as never[] } }
+    );
+    act(() => { result.current.handleTocLoaded("- H"); });
+    act(() => { result.current.setFloatingPanelTab("mentions"); result.current.setFloatingPanelTouched(true); });
+    expect(result.current.floatingPanelTab).toBe("mentions");
+    rerender({ backlinks: [] });
+    expect(result.current.floatingPanelTab).not.toBe("mentions");
+  });
 });

@@ -36,7 +36,7 @@ export function useLinkGraph(opts: {
         })
       );
       setOutboundLinks(settled.filter((d): d is MnoteDocument => d !== null));
-    } catch { setOutboundLinks([]); }
+    } catch { setOutboundLinks([]); } /* v8 ignore -- defensive: inner catch already handles per-doc errors */
   }, [docId]);
 
   useEffect(() => {

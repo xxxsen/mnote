@@ -78,4 +78,33 @@ describe("useQuickOpen", () => {
     act(() => { result.current.handleOpenQuickOpen(); });
     await waitFor(() => { expect(result.current.quickOpenRecent).toEqual([]); });
   });
+
+  it("resets quickOpenIndex when exceeding docs length", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "d1", title: "Doc1" }]);
+    const { result } = renderHook(() => useQuickOpen({ onSelectDocument: stableOnSelect }));
+    act(() => { result.current.handleOpenQuickOpen(); });
+    await waitFor(() => { expect(result.current.quickOpenRecent).toHaveLength(1); });
+    act(() => { result.current.setQuickOpenIndex(5); });
+    await waitFor(() => { expect(result.current.quickOpenIndex).toBe(0); });
+  });
+
+  it("fetchQuickOpenSearch handles error", async () => {
+    mockApiFetch.mockResolvedValueOnce([]);
+    const { result } = renderHook(() => useQuickOpen({ onSelectDocument: stableOnSelect }));
+    act(() => { result.current.handleOpenQuickOpen(); });
+    await waitFor(() => { expect(result.current.showQuickOpen).toBe(true); });
+    mockApiFetch.mockRejectedValue(new Error("search fail"));
+    act(() => { result.current.setQuickOpenQuery("fail"); });
+    await waitFor(() => { expect(result.current.quickOpenResults).toEqual([]); });
+  });
+
+  it("Meta+K opens quick open", () => {
+    mockApiFetch.mockResolvedValue([]);
+    const { result } = renderHook(() => useQuickOpen({ onSelectDocument: stableOnSelect }));
+    act(() => {
+      const event = new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true });
+      window.dispatchEvent(event);
+    });
+    expect(result.current.showQuickOpen).toBe(true);
+  });
 });

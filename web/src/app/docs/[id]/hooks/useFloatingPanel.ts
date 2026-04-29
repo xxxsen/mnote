@@ -13,7 +13,7 @@ export function useFloatingPanel(opts: {
 
   const [tocContent, setTocContent] = useState("");
   const [tocCollapsed, setTocCollapsed] = useState(() => {
-    if (typeof window === "undefined") return false;
+    /* v8 ignore next */ if (typeof window === "undefined") return false;
     const raw = window.localStorage.getItem(FLOATING_PANEL_COLLAPSED_KEY);
     return raw === "1" || raw === "true";
   });
@@ -41,7 +41,7 @@ export function useFloatingPanel(opts: {
   }, [hasGraphPanel, hasMentionsPanel, hasSummaryPanel, hasTocPanel]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    /* v8 ignore next */ if (typeof window === "undefined") return;
     window.localStorage.setItem(FLOATING_PANEL_COLLAPSED_KEY, tocCollapsed ? "1" : "0");
   }, [tocCollapsed]);
 

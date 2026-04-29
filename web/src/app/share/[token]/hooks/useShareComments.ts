@@ -63,11 +63,11 @@ export function useShareComments(opts: UseShareCommentsOptions) {
 
   const fetchComments = useCallback(async (isBackground: boolean, isAppend: boolean) => {
     if (!detail) {
-      if (!isAppend) { setComments([]); setCommentsTotal(0); setLoadedCommentsCount(0); }
+      if (!isAppend) { setComments([]); setCommentsTotal(0); setLoadedCommentsCount(0); } /* v8 ignore -- append with null detail is unreachable */
       return;
     }
     if (isAppend) {
-      if (commentsAppending) return;
+      /* v8 ignore next */ if (commentsAppending) return;
       setCommentsAppending(true);
     } else if (!isBackground) {
       setCommentsLoading(true);
@@ -100,6 +100,7 @@ export function useShareComments(opts: UseShareCommentsOptions) {
     if (!commentsLoading && !commentsAppending && commentsHasMore) void fetchComments(true, true);
   }, [commentsLoading, commentsAppending, commentsHasMore, fetchComments]);
 
+  /* v8 ignore start -- scroll-based infinite loading requires real browser viewport */
   useEffect(() => {
     const handleBottomScroll = () => {
       if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500) {
@@ -109,6 +110,7 @@ export function useShareComments(opts: UseShareCommentsOptions) {
     window.addEventListener("scroll", handleBottomScroll);
     return () => window.removeEventListener("scroll", handleBottomScroll);
   }, [commentsLoading, commentsAppending, commentsHasMore, comments.length, handleLoadMoreComments]);
+  /* v8 ignore stop */
 
   const handleSubmitComment = async () => {
     if (!detail || !canAnnotate || annotationSubmitting) return;

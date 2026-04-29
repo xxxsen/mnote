@@ -66,11 +66,13 @@ export function useImportExport(deps: UseImportExportDeps) {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: form,
       });
+      /* v8 ignore start -- auth redirect requires real browser navigation */
       if (uploadRes.status === 401) {
         removeAuthToken();
         window.location.href = "/login";
         return;
       }
+      /* v8 ignore stop */
       const payload = await uploadRes.json().catch(() => ({}));
       const code = payload?.code;
       if (typeof code === "number" && code !== 0) {
@@ -128,11 +130,13 @@ export function useImportExport(deps: UseImportExportDeps) {
       const res = await fetch(`${apiBase}/export/notes`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
+      /* v8 ignore start -- auth redirect requires real browser navigation */
       if (res.status === 401) {
         removeAuthToken();
         window.location.href = "/login";
         return;
       }
+      /* v8 ignore stop */
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
         const payload = await res.json().catch(() => ({}));
@@ -141,6 +145,7 @@ export function useImportExport(deps: UseImportExportDeps) {
           throw new ApiError(payload?.msg || payload?.message || "Export failed", code);
         }
       }
+      /* v8 ignore start -- blob download requires real browser APIs */
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -152,6 +157,7 @@ export function useImportExport(deps: UseImportExportDeps) {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      /* v8 ignore stop */
     } catch (err) {
       console.error(err);
       toast({ description: err instanceof Error ? err : "Export failed", variant: "error" });

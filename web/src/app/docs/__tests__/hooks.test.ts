@@ -168,6 +168,61 @@ describe("useSavedViews", () => {
     await act(async () => { await result.current.removeSavedView("v1"); });
     expect(toastFn).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
   });
+
+  it("fetchSavedViews handles null/undefined optional fields", async () => {
+    mockApiFetch.mockResolvedValue([
+      { id: "v1", name: "View1", search: null, tag_id: null, show_starred: 0, show_shared: 1 },
+    ]);
+    const { result } = renderHook(() => useSavedViews({ toast: toastFn }));
+    await act(async () => { await result.current.fetchSavedViews(); });
+    expect(result.current.savedViews).toEqual([{
+      id: "v1", name: "View1", search: "", selectedTag: "",
+      showStarred: false, showShared: true,
+    }]);
+  });
+
+  it("handleSaveCurrentView with selectedTag filter works", async () => {
+    vi.stubGlobal("prompt", vi.fn().mockReturnValue("Tag View"));
+    mockApiFetch.mockResolvedValue({ id: "v2" });
+    const { result } = renderHook(() => useSavedViews({ toast: toastFn }));
+    await act(async () => {
+      await result.current.handleSaveCurrentView({ search: "", selectedTag: "t1", showStarred: false, showShared: false });
+    });
+    expect(mockApiFetch).toHaveBeenCalledWith("/saved-views", expect.objectContaining({ method: "POST" }));
+    vi.unstubAllGlobals();
+  });
+
+  it("handleSaveCurrentView with showStarred filter works", async () => {
+    vi.stubGlobal("prompt", vi.fn().mockReturnValue("Starred View"));
+    mockApiFetch.mockResolvedValue({ id: "v3" });
+    const { result } = renderHook(() => useSavedViews({ toast: toastFn }));
+    await act(async () => {
+      await result.current.handleSaveCurrentView({ search: "", selectedTag: "", showStarred: true, showShared: false });
+    });
+    expect(mockApiFetch).toHaveBeenCalledWith("/saved-views", expect.objectContaining({ method: "POST" }));
+    vi.unstubAllGlobals();
+  });
+
+  it("handleSaveCurrentView with showShared filter works", async () => {
+    vi.stubGlobal("prompt", vi.fn().mockReturnValue("Shared View"));
+    mockApiFetch.mockResolvedValue({ id: "v4" });
+    const { result } = renderHook(() => useSavedViews({ toast: toastFn }));
+    await act(async () => {
+      await result.current.handleSaveCurrentView({ search: "", selectedTag: "", showStarred: false, showShared: true });
+    });
+    expect(mockApiFetch).toHaveBeenCalledWith("/saved-views", expect.objectContaining({ method: "POST" }));
+    vi.unstubAllGlobals();
+  });
+
+  it("handleSaveCurrentView aborts when prompt returns null", async () => {
+    vi.stubGlobal("prompt", vi.fn().mockReturnValue(null));
+    const { result } = renderHook(() => useSavedViews({ toast: toastFn }));
+    await act(async () => {
+      await result.current.handleSaveCurrentView({ search: "go", selectedTag: "", showStarred: false, showShared: false });
+    });
+    expect(mockApiFetch).not.toHaveBeenCalledWith("/saved-views", expect.anything());
+    vi.unstubAllGlobals();
+  });
 });
 
 describe("useSidebarTags", () => {

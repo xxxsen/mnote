@@ -166,4 +166,99 @@ describe("useInlineTag", () => {
     expect(result.current.inlineTagDropdownItems.length).toBeGreaterThan(0);
     vi.useRealTimers();
   });
+
+  it("inlineTagDropdownItems shows exact match as 'use' type", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    stableSearchTags.mockResolvedValue([tag("t1", "go")]);
+    const { result } = renderHook(() => useInlineTag(makeOpts({ selectedTagIDs: [] })));
+    act(() => { result.current.setInlineTagMode(true); });
+    act(() => { result.current.setInlineTagValue("go"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    const items = result.current.inlineTagDropdownItems;
+    expect(items[0]?.type).toBe("use");
+    vi.useRealTimers();
+  });
+
+  it("inlineTagDropdownItems shows 'create' when no exact match", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    stableSearchTags.mockResolvedValue([]);
+    const { result } = renderHook(() => useInlineTag(makeOpts()));
+    act(() => { result.current.setInlineTagMode(true); });
+    act(() => { result.current.setInlineTagValue("newname"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    const items = result.current.inlineTagDropdownItems;
+    expect(items.some(i => i.type === "create")).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it("handleInlineAddTag adds existing tag from allTags", async () => {
+    const { result } = renderHook(() => useInlineTag(makeOpts({ selectedTagIDs: [] })));
+    await act(async () => { await result.current.handleInlineAddTag("go"); });
+    expect(stableSaveTagIDs).toHaveBeenCalledWith(["t1"]);
+  });
+
+  it("handleInlineAddTag finds existing tag via findExistingTagByName", async () => {
+    stableFindExisting.mockResolvedValue(tag("t3", "python"));
+    const { result } = renderHook(() => useInlineTag(makeOpts({ selectedTagIDs: [] })));
+    await act(async () => { await result.current.handleInlineAddTag("python"); });
+    expect(stableSaveTagIDs).toHaveBeenCalledWith(["t3"]);
+  });
+
+  it("handleInlineAddTag skips saving if existing tag already selected", async () => {
+    const { result } = renderHook(() => useInlineTag(makeOpts({ selectedTagIDs: ["t1"] })));
+    await act(async () => { await result.current.handleInlineAddTag("go"); });
+    expect(stableSaveTagIDs).not.toHaveBeenCalled();
+    expect(result.current.inlineTagMode).toBe(false);
+  });
+
+  it("handleInlineAddTag rejects invalid tag name", async () => {
+    const { result } = renderHook(() => useInlineTag(makeOpts()));
+    await act(async () => { await result.current.handleInlineAddTag("!!!invalid!!!"); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining("letters") }));
+  });
+
+  it("handleInlineAddTag rejects when at max tags", async () => {
+    const opts = makeOpts({ selectedTagIDs: Array.from({ length: 7 }, (_, i) => `t${i}`) });
+    const { result } = renderHook(() => useInlineTag(opts));
+    await act(async () => { await result.current.handleInlineAddTag("newtag"); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining("7") }));
+  });
+
+  it("search error clears results", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    stableSearchTags.mockRejectedValue(new Error("search fail"));
+    const { result } = renderHook(() => useInlineTag(makeOpts()));
+    act(() => { result.current.setInlineTagMode(true); });
+    act(() => { result.current.setInlineTagValue("test"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(result.current.inlineTagLoading).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("handleInlineAddTag handles non-Error rejection", async () => {
+    mockApiFetch.mockRejectedValue("string error");
+    const { result } = renderHook(() => useInlineTag(makeOpts()));
+    await act(async () => { await result.current.handleInlineAddTag("newtag"); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: "Failed to add tag", variant: "error" }));
+  });
+
+  it("handleInlineTagSelect with create type but no name is no-op", async () => {
+    const { result } = renderHook(() => useInlineTag(makeOpts()));
+    await act(async () => {
+      await result.current.handleInlineTagSelect({ key: "create-", type: "create", name: "" });
+    });
+    expect(stableSaveTagIDs).not.toHaveBeenCalled();
+  });
+
+  it("inlineTagDropdownItems limits to 8 items", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const manyTags = Array.from({ length: 15 }, (_, i) => tag(`s${i}`, `search${i}`));
+    stableSearchTags.mockResolvedValue(manyTags);
+    const { result } = renderHook(() => useInlineTag(makeOpts({ selectedTagIDs: [] })));
+    act(() => { result.current.setInlineTagMode(true); });
+    act(() => { result.current.setInlineTagValue("search"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(result.current.inlineTagDropdownItems.length).toBeLessThanOrEqual(8);
+    vi.useRealTimers();
+  });
 });

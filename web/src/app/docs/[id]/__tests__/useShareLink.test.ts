@@ -104,4 +104,31 @@ describe("useShareLink", () => {
     act(() => { result.current.handleCopyLink(); });
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
   });
+
+  it("updateShareConfig calls onError on failure", async () => {
+    const onError = vi.fn();
+    stableUpdateShareConfig.mockRejectedValue(new Error("config fail"));
+    const { result } = renderHook(() => useShareLink({ docId: "d1", onError }));
+    await act(async () => {
+      await result.current.updateShareConfig({ expires_at: 0, permission: "view", allow_download: true });
+    });
+    expect(onError).toHaveBeenCalled();
+  });
+
+  it("handleRevokeShare calls onError on failure", async () => {
+    const onError = vi.fn();
+    stableRevokeShare.mockRejectedValue(new Error("revoke fail"));
+    const { result } = renderHook(() => useShareLink({ docId: "d1", onError }));
+    await act(async () => { await result.current.handleRevokeShare(); });
+    expect(onError).toHaveBeenCalled();
+  });
+
+  it("handleCopyLink handles clipboard failure gracefully", async () => {
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) } });
+    stableCreateShare.mockResolvedValue({ token: "abc", id: "s1" });
+    const { result } = renderHook(() => useShareLink({ docId: "d1" }));
+    await act(async () => { await result.current.handleShare(); });
+    act(() => { result.current.handleCopyLink(); });
+    expect(result.current.copied).toBe(false);
+  });
 });

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   createSlugger, getHastText, convertWikilinks, extractHeadings,
   buildTocMarkdown, injectToc, toSafeInlineStyle, copyToClipboard,
+  escapeUnsupportedHtml, convertAdmonitions, breakLazyListContinuation, toFontSize,
 } from "../helpers";
 
 describe("createSlugger", () => {
@@ -195,6 +196,120 @@ describe("toSafeInlineStyle", () => {
 
   it("ignores empty declarations", () => {
     expect(toSafeInlineStyle(";;")).toEqual({});
+  });
+});
+
+describe("escapeUnsupportedHtml", () => {
+  it("leaves allowed HTML tags intact", () => {
+    expect(escapeUnsupportedHtml("<div>text</div>")).toBe("<div>text</div>");
+    expect(escapeUnsupportedHtml("<span>text</span>")).toBe("<span>text</span>");
+  });
+
+  it("escapes unsupported tags", () => {
+    const result = escapeUnsupportedHtml("<script>alert(1)</script>");
+    expect(result).toContain("&lt;script");
+  });
+
+  it("strips dangerous attributes from allowed tags", () => {
+    const result = escapeUnsupportedHtml('<div onclick="alert(1)">x</div>');
+    expect(result).toBe("<div>x</div>");
+  });
+
+  it("strips javascript: URLs from allowed tags", () => {
+    const result = escapeUnsupportedHtml('<a href="javascript:alert(1)">click</a>');
+    expect(result).toBe("<a>click</a>");
+  });
+
+  it("does not touch HTML inside code blocks", () => {
+    const input = "```\n<script>alert(1)</script>\n```";
+    expect(escapeUnsupportedHtml(input)).toBe(input);
+  });
+});
+
+describe("convertAdmonitions", () => {
+  it("converts valid admonition", () => {
+    const input = "before\n::: warning\nContent here\n:::\nafter";
+    const result = convertAdmonitions(input);
+    expect(result).toContain("md-alert-warning");
+    expect(result).toContain("Content here");
+  });
+
+  it("ignores admonition without closing :::", () => {
+    const input = "::: warning\nContent here\nno closing";
+    const result = convertAdmonitions(input);
+    expect(result).not.toContain("md-alert");
+  });
+
+  it("ignores unknown admonition type", () => {
+    const input = "::: unknown\nContent\n:::";
+    const result = convertAdmonitions(input);
+    expect(result).not.toContain("md-alert");
+  });
+
+  it("does not convert inside code blocks", () => {
+    const input = "```\n::: warning\ntext\n:::\n```";
+    expect(convertAdmonitions(input)).toBe(input);
+  });
+});
+
+describe("breakLazyListContinuation", () => {
+  it("inserts blank line between list and text", () => {
+    const input = "- item\ntext";
+    const result = breakLazyListContinuation(input);
+    expect(result).toBe("- item\n\ntext");
+  });
+
+  it("does not break inside code fences", () => {
+    const input = "```\n- item\ntext\n```";
+    expect(breakLazyListContinuation(input)).toBe(input);
+  });
+
+  it("handles closing fence correctly", () => {
+    const input = "```go\ncode\n```\n- item\ntext";
+    const result = breakLazyListContinuation(input);
+    expect(result).toContain("- item\n\ntext");
+  });
+
+  it("inserts blank line between blockquote and text", () => {
+    const input = "> quote\ntext";
+    const result = breakLazyListContinuation(input);
+    expect(result).toContain("> quote\n\ntext");
+  });
+
+  it("handles blank lines between items", () => {
+    const input = "- item\n\n- next";
+    const result = breakLazyListContinuation(input);
+    expect(result).toBe(input);
+  });
+
+  it("handles tilde fences", () => {
+    const input = "~~~\ncode\n~~~\n- item\ntext";
+    const result = breakLazyListContinuation(input);
+    expect(result).toContain("- item\n\ntext");
+  });
+
+  it("handles indented continuation of list", () => {
+    const input = "- item\n  continuation";
+    const result = breakLazyListContinuation(input);
+    expect(result).toBe("- item\n  continuation");
+  });
+});
+
+describe("toFontSize", () => {
+  it("returns undefined for undefined", () => {
+    expect(toFontSize(undefined)).toBeUndefined();
+  });
+
+  it("returns undefined for empty string", () => {
+    expect(toFontSize("")).toBeUndefined();
+  });
+
+  it("returns mapped size for known size", () => {
+    expect(toFontSize("1")).toBeDefined();
+  });
+
+  it("passes through unknown sizes", () => {
+    expect(toFontSize("14px")).toBe("14px");
   });
 });
 

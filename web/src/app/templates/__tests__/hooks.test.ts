@@ -144,6 +144,50 @@ describe("useTemplateTags", () => {
     await act(async () => { await result.current.addTag({ id: "t1", name: "go" } as never); });
     expect(result.current.selectedTagIDs.filter((id) => id === "t1")).toHaveLength(1);
   });
+
+  it("addTag non-Error shows generic error", async () => {
+    mockApiFetch
+      .mockRejectedValueOnce("string error")
+      .mockRejectedValueOnce("search fail");
+    const { result } = renderHook(() => useTemplateTags(null));
+    await act(async () => { await result.current.addTag("test"); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: "Failed to create tag" }));
+  });
+
+  it("addTag found existing already in allTags does not duplicate", async () => {
+    const { result } = renderHook(() => useTemplateTags(null));
+    await act(async () => { await result.current.addTag({ id: "t1", name: "go" } as never); });
+    mockApiFetch
+      .mockRejectedValueOnce(new Error("conflict"))
+      .mockResolvedValueOnce([{ id: "t1", name: "go" }]);
+    await act(async () => { await result.current.addTag("go"); });
+    expect(result.current.selectedTagIDs.filter((id) => id === "t1")).toHaveLength(1);
+  });
+
+  it("addTag already selected tag is no-op on fallback search", async () => {
+    const { result } = renderHook(() => useTemplateTags(null));
+    await act(async () => { await result.current.addTag({ id: "t1", name: "go" } as never); });
+    expect(result.current.selectedTagIDs).toContain("t1");
+    mockApiFetch
+      .mockRejectedValueOnce(new Error("conflict"))
+      .mockResolvedValueOnce([{ id: "t1", name: "go" }]);
+    await act(async () => { await result.current.addTag("go"); });
+    expect(result.current.selectedTagIDs.filter((id) => id === "t1")).toHaveLength(1);
+  });
+
+  it("loads missing tags effect triggers when template changes", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "t99", name: "loaded" }]);
+    const { result, rerender } = renderHook(
+      ({ t }) => useTemplateTags(t),
+      { initialProps: { t: null as { default_tag_ids?: string[] } | null } }
+    );
+    const tmpl = { default_tag_ids: ["t99"] };
+    rerender({ t: tmpl });
+    expect(result.current.selectedTagIDs).toEqual(["t99"]);
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith("/tags/ids", expect.objectContaining({ method: "POST" }));
+    });
+  });
 });
 
 const fullTemplate = (id: string, name = "Template") => ({
@@ -572,5 +616,149 @@ describe("useTemplates", () => {
     act(() => { result.current.setDraft({ name: "T1", description: "", content: "Hello {{UNKNOWN_VAR}}" }); });
     expect(result.current.previewContent).not.toContain("{{UNKNOWN_VAR}}");
     expect(result.current.previewContent).toContain("Hello ");
+  });
+
+  it("loadSelected error with non-Error shows generic message", async () => {
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (typeof url === "string" && url.includes("/templates/meta")) return Promise.resolve({ items: [metaItem("t1", "T1")], total: 1 });
+      if (typeof url === "string" && url.includes("/templates/t1")) return Promise.reject("string error"); // eslint-disable-line @typescript-eslint/prefer-promise-reject-errors -- testing non-Error path
+      if (typeof url === "string" && url.includes("/tags/ids")) return Promise.resolve([]);
+      return Promise.resolve({});
+    }));
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await waitFor(() => { expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" })); });
+  });
+
+  it("loadTemplates appends when not reset", async () => {
+    let callCount = 0;
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (typeof url === "string" && url.includes("/templates/meta")) {
+        callCount++;
+        if (callCount === 1) return Promise.resolve({ items: [metaItem("t1", "T1")], total: 3 });
+        return Promise.resolve({ items: [metaItem("t2", "T2")], total: 3 });
+      }
+      if (typeof url === "string" && url.includes("/templates/t1")) return Promise.resolve(fullTemplate("t1", "T1"));
+      if (typeof url === "string" && url.includes("/tags/ids")) return Promise.resolve([]);
+      return Promise.resolve({});
+    }));
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    const scrollEvent = { currentTarget: { scrollTop: 950, clientHeight: 100, scrollHeight: 1000 } };
+    await act(async () => { result.current.handleTemplateListScroll(scrollEvent as never); });
+    await waitFor(() => { expect(result.current.templates.length).toBeGreaterThanOrEqual(1); });
+  });
+
+  it("loadTemplates error shows toast", async () => {
+    mockApiFetch.mockRejectedValue(new Error("load fail"));
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("previewContent resolves SYS: variables", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
+      "/templates/t1": fullTemplate("t1", "T1"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.setDraft({ name: "T1", description: "", content: "Date: {{SYS:DATE}}" }); });
+    expect(result.current.previewContent).not.toContain("{{SYS:DATE}}");
+  });
+
+  it("createTemplate error shows toast", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [], total: 0 },
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    mockApiFetch.mockRejectedValueOnce(new Error("create fail"));
+    await act(async () => { void result.current.createTemplate(); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("createFromTemplate non-Error shows generic message", async () => {
+    mockApiFetch.mockImplementation(((url: string, opts?: RequestInit) => {
+      if (url.startsWith("/templates/meta")) return Promise.resolve({ items: [metaItem("t1", "T1")], total: 1 });
+      if (url.endsWith("/create") && opts?.method === "POST") return Promise.reject("string error"); // eslint-disable-line @typescript-eslint/prefer-promise-reject-errors -- testing non-Error path
+      if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "T1"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }));
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await act(async () => { await result.current.createFromTemplate({ NAME: "Test" }); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: "Failed to create note from template" }));
+    expect(result.current.creatingDoc).toBe(false);
+    expect(result.current.showVariableModal).toBe(false);
+  });
+
+  it("deleteTemplate non-Error shows generic message", async () => {
+    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
+      "/templates/t1": fullTemplate("t1", "T1"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    mockApiFetch.mockRejectedValueOnce("string error");
+    await act(async () => { void result.current.deleteTemplate("t1", "T1"); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: "Failed to delete template" }));
+    vi.unstubAllGlobals();
+  });
+
+  it("deleteTemplate does not reset selectedID when deleting different template", async () => {
+    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+    mockApiFetch.mockImplementation(((url: string, opts?: RequestInit) => {
+      if (url.startsWith("/templates/meta")) return Promise.resolve({ items: [metaItem("t1", "T1"), metaItem("t2", "T2")], total: 2 });
+      if (url.startsWith("/templates/t2") && opts?.method === "DELETE") return Promise.resolve(undefined);
+      if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "T1"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }));
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(result.current.selectedID).toBe("t1");
+    await act(async () => { void result.current.deleteTemplate("t2", "T2"); });
+    expect(result.current.selectedID).toBe("t1");
+    vi.unstubAllGlobals();
+  });
+
+  it("createTemplate non-Error shows generic message", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [], total: 0 },
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    mockApiFetch.mockRejectedValueOnce("string error");
+    await act(async () => { void result.current.createTemplate(); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: "Failed to create template" }));
+  });
+
+  it("loadTemplates non-Error shows generic message", async () => {
+    mockApiFetch.mockRejectedValue("network error");
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: "Failed to load templates" }));
+  });
+
+  it("saveTemplate non-Error shows generic message", async () => {
+    mockApiFetch.mockImplementation(((url: string, opts?: RequestInit) => {
+      if (url.startsWith("/templates/meta")) return Promise.resolve({ items: [metaItem("t1", "T1")], total: 1 });
+      if (url.startsWith("/templates/t1") && opts?.method === "PUT") return Promise.reject("string error"); // eslint-disable-line @typescript-eslint/prefer-promise-reject-errors -- testing non-Error path
+      if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "T1"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }));
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.setDraft({ name: "X", description: "", content: "# X" }); });
+    await act(async () => { const ok = await result.current.saveTemplate(); expect(ok).toBe(false); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: "Failed to save template" }));
   });
 });

@@ -162,6 +162,7 @@ export function useDocsData(deps: UseDocsDataDeps) {
     }
   }, [fetchSummary]);
 
+  /* v8 ignore start -- IntersectionObserver requires real browser viewport */
   useEffect(() => {
     if (!loadMoreRef.current) return;
     const observer = new IntersectionObserver(
@@ -175,6 +176,7 @@ export function useDocsData(deps: UseDocsDataDeps) {
     observer.observe(loadMoreRef.current);
     return () => observer.disconnect();
   }, [fetchDocs, hasMore, loading, loadingMore, nextOffset]);
+  /* v8 ignore stop */
 
   useEffect(() => {
     const timer = setTimeout(() => {

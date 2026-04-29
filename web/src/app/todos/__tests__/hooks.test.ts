@@ -422,4 +422,107 @@ describe("useTodoCalendar", () => {
     const event = { currentTarget: container } as unknown as React.UIEvent<HTMLDivElement>;
     act(() => { result.current.handleCalendarScroll(event); });
   });
+
+  it("handleCalendarScroll appends months when near bottom", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+
+    const section = document.createElement("div");
+    section.setAttribute("data-month-index", "0");
+    Object.defineProperty(section, "offsetTop", { value: 0 });
+    Object.defineProperty(section, "offsetHeight", { value: 100 });
+    const container = document.createElement("div");
+    container.appendChild(section);
+    Object.defineProperty(container, "scrollTop", { value: 2500, writable: true });
+    Object.defineProperty(container, "clientHeight", { value: 600 });
+    Object.defineProperty(container, "scrollHeight", { value: 3000 });
+
+    const prevLen = result.current.months.length;
+    const event = { currentTarget: container } as unknown as React.UIEvent<HTMLDivElement>;
+    act(() => { result.current.handleCalendarScroll(event); });
+    expect(result.current.months.length).toBeGreaterThan(prevLen);
+  });
+
+  it("handleToggleDone non-Error catch path", async () => {
+    mockTodoService.toggleDone.mockRejectedValueOnce("string error");
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await act(async () => {
+      result.current.handleToggleDone({ id: "t1", content: "x", done: 0, due_date: "2026-01-01" } as never);
+    });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("handleUpdateTodoContent error shows toast", async () => {
+    mockTodoService.updateContent.mockRejectedValueOnce(new Error("fail"));
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openEditPanel({ id: "t1", content: "old", done: 0, due_date: "2026-01-01" } as never); });
+    act(() => { result.current.setEditTodoContent("new content"); });
+    await act(async () => { await result.current.handleUpdateTodoContent(); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Update Failed" }));
+  });
+
+  it("handleCreateTodo error shows toast", async () => {
+    mockTodoService.create.mockRejectedValueOnce(new Error("fail"));
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openCreatePanel(new Date(2026, 0, 15)); });
+    act(() => { result.current.setNewTodoContent("todo content"); });
+    await act(async () => { await result.current.handleCreateTodo(); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Create Failed" }));
+  });
+
+  it("handleCreateTodo with empty content shows error", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openCreatePanel(new Date(2026, 0, 15)); });
+    act(() => { result.current.setNewTodoContent("   "); });
+    await act(async () => { await result.current.handleCreateTodo(); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Invalid Todo" }));
+  });
+
+  it("handleUpdateTodoContent with empty content shows error", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openEditPanel({ id: "t1", content: "old", done: 0, due_date: "2026-01-01" } as never); });
+    act(() => { result.current.setEditTodoContent("   "); });
+    await act(async () => { await result.current.handleUpdateTodoContent(); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Invalid Todo" }));
+  });
+
+  it("handleToggleDone with multiple todos only updates the target", async () => {
+    const t1 = makeTodo({ id: "t1", content: "first", done: 0 });
+    const t2 = makeTodo({ id: "t2", content: "second", done: 0 });
+    mockTodoService.listByDateRange.mockResolvedValue([t1, t2]);
+    mockTodoService.toggleDone.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await act(async () => { await result.current.handleToggleDone(t1); });
+    expect(mockTodoService.toggleDone).toHaveBeenCalledWith("t1", true);
+    const todosAfter = result.current.todosByDate(t1.due_date);
+    const t2After = todosAfter.find((t: { id: string }) => t.id === "t2");
+    expect(t2After?.done).toBe(0);
+  });
+
+  it("handleUpdateTodoContent with multiple todos only updates the target", async () => {
+    const t1 = makeTodo({ id: "t1", content: "original1" });
+    const t2 = makeTodo({ id: "t2", content: "original2" });
+    mockTodoService.listByDateRange.mockResolvedValue([t1, t2]);
+    mockTodoService.updateContent.mockResolvedValue({ ...t1, content: "Changed", mtime: 999 });
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openEditPanel(t1); });
+    act(() => { result.current.setEditTodoContent("Changed"); });
+    await act(async () => { await result.current.handleUpdateTodoContent(); });
+    const todosAfter = result.current.todosByDate(t1.due_date);
+    const t2After = todosAfter.find((t: { id: string }) => t.id === "t2");
+    expect(t2After?.content).toBe("original2");
+  });
 });

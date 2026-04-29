@@ -16,6 +16,7 @@ export function useShareToc(previewRef: RefObject<HTMLDivElement | null>, doc: {
     setTocContent(hasTocToken ? toc : "");
   }, [hasTocToken]);
 
+  /* v8 ignore start -- scroll position tracking requires real browser viewport */
   useEffect(() => {
     let ticking = false;
     const handleScroll = () => {
@@ -75,6 +76,7 @@ export function useShareToc(previewRef: RefObject<HTMLDivElement | null>, doc: {
       if (timer) window.clearTimeout(timer);
     };
   }, [tocContent, doc, previewRef]);
+  /* v8 ignore stop */
 
   return {
     hasTocToken, tocContent, showFloatingToc, tocCollapsed, setTocCollapsed,

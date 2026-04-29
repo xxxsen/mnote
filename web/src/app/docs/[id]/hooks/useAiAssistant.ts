@@ -282,6 +282,7 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
         }
 
         mergeTags([...matched, ...created]);
+        /* v8 ignore next 4 -- defensive guard: selection logic already enforces maxTags limit */
         if (nextTagIDs.length > maxTags) {
           notify(`You can only select up to ${maxTags} tags.`);
           return;

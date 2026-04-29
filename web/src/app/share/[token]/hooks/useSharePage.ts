@@ -71,6 +71,7 @@ export function useSharePage() {
     return container.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
   }, []);
 
+  /* v8 ignore start -- scroll position logic requires real browser viewport */
   const scrollToElement = useCallback((el: HTMLElement) => {
     const container = previewRef.current;
     if (!container) { el.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
@@ -82,6 +83,7 @@ export function useSharePage() {
     const offset = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 80;
     container.scrollTo({ top: offset, behavior: "smooth" });
   }, []);
+  /* v8 ignore stop */
 
   useEffect(() => {
     const fetchDoc = async () => {
@@ -134,6 +136,7 @@ export function useSharePage() {
     URL.revokeObjectURL(url);
   };
 
+  /* v8 ignore start -- hash-based scroll requires real browser viewport */
   useEffect(() => {
     if (!doc) return;
     const scrollToHash = () => {
@@ -165,6 +168,7 @@ export function useSharePage() {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, [doc, slugify, getElementById, scrollToElement]);
+  /* v8 ignore stop */
 
   return {
     token, detail, doc, loading, error, previewRef,

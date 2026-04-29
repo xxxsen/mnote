@@ -383,4 +383,61 @@ describe("buildMarkdownComponents", () => {
     expect(block).toBeTruthy();
     expect(block?.getAttribute("data-language")).toBe("text");
   });
+
+  it("img renderer extractMediaFilename for URL with path", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Img = comps.img as React.FC<{ src?: string; alt?: string }>;
+    const { container } = render(<Img src="http://example.com/uploads/test-file.png" alt="test" />);
+    expect(container.querySelector("img")).toBeTruthy();
+    expect(container.textContent).toContain("test-file.png");
+  });
+
+  it("img renderer extractMediaFilename for invalid URL", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Img = comps.img as React.FC<{ src?: string | Blob; alt?: string }>;
+    const { container } = render(<Img src={new Blob() as never} alt="blob" />);
+    expect(container.querySelector("img")).toBeTruthy();
+  });
+
+  it("pre renderer passes through non-code children", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Pre = comps.pre as React.FC<{ children: React.ReactNode }>;
+    const { container } = render(<Pre>plain text</Pre>);
+    expect(container.querySelector("pre")).toBeTruthy();
+  });
+
+  it("a renderer renders internal non-docs link correctly", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const A = comps.a as React.FC<{ href?: string; children: React.ReactNode }>;
+    const { container } = render(<A href="/login">Login</A>);
+    const link = container.querySelector("a");
+    expect(link).toBeTruthy();
+    expect(link?.getAttribute("target")).toBeNull();
+    expect(link?.getAttribute("rel")).toBeNull();
+  });
+
+  it("a renderer renders external link with target=_blank", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const A = comps.a as React.FC<{ href?: string; children: React.ReactNode }>;
+    const { container } = render(<A href="https://example.com">External</A>);
+    const link = container.querySelector("a");
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("code renderer parses language with colon but no numeric prefix", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Code = comps.code as React.FC<{ className?: string; children: React.ReactNode }>;
+    const { container } = render(<Code className="language-python:filename.py">code</Code>);
+    const block = container.querySelector("[data-testid='code-block']");
+    expect(block).toBeTruthy();
+    expect(block?.getAttribute("data-language")).toBe("python");
+  });
+
+  it("div renderer handles div without className", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Div = comps.div as React.FC<{ className?: string; children: React.ReactNode }>;
+    const { container } = render(<Div>text</Div>);
+    expect(container.querySelector("div")).toBeTruthy();
+  });
 });

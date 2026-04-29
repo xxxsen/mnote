@@ -192,6 +192,88 @@ describe("useShareComments", () => {
     await waitFor(() => { expect(result.current.comments).toHaveLength(1); });
     expect(mockApiFetch).toHaveBeenCalledWith(expect.not.stringContaining("password="), expect.anything());
   });
+
+  it("page.total falls back to items.length when not a number", async () => {
+    mockApiFetch.mockResolvedValue({ items: [{ id: "c1", content: "hi" }], total: undefined });
+    const opts = makeOpts();
+    const { result } = renderHook(() => useShareComments(opts));
+    await waitFor(() => { expect(result.current.comments).toHaveLength(1); });
+    expect(result.current.commentsTotal).toBe(1);
+  });
+
+  it("fetchComments error with append mode does not clear comments", async () => {
+    mockApiFetch.mockResolvedValue({ items: Array.from({ length: 10 }, (_, i) => ({ id: `c${i}`, content: `c${i}` })), total: 20 });
+    const opts = makeOpts();
+    const { result } = renderHook(() => useShareComments(opts));
+    await waitFor(() => { expect(result.current.comments).toHaveLength(10); });
+    mockApiFetch.mockRejectedValueOnce(new Error("append fail"));
+    await act(async () => { result.current.handleLoadMoreComments(); });
+    await waitFor(() => { expect(result.current.comments).toHaveLength(10); });
+  });
+
+  it("handleSubmitComment shows generic message for non-Error", async () => {
+    mockApiFetch.mockResolvedValue({ items: [], total: 0 });
+    const opts = makeOpts();
+    const { result } = renderHook(() => useShareComments(opts));
+    await waitFor(() => { expect(result.current.commentsLoading).toBe(false); });
+    act(() => { result.current.setAnnotationContent("Hello"); });
+    mockApiFetch.mockRejectedValueOnce("string error");
+    await act(async () => { await result.current.handleSubmitComment(); });
+    expect(stableShowToast).toHaveBeenCalledWith("Failed to add comment", 3000);
+  });
+
+  it("handleSubmitComment no-op when canAnnotate is false", async () => {
+    mockApiFetch.mockResolvedValue({ items: [], total: 0 });
+    const { result } = renderHook(() => useShareComments(makeOpts({ canAnnotate: false })));
+    await waitFor(() => { expect(result.current.commentsLoading).toBe(false); });
+    act(() => { result.current.setAnnotationContent("Test"); });
+    const callCount = mockApiFetch.mock.calls.length;
+    await act(async () => { await result.current.handleSubmitComment(); });
+    const postCalls = mockApiFetch.mock.calls.slice(callCount).filter(([, opts]) => (opts as { method?: string })?.method === "POST");
+    expect(postCalls).toHaveLength(0);
+  });
+
+  it("handleSubmitComment no-op when content empty", async () => {
+    mockApiFetch.mockResolvedValue({ items: [], total: 0 });
+    const { result } = renderHook(() => useShareComments(makeOpts()));
+    await waitFor(() => { expect(result.current.commentsLoading).toBe(false); });
+    act(() => { result.current.setAnnotationContent("   "); });
+    await act(async () => { await result.current.handleSubmitComment(); });
+    expect(stableShowToast).toHaveBeenCalledWith("Please enter comment content.");
+  });
+
+  it("handleSubmitComment no-op when detail is null", async () => {
+    mockApiFetch.mockResolvedValue({ items: [], total: 0 });
+    const { result } = renderHook(() => useShareComments(makeOpts({ detail: null })));
+    await waitFor(() => { expect(result.current.commentsLoading).toBe(false); });
+    act(() => { result.current.setAnnotationContent("Test"); });
+    const callCount = mockApiFetch.mock.calls.length;
+    await act(async () => { await result.current.handleSubmitComment(); });
+    const postCalls = mockApiFetch.mock.calls.slice(callCount).filter(([, opts]) => (opts as { method?: string })?.method === "POST");
+    expect(postCalls).toHaveLength(0);
+  });
+
+  it("fetchComments passes accessPassword in query", async () => {
+    mockApiFetch.mockResolvedValue({ items: [], total: 0 });
+    renderHook(() => useShareComments(makeOpts({ accessPassword: "secret" })));
+    await waitFor(() => { expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("password=secret"), expect.anything()); });
+  });
+
+  it("page.total defaults to items.length when not number", async () => {
+    mockApiFetch.mockResolvedValue({ items: [{ id: "c1" }], total: undefined });
+    const { result } = renderHook(() => useShareComments(makeOpts()));
+    await waitFor(() => { expect(result.current.comments).toHaveLength(1); });
+    expect(result.current.commentsTotal).toBe(1);
+  });
+
+  it("mergeCommentsByID deduplicates by id", async () => {
+    mockApiFetch.mockResolvedValue({ items: [{ id: "c1", content: "first" }], total: 10 });
+    const { result } = renderHook(() => useShareComments(makeOpts()));
+    await waitFor(() => { expect(result.current.comments).toHaveLength(1); });
+    mockApiFetch.mockResolvedValueOnce({ items: [{ id: "c1", content: "first" }, { id: "c2", content: "second" }], total: 10 });
+    await act(async () => { result.current.handleLoadMoreComments(); });
+    await waitFor(() => { expect(result.current.comments).toHaveLength(2); });
+  });
 });
 
 describe("useShareToc", () => {

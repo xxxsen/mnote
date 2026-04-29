@@ -4,7 +4,7 @@ import { renderHook, act } from "@testing-library/react";
 vi.mock("@/lib/api", () => ({ apiFetch: vi.fn() }));
 
 import { apiFetch } from "@/lib/api";
-import { useHoverPreview } from "../hooks/use-hover-preview";
+import { useHoverPreview, resolveTargetId, fetchPreviewSnippet } from "../hooks/use-hover-preview";
 
 const mockApiFetch = vi.mocked(apiFetch);
 
@@ -204,5 +204,45 @@ describe("useHoverPreview", () => {
     act(() => { result.current.openHoverPreview(edgeEvent, "Edge"); });
     expect(result.current.hoverPreview.open).toBe(true);
     vi.unstubAllGlobals();
+  });
+});
+
+describe("resolveTargetId", () => {
+  it("returns empty string when linkTitle is truthy but API returns empty docs", async () => {
+    mockApiFetch.mockResolvedValue([]);
+    const result = await resolveTargetId("NonExistent");
+    expect(result).toBe("");
+  });
+
+  it("returns docs[0].id when no exact title match", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "d1", title: "Other" }]);
+    const result = await resolveTargetId("Missing");
+    expect(result).toBe("d1");
+  });
+
+  it("returns exact match id over first doc", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "d1", title: "Other" }, { id: "d2", title: "Exact" }]);
+    const result = await resolveTargetId("Exact");
+    expect(result).toBe("d2");
+  });
+});
+
+describe("fetchPreviewSnippet", () => {
+  it("uses linkTitle when document title is empty", async () => {
+    mockApiFetch.mockResolvedValue({ document: { title: "", content: "Some content", summary: "" } });
+    const result = await fetchPreviewSnippet("d1", "Fallback Title");
+    expect(result.title).toBe("Fallback Title");
+  });
+
+  it("uses Untitled when both title and linkTitle are empty", async () => {
+    mockApiFetch.mockResolvedValue({ document: { title: "", content: "Some content", summary: "" } });
+    const result = await fetchPreviewSnippet("d1", "");
+    expect(result.title).toBe("Untitled");
+  });
+
+  it("returns Empty note when content and summary are empty", async () => {
+    mockApiFetch.mockResolvedValue({ document: { title: "T", content: "", summary: "" } });
+    const result = await fetchPreviewSnippet("d1", "T");
+    expect(result.content).toBe("Empty note");
   });
 });

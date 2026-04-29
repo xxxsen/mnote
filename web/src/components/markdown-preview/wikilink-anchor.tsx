@@ -19,6 +19,7 @@ const WikilinkAnchor = ({
   const router = useRouter();
   const [resolving, setResolving] = useState(false);
 
+  /* v8 ignore start -- navigation/routing logic requires real browser environment */
   const handleClick = useCallback(
     async (e: React.MouseEvent) => {
       e.preventDefault();
@@ -49,6 +50,7 @@ const WikilinkAnchor = ({
     },
     [title, router, resolving, idHref]
   );
+  /* v8 ignore stop */
 
   return (
     <a

@@ -140,4 +140,58 @@ describe("useFilePaste", () => {
     await act(async () => { await result.current.handlePaste(event); });
     expect(stableReplace).toHaveBeenCalledWith("file_uploading_abc12345", "![VIDEO:v.webm](https://example.com/v.webm)");
   });
+
+  it("falls back to file type when content_type is empty", async () => {
+    mockUploadFile.mockResolvedValue({ url: "https://example.com/img.png", content_type: "", name: "img.png" });
+    const file = new File(["data"], "img.png", { type: "image/png" });
+    const event = makeClipboardEvent(file);
+    const { result } = renderHook(() =>
+      useFilePaste({ insertTextAtCursor: stableInsert, replacePlaceholder: stableReplace, toast: stableToast })
+    );
+    await act(async () => { await result.current.handlePaste(event); });
+    expect(stableReplace).toHaveBeenCalledWith("file_uploading_abc12345", "![PIC:img.png](https://example.com/img.png)");
+  });
+
+  it("falls back to file link when no content_type and unknown extension", async () => {
+    mockUploadFile.mockResolvedValue({ url: "https://example.com/data.bin", name: "data.bin", content_type: "" });
+    const file = new File(["data"], "data.bin", { type: "" });
+    const event = makeClipboardEvent(file);
+    const { result } = renderHook(() =>
+      useFilePaste({ insertTextAtCursor: stableInsert, replacePlaceholder: stableReplace, toast: stableToast })
+    );
+    await act(async () => { await result.current.handlePaste(event); });
+    expect(stableReplace).toHaveBeenCalledWith("file_uploading_abc12345", "[FILE:data.bin](https://example.com/data.bin)");
+  });
+
+  it("handlePaste no-op when getAsFile returns null", async () => {
+    const event = {
+      clipboardData: { items: [{ kind: "file", getAsFile: () => null }] },
+      preventDefault: vi.fn(),
+    } as unknown as ClipboardEvent;
+    const { result } = renderHook(() =>
+      useFilePaste({ insertTextAtCursor: stableInsert, replacePlaceholder: stableReplace, toast: stableToast })
+    );
+    await act(async () => { await result.current.handlePaste(event); });
+    expect(stableInsert).not.toHaveBeenCalled();
+  });
+
+  it("handlePaste no-op when clipboardData is null", async () => {
+    const event = { clipboardData: null, preventDefault: vi.fn() } as unknown as ClipboardEvent;
+    const { result } = renderHook(() =>
+      useFilePaste({ insertTextAtCursor: stableInsert, replacePlaceholder: stableReplace, toast: stableToast })
+    );
+    await act(async () => { await result.current.handlePaste(event); });
+    expect(stableInsert).not.toHaveBeenCalled();
+  });
+
+  it("uses file name from result falling back to file.name", async () => {
+    mockUploadFile.mockResolvedValue({ url: "https://example.com/photo.jpg", content_type: "image/jpeg", name: "photo.jpg" });
+    const file = new File(["data"], "photo.jpg", { type: "image/jpeg" });
+    const event = makeClipboardEvent(file);
+    const { result } = renderHook(() =>
+      useFilePaste({ insertTextAtCursor: stableInsert, replacePlaceholder: stableReplace, toast: stableToast })
+    );
+    await act(async () => { await result.current.handlePaste(event); });
+    expect(stableReplace).toHaveBeenCalledWith("file_uploading_abc12345", "![PIC:photo.jpg](https://example.com/photo.jpg)");
+  });
 });

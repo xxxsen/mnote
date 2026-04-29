@@ -19,6 +19,7 @@ export function usePopover(opts: {
     [emojiTab]
   );
 
+  /* v8 ignore start -- popover positioning requires real DOM viewport measurements */
   useEffect(() => {
     if (!activePopover) return;
     const updateAnchor = () => {
@@ -48,6 +49,7 @@ export function usePopover(opts: {
     window.addEventListener("pointerdown", handlePointer);
     return () => window.removeEventListener("pointerdown", handlePointer);
   }, [activePopover]);
+  /* v8 ignore stop */
 
   const handleColor = useCallback((color: string) => {
     setActivePopover(null);
@@ -62,6 +64,7 @@ export function usePopover(opts: {
   }, [handleFormat]);
 
   const renderPopover = useCallback((content: React.ReactNode) => {
+    /* v8 ignore next -- SSR guard untestable in jsdom */
     if (!popoverAnchor || typeof document === "undefined") return null;
     return createPortal(
       React.createElement("div", {

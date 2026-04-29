@@ -303,4 +303,166 @@ describe("useAiAssistant", () => {
     const removeLines = result.current.aiDiffLines.filter(l => l.type === "remove");
     expect(removeLines.length).toBeGreaterThan(0);
   });
+
+  it("handleApplyAiTags with no selected and no removed closes modal", async () => {
+    mockApiFetch.mockResolvedValue({ tags: [], existing_tags: [{ id: "e1", name: "tag1" }] });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiTags("content"); });
+    expect(result.current.aiSelectedTags).toHaveLength(0);
+    expect(result.current.aiRemovedTagIDs).toHaveLength(0);
+    const saveTagIDs = vi.fn();
+    await act(async () => {
+      await result.current.handleApplyAiTags({
+        findExistingTagByName: vi.fn(), mergeTags: vi.fn(), saveTagIDs, onError: vi.fn(),
+      });
+    });
+    expect(saveTagIDs).not.toHaveBeenCalled();
+    expect(result.current.aiModalOpen).toBe(false);
+  });
+
+  it("handleApplyAiTags with only removed tags applies without creating", async () => {
+    mockApiFetch.mockResolvedValue({
+      tags: [],
+      existing_tags: [{ id: "e1", name: "old1" }, { id: "e2", name: "old2" }],
+    });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiTags("content"); });
+    act(() => { result.current.toggleExistingTag("e1"); });
+    expect(result.current.aiSelectedTags).toHaveLength(0);
+    expect(result.current.aiRemovedTagIDs).toContain("e1");
+
+    const saveTagIDs = vi.fn().mockResolvedValue(undefined);
+    await act(async () => {
+      await result.current.handleApplyAiTags({
+        findExistingTagByName: vi.fn(), mergeTags: vi.fn(), saveTagIDs, onError: vi.fn(),
+      });
+    });
+    expect(saveTagIDs).toHaveBeenCalledWith(["e2"]);
+  });
+
+  it("handleApplyAiTags with removed existing tags and matched tags", async () => {
+    mockApiFetch.mockResolvedValue({
+      tags: ["newtag"],
+      existing_tags: [{ id: "e1", name: "old1" }, { id: "e2", name: "old2" }],
+    });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiTags("content"); });
+    act(() => { result.current.toggleExistingTag("e1"); });
+    expect(result.current.aiRemovedTagIDs).toContain("e1");
+
+    const matchedTag = { id: "m1", name: "newtag" };
+    const findExistingTagByName = vi.fn().mockResolvedValue(matchedTag);
+    const saveTagIDs = vi.fn().mockResolvedValue(undefined);
+    await act(async () => {
+      await result.current.handleApplyAiTags({
+        findExistingTagByName, mergeTags: vi.fn(), saveTagIDs, onError: vi.fn(),
+      });
+    });
+    expect(saveTagIDs).toHaveBeenCalledWith(expect.arrayContaining(["e2", "m1"]));
+    expect(saveTagIDs).toHaveBeenCalledWith(expect.not.arrayContaining(["e1"]));
+  });
+
+  it("toggleAiTag ignores existing tag names", async () => {
+    mockApiFetch.mockResolvedValue({ tags: [], existing_tags: [{ id: "e1", name: "existing" }] });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiTags("content"); });
+    act(() => { result.current.toggleAiTag("existing"); });
+    expect(result.current.aiSelectedTags).toHaveLength(0);
+  });
+
+  it("runAiTextAction handles non-Error thrown", async () => {
+    mockApiFetch.mockRejectedValue("string error");
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiPolish("text"); });
+    expect(result.current.aiError).toBe("AI request failed");
+  });
+
+  it("handleAiGenerate handles non-Error thrown", async () => {
+    mockApiFetch.mockRejectedValue("string error");
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    act(() => { result.current.handleAiGenerateOpen(); });
+    act(() => { result.current.setAiPrompt("something"); });
+    await act(async () => { await result.current.handleAiGenerate(); });
+    expect(result.current.aiError).toBe("AI request failed");
+  });
+
+  it("handleApplyAiSummary handles non-Error thrown", async () => {
+    mockApiFetch.mockResolvedValue({ summary: "short" });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiSummary("long text"); });
+    mockApiFetch.mockRejectedValue("non-error");
+    const onError = vi.fn();
+    await act(async () => { await result.current.handleApplyAiSummary({ onApplied: vi.fn(), onError }); });
+    expect(onError).toHaveBeenCalledWith("Failed to apply summary");
+  });
+
+  it("handleAiTags handles non-Error thrown", async () => {
+    mockApiFetch.mockRejectedValue("string error");
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiTags("content"); });
+    expect(result.current.aiError).toBe("AI request failed");
+  });
+
+  it("handleAiTags deduplicates and filters invalid suggested tags", async () => {
+    mockApiFetch.mockResolvedValue({
+      tags: ["Go", "go", "Invalid!!!"],
+      existing_tags: [],
+    });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiTags("content"); });
+    expect(result.current.aiSuggestedTags).toEqual(["go"]);
+  });
+
+  it("aiTitle falls back to AI Tags for unknown action", () => {
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    expect(result.current.aiTitle).toBe("AI Tags");
+  });
+
+  it("aiDiffLines shows remove/add for different lines", async () => {
+    mockApiFetch.mockResolvedValue({ text: "new line" });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiPolish("old line"); });
+    expect(result.current.aiDiffLines.length).toBeGreaterThan(0);
+    expect(result.current.aiDiffLines.some(l => l.type === "remove")).toBe(true);
+    expect(result.current.aiDiffLines.some(l => l.type === "add")).toBe(true);
+  });
+
+  it("aiDiffLines shows equal for identical lines", async () => {
+    mockApiFetch.mockResolvedValue({ text: "same\nline" });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiPolish("same\nline"); });
+    expect(result.current.aiDiffLines.every(l => l.type === "equal")).toBe(true);
+  });
+
+  it("aiDiffLines handles longer old text than new text", async () => {
+    mockApiFetch.mockResolvedValue({ text: "A" });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiPolish("A\nB\nC"); });
+    expect(result.current.aiDiffLines.some(l => l.type === "remove")).toBe(true);
+    expect(result.current.aiDiffLines.some(l => l.type === "equal")).toBe(true);
+  });
+
+  it("aiDiffLines handles longer new text than old text", async () => {
+    mockApiFetch.mockResolvedValue({ text: "A\nB\nC" });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiPolish("A"); });
+    expect(result.current.aiDiffLines.some(l => l.type === "add")).toBe(true);
+    expect(result.current.aiDiffLines.some(l => l.type === "equal")).toBe(true);
+  });
+
+  it("runAiTextAction non-Error shows generic message", async () => {
+    mockApiFetch.mockRejectedValue("string error");
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiPolish("content"); });
+    expect(result.current.aiError).toBe("AI request failed");
+  });
+
+  it("handleAiGenerate non-Error shows generic message", async () => {
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    act(() => { result.current.handleAiGenerateOpen(); });
+    mockApiFetch.mockRejectedValue("string error");
+    act(() => { result.current.setAiPrompt("test prompt"); });
+    await act(async () => { await result.current.handleAiGenerate(); });
+    expect(result.current.aiError).toBe("AI request failed");
+  });
 });

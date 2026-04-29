@@ -33,6 +33,7 @@ type UseEditorLifecycleOptions = {
 };
 
 function loadDraft(id: string, serverContent: string): { initialContent: string; hasDraftOverride: boolean } {
+  /* v8 ignore next -- SSR guard untestable in jsdom */
   if (typeof window === "undefined") return { initialContent: serverContent, hasDraftOverride: false };
   const draft = window.localStorage.getItem(`mnote:draft:${id}`);
   if (!draft) return { initialContent: serverContent, hasDraftOverride: false };
@@ -100,6 +101,7 @@ export function useEditorLifecycle({
       lastSavedContentRef.current = latestContent;
       const timestamp = Math.floor(Date.now() / 1000);
       onAutoSavedRef.current({ title: derivedTitle, timestamp });
+      /* v8 ignore next 3 -- SSR guard untestable in jsdom */
       if (typeof window !== "undefined") {
         window.localStorage.removeItem(`mnote:draft:${id}`);
       }
@@ -121,6 +123,7 @@ export function useEditorLifecycle({
   }, [handleAutoSave]);
 
   useEffect(() => {
+    /* v8 ignore next -- SSR guard untestable in jsdom */
     if (typeof window === "undefined") return;
     const timer = window.setTimeout(() => {
       if (!hasUnsavedChanges) {
@@ -136,6 +139,7 @@ export function useEditorLifecycle({
 
   useEffect(() => {
     return () => {
+      /* v8 ignore next -- SSR guard untestable in jsdom */
       if (typeof window !== "undefined" && hasUnsavedChanges) {
         const payload = JSON.stringify({ content: contentRef.current, updatedAt: Date.now() });
         window.localStorage.setItem(`mnote:draft:${id}`, payload);

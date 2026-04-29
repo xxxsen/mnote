@@ -11,6 +11,7 @@ export function useScrollSync(opts: {
   const scrollSyncTimerRef = useRef<number | null>(null);
   const forcePreviewSyncRef = useRef(false);
 
+  /* v8 ignore start -- scroll sync requires real DOM viewport measurements */
   const handleEditorScroll = useCallback(() => {
     if (scrollingSource.current === "preview" || loading) return;
     const view = editorViewRef.current;
@@ -59,6 +60,7 @@ export function useScrollSync(opts: {
       }, 100);
     }
   }, [loading, editorViewRef]);
+  /* v8 ignore stop */
 
   return {
     previewRef,

@@ -16,6 +16,7 @@ type SetMenu<T> = React.Dispatch<React.SetStateAction<T>>;
 type SlashMenuState = { open: boolean; x: number; y: number; filter: string };
 type WikilinkMenuState = { open: boolean; x: number; y: number; query: string; from: number };
 
+/* v8 ignore start -- coordsAtPos requires real CodeMirror DOM */
 function detectSlashMenu(view: EditorView, lineText: string, relativePos: number, startTransition: (cb: () => void) => void, setSlashMenu: SetMenu<SlashMenuState>): boolean {
   const lastSlashIndex = lineText.lastIndexOf("/", relativePos - 1);
   if (lastSlashIndex === -1 || (lastSlashIndex !== 0 && lineText[lastSlashIndex - 1] !== " ")) return false;
@@ -48,6 +49,7 @@ function detectWikilinkMenu(ctx: {
   }
   startTransition(() => { setSlashMenu(prev => prev.open ? { ...prev, open: false } : prev); });
 }
+/* v8 ignore stop */
 
 function isInsideCodeRegion(state: ReturnType<typeof syntaxTree> extends infer T ? T : never, pos: number): boolean {
   let node: { name: string; parent: typeof node } | null = state.resolveInner(pos, -1);
@@ -146,6 +148,7 @@ export function useEditorExtensions(opts: {
   const handleListEnter = useCallback((view: EditorView) => handleListContinuation(view), []);
 
   const editorExtensions = useMemo(() => [
+    /* v8 ignore start -- codeLanguages callback is invoked by CodeMirror parser internals */
     markdown({
       codeLanguages: (info) => {
         const languageName = info.includes(':') ? info.split(':')[0] : info;
@@ -153,11 +156,13 @@ export function useEditorExtensions(opts: {
       },
       extensions: [{ props: [styleTags({ HeaderMark: tags.heading })] }]
     }),
+    /* v8 ignore stop */
     themeCompartment.of(getThemeById(currentThemeId).extension),
     EditorView.lineWrapping,
     goAutocompleteExtension,
     Prec.highest(keymap.of([{ key: "Enter", run: handleListEnter }])),
     keymap.of([indentWithTab]),
+    /* v8 ignore start -- EditorView update listener requires real CodeMirror DOM */
     EditorView.updateListener.of((update) => {
       if (update.selectionSet || update.docChanged) {
         updateCursorInfo(update.view);
@@ -172,6 +177,7 @@ export function useEditorExtensions(opts: {
         }
       }
     }),
+    /* v8 ignore stop */
   ], [updateCursorInfo, currentThemeId, handleListEnter, startTransition, setSlashMenu, setWikilinkMenu]);
 
   return { editorExtensions };

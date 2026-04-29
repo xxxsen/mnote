@@ -282,7 +282,7 @@ describe("useTagInput", () => {
     const opts = makeOpts();
     const { result } = renderHook(() => useTagInput(opts));
     await act(async () => {
-      result.current.handleTagDropdownSelect({ type: "use", tag: { id: "t99", name: "newtag" } });
+      result.current.handleTagDropdownSelect({ type: "use", tag: tag("t99", "newtag") });
     });
     await vi.waitFor(() => { expect(stableSaveTagIDs).toHaveBeenCalled(); });
   });
@@ -291,7 +291,7 @@ describe("useTagInput", () => {
     const opts = makeOpts({ selectedTagIDs: ["t1"] });
     const { result } = renderHook(() => useTagInput(opts));
     await act(async () => {
-      result.current.handleTagDropdownSelect({ type: "suggestion", tag: { id: "t1", name: "go" } });
+      result.current.handleTagDropdownSelect({ type: "suggestion", tag: tag("t1", "go") });
     });
     expect(stableSaveTagIDs).not.toHaveBeenCalled();
   });
@@ -300,7 +300,7 @@ describe("useTagInput", () => {
     const opts = makeOpts({ selectedTagIDs: ["t1", "t2", "t3", "t4", "t5"], maxTags: 5 });
     const { result } = renderHook(() => useTagInput(opts));
     await act(async () => {
-      result.current.handleTagDropdownSelect({ type: "suggestion", tag: { id: "new1", name: "go" } });
+      result.current.handleTagDropdownSelect({ type: "suggestion", tag: tag("new1", "go") });
     });
     expect(stableNotify).toHaveBeenCalledWith(expect.stringContaining("5"));
   });

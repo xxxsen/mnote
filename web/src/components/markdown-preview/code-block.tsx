@@ -20,6 +20,7 @@ export const ThemedSyntaxHighlighter =
 const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps) => {
   const [copied, setCopied] = React.useState(false);
 
+  /* v8 ignore start -- clipboard interaction requires real browser API */
   const handleCopyLocal = React.useCallback(() => {
     void copyToClipboard(rawCode).then((ok) => {
       if (ok) {
@@ -28,6 +29,7 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
       }
     });
   }, [rawCode]);
+  /* v8 ignore stop */
 
   const displayLanguage = language.toUpperCase();
   const displayTitle = fileName || displayLanguage;

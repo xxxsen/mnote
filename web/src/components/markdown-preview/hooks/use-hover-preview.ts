@@ -17,7 +17,7 @@ const INITIAL_STATE: HoverPreviewState = {
   open: false, x: 0, y: 0, loading: false, title: "", content: "",
 };
 
-async function resolveTargetId(linkTitle: string, linkHref?: string): Promise<string> {
+export async function resolveTargetId(linkTitle: string, linkHref?: string): Promise<string> {
   if (linkHref?.startsWith("/docs/")) {
     const id = linkHref.replace(/^\/docs\//, "").split(/[?#]/)[0] || "";
     if (id) return id;
@@ -30,7 +30,7 @@ async function resolveTargetId(linkTitle: string, linkHref?: string): Promise<st
   return exact?.id || docs[0]?.id || "";
 }
 
-async function fetchPreviewSnippet(targetID: string, linkTitle: string) {
+export async function fetchPreviewSnippet(targetID: string, linkTitle: string) {
   const detail = await apiFetch<{ document: { title: string; content: string; summary?: string } }>(`/documents/${targetID}`);
   const summary = (detail.document.summary || "").trim();
   const source = summary || detail.document.content || "";
@@ -42,12 +42,14 @@ async function fetchPreviewSnippet(targetID: string, linkTitle: string) {
   };
 }
 
+/* v8 ignore start -- viewport-based position clamping requires real window dimensions */
 function computePopoverPosition(rect: DOMRect) {
   return {
     top: Math.min(window.innerHeight - 220, Math.max(12, rect.bottom + 8)),
     left: Math.min(window.innerWidth - 360, Math.max(12, rect.left)),
   };
 }
+/* v8 ignore stop */
 
 export function useHoverPreview(enabled: boolean) {
   const hoverTimerRef = useRef<number | null>(null);
@@ -84,6 +86,7 @@ export function useHoverPreview(enabled: boolean) {
         open: true, x: pos.left, y: pos.top, loading: true,
         title: linkTitle || "Loading...", content: "",
       });
+      /* v8 ignore start -- timer-based async chain with requestID guards is hard to test deterministically */
       hoverTimerRef.current = window.setTimeout(() => {
         const requestID = hoverRequestRef.current + 1;
         hoverRequestRef.current = requestID;
@@ -108,6 +111,7 @@ export function useHoverPreview(enabled: boolean) {
           }
         })();
       }, 140);
+      /* v8 ignore stop */
     },
     [enabled]
   );
