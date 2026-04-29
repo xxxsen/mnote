@@ -24,10 +24,14 @@ beforeEach(() => {
 afterEach(() => { cleanup(); });
 
 describe("useShareComments", () => {
-  const makeOpts = (overrides = {}) => ({
-    detail: { permission: 2 }, token: "tok", accessPassword: "",
+  const stableShowToast = vi.fn();
+  const stableDetail = { permission: 2 };
+  const stableNullDetail = null;
+  const makeOpts = (overrides: Record<string, unknown> = {}) => ({
+    detail: stableDetail as { permission?: number } | null,
+    token: "tok", accessPassword: "",
     canAnnotate: true, guestAuthor: "Guest #ABCD",
-    showToast: vi.fn(), ...overrides,
+    showToast: stableShowToast, ...overrides,
   });
 
   it("initializes with empty comments", () => {
@@ -46,7 +50,7 @@ describe("useShareComments", () => {
 
   it("clears comments when detail is null", async () => {
     mockApiFetch.mockResolvedValue({ items: [], total: 0 });
-    const { result } = renderHook(() => useShareComments(makeOpts({ detail: null })));
+    const { result } = renderHook(() => useShareComments(makeOpts({ detail: stableNullDetail })));
     await waitFor(() => { expect(result.current.commentsLoading).toBe(false); });
     expect(result.current.comments).toEqual([]);
   });
@@ -91,6 +95,35 @@ describe("useShareComments", () => {
     const { result } = renderHook(() => useShareComments(makeOpts()));
     act(() => { result.current.setReplyingTo({ id: "c1", author: "Bob" }); });
     expect(result.current.replyingTo).toEqual({ id: "c1", author: "Bob" });
+  });
+
+  it("handleSubmitComment error shows toast", async () => {
+    mockApiFetch.mockResolvedValue({ items: [], total: 0 });
+    const opts = makeOpts();
+    const { result } = renderHook(() => useShareComments(opts));
+    await waitFor(() => { expect(result.current.commentsLoading).toBe(false); });
+    act(() => { result.current.setAnnotationContent("Hello"); });
+    mockApiFetch.mockRejectedValueOnce(new Error("Server error"));
+    await act(async () => { await result.current.handleSubmitComment(); });
+    expect(stableShowToast).toHaveBeenCalledWith("Server error", 3000);
+  });
+
+  it("handleSubmitComment no-op when canAnnotate is false", async () => {
+    mockApiFetch.mockResolvedValue({ items: [], total: 0 });
+    const opts = makeOpts({ canAnnotate: false });
+    const { result } = renderHook(() => useShareComments(opts));
+    await waitFor(() => { expect(result.current.commentsLoading).toBe(false); });
+    act(() => { result.current.setAnnotationContent("Hello"); });
+    await act(async () => { await result.current.handleSubmitComment(); });
+    expect(mockApiFetch).not.toHaveBeenCalledWith(expect.stringContaining("comments"), expect.objectContaining({ method: "POST" }));
+  });
+
+  it("setInlineReplyContent works", () => {
+    mockApiFetch.mockResolvedValue({ items: [], total: 0 });
+    const opts = makeOpts();
+    const { result } = renderHook(() => useShareComments(opts));
+    act(() => { result.current.setInlineReplyContent("reply text"); });
+    expect(result.current.inlineReplyContent).toBe("reply text");
   });
 });
 

@@ -131,4 +131,108 @@ describe("useImportExport", () => {
     expect(deps.toast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
     vi.unstubAllGlobals();
   });
+
+  it("handleImportFile uploads and previews", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "job1" } }),
+    }));
+    mockApiFetch.mockResolvedValue({ files: [{ name: "test.md", size: 100 }], total: 1 });
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip", { type: "application/zip" });
+    await act(async () => { await result.current.handleImportFile(file); });
+    expect(result.current.importStep).toBe("preview");
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportFile handles 401", async () => {
+    const removeAuthToken = await import("@/lib/api").then((m) => vi.mocked(m.removeAuthToken));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 401 }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    expect(removeAuthToken).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportFile handles upload error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ code: 400, msg: "bad file" }),
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    expect(result.current.importError).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportFile handles missing jobId", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: {} }),
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    expect(result.current.importError).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportConfirm runs import flow", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "job1" } }),
+    }));
+    let statusCallCount = 0;
+    mockApiFetch.mockImplementation(((url: string, opts?: { method?: string }) => {
+      if (url.includes("/preview")) return Promise.resolve({ files: [], total: 0 });
+      if (url.includes("/confirm")) return Promise.resolve({ ok: true });
+      if (url.includes("/status")) {
+        statusCallCount++;
+        return Promise.resolve({ status: "done", progress: 100, report: { imported: 1, skipped: 0, failed: 0 } });
+      }
+      return Promise.resolve({});
+    }) as typeof apiFetch);
+
+    const deps = makeDeps();
+    const { result } = renderHook(() => useImportExport(deps));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    await act(async () => { await result.current.handleImportConfirm(); });
+    expect(result.current.importStep).toBe("done");
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportConfirm error falls back to preview", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "job1" } }),
+    }));
+    mockApiFetch.mockImplementation(((url: string, opts?: { method?: string }) => {
+      if (url.includes("/preview")) return Promise.resolve({ files: [], total: 0 });
+      if (url.includes("/confirm")) return Promise.reject(new Error("confirm fail"));
+      return Promise.resolve({});
+    }) as typeof apiFetch);
+
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    await act(async () => { await result.current.handleImportConfirm(); });
+    expect(result.current.importError).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
+  it("setImportMode changes mode", async () => {
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    act(() => { result.current.setImportMode("overwrite"); });
+    expect(result.current.importMode).toBe("overwrite");
+  });
 });

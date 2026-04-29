@@ -159,7 +159,7 @@ function buildGoCompletions(prefix: string, fenceStartLine: number, doc: Text, p
   return options;
 }
 
-function goCompletionSource(context: CompletionContext): CompletionResult | null {
+export function goCompletionSource(context: CompletionContext): CompletionResult | null {
   const fenceCtx = detectGoFence(context.state.doc, context.pos);
   if (!fenceCtx.inGoFence) return null;
 
