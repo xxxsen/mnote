@@ -130,6 +130,78 @@ describe("useSharePage", () => {
     act(() => { result.current.handleCopyLink(); });
   });
 
+  it("handleExport no-op when doc is null", async () => {
+    mockApiFetch.mockRejectedValue(new Error("fail"));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.handleExport(); });
+  });
+
+  it("handleExport no-op when allow_download is 0", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail({ allow_download: 0 }));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.handleExport(); });
+  });
+
+  it("password required error sets passwordRequired", async () => {
+    const { ApiError: AE } = await import("@/lib/api");
+    mockApiFetch.mockRejectedValue(new AE("Password required", 10000002));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(result.current.passwordRequired).toBe(true);
+  });
+
+  it("generic error sets error state", async () => {
+    mockApiFetch.mockRejectedValue(new Error("unknown"));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(result.current.error).toBe(true);
+  });
+
+  it("sets accessPassword from sharePasswordInput", async () => {
+    const { ApiError: AE } = await import("@/lib/api");
+    mockApiFetch.mockRejectedValueOnce(new AE("Password required", 10000002));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.passwordRequired).toBe(true); });
+    mockApiFetch.mockResolvedValue(makeDetail());
+    act(() => { result.current.setSharePasswordInput("secret"); });
+    act(() => { result.current.setAccessPassword("secret"); });
+    await waitFor(() => { expect(result.current.doc).toBeTruthy(); });
+  });
+
+  it("guestAuthor is generated for non-authenticated users", async () => {
+    const { getAuthToken } = await import("@/lib/api");
+    vi.mocked(getAuthToken).mockReturnValue(null);
+    mockApiFetch.mockResolvedValue(makeDetail());
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(result.current.guestAuthor).toMatch(/^Guest #[A-Z0-9]{4}$/);
+    vi.mocked(getAuthToken).mockReturnValue("tok");
+  });
+
+  it("handleCopyLink sets toast on success", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail());
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await act(async () => { result.current.handleCopyLink(); await vi.advanceTimersByTimeAsync(100); });
+    expect(result.current.toast).toBe("Link copied to clipboard!");
+    vi.useRealTimers();
+  });
+
+  it("handleCopyLink shows error toast on clipboard failure", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail());
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) } });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await act(async () => { result.current.handleCopyLink(); await vi.advanceTimersByTimeAsync(100); });
+    expect(result.current.toast).toBe("Failed to copy link");
+    vi.useRealTimers();
+  });
+
   it("handleExport creates download link", async () => {
     mockApiFetch.mockResolvedValue(makeDetail());
     const click = vi.fn();
