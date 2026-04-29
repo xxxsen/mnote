@@ -34,7 +34,12 @@ export default function SharePage() {
           <input type="password" value={sharePasswordInput} onChange={(e) => setSharePasswordInput(e.target.value)}
             className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm" placeholder="Enter password" />
           {passwordError && <div className="text-xs text-red-500">{passwordError}</div>}
-          <Button className="w-full" onClick={() => { setLoading(true); setAccessPassword(sharePasswordInput.trim()); }}>Continue</Button>
+          <Button className="w-full" onClick={() => {
+            const pwd = sharePasswordInput.trim();
+            if (!pwd) { return; }
+            setLoading(true);
+            setAccessPassword(pwd);
+          }}>Continue</Button>
         </div>
       </div>
     );

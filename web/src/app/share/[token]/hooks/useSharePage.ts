@@ -86,26 +86,36 @@ export function useSharePage() {
   /* v8 ignore stop */
 
   useEffect(() => {
-    const fetchDoc = async () => {
+    const controller = new AbortController();
+    const fetchDoc = async (attempt = 0) => {
       try {
         const fetchParams = new URLSearchParams();
         if (accessPassword.trim()) fetchParams.set("password", accessPassword.trim());
         const query = fetchParams.toString();
-        const d = await apiFetch<PublicShareDetail>(`/public/share/${token}${query ? `?${query}` : ""}`, { requireAuth: false });
+        const d = await apiFetch<PublicShareDetail>(`/public/share/${token}${query ? `?${query}` : ""}`, { requireAuth: false, signal: controller.signal });
+        if (controller.signal.aborted) return;
         setDetail(d);
         setPasswordRequired(false);
         setPasswordError("");
       } catch (err) {
+        if (controller.signal.aborted) return;
         if (err instanceof ApiError && err.code === 10000002) {
           setPasswordRequired(true);
           setPasswordError(accessPassword ? "Invalid password." : "");
+        } else if (err instanceof Error && /too many requests/i.test(err.message) && attempt < 2) {
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- signal may be aborted during await
+          if (!controller.signal.aborted) { void fetchDoc(attempt + 1); return; }
         } else {
           console.error(err);
           setError(true);
         }
-      } finally { setLoading(false); }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
     };
     void fetchDoc();
+    return () => controller.abort();
   }, [accessPassword, token]);
 
   useEffect(() => {
