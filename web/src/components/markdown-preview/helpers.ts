@@ -343,5 +343,9 @@ export const copyToClipboard = (value: string): Promise<boolean> => {
     return ok;
   };
 
-  return navigator.clipboard.writeText(value).then(() => true).catch(() => fallbackCopy());
+  try {
+    return navigator.clipboard.writeText(value).then(() => true).catch(() => fallbackCopy());
+  } catch {
+    return Promise.resolve(fallbackCopy());
+  }
 };
