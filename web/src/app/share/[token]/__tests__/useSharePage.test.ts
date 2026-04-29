@@ -143,5 +143,6 @@ describe("useSharePage", () => {
     act(() => { result.current.handleExport(); });
     expect(click).toHaveBeenCalled();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 });
