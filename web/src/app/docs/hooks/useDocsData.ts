@@ -145,6 +145,10 @@ export function useDocsData(deps: UseDocsDataDeps) {
       });
     } catch (err) {
       console.error("Failed to pin document", err);
+      setDocs(prev => {
+        const restored = prev.map(d => d.id === doc.id ? { ...d, pinned: doc.pinned } : d);
+        return sortDocs(restored);
+      });
     }
   }, []);
 
@@ -159,6 +163,7 @@ export function useDocsData(deps: UseDocsDataDeps) {
       void fetchSummary();
     } catch (err) {
       console.error("Failed to star document", err);
+      setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, starred: doc.starred } : d));
     }
   }, [fetchSummary]);
 

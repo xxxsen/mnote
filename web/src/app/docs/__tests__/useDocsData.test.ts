@@ -294,4 +294,96 @@ describe("useDocsData", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("q=my+doc"));
   });
+
+  it("handlePinToggle rollback restores original state on API failure (multiple docs)", async () => {
+    const twoDocs = [
+      { id: "d1", title: "A", pinned: 0, starred: 0, tags: [], tag_ids: [] },
+      { id: "d2", title: "B", pinned: 1, starred: 0, tags: [], tag_ids: [] },
+    ];
+    mockApiFetch.mockResolvedValue(twoDocs);
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(result.current.docs).toHaveLength(2);
+
+    mockApiFetch.mockRejectedValue(new Error("pin fail"));
+    const targetDoc = twoDocs[0];
+    await act(async () => {
+      await result.current.handlePinToggle(
+        { stopPropagation: vi.fn() } as never,
+        targetDoc as never,
+      );
+    });
+    const d1After = result.current.docs.find(d => d.id === "d1");
+    expect(d1After?.pinned).toBe(0);
+    const d2After = result.current.docs.find(d => d.id === "d2");
+    expect(d2After?.pinned).toBe(1);
+  });
+
+  it("handleStarToggle rollback restores original state on API failure (multiple docs)", async () => {
+    const twoDocs = [
+      { id: "d1", title: "A", pinned: 0, starred: 0, tags: [], tag_ids: [] },
+      { id: "d2", title: "B", pinned: 0, starred: 1, tags: [], tag_ids: [] },
+    ];
+    mockApiFetch.mockResolvedValue(twoDocs);
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(result.current.docs).toHaveLength(2);
+
+    mockApiFetch.mockRejectedValue(new Error("star fail"));
+    const targetDoc = twoDocs[0];
+    await act(async () => {
+      await result.current.handleStarToggle(
+        { stopPropagation: vi.fn() } as never,
+        targetDoc as never,
+      );
+    });
+    const d1After = result.current.docs.find(d => d.id === "d1");
+    expect(d1After?.starred).toBe(0);
+    const d2After = result.current.docs.find(d => d.id === "d2");
+    expect(d2After?.starred).toBe(1);
+  });
+
+  it("handlePinToggle optimistic update with multiple docs (non-target untouched)", async () => {
+    const twoDocs = [
+      { id: "d1", title: "A", pinned: 0, starred: 0, tags: [], tag_ids: [] },
+      { id: "d2", title: "B", pinned: 0, starred: 0, tags: [], tag_ids: [] },
+    ];
+    mockApiFetch.mockResolvedValue(twoDocs);
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+
+    mockApiFetch.mockResolvedValue(undefined);
+    await act(async () => {
+      await result.current.handlePinToggle(
+        { stopPropagation: vi.fn() } as never,
+        twoDocs[0] as never,
+      );
+    });
+    const d1 = result.current.docs.find(d => d.id === "d1");
+    expect(d1?.pinned).toBe(1);
+    const d2 = result.current.docs.find(d => d.id === "d2");
+    expect(d2?.pinned).toBe(0);
+  });
+
+  it("handleStarToggle optimistic update with multiple docs (non-target untouched)", async () => {
+    const twoDocs = [
+      { id: "d1", title: "A", pinned: 0, starred: 0, tags: [], tag_ids: [] },
+      { id: "d2", title: "B", pinned: 0, starred: 0, tags: [], tag_ids: [] },
+    ];
+    mockApiFetch.mockResolvedValue(twoDocs);
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+
+    mockApiFetch.mockResolvedValue(undefined);
+    await act(async () => {
+      await result.current.handleStarToggle(
+        { stopPropagation: vi.fn() } as never,
+        twoDocs[0] as never,
+      );
+    });
+    const d1 = result.current.docs.find(d => d.id === "d1");
+    expect(d1?.starred).toBe(1);
+    const d2 = result.current.docs.find(d => d.id === "d2");
+    expect(d2?.starred).toBe(0);
+  });
 });

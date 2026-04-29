@@ -436,6 +436,47 @@ describe("useImportExport", () => {
     vi.unstubAllGlobals();
   });
 
+  it("handleImportConfirm handles server 'failed' status", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "job1" } }),
+    }));
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.includes("/preview")) return Promise.resolve({ files: [], total: 0 });
+      if (url.includes("/confirm")) return Promise.resolve({ ok: true });
+      if (url.includes("/status")) return Promise.resolve({ status: "failed", progress: 50, report: null });
+      return Promise.resolve({});
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    await act(async () => { await result.current.handleImportConfirm(); });
+    expect(result.current.importError).toBe("Import failed on server");
+    expect(result.current.importStep).toBe("preview");
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportConfirm handles server 'error' status", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "job1" } }),
+    }));
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.includes("/preview")) return Promise.resolve({ files: [], total: 0 });
+      if (url.includes("/confirm")) return Promise.resolve({ ok: true });
+      if (url.includes("/status")) return Promise.resolve({ status: "error", progress: 30, report: null });
+      return Promise.resolve({});
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    await act(async () => { await result.current.handleImportConfirm(); });
+    expect(result.current.importError).toBe("Import failed on server");
+    vi.unstubAllGlobals();
+  });
+
   it("handleImportConfirm with null report sets null", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       status: 200,

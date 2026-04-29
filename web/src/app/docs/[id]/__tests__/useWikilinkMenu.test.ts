@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 
 vi.mock("@/lib/api", () => ({ apiFetch: vi.fn() }));
@@ -18,7 +18,8 @@ const makeOpts = () => ({
   setHasUnsavedChanges: vi.fn(),
 });
 
-beforeEach(() => { vi.clearAllMocks(); });
+beforeEach(() => { vi.clearAllMocks(); vi.useFakeTimers({ shouldAdvanceTime: true }); });
+afterEach(() => { vi.useRealTimers(); });
 
 describe("useWikilinkMenu", () => {
   it("initializes with closed menu", () => {
@@ -32,7 +33,7 @@ describe("useWikilinkMenu", () => {
     mockApiFetch.mockResolvedValue([{ id: "d1", title: "Doc 1" }]);
     const { result } = renderHook(() => useWikilinkMenu(makeOpts()));
     act(() => { result.current.setWikilinkMenu({ open: true, x: 0, y: 0, query: "test", from: 0 }); });
-    await waitFor(() => { expect(result.current.wikilinkLoading).toBe(false); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
     await waitFor(() => { expect(result.current.wikilinkResults).toHaveLength(1); });
   });
 
@@ -40,7 +41,7 @@ describe("useWikilinkMenu", () => {
     mockApiFetch.mockResolvedValue([{ id: "d1", title: "Doc 1" }]);
     const { result } = renderHook(() => useWikilinkMenu(makeOpts()));
     act(() => { result.current.setWikilinkMenu({ open: true, x: 0, y: 0, query: "", from: 0 }); });
-    await waitFor(() => { expect(result.current.wikilinkResults.length).toBeGreaterThanOrEqual(0); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
     act(() => { result.current.setWikilinkMenu({ open: false, x: 0, y: 0, query: "", from: 0 }); });
     expect(result.current.wikilinkResults).toEqual([]);
   });
@@ -56,6 +57,7 @@ describe("useWikilinkMenu", () => {
     mockApiFetch.mockResolvedValue([{ id: "d1", title: "A" }, { id: "d2", title: "B" }]);
     const { result } = renderHook(() => useWikilinkMenu(makeOpts()));
     act(() => { result.current.setWikilinkMenu({ open: true, x: 0, y: 0, query: "", from: 0 }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
     await waitFor(() => { expect(result.current.wikilinkResults).toHaveLength(2); });
     const ev = { key: "ArrowDown", preventDefault: vi.fn() };
     act(() => { result.current.handleWikilinkKeyDown(ev as never); });
@@ -66,6 +68,7 @@ describe("useWikilinkMenu", () => {
     mockApiFetch.mockResolvedValue([{ id: "d1", title: "A" }]);
     const { result } = renderHook(() => useWikilinkMenu(makeOpts()));
     act(() => { result.current.setWikilinkMenu({ open: true, x: 0, y: 0, query: "", from: 0 }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
     await waitFor(() => { expect(result.current.wikilinkResults).toHaveLength(1); });
     act(() => { result.current.handleWikilinkKeyDown({ key: "Escape", preventDefault: vi.fn() } as never); });
     expect(result.current.wikilinkMenu.open).toBe(false);
@@ -80,6 +83,7 @@ describe("useWikilinkMenu", () => {
     mockApiFetch.mockRejectedValue(new Error("fail"));
     const { result } = renderHook(() => useWikilinkMenu(makeOpts()));
     act(() => { result.current.setWikilinkMenu({ open: true, x: 0, y: 0, query: "test", from: 0 }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
     await waitFor(() => { expect(result.current.wikilinkLoading).toBe(false); });
     expect(result.current.wikilinkResults).toEqual([]);
   });
@@ -88,6 +92,7 @@ describe("useWikilinkMenu", () => {
     mockApiFetch.mockResolvedValue([{ id: "d1", title: "A" }, { id: "d2", title: "B" }]);
     const { result } = renderHook(() => useWikilinkMenu(makeOpts()));
     act(() => { result.current.setWikilinkMenu({ open: true, x: 0, y: 0, query: "", from: 0 }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
     await waitFor(() => { expect(result.current.wikilinkResults).toHaveLength(2); });
     act(() => { result.current.handleWikilinkKeyDown({ key: "ArrowDown", preventDefault: vi.fn() } as never); });
     expect(result.current.wikilinkIndex).toBe(1);
@@ -108,6 +113,7 @@ describe("useWikilinkMenu", () => {
     const opts = { ...makeOpts(), editorViewRef: { current: mockView as never } };
     const { result } = renderHook(() => useWikilinkMenu(opts));
     act(() => { result.current.setWikilinkMenu({ open: true, x: 0, y: 0, query: "Doc", from: 0 }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
     await waitFor(() => { expect(result.current.wikilinkResults).toHaveLength(1); });
     const ev = { key: "Enter", preventDefault: vi.fn() };
     act(() => { result.current.handleWikilinkKeyDown(ev as never); });
@@ -128,6 +134,7 @@ describe("useWikilinkMenu", () => {
     const opts = { ...makeOpts(), editorViewRef: { current: mockView as never } };
     const { result } = renderHook(() => useWikilinkMenu(opts));
     act(() => { result.current.setWikilinkMenu({ open: true, x: 0, y: 0, query: "Doc", from: 0 }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
     await waitFor(() => { expect(result.current.wikilinkResults).toHaveLength(1); });
     act(() => { result.current.handleWikilinkSelect("Doc1", "d1"); });
     expect(mockView.dispatch).toHaveBeenCalledWith(expect.objectContaining({
@@ -144,6 +151,7 @@ describe("useWikilinkMenu", () => {
     mockApiFetch.mockResolvedValue([{ id: "d1", title: "A" }]);
     const { result } = renderHook(() => useWikilinkMenu(makeOpts()));
     act(() => { result.current.setWikilinkMenu({ open: true, x: 0, y: 0, query: "", from: 0 }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
     await waitFor(() => { expect(result.current.wikilinkResults).toHaveLength(1); });
     let handled = false;
     act(() => { handled = result.current.handleWikilinkKeyDown({ key: "a", preventDefault: vi.fn() } as never); });

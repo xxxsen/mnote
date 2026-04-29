@@ -100,9 +100,12 @@ export function useImportExport(deps: UseImportExportDeps) {
         method: "POST",
         body: JSON.stringify({ mode: importMode }),
       });
+      const MAX_POLL_ATTEMPTS = 300;
       let finished = false;
+      let attempts = 0;
       while (!finished) {
         await new Promise((resolve) => setTimeout(resolve, 700));
+        if (++attempts > MAX_POLL_ATTEMPTS) throw new Error("Import timed out");
         const status = await apiFetch<{
           status: string; progress: number; report: ImportReport | null;
         }>(`/import/${importSource}/${importJobId}/status`);
@@ -114,6 +117,8 @@ export function useImportExport(deps: UseImportExportDeps) {
           void fetchSummary();
           void fetchTags("");
           void fetchSidebarTags(0, false, tagSearch.trim());
+        } else if (status.status === "failed" || status.status === "error") {
+          throw new Error("Import failed on server");
         }
       }
     } catch (err) {
