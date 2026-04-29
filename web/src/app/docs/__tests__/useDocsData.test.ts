@@ -130,4 +130,79 @@ describe("useDocsData", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     expect(mt).toHaveBeenCalled();
   });
+
+  it("hasMore is false when fewer than 20 results", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "d1", title: "T", tags: [], tag_ids: [] }]);
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it("fetchDocs handles error gracefully", async () => {
+    mockApiFetch.mockRejectedValue(new Error("network"));
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(result.current.docs).toEqual([]);
+    expect(result.current.loading).toBe(false);
+  });
+
+  it("fetchSharedSummary handles error", async () => {
+    mockApiFetch.mockRejectedValue(new Error("fail"));
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await result.current.fetchSharedSummary(); });
+    expect(result.current.sharedTotal).toBe(0);
+  });
+
+  it("handlePinToggle handles error", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "d1", title: "T", pinned: 0, starred: 0, tags: [], tag_ids: [] }]);
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    mockApiFetch.mockRejectedValue(new Error("fail"));
+    await act(async () => {
+      await result.current.handlePinToggle({ stopPropagation: vi.fn() } as never, { id: "d1", pinned: 0 } as never);
+    });
+  });
+
+  it("handleStarToggle handles error", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "d1", title: "T", starred: 0, tags: [], tag_ids: [] }]);
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    mockApiFetch.mockRejectedValue(new Error("fail"));
+    await act(async () => {
+      await result.current.handleStarToggle({ stopPropagation: vi.fn() } as never, { id: "d1", starred: 0 } as never);
+    });
+  });
+
+  it("shared items trigger fetchTagsByIDs for tag_ids", async () => {
+    const fetchTagsByIDs = vi.fn().mockResolvedValue(undefined);
+    mockApiFetch.mockResolvedValue({ items: [{ id: "s1", title: "S", mtime: 100, token: "tk", tag_ids: ["t1"] }] });
+    renderHook(() => useDocsData(makeDeps({ showShared: true, fetchTagsByIDs })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(fetchTagsByIDs).toHaveBeenCalledWith(["t1"]);
+  });
+
+  it("fetchDocs with missing tag_ids calls fetchTagsByIDs", async () => {
+    const fetchTagsByIDs = vi.fn().mockResolvedValue(undefined);
+    mockApiFetch.mockResolvedValue([{ id: "d1", title: "T", tags: [], tag_ids: ["t1", "t2"] }]);
+    renderHook(() => useDocsData(makeDeps({ fetchTagsByIDs })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(fetchTagsByIDs).toHaveBeenCalledWith(expect.arrayContaining(["t1", "t2"]));
+  });
+
+  it("search triggers aiSearch for non-command queries", async () => {
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.startsWith("/ai/search")) return Promise.resolve({ items: [{ id: "a1" }] });
+      return Promise.resolve([]);
+    }) as typeof apiFetch);
+    const { result } = renderHook(() => useDocsData(makeDeps({ search: "hello" })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(result.current.aiSearchDocs).toHaveLength(1);
+  });
+
+  it("search starting with / does not trigger aiSearch", async () => {
+    mockApiFetch.mockResolvedValue([]);
+    const { result } = renderHook(() => useDocsData(makeDeps({ search: "/command" })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(result.current.aiSearchDocs).toEqual([]);
+  });
 });

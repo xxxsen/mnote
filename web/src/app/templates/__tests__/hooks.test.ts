@@ -83,6 +83,67 @@ describe("useTemplateTags", () => {
     act(() => { result.current.setShowTagInput(true); });
     expect(result.current.showTagInput).toBe(true);
   });
+
+  it("addTag with invalid name shows error", async () => {
+    const { result } = renderHook(() => useTemplateTags(null));
+    await act(async () => { await result.current.addTag("!!!"); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("addTag with empty name does nothing", async () => {
+    const { result } = renderHook(() => useTemplateTags(null));
+    await act(async () => { await result.current.addTag("  "); });
+    expect(result.current.selectedTagIDs).toEqual([]);
+  });
+
+  it("addTag creates new tag by name", async () => {
+    mockApiFetch.mockResolvedValueOnce({ id: "t5", name: "newTag" });
+    const { result } = renderHook(() => useTemplateTags(null));
+    await act(async () => { await result.current.addTag("newTag"); });
+    expect(result.current.selectedTagIDs).toContain("t5");
+  });
+
+  it("addTag falls back to search when create fails", async () => {
+    mockApiFetch
+      .mockRejectedValueOnce(new Error("conflict"))
+      .mockResolvedValueOnce([{ id: "t6", name: "existing" }]);
+    const { result } = renderHook(() => useTemplateTags(null));
+    await act(async () => { await result.current.addTag("existing"); });
+    expect(result.current.selectedTagIDs).toContain("t6");
+  });
+
+  it("addTag shows error when both create and search fail", async () => {
+    mockApiFetch
+      .mockRejectedValueOnce(new Error("create fail"))
+      .mockRejectedValueOnce(new Error("search fail"));
+    const { result } = renderHook(() => useTemplateTags(null));
+    await act(async () => { await result.current.addTag("failing"); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("addTag shows error when search finds no match", async () => {
+    mockApiFetch
+      .mockRejectedValueOnce(new Error("create fail"))
+      .mockResolvedValueOnce([{ id: "x", name: "other" }]);
+    const { result } = renderHook(() => useTemplateTags(null));
+    await act(async () => { await result.current.addTag("noMatch"); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: "create fail" }));
+  });
+
+  it("visibleSelectedTags maps IDs to tag objects", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "t1", name: "go" }]);
+    const { result } = renderHook(() => useTemplateTags(null));
+    await act(async () => { await result.current.addTag({ id: "t1", name: "go" } as never); });
+    expect(result.current.visibleSelectedTags).toHaveLength(1);
+    expect(result.current.visibleSelectedTags[0].name).toBe("go");
+  });
+
+  it("addTag does not add duplicate tag object", async () => {
+    const { result } = renderHook(() => useTemplateTags(null));
+    await act(async () => { await result.current.addTag({ id: "t1", name: "go" } as never); });
+    await act(async () => { await result.current.addTag({ id: "t1", name: "go" } as never); });
+    expect(result.current.selectedTagIDs.filter((id) => id === "t1")).toHaveLength(1);
+  });
 });
 
 const fullTemplate = (id: string, name = "Template") => ({
@@ -180,5 +241,166 @@ describe("useTemplates", () => {
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     act(() => { result.current.setDraft({ name: "Updated", description: "desc", content: "# New" }); });
     expect(result.current.draft.name).toBe("Updated");
+  });
+
+  it("saveTemplate saves and refreshes list", async () => {
+    mockApiFetch.mockImplementation(((url: string, opts?: RequestInit) => {
+      if (url.startsWith("/templates/meta")) return Promise.resolve({ items: [metaItem("t1", "T1")], total: 1 });
+      if (url.startsWith("/templates/t1") && opts?.method === "PUT") return Promise.resolve(undefined);
+      if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "T1"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }) as typeof apiFetch);
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.setDraft({ name: "Changed", description: "", content: "# X" }); });
+    await act(async () => { const ok = await result.current.saveTemplate(); expect(ok).toBe(true); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: "Template saved." }));
+  });
+
+  it("saveTemplate returns false on error", async () => {
+    mockApiFetch.mockImplementation(((url: string, opts?: RequestInit) => {
+      if (url.startsWith("/templates/meta")) return Promise.resolve({ items: [metaItem("t1", "T1")], total: 1 });
+      if (url.startsWith("/templates/t1") && opts?.method === "PUT") return Promise.reject(new Error("save fail"));
+      if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "T1"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }) as typeof apiFetch);
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.setDraft({ name: "X", description: "", content: "# X" }); });
+    await act(async () => { const ok = await result.current.saveTemplate(); expect(ok).toBe(false); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("saveTemplate returns false when no selectedTemplate", async () => {
+    setupApiRouter({ "/templates/meta": { items: [], total: 0 }, "/tags/ids": [] });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await act(async () => { const ok = await result.current.saveTemplate(); expect(ok).toBe(false); });
+  });
+
+  it("isSaveDisabled is true when nothing changed", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "Tmpl")], total: 1 },
+      "/templates/t1": fullTemplate("t1", "Tmpl"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await waitFor(() => { expect(result.current.draft.name).toBe("Tmpl"); });
+    expect(result.current.isSaveDisabled).toBe(true);
+  });
+
+  it("isSaveDisabled is false when draft changed", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "Tmpl")], total: 1 },
+      "/templates/t1": fullTemplate("t1", "Tmpl"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await waitFor(() => { expect(result.current.draft.name).toBe("Tmpl"); });
+    act(() => { result.current.setDraft({ name: "Changed", description: "", content: "# Hello\n" }); });
+    expect(result.current.isSaveDisabled).toBe(false);
+  });
+
+  it("createFromTemplate navigates on success", async () => {
+    const stablePush = vi.fn();
+    vi.mocked(await import("next/navigation")).useRouter = (() => ({ push: stablePush })) as never;
+    mockApiFetch.mockImplementation(((url: string, opts?: RequestInit) => {
+      if (url.startsWith("/templates/meta")) return Promise.resolve({ items: [metaItem("t1", "T1")], total: 1 });
+      if (url.endsWith("/create") && opts?.method === "POST") return Promise.resolve({ id: "doc1" });
+      if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "T1"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }) as typeof apiFetch);
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await act(async () => { await result.current.createFromTemplate({ NAME: "Test" }); });
+    expect(stablePush).toHaveBeenCalledWith("/docs/doc1");
+  });
+
+  it("createFromTemplate error shows toast", async () => {
+    mockApiFetch.mockImplementation(((url: string, opts?: RequestInit) => {
+      if (url.startsWith("/templates/meta")) return Promise.resolve({ items: [metaItem("t1", "T1")], total: 1 });
+      if (url.endsWith("/create") && opts?.method === "POST") return Promise.reject(new Error("fail"));
+      if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "T1"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }) as typeof apiFetch);
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await act(async () => { await result.current.createFromTemplate({ NAME: "Test" }); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("previewContent resolves system variables", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
+      "/templates/t1": fullTemplate("t1", "T1"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.setDraft({ name: "T1", description: "", content: "Hello {{SYS:DATE}}" }); });
+    expect(result.current.previewContent).not.toContain("{{SYS:DATE}}");
+  });
+
+  it("previewContent resolves user variables", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
+      "/templates/t1": fullTemplate("t1", "T1"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.setDraft({ name: "T1", description: "", content: "Hello {{NAME}}" }); });
+    act(() => { result.current.setVariableValues({ NAME: "World" }); });
+    expect(result.current.previewContent).toContain("World");
+  });
+
+  it("handleTemplateListScroll triggers loadMore", async () => {
+    const items = Array.from({ length: 10 }, (_, i) => metaItem(`t${i}`, `T${i}`));
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.startsWith("/templates/meta")) return Promise.resolve({ items, total: 50 });
+      if (url.startsWith("/templates/t0")) return Promise.resolve(fullTemplate("t0", "T0"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }) as typeof apiFetch);
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    const scrollEvent = { currentTarget: { scrollTop: 900, clientHeight: 100, scrollHeight: 1000 } };
+    act(() => { result.current.handleTemplateListScroll(scrollEvent as never); });
+  });
+
+  it("deleteTemplate cancelled by confirm does nothing", async () => {
+    vi.stubGlobal("confirm", vi.fn().mockReturnValue(false));
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
+      "/templates/t1": fullTemplate("t1", "T1"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    const callCountBefore = mockApiFetch.mock.calls.length;
+    await act(async () => { void result.current.deleteTemplate("t1", "T1"); });
+    const deleteCalls = mockApiFetch.mock.calls.slice(callCountBefore).filter(([, opts]) => (opts as { method?: string })?.method === "DELETE");
+    expect(deleteCalls).toHaveLength(0);
+    vi.unstubAllGlobals();
+  });
+
+  it("selected is null when no templates", async () => {
+    setupApiRouter({ "/templates/meta": { items: [], total: 0 }, "/tags/ids": [] });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(result.current.selected).toBeNull();
+  });
+
+  it("loadTemplates error shows toast", async () => {
+    mockApiFetch.mockRejectedValue(new Error("network"));
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
   });
 });
