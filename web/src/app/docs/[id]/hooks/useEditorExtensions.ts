@@ -58,7 +58,7 @@ function isInsideCodeRegion(state: ReturnType<typeof syntaxTree> extends infer T
   return false;
 }
 
-function handleListContinuation(view: EditorView): boolean {
+export function handleListContinuation(view: EditorView): boolean {
   const selection = view.state.selection.main;
   if (!selection.empty) return false;
   const tree = syntaxTree(view.state);

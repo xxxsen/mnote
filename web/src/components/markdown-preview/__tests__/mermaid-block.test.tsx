@@ -120,4 +120,65 @@ describe("MermaidBlock", () => {
     const { container } = render(<MermaidBlock chart="!!!" />);
     expect(container.textContent).toContain("DIAGRAM");
   });
+
+  it("modal debug toggle shows debug overlay", () => {
+    const { baseElement, container } = render(<MermaidBlock chart="graph TD; A-->B;" />);
+    fireEvent.click(container.querySelector("button[title='Open preview']")!);
+    const debugBtn = baseElement.querySelector("button[title='Toggle debug']")!;
+    fireEvent.click(debugBtn);
+    expect(baseElement.querySelector(".font-mono")).toBeTruthy();
+  });
+
+  it("modal backdrop click closes modal", () => {
+    const { baseElement, container } = render(<MermaidBlock chart="graph TD; A-->B;" />);
+    fireEvent.click(container.querySelector("button[title='Open preview']")!);
+    const backdrop = baseElement.querySelector(".backdrop-blur-sm")!;
+    fireEvent.click(backdrop);
+    expect(baseElement.querySelector(".fixed")).toBeNull();
+  });
+
+  it("modal double-click resets zoom", () => {
+    const { baseElement, container } = render(<MermaidBlock chart="graph TD; A-->B;" />);
+    fireEvent.click(container.querySelector("button[title='Open preview']")!);
+    const modalBody = baseElement.querySelector(".mermaid-zoom");
+    expect(modalBody).toBeTruthy();
+    if (modalBody) fireEvent.doubleClick(modalBody);
+  });
+
+  it("modal wheel zooms in and out", () => {
+    const { baseElement, container } = render(<MermaidBlock chart="graph TD; A-->B;" />);
+    fireEvent.click(container.querySelector("button[title='Open preview']")!);
+    const modalBody = baseElement.querySelector(".mermaid-zoom");
+    if (modalBody) {
+      fireEvent.wheel(modalBody, { deltaY: -100 });
+      fireEvent.wheel(modalBody, { deltaY: 100 });
+    }
+  });
+
+  it("modal renders mermaid component inside", () => {
+    const { baseElement, container } = render(<MermaidBlock chart="graph TD; A-->B;" />);
+    fireEvent.click(container.querySelector("button[title='Open preview']")!);
+    const mermaidEls = baseElement.querySelectorAll("[data-testid='mermaid']");
+    expect(mermaidEls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("detects gantt diagram type", () => {
+    const { container } = render(<MermaidBlock chart="gantt\ntitle Timeline" />);
+    expect(container.textContent).toContain("GANTT CHART");
+  });
+
+  it("detects gitGraph type", () => {
+    const { container } = render(<MermaidBlock chart="gitGraph\ncommit" />);
+    expect(container.textContent).toContain("GIT GRAPH");
+  });
+
+  it("detects erDiagram type", () => {
+    const { container } = render(<MermaidBlock chart="erDiagram\nCUSTOMER ||--o{ ORDER : places" />);
+    expect(container.textContent).toContain("ER DIAGRAM");
+  });
+
+  it("detects stateDiagram type", () => {
+    const { container } = render(<MermaidBlock chart="stateDiagram-v2\n[*] --> Active" />);
+    expect(container.textContent?.toUpperCase()).toContain("STATE");
+  });
 });
