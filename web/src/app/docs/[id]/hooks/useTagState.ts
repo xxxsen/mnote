@@ -14,13 +14,13 @@ export function useTagState(opts: {
   const [selectedTagIDs, setSelectedTagIDs] = useState<string[]>([]);
 
   const tagIndex = useMemo(() => {
-    const map: Record<string, Tag> = {};
+    const map: Partial<Record<string, Tag>> = {};
     allTags.forEach((tag) => { map[tag.id] = tag; });
     return map;
   }, [allTags]);
 
   const selectedTags = useMemo(
-    () => selectedTagIDs.map((id) => tagIndex[id]),
+    () => selectedTagIDs.map((id) => tagIndex[id]).filter((t): t is Tag => t !== undefined),
     [selectedTagIDs, tagIndex]
   );
 

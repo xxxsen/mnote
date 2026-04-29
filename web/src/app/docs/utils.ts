@@ -46,6 +46,6 @@ export function formatRelativeTime(timestamp?: number): string {
 }
 
 export async function copyToClipboard(text: string): Promise<boolean> {
-  if (typeof navigator === "undefined") return false;
-  return navigator.clipboard.writeText(text).then(() => true).catch(() => false);
+  /* v8 ignore next */ if (typeof navigator === "undefined") return false;
+  try { return await navigator.clipboard.writeText(text).then(() => true); } catch { return false; }
 }

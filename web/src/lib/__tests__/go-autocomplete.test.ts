@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { EditorState } from "@codemirror/state";
-import { goAutocompleteExtension, goCompletionSource } from "../go-autocomplete";
+import { goAutocompleteExtension, goCompletionSource, buildGoCompletions } from "../go-autocomplete";
 import type { CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 
 function makeState(content: string) {
@@ -256,5 +256,38 @@ describe("goCompletionSource", () => {
     expect(result).not.toBeNull();
     const labels = result.options.map((o) => o.label);
     expect(labels).toEqual(["zzzzz"]);
+  });
+});
+
+describe("buildGoCompletions", () => {
+  it("returns keywords, builtins, packages and snippets for empty prefix", () => {
+    const doc = makeState("```go\n\n```").doc;
+    const result = buildGoCompletions("", 1, doc, 6);
+    const types = new Set(result.map((o) => o.type));
+    expect(types).toContain("keyword");
+    expect(types).toContain("function");
+    expect(types).toContain("module");
+  });
+
+  it("filters completions by prefix", () => {
+    const doc = makeState("```go\nstr\n```").doc;
+    const result = buildGoCompletions("str", 1, doc, 9);
+    const labels = result.map((o) => o.label);
+    expect(labels).toContain("struct");
+    expect(labels).toContain("strings");
+    expect(labels).not.toContain("func");
+  });
+
+  it("includes user-defined identifiers", () => {
+    const doc = makeState("```go\nmyVar := 1\nmy\n```").doc;
+    const result = buildGoCompletions("my", 1, doc, 18);
+    const labels = result.map((o) => o.label);
+    expect(labels).toContain("myVar");
+  });
+
+  it("returns empty array when prefix matches nothing", () => {
+    const doc = makeState("```go\nzzz_unique\n```").doc;
+    const result = buildGoCompletions("xyz_nomatch", 1, doc, 17);
+    expect(result).toEqual([]);
   });
 });

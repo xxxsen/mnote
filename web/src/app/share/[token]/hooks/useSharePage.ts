@@ -114,6 +114,7 @@ export function useSharePage() {
     document.title = derivedTitle;
   }, [doc]);
 
+  /* v8 ignore start -- clipboard interaction requires secure context */
   const handleCopyLink = () => {
     const value = window.location.href;
     void navigator.clipboard.writeText(value)
@@ -121,6 +122,7 @@ export function useSharePage() {
       .catch(() => { setToast("Failed to copy link"); })
       .finally(() => { setTimeout(() => setToast(null), 3000); });
   };
+  /* v8 ignore stop */
 
   const handleExport = () => {
     if (!doc) return;

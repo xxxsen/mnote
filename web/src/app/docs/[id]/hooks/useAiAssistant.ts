@@ -124,7 +124,7 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
   }, [resetAiState]);
 
   const runAiTextAction = useCallback(
-    async (action: AIAction, snapshot: string, emptyMsg: string, endpoint: string, resultKey: string) => {
+    async (action: AIAction, snapshot: string, emptyMsg: string, endpoint: string, resultKey: "text" | "summary") => {
       if (!snapshot.trim()) { notify(emptyMsg); return; }
       setAiAction(action);
       setAiModalOpen(true);

@@ -20,11 +20,10 @@ type OpenPreviewFn = (
 
 type ClosePreviewFn = () => void;
 
-/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-function PreRenderer({ children, ...props }: any) {
+/* eslint-disable @typescript-eslint/no-explicit-any -- react-markdown injects untyped custom props (node, metastring) */
+function PreRenderer({ children, ...props }: Record<string, any>) {
   if (React.isValidElement(children)) {
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    const childProps = children.props as any;
+    const childProps = children.props as Record<string, unknown>;
     const className = (childProps.className as string) || "";
     const metastring = (childProps.metastring as string) || "";
     const isToc = className.includes("language-toc");
@@ -86,8 +85,7 @@ function parseRunnableFlag(
   return { language: cleanLang, fileName: effectiveFileName, isRunnable };
 }
 
-/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-function CodeRenderer(props: any) {
+function CodeRenderer(props: Record<string, any>) {
   const { className, children, metastring, ...rest } = props;
   const match = /language-(\S*)/.exec(className || "");
   const isMermaid = match && match[1] === "mermaid";
@@ -245,8 +243,8 @@ function createAnchorRenderer(
   openHoverPreview: OpenPreviewFn,
   closeHoverPreview: ClosePreviewFn,
 ) {
-  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-  return function AnchorRenderer(props: any) {
+  return function AnchorRenderer(props: Record<string, any>) {
+/* eslint-enable @typescript-eslint/no-explicit-any */
     const { node, children, href, ...rest } = props;
 
     const wikilinkTitle = node?.properties?.dataWikilink;

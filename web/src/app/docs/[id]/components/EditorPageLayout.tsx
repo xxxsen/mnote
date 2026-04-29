@@ -85,7 +85,7 @@ export function EditorPageLayout(p: EditorPageLayoutProps) {
         #mermaid-error-box, .mermaid-error-overlay, [id^="mermaid-error"] { display: none !important; }
         .mermaid-container > svg[id^="mermaid-"] { max-width: 100%; height: auto; }
       `}</style>
-      <EditorHeader router={p.router} title={p.title} handleSave={p.handleSave} saving={p.saving} hasUnsavedChanges={p.ec.hasUnsavedChanges} lastSavedAt={p.lastSavedAt} showDetails={p.showDetails} setShowDetails={p.setShowDetails} loadVersions={() => {}} starred={p.starred} handleStarToggle={p.handleStarToggle} />
+      <EditorHeader router={p.router} title={p.title} handleSave={p.handleSave} saving={p.saving} hasUnsavedChanges={p.ec.hasUnsavedChanges} lastSavedAt={p.lastSavedAt} showDetails={p.showDetails} setShowDetails={p.setShowDetails} loadVersions={() => void p.documentActions.listVersions()} starred={p.starred} handleStarToggle={p.handleStarToggle} />
       <EditorMainArea p={p} />
       <EditorFooter cursorPos={p.ec.cursorPos} wordCount={p.ec.wordCount} charCount={p.ec.charCount} hasUnsavedChanges={p.ec.hasUnsavedChanges} />
       <EditorOverlays p={p} />

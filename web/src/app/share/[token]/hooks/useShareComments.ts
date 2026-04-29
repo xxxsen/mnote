@@ -93,7 +93,7 @@ export function useShareComments(opts: UseShareCommentsOptions) {
 
   useEffect(() => {
     void fetchComments(false, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally omit fetchComments to avoid re-fetch loops; triggers on data/auth changes only
   }, [detail, accessPassword, token]);
 
   const handleLoadMoreComments = useCallback(() => {
