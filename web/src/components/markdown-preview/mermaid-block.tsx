@@ -41,6 +41,7 @@ const KNOWN_DIAGRAM_TYPES: Record<string, string> = {
   architecture: "ARCHITECTURE",
 };
 
+/* v8 ignore start -- SVG measurement requires real browser rendering */
 function readSvgNaturalSize(svg: SVGElement): { width: number; height: number } | null {
   const svgEl = svg as SVGSVGElement;
   const viewBox = svgEl.viewBox.baseVal;
@@ -115,6 +116,7 @@ function measureSvgInContainer(
     },
   };
 }
+/* v8 ignore stop */
 
 const EMPTY_METRICS: SvgMetrics = {
   svgFound: false, svgWidth: 0, svgHeight: 0, rectWidth: 0, rectHeight: 0,

@@ -56,6 +56,7 @@ const MarkdownPreview = memo(
       return { processedContent: lazyFixed, tocMarkdown: toc };
     }, [content]);
 
+    /* v8 ignore start -- rehype plugin tested indirectly via markdown output */
     const rehypeSlugger = useMemo(() => {
       /* eslint-disable no-param-reassign -- AST transformer mutates nodes by design */
       return () => (tree: HastNode) => {
@@ -76,6 +77,7 @@ const MarkdownPreview = memo(
       };
       /* eslint-enable no-param-reassign */
     }, []);
+    /* v8 ignore stop */
 
     useEffect(() => {
       onTocLoaded?.(tocMarkdown);

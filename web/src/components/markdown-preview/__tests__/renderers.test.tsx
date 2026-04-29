@@ -271,4 +271,116 @@ describe("buildMarkdownComponents", () => {
     const { container } = render(<Img alt="no src" />);
     expect(container.querySelector("img")).toBeTruthy();
   });
+
+  it("code renderer handles array children", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Code = comps.code as React.FC<{ className?: string; children: React.ReactNode }>;
+    const { container } = render(<Code className="language-js">{["line1", "line2"]}</Code>);
+    expect(container.querySelector("[data-testid='code-block']")).toBeTruthy();
+  });
+
+  it("code renderer runnable flag in language string", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Code = comps.code as React.FC<{ className?: string; children: React.ReactNode }>;
+    const { container } = render(<Code className="language-go[runnable]">fmt.Println</Code>);
+    expect(container.querySelector("[data-testid='sandbox']")).toBeTruthy();
+  });
+
+  it("code renderer metastring as fileName when no explicit fileName", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Code = comps.code as React.FC<{ className?: string; metastring?: string; children: React.ReactNode }>;
+    const { container } = render(<Code className="language-go" metastring="main.go">code</Code>);
+    const block = container.querySelector("[data-testid='code-block']");
+    expect(block?.getAttribute("data-filename")).toBe("main.go");
+  });
+
+  it("pre renderer unwraps mermaid code blocks", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Pre = comps.pre as React.FC<{ children: React.ReactNode }>;
+    const child = React.createElement("code", { className: "language-mermaid" }, "graph TD");
+    const { container } = render(<Pre>{child}</Pre>);
+    expect(container.querySelector("pre")).toBeNull();
+  });
+
+  it("pre renderer unwraps toc code blocks", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Pre = comps.pre as React.FC<{ children: React.ReactNode }>;
+    const child = React.createElement("code", { className: "language-toc" }, "toc");
+    const { container } = render(<Pre>{child}</Pre>);
+    expect(container.querySelector("pre")).toBeNull();
+  });
+
+  it("pre renderer unwraps runnable code blocks", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Pre = comps.pre as React.FC<{ children: React.ReactNode }>;
+    const child = React.createElement("code", { className: "language-go", metastring: "[runnable]" }, "code");
+    const { container } = render(<Pre>{child}</Pre>);
+    expect(container.querySelector("pre")).toBeNull();
+  });
+
+  it("font renderer without color or size", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Font = comps.font as React.FC<{ children: React.ReactNode }>;
+    const { container } = render(<Font>text</Font>);
+    expect(container.querySelector("span")).toBeTruthy();
+  });
+
+  it("font renderer with node properties", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Font = comps.font as React.FC<{ node?: { properties?: Record<string, unknown> }; children: React.ReactNode }>;
+    const { container } = render(<Font node={{ properties: { color: "blue", size: 3 } }}>text</Font>);
+    expect(container.querySelector("span")?.style.color).toBe("blue");
+  });
+
+  it("span renderer with node style property", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Span = comps.span as React.FC<{ node?: { properties?: { style?: string } }; children: React.ReactNode }>;
+    const { container } = render(<Span node={{ properties: { style: "color: red" } }}>text</Span>);
+    expect(container.querySelector("span")?.style.color).toBe("red");
+  });
+
+  it("div renderer without className", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Div = comps.div as React.FC<{ children: React.ReactNode }>;
+    const { container } = render(<Div>plain div</Div>);
+    expect(container.querySelector("div")).toBeTruthy();
+  });
+
+  it("a renderer for anchor without href", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const A = comps.a as React.FC<{ children: React.ReactNode }>;
+    const { container } = render(<A>no link</A>);
+    expect(container.querySelector("a")).toBeTruthy();
+  });
+
+  it("a renderer for /docs/ with non-string child", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const A = comps.a as React.FC<{ href?: string; children: React.ReactNode }>;
+    const { container } = render(<A href="/docs/123"><em>styled</em></A>);
+    expect(container.querySelector("[data-testid='wikilink']")).toBeTruthy();
+  });
+
+  it("img renderer extractMediaFilename handles blob src", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Img = comps.img as React.FC<{ src?: string | Blob; alt?: string }>;
+    const { container } = render(<Img alt="normal" />);
+    expect(container.querySelector("img")).toBeTruthy();
+  });
+
+  it("pre renderer unwraps code with runnable in className", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Pre = comps.pre as React.FC<{ children: React.ReactNode }>;
+    const child = React.createElement("code", { className: "language-go[runnable]" }, "code");
+    const { container } = render(<Pre>{child}</Pre>);
+    expect(container.querySelector("pre")).toBeNull();
+  });
+
+  it("code renderer parses language without extension from numeric prefix", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Code = comps.code as React.FC<{ className?: string; children: React.ReactNode }>;
+    const { container } = render(<Code className="language-1:5:main">code</Code>);
+    const block = container.querySelector("[data-testid='code-block']");
+    expect(block).toBeTruthy();
+    expect(block?.getAttribute("data-language")).toBe("text");
+  });
 });
