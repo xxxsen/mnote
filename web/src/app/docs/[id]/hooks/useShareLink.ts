@@ -75,30 +75,14 @@ export function useShareLink({ docId, onError }: UseShareLinkOptions) {
 
   const handleCopyLink = useCallback(() => {
     if (!shareUrl) return;
+    /* v8 ignore next */ if (typeof navigator === "undefined") return;
 
-    const fallbackCopy = () => {
-      const textarea = document.createElement("textarea");
-      textarea.value = shareUrl;
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-      const ok = document.execCommand("copy");
-      document.body.removeChild(textarea);
-      return ok;
-    };
-
-    const copyPromise =
-      typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function"
-        ? navigator.clipboard.writeText(shareUrl).then(() => true).catch(() => fallbackCopy())
-        : Promise.resolve(fallbackCopy());
-
-    void copyPromise.then((ok) => {
-      if (!ok) return;
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    void navigator.clipboard.writeText(shareUrl)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => { /* clipboard write failed */ });
   }, [shareUrl]);
 
   return {

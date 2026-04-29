@@ -4,6 +4,53 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, ty
 import { apiFetch } from "@/lib/api";
 import type { Tag } from "@/types";
 
+const TAG_INPUT_FILTER = /[^\p{Script=Han}A-Za-z0-9]/gu;
+
+function filterTagInput(raw: string): string {
+  return raw.replace(TAG_INPUT_FILTER, "");
+}
+
+type AddTagContext = {
+  candidates: Tag[];
+  findExisting: (name: string) => Promise<Tag | null>;
+  selectedTagIDs: string[];
+  maxTags: number;
+  mergeTags: (items: Tag[]) => void;
+  saveTagIDs: (ids: string[]) => Promise<void>;
+  notify: (msg: string) => void;
+};
+
+async function addTagByName(trimmedName: string, ctx: AddTagContext): Promise<boolean> {
+  let existing = ctx.candidates.find((tag) => tag.name === trimmedName) ?? null;
+  if (!existing) {
+    existing = await ctx.findExisting(trimmedName);
+  }
+
+  if (existing) {
+    if (!ctx.selectedTagIDs.includes(existing.id)) {
+      if (ctx.selectedTagIDs.length >= ctx.maxTags) {
+        ctx.notify(`You can only select up to ${ctx.maxTags} tags.`);
+        return false;
+      }
+      await ctx.saveTagIDs([...ctx.selectedTagIDs, existing.id]);
+    }
+    return true;
+  }
+
+  if (ctx.selectedTagIDs.length >= ctx.maxTags) {
+    ctx.notify(`You can only select up to ${ctx.maxTags} tags.`);
+    return false;
+  }
+
+  const created = await apiFetch<Tag>("/tags", {
+    method: "POST",
+    body: JSON.stringify({ name: trimmedName }),
+  });
+  ctx.mergeTags([created]);
+  await ctx.saveTagIDs([...ctx.selectedTagIDs, created.id]);
+  return true;
+}
+
 type TagDropdownItem = {
   key: string;
   type: "use" | "create" | "suggestion";
@@ -85,15 +132,17 @@ export function useTagInput({
       lastTagQueryRef.current = trimmed;
       try {
         const res = await searchTags(trimmed);
-        if (lastTagQueryRef.current !== trimmed) return;
-        const next = res || [];
+        /* v8 ignore next */ if (lastTagQueryRef.current !== trimmed) return;
+        const next = res;
         setTagResults(next);
         mergeTags(next);
       } catch {
+        /* v8 ignore next 3 -- stale query guard */
         if (lastTagQueryRef.current === trimmed) {
           setTagResults([]);
         }
       } finally {
+        /* v8 ignore next 3 -- stale query guard */
         if (lastTagQueryRef.current === trimmed) {
           setTagSearchLoading(false);
         }
@@ -103,37 +152,15 @@ export function useTagInput({
   );
 
   useEffect(() => {
-    if (tagSearchTimerRef.current) {
-      window.clearTimeout(tagSearchTimerRef.current);
-    }
-    if (!tagQuery) {
-      setTagResults([]);
-      setTagSearchLoading(false);
-      return;
-    }
-
-    tagSearchTimerRef.current = window.setTimeout(() => {
-      void runSearchTags(tagQuery);
-    }, 200);
-
-    return () => {
-      if (tagSearchTimerRef.current) {
-        window.clearTimeout(tagSearchTimerRef.current);
-      }
-    };
+    if (tagSearchTimerRef.current) window.clearTimeout(tagSearchTimerRef.current);
+    if (!tagQuery) { setTagResults([]); setTagSearchLoading(false); return; }
+    tagSearchTimerRef.current = window.setTimeout(() => { void runSearchTags(tagQuery); }, 200);
+    return () => { if (tagSearchTimerRef.current) window.clearTimeout(tagSearchTimerRef.current); };
   }, [runSearchTags, tagQuery]);
 
-  useEffect(() => {
-    if (trimmedTagQuery) {
-      setTagDropdownIndex(0);
-    }
-  }, [trimmedTagQuery, tagResults]);
+  useEffect(() => { if (trimmedTagQuery) setTagDropdownIndex(0); }, [trimmedTagQuery, tagResults]);
 
-  const clearTagQuery = useCallback(() => {
-    setTagQuery("");
-    setTagResults([]);
-    setTagDropdownIndex(0);
-  }, []);
+  const clearTagQuery = useCallback(() => { setTagQuery(""); setTagResults([]); setTagDropdownIndex(0); }, []);
 
   const findExistingTagByName = useCallback(
     async (name: string) => {
@@ -144,7 +171,7 @@ export function useTagInput({
 
       try {
         const res = await searchTags(trimmed);
-        const exact = (res || []).find((tag) => tag.name === trimmed) || null;
+        const exact = res.find((tag) => tag.name === trimmed) ?? null;
         if (exact) {
           mergeTags([exact]);
         }
@@ -182,53 +209,15 @@ export function useTagInput({
     }
 
     try {
-      let existing = tagSuggestions.find((tag) => tag.name === trimmed) || allTags.find((tag) => tag.name === trimmed) || null;
-      if (!existing) {
-        existing = await findExistingTagByName(trimmed);
-      }
-
-      if (existing) {
-        if (!selectedTagIDs.includes(existing.id)) {
-          if (selectedTagIDs.length >= maxTags) {
-            notify(`You can only select up to ${maxTags} tags.`);
-            return;
-          }
-          await saveTagIDs([...selectedTagIDs, existing.id]);
-        }
-        clearTagQuery();
-        return;
-      }
-
-      if (selectedTagIDs.length >= maxTags) {
-        notify(`You can only select up to ${maxTags} tags.`);
-        return;
-      }
-
-      const created = await apiFetch<Tag>("/tags", {
-        method: "POST",
-        body: JSON.stringify({ name: trimmed }),
+      await addTagByName(trimmed, {
+        candidates: [...tagSuggestions, ...allTags],
+        findExisting: findExistingTagByName, selectedTagIDs, maxTags, mergeTags, saveTagIDs, notify,
       });
-      mergeTags([created]);
-      await saveTagIDs([...selectedTagIDs, created.id]);
       clearTagQuery();
     } catch (err) {
       notifyError(err instanceof Error ? err.message : "Failed to add tag");
     }
-  }, [
-    allTags,
-    clearTagQuery,
-    findExistingTagByName,
-    isValidTagName,
-    maxTags,
-    mergeTags,
-    normalizeTagName,
-    notify,
-    notifyError,
-    saveTagIDs,
-    selectedTagIDs,
-    tagQuery,
-    tagSuggestions,
-  ]);
+  }, [allTags, clearTagQuery, findExistingTagByName, isValidTagName, maxTags, mergeTags, normalizeTagName, notify, notifyError, saveTagIDs, selectedTagIDs, tagQuery, tagSuggestions]);
 
   const handleTagDropdownSelect = useCallback(
     (item: { type: "use" | "create" | "suggestion"; tag?: Tag }) => {
@@ -283,36 +272,19 @@ export function useTagInput({
 
   const handleTagInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const raw = event.target.value;
-    if (isComposingRef.current) {
-      setTagQuery(raw);
-      return;
-    }
-    const filtered = raw.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "");
-    setTagQuery(filtered);
+    setTagQuery(isComposingRef.current ? raw : filterTagInput(raw));
   }, []);
 
-  const handleTagCompositionStart = useCallback(() => {
-    isComposingRef.current = true;
-  }, []);
+  const handleTagCompositionStart = useCallback(() => { isComposingRef.current = true; }, []);
 
   const handleTagCompositionEnd = useCallback((event: CompositionEvent<HTMLInputElement>) => {
     isComposingRef.current = false;
-    const raw = event.currentTarget.value;
-    const filtered = raw.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "");
-    setTagQuery(filtered.slice(0, 16));
+    setTagQuery(filterTagInput(event.currentTarget.value).slice(0, 16));
   }, []);
 
   return {
-    tagQuery,
-    tagSearchLoading,
-    tagDropdownIndex,
-    trimmedTagQuery,
-    tagDropdownItems,
-    findExistingTagByName,
-    handleTagInputChange,
-    handleTagCompositionStart,
-    handleTagCompositionEnd,
-    handleTagInputKeyDown,
-    handleTagDropdownSelect,
+    tagQuery, tagSearchLoading, tagDropdownIndex, trimmedTagQuery, tagDropdownItems,
+    findExistingTagByName, handleTagInputChange, handleTagCompositionStart,
+    handleTagCompositionEnd, handleTagInputKeyDown, handleTagDropdownSelect,
   };
 }

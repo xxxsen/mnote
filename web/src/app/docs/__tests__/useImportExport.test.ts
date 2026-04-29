@@ -1,0 +1,499 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook, act } from "@testing-library/react";
+
+vi.mock("@/lib/api", () => ({
+  apiFetch: vi.fn(),
+  getAuthToken: vi.fn().mockReturnValue("tok"),
+  removeAuthToken: vi.fn(),
+  ApiError: class ApiError extends Error { code: number; constructor(m: string, c: number) { super(m); this.code = c; } },
+}));
+
+import { apiFetch } from "@/lib/api";
+import { useImportExport } from "../hooks/useImportExport";
+
+const mockApiFetch = vi.mocked(apiFetch);
+
+const makeDeps = () => ({
+  fetchSummary: vi.fn().mockResolvedValue(undefined),
+  fetchTags: vi.fn().mockResolvedValue(undefined),
+  fetchSidebarTags: vi.fn().mockResolvedValue(undefined),
+  tagSearch: "", toast: vi.fn(),
+});
+
+beforeEach(() => { vi.clearAllMocks(); });
+
+describe("useImportExport", () => {
+  it("initializes with closed dialogs", () => {
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    expect(result.current.importOpen).toBe(false);
+    expect(result.current.exportOpen).toBe(false);
+    expect(result.current.importStep).toBe("upload");
+  });
+
+  it("openImportModal / closeImportModal toggles import dialog", () => {
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    expect(result.current.importOpen).toBe(true);
+    act(() => { result.current.closeImportModal(); });
+    expect(result.current.importOpen).toBe(false);
+  });
+
+  it("openExportModal / closeExportModal toggles export dialog", () => {
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openExportModal(); });
+    expect(result.current.exportOpen).toBe(true);
+    act(() => { result.current.closeExportModal(); });
+    expect(result.current.exportOpen).toBe(false);
+  });
+
+  it("handleImportFile uploads and previews", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: () => Promise.resolve({ code: 0, data: { job_id: "j1" } }),
+    }));
+    mockApiFetch.mockResolvedValue({ notes_count: 5, tags_count: 2 });
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    expect(result.current.importStep).toBe("preview");
+    expect(result.current.importPreview).toBeDefined();
+  });
+
+  it("handleImportFile handles upload error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: () => Promise.resolve({ code: 1001, msg: "bad file" }),
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "bad.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    expect(result.current.importError).toBe("bad file");
+    expect(result.current.importStep).toBe("upload");
+  });
+
+  it("handleImportConfirm does nothing without job ID", async () => {
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    await act(async () => { await result.current.handleImportConfirm(); });
+    expect(mockApiFetch).not.toHaveBeenCalled();
+  });
+
+  it("handleExportNotes downloads zip", async () => {
+    const click = vi.fn();
+    const fakeLink = { click, href: "", download: "", remove: vi.fn() };
+    const origCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      if (tag === "a") return fakeLink as unknown as HTMLAnchorElement;
+      return origCreateElement(tag);
+    });
+    vi.spyOn(document.body, "appendChild").mockImplementation((node) => node);
+    vi.stubGlobal("URL", { createObjectURL: vi.fn().mockReturnValue("blob:url"), revokeObjectURL: vi.fn() });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      headers: new Headers({ "content-type": "application/zip", "content-disposition": 'attachment; filename="notes.zip"' }),
+      blob: () => Promise.resolve(new Blob(["data"])),
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    await act(async () => { await result.current.handleExportNotes(); });
+    expect(click).toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it("handleExportNotes handles error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
+    const deps = makeDeps();
+    const { result } = renderHook(() => useImportExport(deps));
+    await act(async () => { await result.current.handleExportNotes(); });
+    expect(deps.toast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+    vi.unstubAllGlobals();
+  });
+
+  it("handleExportNotes handles 401", async () => {
+    const removeAuthToken = await import("@/lib/api").then((m) => vi.mocked(m.removeAuthToken));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    await act(async () => { await result.current.handleExportNotes(); });
+    expect(removeAuthToken).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("handleExportNotes handles JSON error response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.resolve({ code: 500, msg: "export failed" }),
+      blob: () => Promise.resolve(new Blob()),
+    }));
+    const deps = makeDeps();
+    const { result } = renderHook(() => useImportExport(deps));
+    await act(async () => { await result.current.handleExportNotes(); });
+    expect(deps.toast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportFile uploads and previews", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "job1" } }),
+    }));
+    mockApiFetch.mockResolvedValue({ files: [{ name: "test.md", size: 100 }], total: 1 });
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip", { type: "application/zip" });
+    await act(async () => { await result.current.handleImportFile(file); });
+    expect(result.current.importStep).toBe("preview");
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportFile handles 401", async () => {
+    const removeAuthToken = await import("@/lib/api").then((m) => vi.mocked(m.removeAuthToken));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 401 }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    expect(removeAuthToken).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportFile handles upload error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ code: 400, msg: "bad file" }),
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    expect(result.current.importError).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportFile handles missing jobId", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: {} }),
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    expect(result.current.importError).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportConfirm runs import flow", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "job1" } }),
+    }));
+    mockApiFetch.mockImplementation(((url: string, _opts?: { method?: string }) => {
+      if (url.includes("/preview")) return Promise.resolve({ files: [], total: 0 });
+      if (url.includes("/confirm")) return Promise.resolve({ ok: true });
+      if (url.includes("/status")) {
+        return Promise.resolve({ status: "done", progress: 100, report: { imported: 1, skipped: 0, failed: 0 } });
+      }
+      return Promise.resolve({});
+    }));
+
+    const deps = makeDeps();
+    const { result } = renderHook(() => useImportExport(deps));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    await act(async () => { await result.current.handleImportConfirm(); });
+    expect(result.current.importStep).toBe("done");
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportConfirm error falls back to preview", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "job1" } }),
+    }));
+    mockApiFetch.mockImplementation(((url: string, _opts?: { method?: string }) => {
+      if (url.includes("/preview")) return Promise.resolve({ files: [], total: 0 });
+      if (url.includes("/confirm")) return Promise.reject(new Error("confirm fail"));
+      return Promise.resolve({});
+    }));
+
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    await act(async () => { await result.current.handleImportConfirm(); });
+    expect(result.current.importError).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
+  it("setImportMode changes mode", async () => {
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    act(() => { result.current.setImportMode("overwrite"); });
+    expect(result.current.importMode).toBe("overwrite");
+  });
+
+  it("handleExportNotes with non-JSON content type proceeds to download", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      headers: new Headers({ "content-type": "application/zip" }),
+      blob: () => Promise.resolve(new Blob(["data"])),
+    }));
+    vi.stubGlobal("URL", { createObjectURL: vi.fn().mockReturnValue("blob:url"), revokeObjectURL: vi.fn() });
+    const origCreateElement = document.createElement.bind(document);
+    const fakeLink = { click: vi.fn(), href: "", download: "", remove: vi.fn() };
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      if (tag === "a") return fakeLink as unknown as HTMLAnchorElement;
+      return origCreateElement(tag);
+    });
+    vi.spyOn(document.body, "appendChild").mockImplementation((node) => node);
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    await act(async () => { await result.current.handleExportNotes(); });
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("handleExportNotes with JSON error code 0 does not throw", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.resolve({ code: 0, msg: "ok" }),
+      blob: () => Promise.resolve(new Blob(["data"])),
+    }));
+    vi.stubGlobal("URL", { createObjectURL: vi.fn().mockReturnValue("blob:url"), revokeObjectURL: vi.fn() });
+    const origCreateElement = document.createElement.bind(document);
+    const fakeLink = { click: vi.fn(), href: "", download: "", remove: vi.fn() };
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      if (tag === "a") return fakeLink as unknown as HTMLAnchorElement;
+      return origCreateElement(tag);
+    });
+    vi.spyOn(document.body, "appendChild").mockImplementation((node) => node);
+    const deps = makeDeps();
+    const { result } = renderHook(() => useImportExport(deps));
+    await act(async () => { await result.current.handleExportNotes(); });
+    expect(deps.toast).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("handleExportNotes with JSON parse failure continues to download", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.reject(new Error("parse")),
+      blob: () => Promise.resolve(new Blob(["data"])),
+    }));
+    vi.stubGlobal("URL", { createObjectURL: vi.fn().mockReturnValue("blob:url"), revokeObjectURL: vi.fn() });
+    const origCreateElement = document.createElement.bind(document);
+    const fakeLink = { click: vi.fn(), href: "", download: "", remove: vi.fn() };
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      if (tag === "a") return fakeLink as unknown as HTMLAnchorElement;
+      return origCreateElement(tag);
+    });
+    vi.spyOn(document.body, "appendChild").mockImplementation((node) => node);
+    const deps = makeDeps();
+    const { result } = renderHook(() => useImportExport(deps));
+    await act(async () => { await result.current.handleExportNotes(); });
+    expect(deps.toast).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportFile without token sends no auth header", async () => {
+    const getAuthToken = await import("@/lib/api").then((m) => vi.mocked(m.getAuthToken));
+    getAuthToken.mockReturnValue(null);
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "j1" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    mockApiFetch.mockResolvedValue({ files: [], total: 0 });
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    const callHeaders = fetchMock.mock.calls[0][1].headers;
+    expect(callHeaders).toEqual({});
+    vi.unstubAllGlobals();
+  });
+
+  it("handleExportNotes non-Error in catch shows generic message", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue("string error"));
+    const deps = makeDeps();
+    const { result } = renderHook(() => useImportExport(deps));
+    await act(async () => { await result.current.handleExportNotes(); });
+    expect(deps.toast).toHaveBeenCalledWith(expect.objectContaining({ description: "Export failed" }));
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportFile non-Error in catch shows generic message", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue("string error"));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    expect(result.current.importError).toBe("Import failed");
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportConfirm non-Error in catch shows generic message", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "job1" } }),
+    }));
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.includes("/preview")) return Promise.resolve({ files: [], total: 0 });
+      if (url.includes("/confirm")) return Promise.reject("confirm failed"); // eslint-disable-line @typescript-eslint/prefer-promise-reject-errors -- testing non-Error path
+      return Promise.resolve({});
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    await act(async () => { await result.current.handleImportConfirm(); });
+    expect(result.current.importError).toBe("Import failed");
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportConfirm polls status and completes", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "job1" } }),
+    }));
+    let statusCall = 0;
+    const deps = makeDeps();
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.includes("/preview")) return Promise.resolve({ files: [], total: 0 });
+      if (url.includes("/confirm")) return Promise.resolve({ ok: true });
+      if (url.includes("/status")) {
+        statusCall++;
+        if (statusCall >= 1) return Promise.resolve({ status: "done", progress: 100, report: { imported: 5, skipped: 0 } });
+        return Promise.resolve({ status: "processing", progress: 50, report: null });
+      }
+      return Promise.resolve({});
+    }));
+    const { result } = renderHook(() => useImportExport(deps));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    await act(async () => { await result.current.handleImportConfirm(); });
+    expect(result.current.importStep).toBe("done");
+    expect(deps.fetchSummary).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportConfirm no-op when no jobId", async () => {
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    await act(async () => { await result.current.handleImportConfirm(); });
+    expect(result.current.importStep).toBe("upload");
+  });
+
+  it("handleImportFile with status 401 redirects", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 401 }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    vi.unstubAllGlobals();
+  });
+
+  it("handleExportNotes with 401 redirects", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 401,
+      headers: new Headers(),
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    await act(async () => { await result.current.handleExportNotes(); });
+    vi.unstubAllGlobals();
+  });
+
+  it("handleExportNotes with JSON error code handles correctly", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.resolve({ code: 500, msg: "Server error" }),
+      blob: () => Promise.resolve(new Blob()),
+    }));
+    const deps = makeDeps();
+    const { result } = renderHook(() => useImportExport(deps));
+    await act(async () => { await result.current.handleExportNotes(); });
+    expect(deps.toast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportFile handles JSON error code 0 (success)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ code: 0, data: { job_id: "j1" } }),
+    }));
+    mockApiFetch.mockResolvedValueOnce({ files: [{ name: "f.md" }], total: 1 });
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    expect(result.current.importStep).toBe("preview");
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportConfirm handles server 'failed' status", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "job1" } }),
+    }));
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.includes("/preview")) return Promise.resolve({ files: [], total: 0 });
+      if (url.includes("/confirm")) return Promise.resolve({ ok: true });
+      if (url.includes("/status")) return Promise.resolve({ status: "failed", progress: 50, report: null });
+      return Promise.resolve({});
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    await act(async () => { await result.current.handleImportConfirm(); });
+    expect(result.current.importError).toBe("Import failed on server");
+    expect(result.current.importStep).toBe("preview");
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportConfirm handles server 'error' status", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "job1" } }),
+    }));
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.includes("/preview")) return Promise.resolve({ files: [], total: 0 });
+      if (url.includes("/confirm")) return Promise.resolve({ ok: true });
+      if (url.includes("/status")) return Promise.resolve({ status: "error", progress: 30, report: null });
+      return Promise.resolve({});
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    await act(async () => { await result.current.handleImportConfirm(); });
+    expect(result.current.importError).toBe("Import failed on server");
+    vi.unstubAllGlobals();
+  });
+
+  it("handleImportConfirm with null report sets null", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ data: { job_id: "job1" } }),
+    }));
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.includes("/preview")) return Promise.resolve({ files: [], total: 0 });
+      if (url.includes("/confirm")) return Promise.resolve({ ok: true });
+      if (url.includes("/status")) return Promise.resolve({ status: "done", progress: 100, report: null });
+      return Promise.resolve({});
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openImportModal("hedgedoc"); });
+    const file = new File(["data"], "backup.zip");
+    await act(async () => { await result.current.handleImportFile(file); });
+    await act(async () => { await result.current.handleImportConfirm(); });
+    expect(result.current.importStep).toBe("done");
+    vi.unstubAllGlobals();
+  });
+});

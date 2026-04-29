@@ -35,7 +35,7 @@ function OAuthCallbackContent() {
         setExchangeError(message || "invalid");
       }
     };
-    exchange();
+    void exchange();
     return () => {
       cancelled = true;
     };

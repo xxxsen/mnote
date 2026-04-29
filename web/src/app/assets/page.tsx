@@ -53,7 +53,7 @@ export default function AssetsPage() {
       const params = new URLSearchParams();
       params.set("limit", "200");
       const items = await apiFetch<Asset[]>(`/assets?${params.toString()}`);
-      const next = items || [];
+      const next = items;
       setAssets(next);
       setSelectedID((prev) => {
         if (next.length === 0) return "";
@@ -81,7 +81,7 @@ export default function AssetsPage() {
       setLoadingReferences(true);
       try {
         const items = await apiFetch<AssetReference[]>(`/assets/${selected.id}/references`);
-        setReferences(items || []);
+        setReferences(items);
       } catch (err) {
         toast({ description: err instanceof Error ? err.message : "Failed to load references", variant: "error" });
         setReferences([]);
@@ -101,7 +101,6 @@ export default function AssetsPage() {
     const resolvedURL = resolveAssetURL(asset.url);
     if (asset.content_type.startsWith("image/")) {
       return (
-        // eslint-disable-next-line @next/next/no-img-element
         <img src={resolvedURL} alt={asset.name} className="h-28 w-full object-cover rounded-lg" />
       );
     }
@@ -117,7 +116,6 @@ export default function AssetsPage() {
     const resolvedURL = resolveAssetURL(selected.url);
     if (selected.content_type.startsWith("image/")) {
       return (
-        // eslint-disable-next-line @next/next/no-img-element
         <img src={resolvedURL} alt={selected.name} className="max-h-56 w-full object-contain rounded-lg" />
       );
     }

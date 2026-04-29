@@ -19,7 +19,7 @@ export function useQuickOpen({ onSelectDocument }: UseQuickOpenOptions) {
   const fetchRecentDocs = useCallback(async () => {
     try {
       const docs = await apiFetch<Document[]>("/documents?limit=5&order=mtime");
-      setQuickOpenRecent(docs || []);
+      setQuickOpenRecent(docs);
     } catch {
       setQuickOpenRecent([]);
     }
@@ -32,7 +32,7 @@ export function useQuickOpen({ onSelectDocument }: UseQuickOpenOptions) {
       params.set("q", query);
       params.set("limit", "5");
       const docs = await apiFetch<Document[]>(`/documents?${params.toString()}`);
-      setQuickOpenResults(docs || []);
+      setQuickOpenResults(docs);
     } catch {
       setQuickOpenResults([]);
     } finally {

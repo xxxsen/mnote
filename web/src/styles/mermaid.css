@@ -1,0 +1,48 @@
+#mermaid-error-box,
+.mermaid-error-overlay,
+[id^="mermaid-error"] {
+  display: none !important;
+}
+
+.mermaid-container > svg[id^="mermaid-"] {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid {
+  background: #fff7ed;
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem;
+  border: 1px dashed #fb923c;
+  margin-bottom: 0.8em;
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+}
+
+.mermaid-zoom .mermaid-container {
+  width: max-content;
+  max-width: none;
+  height: 100%;
+}
+
+.mermaid-zoom .mermaid-container > svg {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  display: block;
+}
+
+.mermaid svg .node rect {
+  fill: #e9d5ff;
+  stroke: #c084fc;
+  rx: 8px;
+  ry: 8px;
+}
+
+.mermaid svg .cluster rect {
+  fill: #fef3c7;
+  stroke: #f59e0b;
+  rx: 10px;
+  ry: 10px;
+}

@@ -1,7 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { Extension } from "@codemirror/state";
+import type { Extension } from "@codemirror/state";
 
 // ---------------------------------------------------------------------------
 // Theme type definitions
@@ -377,6 +377,7 @@ export function getThemeById(id: ThemeId): ThemeDefinition {
 const STORAGE_KEY = "mnote-editor-theme";
 
 export function loadThemePreference(): ThemeId {
+  /* v8 ignore next -- SSR guard untestable in jsdom */
   if (typeof window === "undefined") return DEFAULT_THEME_ID;
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored && THEMES.some((t) => t.id === stored)) return stored as ThemeId;
@@ -384,6 +385,7 @@ export function loadThemePreference(): ThemeId {
 }
 
 export function saveThemePreference(id: ThemeId): void {
+  /* v8 ignore next -- SSR guard untestable in jsdom */
   if (typeof window === "undefined") return;
   localStorage.setItem(STORAGE_KEY, id);
 }

@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
-import type { Document } from "@/types";
+import { useCallback, useEffect, useRef, type RefObject } from "react";
+import type { Document, Tag } from "@/types";
+
+type DocumentDetail = {
+  document: Document;
+  tag_ids: string[];
+  tags?: Tag[];
+};
 
 type DocumentActions = {
-  getDocument: () => Promise<{
-    document: Document;
-    tag_ids: string[];
-    tags?: import("@/types").Tag[];
-  }>;
+  getDocument: () => Promise<DocumentDetail>;
   saveDocument: (title: string, content: string) => Promise<void>;
 };
 
@@ -16,19 +18,35 @@ type UseEditorLifecycleOptions = {
   id: string;
   saving: boolean;
   hasUnsavedChanges: boolean;
-  contentRef: MutableRefObject<string>;
-  lastSavedContentRef: MutableRefObject<string>;
+  contentRef: RefObject<string>;
+  lastSavedContentRef: RefObject<string>;
   documentActions: DocumentActions;
   extractTitleFromContent: (value: string) => string;
   onLoadingChange: (loading: boolean) => void;
   onLoaded: (payload: {
     initialContent: string;
-    detail: { document: Document; tag_ids: string[]; tags?: import("@/types").Tag[] };
+    detail: DocumentDetail;
     hasDraftOverride: boolean;
   }) => void;
   onLoadError: (err: unknown) => void;
   onAutoSaved: (payload: { title: string; timestamp: number }) => void;
 };
+
+function loadDraft(id: string, serverContent: string): { initialContent: string; hasDraftOverride: boolean } {
+  /* v8 ignore next -- SSR guard untestable in jsdom */
+  if (typeof window === "undefined") return { initialContent: serverContent, hasDraftOverride: false };
+  const draft = window.localStorage.getItem(`mnote:draft:${id}`);
+  if (!draft) return { initialContent: serverContent, hasDraftOverride: false };
+  try {
+    const parsed = JSON.parse(draft) as { content?: string };
+    if (parsed.content && parsed.content !== serverContent) {
+      return { initialContent: parsed.content, hasDraftOverride: true };
+    }
+  } catch {
+    window.localStorage.removeItem(`mnote:draft:${id}`);
+  }
+  return { initialContent: serverContent, hasDraftOverride: false };
+}
 
 export function useEditorLifecycle({
   id,
@@ -59,23 +77,7 @@ export function useEditorLifecycle({
     onLoadingChangeRef.current(true);
     try {
       const detail = await documentActions.getDocument();
-      let initialContent = detail.document.content;
-      let hasDraftOverride = false;
-
-      if (typeof window !== "undefined") {
-        const draft = window.localStorage.getItem(`mnote:draft:${id}`);
-        if (draft) {
-          try {
-            const parsed = JSON.parse(draft) as { content?: string };
-            if (parsed.content && parsed.content !== detail.document.content) {
-              initialContent = parsed.content;
-              hasDraftOverride = true;
-            }
-          } catch {
-            window.localStorage.removeItem(`mnote:draft:${id}`);
-          }
-        }
-      }
+      const { initialContent, hasDraftOverride } = loadDraft(id, detail.document.content);
 
       contentRef.current = initialContent;
       lastSavedContentRef.current = detail.document.content;
@@ -99,6 +101,7 @@ export function useEditorLifecycle({
       lastSavedContentRef.current = latestContent;
       const timestamp = Math.floor(Date.now() / 1000);
       onAutoSavedRef.current({ title: derivedTitle, timestamp });
+      /* v8 ignore next 3 -- SSR guard untestable in jsdom */
       if (typeof window !== "undefined") {
         window.localStorage.removeItem(`mnote:draft:${id}`);
       }
@@ -120,6 +123,7 @@ export function useEditorLifecycle({
   }, [handleAutoSave]);
 
   useEffect(() => {
+    /* v8 ignore next -- SSR guard untestable in jsdom */
     if (typeof window === "undefined") return;
     const timer = window.setTimeout(() => {
       if (!hasUnsavedChanges) {
@@ -135,6 +139,7 @@ export function useEditorLifecycle({
 
   useEffect(() => {
     return () => {
+      /* v8 ignore next -- SSR guard untestable in jsdom */
       if (typeof window !== "undefined" && hasUnsavedChanges) {
         const payload = JSON.stringify({ content: contentRef.current, updatedAt: Date.now() });
         window.localStorage.setItem(`mnote:draft:${id}`, payload);

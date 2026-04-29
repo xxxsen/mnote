@@ -22,13 +22,13 @@ export default function RegisterPage() {
     const loadProperties = async () => {
       try {
         const res = await apiFetch<{ properties: Record<string, boolean> }>("/properties", { requireAuth: false });
-        setProperties(res?.properties || {});
+        setProperties(res.properties);
       } catch (err) {
         console.error(err);
         setProperties({});
       }
     };
-    loadProperties();
+    void loadProperties();
   }, []);
 
   useEffect(() => {

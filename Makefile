@@ -1,4 +1,4 @@
-.PHONY: build test test-coverage install-golangci-lint lint-go backend-build backend-test backend-check build-image build-web-image build-yaegi-wasm run-web run run-dev-docker
+.PHONY: build test test-coverage install-golangci-lint lint-go backend-build backend-test backend-check build-image build-web-image build-yaegi-wasm run-web run run-dev-docker web-install web-lint web-test web-build
 
 BIN ?= mnote
 GO_TEST_PKGS ?= ./cmd/... ./internal/...
@@ -47,3 +47,15 @@ run:
 
 run-dev-docker:
 	docker compose -f docker/docker-compose.yml up --build
+
+web-install:
+	cd web && npm ci
+
+web-lint:
+	cd web && npm run lint
+
+web-test:
+	cd web && npm run test:coverage
+
+web-build:
+	cd web && npm run build
