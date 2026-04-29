@@ -452,4 +452,125 @@ describe("useTemplates", () => {
     act(() => { result.current.prepareUseTemplate(); });
     expect(result.current.showVariableModal).toBe(false);
   });
+
+  it("saveTemplate returns false when no selected template", async () => {
+    setupApiRouter({ "/templates/meta": { items: [], total: 0 }, "/tags/ids": [] });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    let ok: boolean | undefined;
+    await act(async () => { ok = await result.current.saveTemplate(); });
+    expect(ok).toBe(false);
+  });
+
+  it("saveTemplate saves and refreshes", async () => {
+    let savedName = "T1";
+    mockApiFetch.mockImplementation(((url: string, opts?: RequestInit) => {
+      if ((opts as { method?: string })?.method === "PUT") { savedName = "New Name"; return Promise.resolve(undefined); }
+      if (url.startsWith("/templates/meta")) return Promise.resolve({ items: [metaItem("t1", savedName)], total: 1 });
+      if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", savedName));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }));
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await waitFor(() => { expect(result.current.draft.name).toBe("T1"); });
+    act(() => { result.current.setDraft({ name: "New Name", description: "desc", content: "# New" }); });
+    let ok: boolean | undefined;
+    await act(async () => { ok = await result.current.saveTemplate(); });
+    expect(ok).toBe(true);
+  });
+
+  it("isSaveDisabled is true when draft matches template", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
+      "/templates/t1": fullTemplate("t1", "T1"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await waitFor(() => { expect(result.current.draft.name).toBe("T1"); });
+    expect(result.current.isSaveDisabled).toBe(true);
+  });
+
+  it("deleteTemplate refreshes selectedID if matching", async () => {
+    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1"), metaItem("t2", "T2")], total: 2 },
+      "/templates/t1": fullTemplate("t1", "T1"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    mockApiFetch.mockResolvedValueOnce(undefined);
+    mockApiFetch.mockResolvedValueOnce({ items: [metaItem("t2", "T2")], total: 1 });
+    mockApiFetch.mockResolvedValueOnce(fullTemplate("t2", "T2"));
+    await act(async () => { void result.current.deleteTemplate("t1", "T1"); });
+    vi.unstubAllGlobals();
+  });
+
+  it("filteredTemplates filters by search", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "Alpha"), metaItem("t2", "Beta")], total: 2 },
+      "/templates/t1": fullTemplate("t1", "Alpha"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.setSearch("alpha"); });
+    expect(result.current.templates).toHaveLength(1);
+    expect(result.current.templates[0].name).toBe("Alpha");
+  });
+
+  it("handleTemplateListScroll no-op when all loaded", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
+      "/templates/t1": fullTemplate("t1", "T1"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    const callCount = mockApiFetch.mock.calls.length;
+    const scrollEvent = { currentTarget: { scrollTop: 900, clientHeight: 100, scrollHeight: 1000 } };
+    act(() => { result.current.handleTemplateListScroll(scrollEvent as never); });
+    expect(mockApiFetch.mock.calls.length).toBe(callCount);
+  });
+
+  it("detectedVariables detects multiple unique variables", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
+      "/templates/t1": { ...fullTemplate("t1", "T1"), content: "{{A}} {{B}} {{A}}" },
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await waitFor(() => { expect(result.current.draft.content).toContain("{{A}}"); });
+  });
+
+  it("loadSelected sets template to null when selectedID is empty", async () => {
+    setupApiRouter({ "/templates/meta": { items: [], total: 0 }, "/tags/ids": [] });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(result.current.selected).toBeNull();
+  });
+
+  it("createFromTemplate no-op when no selected template", async () => {
+    setupApiRouter({ "/templates/meta": { items: [], total: 0 }, "/tags/ids": [] });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await act(async () => { await result.current.createFromTemplate({ NAME: "Test" }); });
+    expect(result.current.creatingDoc).toBe(false);
+  });
+
+  it("previewContent resolves unknown user variable to empty", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
+      "/templates/t1": fullTemplate("t1", "T1"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.setDraft({ name: "T1", description: "", content: "Hello {{UNKNOWN_VAR}}" }); });
+    expect(result.current.previewContent).not.toContain("{{UNKNOWN_VAR}}");
+    expect(result.current.previewContent).toContain("Hello ");
+  });
 });

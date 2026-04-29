@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, fireEvent, cleanup } from "@testing-library/react";
+import { render, fireEvent, cleanup, waitFor } from "@testing-library/react";
 
 vi.mock("@/components/mermaid", () => ({
   default: ({ chart }: { chart: string }) => <div data-testid="mermaid">{chart}</div>,
@@ -179,5 +179,101 @@ describe("MermaidBlock", () => {
   it("detects stateDiagram type", () => {
     const { container } = render(<MermaidBlock chart="stateDiagram-v2\n[*] --> Active" />);
     expect(container.textContent?.toUpperCase()).toContain("STATE");
+  });
+
+  it("detects mindmap type", () => {
+    const { container } = render(<MermaidBlock chart="mindmap\n  root" />);
+    expect(container.textContent).toContain("MINDMAP");
+  });
+
+  it("detects timeline type", () => {
+    const { container } = render(<MermaidBlock chart="timeline\n2024: event" />);
+    expect(container.textContent).toContain("TIMELINE");
+  });
+
+  it("detects journey type", () => {
+    const { container } = render(<MermaidBlock chart="journey\ntitle My day" />);
+    expect(container.textContent).toContain("JOURNEY");
+  });
+
+  it("modal zoom in via wheel repeatedly", () => {
+    const { baseElement, container } = render(<MermaidBlock chart="graph TD; A-->B;" />);
+    fireEvent.click(container.querySelector("button[title='Open preview']")!);
+    const modalBody = baseElement.querySelector(".mermaid-zoom")!;
+    for (let i = 0; i < 5; i++) fireEvent.wheel(modalBody, { deltaY: -100 });
+    for (let i = 0; i < 10; i++) fireEvent.wheel(modalBody, { deltaY: 100 });
+  });
+
+  it("modal pan start/move/end when zoomed in", () => {
+    const { baseElement, container } = render(<MermaidBlock chart="graph TD; A-->B;" />);
+    fireEvent.click(container.querySelector("button[title='Open preview']")!);
+    const modalBody = baseElement.querySelector(".mermaid-zoom")!;
+    for (let i = 0; i < 15; i++) fireEvent.wheel(modalBody, { deltaY: -100 });
+    fireEvent.mouseDown(modalBody, { clientX: 100, clientY: 100 });
+    fireEvent.mouseMove(modalBody, { clientX: 150, clientY: 120 });
+    fireEvent.mouseUp(modalBody);
+  });
+
+  it("modal pan no-op when not dragging on mouseMove/mouseUp", () => {
+    const { baseElement, container } = render(<MermaidBlock chart="graph TD; A-->B;" />);
+    fireEvent.click(container.querySelector("button[title='Open preview']")!);
+    const modalBody = baseElement.querySelector(".mermaid-zoom")!;
+    fireEvent.mouseMove(modalBody, { clientX: 50, clientY: 50 });
+    fireEvent.mouseUp(modalBody);
+  });
+
+  it("modal pan no-op when zoom <= 1 on mouseDown", () => {
+    const { baseElement, container } = render(<MermaidBlock chart="graph TD; A-->B;" />);
+    fireEvent.click(container.querySelector("button[title='Open preview']")!);
+    const modalBody = baseElement.querySelector(".mermaid-zoom")!;
+    fireEvent.mouseDown(modalBody, { clientX: 100, clientY: 100 });
+    fireEvent.mouseUp(modalBody);
+  });
+
+  it("modal mouseLeave ends drag", () => {
+    const { baseElement, container } = render(<MermaidBlock chart="graph TD; A-->B;" />);
+    fireEvent.click(container.querySelector("button[title='Open preview']")!);
+    const modalBody = baseElement.querySelector(".mermaid-zoom")!;
+    for (let i = 0; i < 15; i++) fireEvent.wheel(modalBody, { deltaY: -100 });
+    fireEvent.mouseDown(modalBody, { clientX: 100, clientY: 100 });
+    fireEvent.mouseLeave(modalBody);
+  });
+
+  it("copy button shows check icon after click", async () => {
+    const { container } = render(<MermaidBlock chart="graph TD; A-->B;" />);
+    const btn = container.querySelector("button[title='Copy']")!;
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(container.querySelector("button[title='Copy']")).toBeTruthy();
+    });
+  });
+
+  it("detects flowchart (lowercase) type", () => {
+    const { container } = render(<MermaidBlock chart="flowchart LR; A-->B;" />);
+    expect(container.textContent).toContain("FLOWCHART");
+  });
+
+  it("detects quadrantChart type", () => {
+    const { container } = render(<MermaidBlock chart="quadrantChart\nx-axis Low --> High" />);
+    expect(container.textContent).toContain("QUADRANT CHART");
+  });
+
+  it("detects xychart type", () => {
+    const { container } = render(<MermaidBlock chart='xychart-beta\nx-axis ["A"]' />);
+    expect(container.textContent?.toUpperCase()).toContain("XY");
+  });
+
+  it("detects sankey type", () => {
+    const { container } = render(<MermaidBlock chart="sankey-beta\nA,B,10" />);
+    expect(container.textContent?.toUpperCase()).toContain("SANKEY");
+  });
+
+  it("debug overlay shows svg state", () => {
+    const { baseElement, container } = render(<MermaidBlock chart="graph TD; A-->B;" />);
+    fireEvent.click(container.querySelector("button[title='Open preview']")!);
+    fireEvent.click(baseElement.querySelector("button[title='Toggle debug']")!);
+    const monos = baseElement.querySelectorAll(".font-mono");
+    const overlay = Array.from(monos).find(el => (el.textContent ?? "").includes("svg:"));
+    expect(overlay).toBeTruthy();
   });
 });

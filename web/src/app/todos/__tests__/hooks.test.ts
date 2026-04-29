@@ -329,4 +329,97 @@ describe("useTodoCalendar", () => {
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     expect(result.current.todosByDate("")).toHaveLength(0);
   });
+
+  it("handleToggleDone toggles done=1 to 0", async () => {
+    const todo = makeTodo({ done: 1 });
+    mockTodoService.listByDateRange.mockResolvedValue([todo]);
+    mockTodoService.toggleDone.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await act(async () => { await result.current.handleToggleDone(todo); });
+    expect(mockTodoService.toggleDone).toHaveBeenCalledWith("t1", false);
+  });
+
+  it("handleUpdateTodoContent no-op when editingTodoID is empty", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await act(async () => { await result.current.handleUpdateTodoContent(); });
+    expect(mockTodoService.updateContent).not.toHaveBeenCalled();
+  });
+
+  it("Escape closes edit panel when both edit and create are open", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([makeTodo()]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openCreatePanel(new Date(2025, 0, 1)); });
+    act(() => { result.current.openEditPanel(makeTodo()); });
+    expect(result.current.editOpen).toBe(true);
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(result.current.editOpen).toBe(false);
+  });
+
+  it("non-Escape key does not close panels", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openCreatePanel(new Date(2025, 0, 1)); });
+    expect(result.current.createOpen).toBe(true);
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+    expect(result.current.createOpen).toBe(true);
+  });
+
+  it("useTodoFetch shows error toast on fetch failure", async () => {
+    mockTodoService.listByDateRange.mockRejectedValue(new Error("network"));
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("handleCalendarScroll skips prepend/append when loadingMoreRef is true", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+
+    const section = document.createElement("div");
+    section.setAttribute("data-month-index", "0");
+    Object.defineProperty(section, "offsetTop", { value: 0 });
+    Object.defineProperty(section, "offsetHeight", { value: 200 });
+
+    const container = document.createElement("div");
+    container.appendChild(section);
+    Object.defineProperty(container, "scrollTop", { value: 10, writable: true });
+    Object.defineProperty(container, "clientHeight", { value: 600 });
+    Object.defineProperty(container, "scrollHeight", { value: 3000 });
+
+    const event = { currentTarget: container } as unknown as React.UIEvent<HTMLDivElement>;
+    act(() => { result.current.handleCalendarScroll(event); });
+    const countAfterFirst = result.current.months.length;
+    act(() => { result.current.handleCalendarScroll(event); });
+    expect(result.current.months.length).toBe(countAfterFirst);
+  });
+
+  it("handleCalendarScroll finds nearest section among multiple", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+
+    const container = document.createElement("div");
+    const s0 = document.createElement("div");
+    s0.setAttribute("data-month-index", "0");
+    Object.defineProperty(s0, "offsetTop", { value: 0 });
+    Object.defineProperty(s0, "offsetHeight", { value: 300 });
+    const s1 = document.createElement("div");
+    s1.setAttribute("data-month-index", "1");
+    Object.defineProperty(s1, "offsetTop", { value: 300 });
+    Object.defineProperty(s1, "offsetHeight", { value: 300 });
+    container.appendChild(s0);
+    container.appendChild(s1);
+    Object.defineProperty(container, "scrollTop", { value: 350, writable: true });
+    Object.defineProperty(container, "clientHeight", { value: 600 });
+    Object.defineProperty(container, "scrollHeight", { value: 5000 });
+
+    const event = { currentTarget: container } as unknown as React.UIEvent<HTMLDivElement>;
+    act(() => { result.current.handleCalendarScroll(event); });
+  });
 });

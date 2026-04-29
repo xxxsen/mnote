@@ -227,4 +227,62 @@ describe("handleListContinuation", () => {
     expect(result).toBe(false);
     view.destroy();
   });
+
+  it("lazy continuation breaks on blank line before list", () => {
+    const doc = "- first\n\ntext";
+    const view = makeView(doc, doc.length);
+    const result = handleListContinuation(view);
+    expect(result).toBe(false);
+    view.destroy();
+  });
+
+  it("lazy continuation after todo item", () => {
+    const doc = "- [x] done\ncontinuation";
+    const view = makeView(doc, doc.length);
+    const result = handleListContinuation(view);
+    expect(result).toBe(true);
+    view.destroy();
+  });
+
+  it("returns false for empty line", () => {
+    const doc = "- item\n";
+    const view = makeView(doc, doc.length);
+    const result = handleListContinuation(view);
+    expect(result).toBe(false);
+    view.destroy();
+  });
+
+  it("returns false for indented non-list line", () => {
+    const doc = "  indented text";
+    const view = makeView(doc, doc.length);
+    const result = handleListContinuation(view);
+    expect(result).toBe(false);
+    view.destroy();
+  });
+
+  it("handles nested blockquote clear", () => {
+    const doc = "> > ";
+    const view = makeView(doc, doc.length);
+    const result = handleListContinuation(view);
+    expect(result).toBe(true);
+    view.destroy();
+  });
+
+  it("slash with space before triggers menu", () => {
+    const opts = makeOpts();
+    const { result } = renderHook(() => useEditorExtensions(opts));
+    const state = EditorState.create({ doc: "text ", extensions: result.current.editorExtensions });
+    const view = new EditorView({ state });
+    view.dispatch({ changes: { from: 5, insert: "/" } });
+    view.destroy();
+  });
+
+  it("regular typing does not trigger slash menu", () => {
+    const opts = makeOpts();
+    const { result } = renderHook(() => useEditorExtensions(opts));
+    const state = EditorState.create({ doc: "", extensions: result.current.editorExtensions });
+    const view = new EditorView({ state });
+    view.dispatch({ changes: { from: 0, insert: "hello" } });
+    view.destroy();
+  });
 });

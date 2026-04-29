@@ -174,4 +174,92 @@ describe("useEditorContent", () => {
     act(() => { result.current.applyContent("same"); });
     expect(result.current.hasUnsavedChanges).toBe(false);
   });
+
+  it("handleFormat line toggles off prefix if all lines have it", () => {
+    const view = createEditorView("## hello");
+    view.dispatch({ selection: { anchor: 3, head: 3 } });
+    const opts = makeOpts(view);
+    const { result } = renderHook(() => useEditorContent(opts));
+    act(() => { result.current.handleFormat("line", "## "); });
+    expect(opts.contentRef.current).toBe("hello");
+  });
+
+  it("handleFormat line applies prefix to multi-line selection", () => {
+    const view = createEditorView("aaa\nbbb\nccc");
+    view.dispatch({ selection: { anchor: 0, head: 11 } });
+    const opts = makeOpts(view);
+    const { result } = renderHook(() => useEditorContent(opts));
+    act(() => { result.current.handleFormat("line", "- "); });
+    expect(opts.contentRef.current).toBe("- aaa\n- bbb\n- ccc");
+  });
+
+  it("handleFormat line toggles off multi-line with prefix", () => {
+    const view = createEditorView("- aaa\n- bbb");
+    view.dispatch({ selection: { anchor: 0, head: 11 } });
+    const opts = makeOpts(view);
+    const { result } = renderHook(() => useEditorContent(opts));
+    act(() => { result.current.handleFormat("line", "- "); });
+    expect(opts.contentRef.current).toBe("aaa\nbbb");
+  });
+
+  it("handleFormat wrap unwraps already-wrapped text", () => {
+    const view = createEditorView("**hello**");
+    view.dispatch({ selection: { anchor: 2, head: 7 } });
+    const opts = makeOpts(view);
+    const { result } = renderHook(() => useEditorContent(opts));
+    act(() => { result.current.handleFormat("wrap", "**", "**"); });
+    expect(opts.contentRef.current).toBe("hello");
+  });
+
+  it("replacePlaceholder no-op when placeholder not found in editor", () => {
+    const view = createEditorView("no match here");
+    const opts = makeOpts(view);
+    const { result } = renderHook(() => useEditorContent(opts));
+    act(() => { result.current.replacePlaceholder("{{missing}}", "val"); });
+    expect(view.state.doc.toString()).toBe("no match here");
+  });
+
+  it("replacePlaceholder no-op without editor when placeholder absent", () => {
+    const opts = makeOpts();
+    opts.contentRef.current = "no match";
+    const { result } = renderHook(() => useEditorContent(opts));
+    act(() => { result.current.replacePlaceholder("{{gone}}", "val"); });
+    expect(opts.contentRef.current).toBe("no match");
+  });
+
+  it("schedulePreviewUpdate clears previous timer", () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const opts = makeOpts();
+    opts.contentRef.current = "a b";
+    opts.lastSavedContentRef.current = "a b";
+    const { result } = renderHook(() => useEditorContent(opts));
+    act(() => { result.current.schedulePreviewUpdate(); });
+    act(() => { result.current.schedulePreviewUpdate(); });
+    act(() => { vi.advanceTimersByTime(350); });
+    expect(result.current.hasUnsavedChanges).toBe(false);
+    expect(result.current.wordCount).toBe(2);
+    vi.useRealTimers();
+  });
+
+  it("schedulePreviewUpdate handles empty content", () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const opts = makeOpts();
+    opts.contentRef.current = "";
+    opts.lastSavedContentRef.current = "";
+    const { result } = renderHook(() => useEditorContent(opts));
+    act(() => { result.current.schedulePreviewUpdate(); });
+    act(() => { vi.advanceTimersByTime(350); });
+    expect(result.current.wordCount).toBe(0);
+    expect(result.current.charCount).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it("handleFormat line on partially-prefixed multi-line adds prefix to missing lines", () => {
+    const view = createEditorView("- aaa\nbbb");
+    view.dispatch({ selection: { anchor: 0, head: 9 } });
+    const opts = makeOpts(view);
+    const { result } = renderHook(() => useEditorContent(opts));
+    act(() => { result.current.handleFormat("line", "- "); });
+    expect(opts.contentRef.current).toBe("- aaa\n- bbb");
+  });
 });

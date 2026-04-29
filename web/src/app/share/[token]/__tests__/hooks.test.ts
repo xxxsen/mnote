@@ -160,6 +160,38 @@ describe("useShareComments", () => {
     renderHook(() => useShareComments(makeOpts({ accessPassword: "secret" })));
     await waitFor(() => { expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("password=secret"), expect.objectContaining({ requireAuth: false })); });
   });
+
+  it("handleSubmitComment sends with replyingTo parent", async () => {
+    mockApiFetch.mockResolvedValue({ items: [], total: 0 });
+    const opts = makeOpts();
+    const { result } = renderHook(() => useShareComments(opts));
+    await waitFor(() => { expect(result.current.commentsLoading).toBe(false); });
+    act(() => { result.current.setAnnotationContent("reply content"); });
+    act(() => { result.current.setReplyingTo({ id: "p1", author: "Alice" }); });
+    mockApiFetch.mockResolvedValueOnce({ id: "c2", content: "reply content" });
+    mockApiFetch.mockResolvedValueOnce({ items: [], total: 0 });
+    await act(async () => { await result.current.handleSubmitComment(); });
+    expect(opts.showToast).toHaveBeenCalledWith("Comment added.");
+  });
+
+  it("handleLoadMoreComments no-op when no more comments", async () => {
+    mockApiFetch.mockResolvedValue({ items: [{ id: "c1", content: "hi" }], total: 1 });
+    const opts = makeOpts();
+    const { result } = renderHook(() => useShareComments(opts));
+    await waitFor(() => { expect(result.current.comments).toHaveLength(1); });
+    await waitFor(() => { expect(result.current.commentsHasMore).toBe(false); });
+    const callCount = mockApiFetch.mock.calls.length;
+    act(() => { result.current.handleLoadMoreComments(); });
+    expect(mockApiFetch.mock.calls.length).toBe(callCount);
+  });
+
+  it("fetch comments on detail change with empty accessPassword", async () => {
+    mockApiFetch.mockResolvedValue({ items: [{ id: "c1", content: "hi" }], total: 1 });
+    const opts = makeOpts({ accessPassword: "" });
+    const { result } = renderHook(() => useShareComments(opts));
+    await waitFor(() => { expect(result.current.comments).toHaveLength(1); });
+    expect(mockApiFetch).toHaveBeenCalledWith(expect.not.stringContaining("password="), expect.anything());
+  });
 });
 
 describe("useShareToc", () => {

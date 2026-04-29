@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import React from "react";
-import { render, waitFor } from "@testing-library/react";
+import { render, waitFor, cleanup } from "@testing-library/react";
 
+let mockHoverState = { open: false, x: 0, y: 0, title: "", content: "", loading: false };
 vi.mock("react-markdown", () => ({
   default: ({ children }: { children: string }) => <div data-testid="markdown">{children}</div>,
 }));
@@ -14,7 +15,7 @@ vi.mock("../renderers", () => ({
 }));
 vi.mock("../hooks/use-hover-preview", () => ({
   useHoverPreview: () => ({
-    hoverPreview: { open: false, x: 0, y: 0, title: "", content: "", loading: false },
+    hoverPreview: mockHoverState,
     openHoverPreview: vi.fn(),
     closeHoverPreview: vi.fn(),
   }),
@@ -22,7 +23,11 @@ vi.mock("../hooks/use-hover-preview", () => ({
 
 import MarkdownPreview from "..";
 
-beforeEach(() => { vi.clearAllMocks(); });
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockHoverState = { open: false, x: 0, y: 0, title: "", content: "", loading: false };
+});
+afterEach(() => { cleanup(); });
 
 describe("MarkdownPreview", () => {
   it("renders markdown content", () => {
@@ -87,5 +92,71 @@ describe("MarkdownPreview", () => {
     const { container } = render(<MarkdownPreview content="test" onScroll={onScroll} />);
     const scrollDiv = container.querySelector(".markdown-body");
     expect(scrollDiv).toBeTruthy();
+  });
+
+  it("does not render toc aside when showTocAside is true but no toc content", () => {
+    const { container } = render(<MarkdownPreview content="No headings here" showTocAside />);
+    const aside = container.querySelector("aside");
+    expect(aside).toBeNull();
+  });
+
+  it("renders hover preview portal when enabled and open", () => {
+    mockHoverState = { open: true, x: 50, y: 100, title: "Preview Title", content: "Preview body", loading: false };
+    const { baseElement } = render(
+      <MarkdownPreview content="test" enableMentionHoverPreview />
+    );
+    expect(baseElement.textContent).toContain("Preview Title");
+    expect(baseElement.textContent).toContain("Preview body");
+  });
+
+  it("hover preview shows loading state", () => {
+    mockHoverState = { open: true, x: 10, y: 20, title: "", content: "", loading: true };
+    const { baseElement } = render(
+      <MarkdownPreview content="test" enableMentionHoverPreview />
+    );
+    expect(baseElement.textContent).toContain("Loading preview...");
+  });
+
+  it("hover preview shows Untitled when no title", () => {
+    mockHoverState = { open: true, x: 10, y: 20, title: "", content: "Content here", loading: false };
+    const { baseElement } = render(
+      <MarkdownPreview content="test" enableMentionHoverPreview />
+    );
+    expect(baseElement.textContent).toContain("Untitled");
+  });
+
+  it("does not render portal when enableMentionHoverPreview is false", () => {
+    mockHoverState = { open: true, x: 50, y: 100, title: "Title", content: "Body", loading: false };
+    const { baseElement } = render(
+      <MarkdownPreview content="test" enableMentionHoverPreview={false} />
+    );
+    expect(baseElement.querySelector(".backdrop-blur-md")).toBeNull();
+  });
+
+  it("does not render portal when hoverPreview.open is false", () => {
+    mockHoverState = { open: false, x: 0, y: 0, title: "", content: "", loading: false };
+    const { baseElement } = render(
+      <MarkdownPreview content="test" enableMentionHoverPreview />
+    );
+    expect(baseElement.querySelector(".backdrop-blur-md")).toBeNull();
+  });
+
+  it("processes inline math notation", () => {
+    const { container } = render(<MarkdownPreview content="Inline \\(x^2\\) math" />);
+    expect(container.querySelector(".markdown-body")).toBeTruthy();
+  });
+
+  it("processes block math notation", () => {
+    const { container } = render(<MarkdownPreview content="Block \\[E = mc^2\\] done" />);
+    expect(container.querySelector(".markdown-body")).toBeTruthy();
+  });
+
+  it("processes content with lazy list continuation", () => {
+    const { container } = render(<MarkdownPreview content="1. item\n   continued" />);
+    expect(container.querySelector(".markdown-body")).toBeTruthy();
+  });
+
+  it("onTocLoaded not called when not provided", () => {
+    render(<MarkdownPreview content="# Heading" />);
   });
 });

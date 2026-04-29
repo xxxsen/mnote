@@ -282,4 +282,103 @@ describe("useSharePage", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
+
+  it("extractDocTitle falls back to doc.title", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail({ document: { id: "d1", title: "Fallback", content: "", ctime: 0, mtime: 0 } }));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(document.title).toBe("Fallback");
+  });
+
+  it("extractDocTitle falls back to MNOTE when both empty", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail({ document: { id: "d1", title: "", content: "", ctime: 0, mtime: 0 } }));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(document.title).toBe("MNOTE");
+  });
+
+  it("extractDocTitle handles blank lines before heading", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail({ document: { id: "d1", title: "", content: "\n\n# Title", ctime: 0, mtime: 0 } }));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(document.title).toBe("Title");
+  });
+
+  it("slugify handles special characters", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail());
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(result.current.slugify("Hello! @World#")).toBe("hello-world");
+    expect(result.current.slugify("---")).toBe("section");
+  });
+
+  it("guestAuthor uses stored anonID from localStorage", async () => {
+    const { getAuthToken } = await import("@/lib/api");
+    vi.mocked(getAuthToken).mockReturnValue(null);
+    localStorage.setItem("mnote_share_guest_id", "AB12");
+    mockApiFetch.mockResolvedValue(makeDetail());
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(result.current.guestAuthor).toBe("Guest #AB12");
+    vi.mocked(getAuthToken).mockReturnValue("tok");
+  });
+
+  it("guestAuthor regenerates invalid anonID", async () => {
+    const { getAuthToken } = await import("@/lib/api");
+    vi.mocked(getAuthToken).mockReturnValue(null);
+    localStorage.setItem("mnote_share_guest_id", "bad");
+    mockApiFetch.mockResolvedValue(makeDetail());
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(result.current.guestAuthor).toMatch(/^Guest #[A-Z0-9]{4}$/);
+    vi.mocked(getAuthToken).mockReturnValue("tok");
+  });
+
+  it("password error shows invalid password message on re-attempt", async () => {
+    const { ApiError: AE } = await import("@/lib/api");
+    mockApiFetch.mockRejectedValue(new AE("Password required", 10000002));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.passwordRequired).toBe(true); });
+    mockApiFetch.mockRejectedValue(new AE("Password required", 10000002));
+    act(() => { result.current.setAccessPassword("wrong"); });
+    await waitFor(() => { expect(result.current.passwordError).toBe("Invalid password."); });
+  });
+
+  it("getElementById returns element when previewRef has it", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail());
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    const el = result.current.getElementById("nonexistent");
+    expect(el).toBeNull();
+  });
+
+  it("fetchDoc sends password in query string", async () => {
+    const { ApiError: AE } = await import("@/lib/api");
+    mockApiFetch.mockRejectedValueOnce(new AE("Password required", 10000002));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.passwordRequired).toBe(true); });
+    mockApiFetch.mockResolvedValue(makeDetail());
+    act(() => { result.current.setAccessPassword("correct"); });
+    await waitFor(() => { expect(result.current.detail).toBeTruthy(); });
+    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("password=correct"), expect.anything());
+  });
+
+  it("handleExport uses title or untitled fallback", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail({ document: { id: "d1", title: "", content: "content", ctime: 0, mtime: 0 } }));
+    const click = vi.fn();
+    const origCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      if (tag === "a") { const a = { click, href: "", download: "", style: {} }; return a as unknown as HTMLAnchorElement; }
+      return origCreateElement(tag);
+    });
+    vi.spyOn(document.body, "appendChild").mockImplementation((n) => n);
+    vi.spyOn(document.body, "removeChild").mockImplementation((n) => n);
+    vi.stubGlobal("URL", { createObjectURL: vi.fn().mockReturnValue("blob:url"), revokeObjectURL: vi.fn() });
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.handleExport(); });
+    expect(click).toHaveBeenCalled();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 });
