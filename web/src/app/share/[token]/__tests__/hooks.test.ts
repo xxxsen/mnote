@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
 
 vi.mock("@/lib/api", () => ({
   apiFetch: vi.fn(),
@@ -21,6 +21,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
 });
+afterEach(() => { cleanup(); });
 
 describe("useShareComments", () => {
   const makeOpts = (overrides = {}) => ({

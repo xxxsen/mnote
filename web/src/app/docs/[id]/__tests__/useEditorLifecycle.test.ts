@@ -108,4 +108,132 @@ describe("useEditorLifecycle", () => {
     await waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
     expect(localStorage.getItem("mnote:draft:d1")).toBeNull();
   });
+
+  it("auto-save saves document when content changed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const opts = makeOpts();
+
+    renderHook(() => useEditorLifecycle(opts));
+    await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
+
+    opts.contentRef.current = "# Updated Title\nNew content";
+
+    await vi.advanceTimersByTimeAsync(10100);
+    expect(opts.documentActions.saveDocument).toHaveBeenCalledWith("Updated Title", "# Updated Title\nNew content");
+    vi.useRealTimers();
+  });
+
+  it("auto-save skips when saving is true", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const opts = makeOpts({ saving: true });
+    opts.contentRef.current = "# Changed";
+    opts.lastSavedContentRef.current = "# Hello";
+
+    renderHook(() => useEditorLifecycle(opts));
+    await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
+
+    await vi.advanceTimersByTimeAsync(10100);
+    expect(opts.documentActions.saveDocument).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("auto-save skips when content unchanged", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const opts = makeOpts();
+    opts.contentRef.current = "# Hello";
+    opts.lastSavedContentRef.current = "# Hello";
+
+    renderHook(() => useEditorLifecycle(opts));
+    await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
+
+    await vi.advanceTimersByTimeAsync(10100);
+    expect(opts.documentActions.saveDocument).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("auto-save skips when no title extracted", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const opts = makeOpts();
+    opts.contentRef.current = "no heading";
+    opts.lastSavedContentRef.current = "# Hello";
+
+    renderHook(() => useEditorLifecycle(opts));
+    await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
+
+    await vi.advanceTimersByTimeAsync(10100);
+    expect(opts.documentActions.saveDocument).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("auto-save calls onAutoSaved after successful save", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const opts = makeOpts();
+
+    renderHook(() => useEditorLifecycle(opts));
+    await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
+
+    opts.contentRef.current = "# Title\nBody";
+
+    await vi.advanceTimersByTimeAsync(10100);
+    expect(opts.onAutoSaved).toHaveBeenCalledWith(expect.objectContaining({ title: "Title" }));
+    vi.useRealTimers();
+  });
+
+  it("auto-save removes draft on success", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    localStorage.setItem("mnote:draft:d1", JSON.stringify({ content: "old" }));
+    const opts = makeOpts();
+
+    renderHook(() => useEditorLifecycle(opts));
+    await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
+
+    opts.contentRef.current = "# New Title\nBody";
+
+    await vi.advanceTimersByTimeAsync(10100);
+    expect(localStorage.getItem("mnote:draft:d1")).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("auto-save handles save error gracefully", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const opts = makeOpts({
+      documentActions: {
+        getDocument: vi.fn().mockResolvedValue(makeDocDetail()),
+        saveDocument: vi.fn().mockRejectedValue(new Error("save fail")),
+      },
+    });
+
+    renderHook(() => useEditorLifecycle(opts));
+    await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
+
+    opts.contentRef.current = "# Title\nBody";
+
+    await vi.advanceTimersByTimeAsync(10100);
+    expect(opts.onAutoSaved).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("draft save removes draft when no unsaved changes", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    localStorage.setItem("mnote:draft:d1", JSON.stringify({ content: "old" }));
+    const opts = makeOpts({ hasUnsavedChanges: false });
+
+    renderHook(() => useEditorLifecycle(opts));
+    await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(localStorage.getItem("mnote:draft:d1")).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("saves draft on unmount when hasUnsavedChanges", async () => {
+    const opts = makeOpts({ hasUnsavedChanges: true });
+    const { unmount } = renderHook(() => useEditorLifecycle(opts));
+    await waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
+    opts.contentRef.current = "# Unsaved";
+    unmount();
+    const draft = localStorage.getItem("mnote:draft:d1");
+    expect(draft).toBeTruthy();
+    expect(JSON.parse(draft!).content).toBe("# Unsaved");
+  });
 });

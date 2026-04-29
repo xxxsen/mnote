@@ -69,4 +69,72 @@ describe("useSlashMenu", () => {
     const { result } = renderHook(() => useSlashMenu(makeOpts()));
     expect(typeof result.current.slashKeydownRef.current).toBe("function");
   });
+
+  it("handleSlashKeyDown Enter calls action with view", () => {
+    const mockView = {
+      state: {
+        selection: { main: { from: 5, head: 5 } },
+        doc: { lineAt: () => ({ from: 0, text: "test/", to: 5 }) },
+      },
+      dispatch: vi.fn(),
+    };
+    const opts = { ...makeOpts(), editorViewRef: { current: mockView as never } };
+    const { result } = renderHook(() => useSlashMenu(opts));
+    act(() => { result.current.setSlashMenu({ open: true, x: 0, y: 0, filter: "" }); });
+    const ev = { key: "Enter", preventDefault: vi.fn() };
+    act(() => { result.current.handleSlashKeyDown(ev as never); });
+    expect(result.current.slashMenu.open).toBe(false);
+  });
+
+  it("handleSlashAction removes slash prefix from editor", () => {
+    const mockView = {
+      state: {
+        selection: { main: { from: 5 } },
+        doc: {
+          lineAt: () => ({ from: 0, text: "test/head", to: 9 }),
+        },
+      },
+      dispatch: vi.fn(),
+    };
+    const opts = { ...makeOpts(), editorViewRef: { current: mockView as never } };
+    const { result } = renderHook(() => useSlashMenu(opts));
+    const action = vi.fn();
+    act(() => { result.current.handleSlashAction(action); });
+    expect(action).toHaveBeenCalled();
+  });
+
+  it("handleSlashAction no-ops when no view", () => {
+    const opts = makeOpts();
+    const { result } = renderHook(() => useSlashMenu(opts));
+    const action = vi.fn();
+    act(() => { result.current.handleSlashAction(action); });
+    expect(action).not.toHaveBeenCalled();
+  });
+
+  it("handleSlashKeyDown Enter returns false when no commands", () => {
+    const { result } = renderHook(() => useSlashMenu(makeOpts()));
+    act(() => { result.current.setSlashMenu({ open: true, x: 0, y: 0, filter: "xyznonexistent" }); });
+    const ev = { key: "Enter", preventDefault: vi.fn() };
+    let handled = false;
+    act(() => { handled = result.current.handleSlashKeyDown(ev as never); });
+    expect(handled).toBe(false);
+  });
+
+  it("handleSlashKeyDown ArrowDown returns true for empty list", () => {
+    const { result } = renderHook(() => useSlashMenu(makeOpts()));
+    act(() => { result.current.setSlashMenu({ open: true, x: 0, y: 0, filter: "xyznonexistent" }); });
+    const ev = { key: "ArrowDown", preventDefault: vi.fn() };
+    let handled = false;
+    act(() => { handled = result.current.handleSlashKeyDown(ev as never); });
+    expect(handled).toBe(true);
+  });
+
+  it("handleSlashKeyDown unknown key returns false", () => {
+    const { result } = renderHook(() => useSlashMenu(makeOpts()));
+    act(() => { result.current.setSlashMenu({ open: true, x: 0, y: 0, filter: "" }); });
+    const ev = { key: "a", preventDefault: vi.fn() };
+    let handled = false;
+    act(() => { handled = result.current.handleSlashKeyDown(ev as never); });
+    expect(handled).toBe(false);
+  });
 });

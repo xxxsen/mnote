@@ -1,11 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { renderHook, act, cleanup } from "@testing-library/react";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
 import { useEditorContent } from "../hooks/useEditorContent";
 
 beforeEach(() => { vi.clearAllMocks(); });
+afterEach(() => { cleanup(); });
 
 function createEditorView(content = ""): EditorView {
   const state = EditorState.create({ doc: content });
