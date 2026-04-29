@@ -208,7 +208,10 @@ export function HeaderBar(props: HeaderBarProps) {
           className="w-8 h-8 rounded-full overflow-hidden border border-border hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           title={userEmail || "User menu"}
         >
-          <img src={avatarUrl} alt="User" className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
+          {avatarUrl
+            ? <img src={avatarUrl} alt="User" className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
+            : <span className="flex items-center justify-center w-full h-full bg-muted text-muted-foreground text-xs font-medium">{(userEmail[0] || "U").toUpperCase()}</span>
+          }
         </button>
         {showUserMenu && (
           <UserMenu
