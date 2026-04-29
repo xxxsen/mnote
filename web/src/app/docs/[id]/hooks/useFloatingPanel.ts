@@ -46,20 +46,20 @@ export function useFloatingPanel(opts: {
   }, [tocCollapsed]);
 
   useEffect(() => {
-    setFloatingPanelTab("toc");
+    setFloatingPanelTab("toc"); // eslint-disable-line react-hooks/set-state-in-effect -- reset on route change
     setFloatingPanelTouched(false);
   }, [docId]);
 
   useEffect(() => {
     if (availableFloatingTabs.length === 0) return;
     if (floatingPanelTouched) return;
-    setFloatingPanelTab(availableFloatingTabs[0]);
+    setFloatingPanelTab(availableFloatingTabs[0]); // eslint-disable-line react-hooks/set-state-in-effect -- sync tab with available tabs
   }, [availableFloatingTabs, floatingPanelTouched]);
 
   useEffect(() => {
     if (availableFloatingTabs.length === 0) return;
     if (!availableFloatingTabs.includes(floatingPanelTab)) {
-      setFloatingPanelTab(availableFloatingTabs[0]);
+      setFloatingPanelTab(availableFloatingTabs[0]); // eslint-disable-line react-hooks/set-state-in-effect -- fallback when active tab removed
     }
   }, [availableFloatingTabs, floatingPanelTab]);
 

@@ -15,6 +15,49 @@ type ThemedSyntaxHighlighterProps = Omit<SyntaxHighlighterProps, "style"> & {
 const ThemedSyntaxHighlighter =
   SyntaxHighlighter as unknown as React.ComponentType<ThemedSyntaxHighlighterProps>;
 
+type OutputLine = { type: "stdout" | "stderr" | "system"; content: string };
+
+function TerminalOutput({ output, error, isRunning }: { output: OutputLine[]; error: string | null; isRunning: boolean }) {
+  if (output.length === 0 && !error) return null;
+  return (
+    <div className="border-t border-border/40 bg-black/5 p-4 font-mono text-[11px] text-left">
+      <div className="flex items-center gap-2 mb-3 text-muted-foreground/40 uppercase tracking-[0.2em] font-bold">
+        <Terminal className="h-3 w-3" />
+        Terminal Output
+      </div>
+      <div className="space-y-1.5 max-h-60 overflow-y-auto custom-scrollbar">
+        {error ? (
+          <div className="flex items-start gap-2 text-destructive bg-destructive/5 p-2 rounded border border-destructive/10">
+            <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <pre className="whitespace-pre-wrap text-left">{error}</pre>
+          </div>
+        ) : (
+          output.map((line, i) => (
+            <div key={i} className="flex gap-2 text-left">
+              <span className="opacity-30 shrink-0 select-none">
+                <ChevronRight className="h-3 w-3 mt-0.5" />
+              </span>
+              <span className={
+                line.type === "system" ? "text-blue-500/70 italic" :
+                line.type === "stderr" ? "text-destructive/80" :
+                "text-foreground/80"
+              }>
+                {line.content}
+              </span>
+            </div>
+          ))
+        )}
+        {isRunning && (
+          <div className="flex gap-2 items-center text-muted-foreground/40 animate-pulse text-left">
+            <ChevronRight className="h-3 w-3" />
+            <span>_</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface CodeSandboxProps {
   code: string;
   language: string;
@@ -22,7 +65,7 @@ interface CodeSandboxProps {
 }
 
 export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
-  const [output, setOutput] = useState<{ type: "stdout" | "stderr" | "system"; content: string }[]>([]);
+  const [output, setOutput] = useState<OutputLine[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -70,8 +113,8 @@ export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
           setError(msg.content || "Unknown error");
           setIsRunning(false);
         } else {
-          const type = msg.type as "stdout" | "stderr" | "system";
-          setOutput((prev) => [...prev, { type, content: msg.content || "" }]);
+          const lineType = msg.type as OutputLine["type"];
+          setOutput((prev) => [...prev, { type: lineType, content: msg.content || "" }]);
         }
       }
     });
@@ -159,43 +202,7 @@ export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
         </div>
       )}
 
-      {(output.length > 0 || error) && (
-        <div className="border-t border-border/40 bg-black/5 p-4 font-mono text-[11px] text-left">
-          <div className="flex items-center gap-2 mb-3 text-muted-foreground/40 uppercase tracking-[0.2em] font-bold">
-            <Terminal className="h-3 w-3" />
-            Terminal Output
-          </div>
-          <div className="space-y-1.5 max-h-60 overflow-y-auto custom-scrollbar">
-            {error ? (
-              <div className="flex items-start gap-2 text-destructive bg-destructive/5 p-2 rounded border border-destructive/10">
-                <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                <pre className="whitespace-pre-wrap text-left">{error}</pre>
-              </div>
-            ) : (
-              output.map((line, i) => (
-                <div key={i} className="flex gap-2 text-left">
-                  <span className="opacity-30 shrink-0 select-none">
-                    <ChevronRight className="h-3 w-3 mt-0.5" />
-                  </span>
-                  <span className={
-                    line.type === "system" ? "text-blue-500/70 italic" : 
-                    line.type === "stderr" ? "text-destructive/80" : 
-                    "text-foreground/80"
-                  }>
-                    {line.content}
-                  </span>
-                </div>
-              ))
-            )}
-            {isRunning && (
-              <div className="flex gap-2 items-center text-muted-foreground/40 animate-pulse text-left">
-                <ChevronRight className="h-3 w-3" />
-                <span>_</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <TerminalOutput output={output} error={error} isRunning={isRunning} />
     </div>
   );
 };

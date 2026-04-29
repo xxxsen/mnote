@@ -7,7 +7,7 @@ import { ChevronDown, ChevronRight, Download, FileArchive, Images, LogOut, Searc
 export interface HeaderBarProps {
   search: string;
   selectedTag: string;
-  tagIndex: Record<string, Tag>;
+  tagIndex: Partial<Record<string, Tag>>;
   showTagSelector: boolean;
   activeTagIndex: number;
   filteredTags: Tag[];
@@ -143,7 +143,7 @@ export function HeaderBar(props: HeaderBarProps) {
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           {selectedTag && (
             <div className="flex items-center gap-1 bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap">
-              #{tagIndex[selectedTag]?.name || "tag"}
+              #{tagIndex[selectedTag]?.name ?? "tag"}
               <button onClick={() => onSetSelectedTag("")} className="hover:text-primary/70"><X className="h-2.5 w-2.5" /></button>
             </div>
           )}
@@ -170,8 +170,7 @@ export function HeaderBar(props: HeaderBarProps) {
                   onSetActiveTagIndex(prev => (prev - 1 + (filteredTags.length || 1)) % (filteredTags.length || 1));
                 } else if (e.key === "Enter" && filteredTags.length > 0) {
                   e.preventDefault();
-                  const tag = filteredTags[activeTagIndex];
-                  if (tag) selectTag(tag);
+                  selectTag(filteredTags[activeTagIndex]);
                 }
               }
             }}
@@ -209,9 +208,7 @@ export function HeaderBar(props: HeaderBarProps) {
           className="w-8 h-8 rounded-full overflow-hidden border border-border hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           title={userEmail || "User menu"}
         >
-          {avatarUrl && (
-            <img src={avatarUrl} alt="User" className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
-          )}
+          <img src={avatarUrl} alt="User" className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
         </button>
         {showUserMenu && (
           <UserMenu

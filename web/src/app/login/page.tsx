@@ -6,7 +6,7 @@ import Link from "next/link";
 import { apiFetch, setAuthEmail, setAuthToken, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Chrome, Github } from "lucide-react";
+import { GithubIcon, GoogleIcon } from "@/components/brand-icons";
 
 type Properties = {
   enable_github_oauth?: boolean;
@@ -22,6 +22,73 @@ type BannerConfig = {
   redirect?: string;
 };
 
+function LoginBanner({ banner }: { banner: BannerConfig | null }) {
+  if (!banner?.enable || (!banner.title && !banner.wording)) return null;
+  return (
+    <div className="mb-6 rounded-lg border border-amber-200/60 bg-amber-50/70 px-3 py-2 text-amber-900">
+      {banner.title && (
+        <div className="text-[10px] font-semibold uppercase tracking-wider">{banner.title}</div>
+      )}
+      {banner.wording && (
+        banner.redirect ? (
+          <a
+            href={banner.redirect}
+            className="text-sm underline underline-offset-4 hover:text-amber-700"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {banner.wording}
+          </a>
+        ) : (
+          <div className="text-sm">{banner.wording}</div>
+        )
+      )}
+    </div>
+  );
+}
+
+function OAuthButtons({
+  properties,
+  oauthLoading,
+  onOAuth,
+}: {
+  properties: Properties | null;
+  oauthLoading: string | null;
+  onOAuth: (provider: "github" | "google") => void;
+}) {
+  if (!properties?.enable_github_oauth && !properties?.enable_google_oauth) return null;
+  return (
+    <div className="mt-6 flex items-center justify-center gap-3">
+      {properties.enable_github_oauth && (
+        <Button
+          type="button"
+          variant="outline"
+          className="h-10 w-10 rounded-full p-0"
+          onClick={() => onOAuth("github")}
+          disabled={oauthLoading !== null}
+          aria-label="Continue with GitHub"
+          title={oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
+        >
+          <GithubIcon className="h-4 w-4" />
+        </Button>
+      )}
+      {properties.enable_google_oauth && (
+        <Button
+          type="button"
+          variant="outline"
+          className="h-10 w-10 rounded-full p-0"
+          onClick={() => onOAuth("google")}
+          disabled={oauthLoading !== null}
+          aria-label="Continue with Google"
+          title={oauthLoading === "google" ? "Connecting..." : "Continue with Google"}
+        >
+          <GoogleIcon className="h-4 w-4" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -36,15 +103,15 @@ export default function LoginPage() {
     const loadProperties = async () => {
       try {
         const res = await apiFetch<{ properties: Properties; banner?: BannerConfig }>("/properties", { requireAuth: false });
-        setProperties(res?.properties || {});
-        setBanner(res?.banner || null);
+        setProperties(res.properties);
+        setBanner(res.banner ?? null);
       } catch (err) {
         console.error(err);
         setProperties({});
         setBanner(null);
       }
     };
-    loadProperties();
+    void loadProperties();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -95,27 +162,7 @@ export default function LoginPage() {
           <p className="text-muted-foreground text-sm">Enter your credentials</p>
         </div>
 
-        {banner?.enable && (banner.title || banner.wording) && (
-          <div className="mb-6 rounded-lg border border-amber-200/60 bg-amber-50/70 px-3 py-2 text-amber-900">
-            {banner.title && (
-              <div className="text-[10px] font-semibold uppercase tracking-wider">{banner.title}</div>
-            )}
-            {banner.wording && (
-              banner.redirect ? (
-                <a
-                  href={banner.redirect}
-                  className="text-sm underline underline-offset-4 hover:text-amber-700"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {banner.wording}
-                </a>
-              ) : (
-                <div className="text-sm">{banner.wording}</div>
-              )
-            )}
-          </div>
-        )}
+        <LoginBanner banner={banner} />
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -155,38 +202,9 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        {(properties?.enable_github_oauth || properties?.enable_google_oauth) && (
-          <div className="mt-6 flex items-center justify-center gap-3">
-            {properties?.enable_github_oauth && (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-10 w-10 rounded-full p-0"
-                onClick={() => handleOAuth("github")}
-                disabled={oauthLoading !== null}
-                aria-label="Continue with GitHub"
-                title={oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
-              >
-                <Github className="h-4 w-4" />
-              </Button>
-            )}
-            {properties?.enable_google_oauth && (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-10 w-10 rounded-full p-0"
-                onClick={() => handleOAuth("google")}
-                disabled={oauthLoading !== null}
-                aria-label="Continue with Google"
-                title={oauthLoading === "google" ? "Connecting..." : "Continue with Google"}
-              >
-                <Chrome className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        )}
+        <OAuthButtons properties={properties} oauthLoading={oauthLoading} onOAuth={handleOAuth} />
 
-        {properties?.enable_user_register && properties?.enable_email_register && (
+        {properties?.enable_user_register && properties.enable_email_register && (
           <div className="mt-6 text-center text-sm text-muted-foreground">
             Don&apos;t have an account?{" "}
             <Link href="/register" className="underline underline-offset-4 hover:text-primary">

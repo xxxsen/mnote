@@ -32,7 +32,7 @@ export function useInlineTag(opts: {
   }, [inlineTagMode]);
 
   useEffect(() => {
-    if (!inlineTagMode) { setInlineTagMenuPos(null); return; }
+    if (!inlineTagMode) { setInlineTagMenuPos(null); return; } // eslint-disable-line react-hooks/set-state-in-effect -- cleanup on mode toggle
     const updateMenuPosition = () => {
       const input = inlineTagInputRef.current;
       if (!input) { setInlineTagMenuPos(null); return; }
@@ -74,7 +74,7 @@ export function useInlineTag(opts: {
   }, [inlineTagTrimmed, inlineTagLoading, inlineTagExact, inlineTagSuggestions]);
 
   useEffect(() => {
-    if (!inlineTagMode) { setInlineTagResults([]); setInlineTagLoading(false); setInlineTagIndex(0); return; }
+    if (!inlineTagMode) { setInlineTagResults([]); setInlineTagLoading(false); setInlineTagIndex(0); return; } // eslint-disable-line react-hooks/set-state-in-effect -- cleanup on mode toggle
     if (inlineTagSearchTimerRef.current) window.clearTimeout(inlineTagSearchTimerRef.current);
     if (!inlineTagTrimmed) { setInlineTagResults([]); setInlineTagLoading(false); setInlineTagIndex(0); return; }
     inlineTagSearchTimerRef.current = window.setTimeout(() => {
@@ -87,7 +87,9 @@ export function useInlineTag(opts: {
     return () => { if (inlineTagSearchTimerRef.current) window.clearTimeout(inlineTagSearchTimerRef.current); };
   }, [inlineTagMode, inlineTagTrimmed, tagActions, mergeTags]);
 
-  useEffect(() => { setInlineTagIndex(0); }, [inlineTagDropdownItems]);
+  useEffect(() => {
+    setInlineTagIndex(0); // eslint-disable-line react-hooks/set-state-in-effect -- reset index when dropdown items change
+  }, [inlineTagDropdownItems]);
 
   const handleInlineAddTag = useCallback(async (name?: string) => {
     const trimmed = normalizeTagName(name ?? inlineTagValue);

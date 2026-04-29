@@ -12,7 +12,7 @@ export interface SidebarProps {
   starredTotal: number;
   sharedTotal: number;
   recentDocs: DocumentWithTags[];
-  tagIndex: Record<string, Tag>;
+  tagIndex: Partial<Record<string, Tag>>;
   savedViews: SavedView[];
   search: string;
   sidebarTags: TagSummary[];

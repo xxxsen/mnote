@@ -46,7 +46,7 @@ export default function TagsPage() {
       if (search.trim()) {
         params.set("q", search.trim());
       }
-      const items = await apiFetch<{ id: string; name: string; count: number }[]>(`/tags/summary?${params.toString()}`) || [];
+      const items = await apiFetch<{ id: string; name: string; count: number }[]>(`/tags/summary?${params.toString()}`);
       const next: TagWithUsage[] = items.map((tag) => ({
         id: tag.id,
         name: tag.name,
@@ -68,7 +68,7 @@ export default function TagsPage() {
   useEffect(() => {
     setOffset(0);
     setHasMore(true);
-    fetchData(0, false);
+    void fetchData(0, false);
   }, [fetchData]);
 
   const handleBack = useCallback(() => {
@@ -113,7 +113,7 @@ export default function TagsPage() {
           const el = e.currentTarget;
           if (loading || loadingMore || !hasMore) return;
           if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
-            fetchData(offset, true);
+            void fetchData(offset, true);
           }
         }}
       >

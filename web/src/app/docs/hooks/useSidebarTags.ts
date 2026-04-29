@@ -30,7 +30,7 @@ export function useSidebarTags({ toast }: UseSidebarTagsDeps) {
         params.set("offset", String(offset));
         if (query) params.set("q", query);
         const res = await apiFetch<TagSummary[]>(`/tags/summary?${params.toString()}`);
-        const next = res || [];
+        const next = res;
         setSidebarTags((prev) => (append ? [...prev, ...next] : next));
         setSidebarHasMore(next.length === 20);
         setSidebarOffset(offset + next.length);

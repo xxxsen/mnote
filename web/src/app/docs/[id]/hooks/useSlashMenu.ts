@@ -27,7 +27,7 @@ export function useSlashMenu(opts: {
   }, [slashMenu.filter]);
 
   useEffect(() => {
-    setSlashIndex(0);
+    setSlashIndex(0); // eslint-disable-line react-hooks/set-state-in-effect -- reset index when menu opens or filter changes
   }, [slashMenu.open, slashMenu.filter]);
 
   const handleSlashAction = useCallback((action: (ctx: SlashActionContext) => void) => {

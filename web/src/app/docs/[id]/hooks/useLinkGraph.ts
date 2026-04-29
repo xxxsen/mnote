@@ -39,14 +39,18 @@ export function useLinkGraph(opts: {
     } catch { setOutboundLinks([]); }
   }, [docId]);
 
-  useEffect(() => { void loadBacklinks(); }, [loadBacklinks]);
+  useEffect(() => {
+    void loadBacklinks(); // eslint-disable-line react-hooks/set-state-in-effect -- triggers async data fetch on dependency change
+  }, [loadBacklinks]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void loadOutboundLinks(previewContent); }, 220);
     return () => window.clearTimeout(timer);
   }, [loadOutboundLinks, previewContent]);
 
-  useEffect(() => { setOutboundLinks([]); }, [docId]);
+  useEffect(() => {
+    setOutboundLinks([]); // eslint-disable-line react-hooks/set-state-in-effect -- reset on route change
+  }, [docId]);
 
   const linkGraph = useMemo(() => {
     const incomingMap = new Map(backlinks.map((doc) => [doc.id, doc]));

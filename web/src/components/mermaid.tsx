@@ -45,10 +45,8 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
           titleColor: "#0F172A",
         },
       });
-      // Also set it via setConfig just in case initialize was already called elsewhere
-      mermaid.mermaidAPI.setConfig({
-        suppressErrorRendering: true,
-        logLevel: "fatal"
+      mermaid.parse("graph TD; A-->B;").catch(() => {
+        /* warm-up parse to ensure config is applied */
       });
       initialized.current = true;
     }
@@ -74,9 +72,9 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
         setError(false);
         setIsRendered(true);
       })
-      .catch((err) => {
+      .catch((renderErr: unknown) => {
         if (!isMounted) return;
-        console.error("Mermaid render error:", err);
+        console.error("Mermaid render error:", renderErr);
         setError(true);
       });
 

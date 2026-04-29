@@ -11,8 +11,8 @@ type RunOptions = {
 };
 
 class SandboxRegistry {
-  private workers: Record<string, Worker> = {};
-  private activeListeners: Record<string, ((msg: WorkerMessage) => void) | null> = {};
+  private workers: Partial<Record<string, Worker>> = {};
+  private activeListeners: Partial<Record<string, ((msg: WorkerMessage) => void) | null>> = {};
 
   private getWorkerCode(language: string): string {
     if (language === "javascript" || language === "js") {
@@ -193,17 +193,18 @@ class SandboxRegistry {
 
   private getOrCreateWorker(language: string): Worker {
     const key = this.getLangKey(language);
-    if (!this.workers[key]) {
-      const code = this.getWorkerCode(key);
-      const blob = new Blob([code], { type: "application/javascript" });
-      const worker = new Worker(URL.createObjectURL(blob));
-      this.workers[key] = worker;
-      worker.onmessage = (e) => {
-        const listener = this.activeListeners[key];
-        if (listener) listener(e.data);
-      };
-    }
-    return this.workers[key];
+    const existing = this.workers[key];
+    if (existing) return existing;
+
+    const code = this.getWorkerCode(key);
+    const blob = new Blob([code], { type: "application/javascript" });
+    const worker = new Worker(URL.createObjectURL(blob));
+    this.workers[key] = worker;
+    worker.onmessage = (e) => {
+      const listener = this.activeListeners[key];
+      if (listener) listener(e.data);
+    };
+    return worker;
   }
 
   private getLangKey(language: string): string {
@@ -225,8 +226,9 @@ class SandboxRegistry {
 
   public terminate(language: string) {
     const key = this.getLangKey(language);
-    if (this.workers[key]) {
-      this.workers[key].terminate();
+    const worker = this.workers[key];
+    if (worker) {
+      worker.terminate();
       delete this.workers[key];
       delete this.activeListeners[key];
     }

@@ -26,7 +26,7 @@ export function useWikilinkMenu(opts: {
 
   useEffect(() => {
     if (!wikilinkMenu.open) {
-      setWikilinkResults([]);
+      setWikilinkResults([]); // eslint-disable-line react-hooks/set-state-in-effect -- cleanup on menu close
       return;
     }
     if (wikilinkTimerRef.current) window.clearTimeout(wikilinkTimerRef.current);
@@ -44,7 +44,7 @@ export function useWikilinkMenu(opts: {
   }, [wikilinkMenu.open, wikilinkMenu.query]);
 
   useEffect(() => {
-    setWikilinkIndex(0);
+    setWikilinkIndex(0); // eslint-disable-line react-hooks/set-state-in-effect -- reset index when results change
   }, [wikilinkResults]);
 
   const handleWikilinkSelect = useCallback((docTitle: string, docId: string) => {

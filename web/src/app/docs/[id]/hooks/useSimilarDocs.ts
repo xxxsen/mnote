@@ -27,7 +27,7 @@ export function useSimilarDocs({ docId, title }: UseSimilarDocsOptions) {
       setSimilarLoading(true);
       try {
         const res = await apiFetch<{ items: SimilarDoc[] }>(`/ai/search?q=${encodeURIComponent(query)}&limit=5&exclude_id=${docId}`);
-        setSimilarDocs(res?.items || []);
+        setSimilarDocs(res.items);
       } catch {
         setSimilarDocs([]);
       } finally {

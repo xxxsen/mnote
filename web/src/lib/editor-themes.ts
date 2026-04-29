@@ -1,7 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { Extension } from "@codemirror/state";
+import type { Extension } from "@codemirror/state";
 
 // ---------------------------------------------------------------------------
 // Theme type definitions

@@ -11,7 +11,7 @@ interface UseDocsDataDeps {
   showShared: boolean;
   mergeTags: (items: Tag[]) => void;
   fetchTagsByIDs: (ids: string[]) => Promise<void>;
-  tagIndexRef: { current: Record<string, Tag> };
+  tagIndexRef: { current: Partial<Record<string, Tag>> };
 }
 
 export function useDocsData(deps: UseDocsDataDeps) {
@@ -35,7 +35,7 @@ export function useDocsData(deps: UseDocsDataDeps) {
     setAiSearching(true);
     try {
       const res = await apiFetch<{ items: DocumentWithTags[] }>(`/ai/search?q=${encodeURIComponent(query)}`);
-      setAiSearchDocs(res?.items || []);
+      setAiSearchDocs(res.items);
     } catch (e) {
       console.error(e);
       setAiSearchDocs([]);
@@ -53,18 +53,18 @@ export function useDocsData(deps: UseDocsDataDeps) {
         const params = new URLSearchParams();
         if (search) params.set("q", search);
         const res = await apiFetch<{ items: SharedItem[] }>(`/shares?${params.toString()}`);
-        const items = res?.items || [];
+        const items = res.items;
         const tagIDs = new Set<string>();
-        setDocs(items.map((item) => ({
+        setDocs(items.map((item): DocumentWithTags => ({
           id: item.id, user_id: "", title: item.title,
           content: item.summary || "", summary: item.summary || "",
           state: 1, pinned: 0, starred: 0,
           ctime: item.mtime, mtime: item.mtime,
           tags: [], tag_ids: item.tag_ids || [],
           share_token: item.token,
-        } as DocumentWithTags)));
+        })));
         items.forEach((item) => {
-          (item.tag_ids || []).forEach((id) => tagIDs.add(id));
+          (item.tag_ids ?? []).forEach((id) => tagIDs.add(id));
         });
         if (tagIDs.size > 0) await fetchTagsByIDs(Array.from(tagIDs));
         setHasMore(false);
@@ -79,15 +79,15 @@ export function useDocsData(deps: UseDocsDataDeps) {
       query.set("limit", "20");
       query.set("offset", String(offset));
       const res = await apiFetch<DocumentWithTags[]>(`/documents?${query.toString()}`);
-      const enrichedDocs = (res || []).map((doc) => ({
+      const enrichedDocs = res.map((doc) => ({
         ...doc, tag_ids: doc.tag_ids || [], tags: doc.tags || [],
       }));
       const missingTagIDs = new Set<string>();
       const providedTagIDs = new Set<string>();
       const tagsFromDocs: Tag[] = [];
       enrichedDocs.forEach((doc) => {
-        (doc.tags || []).forEach((tag) => { providedTagIDs.add(tag.id); tagsFromDocs.push(tag); });
-        (doc.tag_ids || []).forEach((id) => {
+        doc.tags.forEach((tag) => { providedTagIDs.add(tag.id); tagsFromDocs.push(tag); });
+        doc.tag_ids.forEach((id) => {
           if (!providedTagIDs.has(id) && !tagIndexRef.current[id]) missingTagIDs.add(id);
         });
       });
@@ -101,8 +101,8 @@ export function useDocsData(deps: UseDocsDataDeps) {
         }
         return sortDocs(enrichedDocs);
       });
-      setHasMore((res || []).length === 20);
-      setNextOffset(offset + (res || []).length);
+      setHasMore(res.length === 20);
+      setNextOffset(offset + res.length);
     } catch (e) {
       console.error(e);
     } finally {
@@ -115,9 +115,9 @@ export function useDocsData(deps: UseDocsDataDeps) {
   const fetchSummary = useCallback(async () => {
     try {
       const res = await apiFetch<{ recent: DocumentWithTags[]; tag_counts: Record<string, number>; total: number; starred_total: number }>("/documents/summary?limit=5");
-      setRecentDocs(sortRecentDocs((res?.recent || []) as DocumentWithTags[]));
-      setTotalDocs(res?.total || 0);
-      setStarredTotal(res?.starred_total || 0);
+      setRecentDocs(sortRecentDocs(res.recent));
+      setTotalDocs(res.total);
+      setStarredTotal(res.starred_total);
     } catch (e) {
       console.error(e);
     }
@@ -126,7 +126,7 @@ export function useDocsData(deps: UseDocsDataDeps) {
   const fetchSharedSummary = useCallback(async () => {
     try {
       const shared = await apiFetch<{ items: SharedItem[] }>("/shares");
-      setSharedTotal(shared?.items?.length || 0);
+      setSharedTotal(shared.items.length);
     } catch (e) {
       console.error(e);
     }
@@ -156,7 +156,7 @@ export function useDocsData(deps: UseDocsDataDeps) {
       await apiFetch(`/documents/${doc.id}/star`, {
         method: "PUT", body: JSON.stringify({ starred: newStarred === 1 }),
       });
-      void fetchSummary(); // eslint-disable-line @typescript-eslint/no-floating-promises
+      void fetchSummary();
     } catch (err) {
       console.error("Failed to star document", err);
     }
@@ -166,8 +166,7 @@ export function useDocsData(deps: UseDocsDataDeps) {
     if (!loadMoreRef.current) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        const first = entries[0];
-        if (!first?.isIntersecting) return;
+        if (!entries[0].isIntersecting) return;
         if (loading || loadingMore || !hasMore) return;
         void fetchDocs(nextOffset, true);
       },

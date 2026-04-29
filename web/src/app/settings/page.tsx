@@ -1,12 +1,14 @@
 "use client";
 
+import type { SVGProps } from "react";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { apiFetch } from "@/lib/api";
-import { Github, Chrome, Link2, Unlink } from "lucide-react";
+import { GithubIcon, GoogleIcon } from "@/components/brand-icons";
+import { Link2, Unlink } from "lucide-react";
 
 type BindingItem = {
   provider: "github" | "google";
@@ -17,6 +19,64 @@ type ProviderStatus = {
   bound: boolean;
   email?: string;
 };
+
+type ProviderConfig = {
+  key: "github" | "google";
+  label: string;
+  icon: (props: SVGProps<SVGSVGElement>) => React.JSX.Element;
+};
+
+const PROVIDER_CONFIGS: ProviderConfig[] = [
+  { key: "github", label: "GitHub", icon: GithubIcon },
+  { key: "google", label: "Google", icon: GoogleIcon },
+];
+
+function getEnabledProviders(properties: Record<string, boolean> | null): ProviderConfig[] {
+  if (!properties) return [];
+  const enableMap: Record<string, string> = {
+    github: "enable_github_oauth",
+    google: "enable_google_oauth",
+  };
+  return PROVIDER_CONFIGS.filter((p) => properties[enableMap[p.key]]);
+}
+
+function PasswordSection({
+  currentPassword, setCurrentPassword, newPassword, setNewPassword, savingPassword, onUpdate,
+}: {
+  currentPassword: string; setCurrentPassword: (v: string) => void;
+  newPassword: string; setNewPassword: (v: string) => void;
+  savingPassword: boolean; onUpdate: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="text-sm font-semibold">Security</div>
+        <div className="text-xs text-muted-foreground">Keep your account protected.</div>
+      </div>
+      <div className="border border-border rounded-2xl bg-card p-5 shadow-sm space-y-4">
+        <div>
+          <div className="font-medium">Password</div>
+          <div className="text-xs text-muted-foreground mt-1">Leave current password blank if you signed up with OAuth.</div>
+        </div>
+        <div className="grid gap-3">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Current password</label>
+            <Input type="password" placeholder="Current password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">New password</label>
+            <Input type="password" placeholder="New password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <Button onClick={onUpdate} disabled={savingPassword} className="w-full">
+            {savingPassword ? "Saving..." : "Update Password"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function SettingsContent() {
   const { toast } = useToast();
@@ -42,7 +102,7 @@ function SettingsContent() {
         github: { bound: false },
         google: { bound: false },
       };
-      (res?.bindings || []).forEach((item) => {
+      res.bindings.forEach((item) => {
         next[item.provider] = { bound: true, email: item.email };
       });
       setBindings(next);
@@ -55,20 +115,20 @@ function SettingsContent() {
   }, [toast]);
 
   useEffect(() => {
-    fetchBindings();
+    void fetchBindings();
   }, [fetchBindings]);
 
   useEffect(() => {
     const loadProperties = async () => {
       try {
         const res = await apiFetch<{ properties: Record<string, boolean> }>("/properties", { requireAuth: false });
-        setProperties(res?.properties || {});
+        setProperties(res.properties);
       } catch (err) {
         console.error(err);
         setProperties({});
       }
     };
-    loadProperties();
+    void loadProperties();
   }, []);
 
   useEffect(() => {
@@ -77,7 +137,7 @@ function SettingsContent() {
     if (!status) return;
     if (status === "bound") {
       toast({ description: `${provider || "Provider"} bound successfully.` });
-      fetchBindings();
+      void fetchBindings();
       return;
     }
     if (status === "conflict") {
@@ -102,7 +162,7 @@ function SettingsContent() {
   const unbind = async (provider: "github" | "google") => {
     try {
       await apiFetch(`/auth/oauth/${provider}/bind`, { method: "DELETE" });
-      fetchBindings();
+      void fetchBindings();
     } catch (err) {
       console.error(err);
       toast({ description: err instanceof Error ? err : "Failed to unbind provider", variant: "error" });
@@ -130,22 +190,11 @@ function SettingsContent() {
       console.error(err);
       toast({ description: err instanceof Error ? err : "Failed to update password", variant: "error" });
     } finally {
-
       setSavingPassword(false);
     }
   };
 
-  const providers = [
-    { key: "github" as const, label: "GitHub", icon: Github },
-    { key: "google" as const, label: "Google", icon: Chrome },
-  ];
-
-  const enabledProviders = providers.filter((provider) => {
-    if (!properties) return false;
-    if (provider.key === "github") return properties.enable_github_oauth;
-    if (provider.key === "google") return properties.enable_google_oauth;
-    return false;
-  });
+  const enabledProviders = getEnabledProviders(properties);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-muted/40 via-background to-background text-foreground">
@@ -179,7 +228,7 @@ function SettingsContent() {
                 <div className="px-4 py-6 text-sm text-muted-foreground">Loading providers...</div>
               )}
               {enabledProviders.map(({ key, label, icon: Icon }) => {
-                const status = bindings[key] || { bound: false };
+                const status = bindings[key];
                 return (
                   <div key={key} className="flex items-center justify-between gap-4 px-4 py-4 border-b border-border/70 last:border-b-0">
                     <div className="flex items-center gap-3">
@@ -206,7 +255,7 @@ function SettingsContent() {
                       ) : status.bound ? (
                         <Button
                           variant="outline"
-                          onClick={() => unbind(key)}
+                          onClick={() => void unbind(key)}
                           className="h-9 w-9 p-0"
                           aria-label={`Unbind ${label}`}
                           title={`Unbind ${label}`}
@@ -215,7 +264,7 @@ function SettingsContent() {
                         </Button>
                       ) : (
                         <Button
-                          onClick={() => startBind(key)}
+                          onClick={() => void startBind(key)}
                           className="h-9 w-9 p-0"
                           aria-label={`Bind ${label}`}
                           title={`Bind ${label}`}
@@ -230,43 +279,11 @@ function SettingsContent() {
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div>
-              <div className="text-sm font-semibold">Security</div>
-              <div className="text-xs text-muted-foreground">Keep your account protected.</div>
-            </div>
-            <div className="border border-border rounded-2xl bg-card p-5 shadow-sm space-y-4">
-              <div>
-                <div className="font-medium">Password</div>
-                <div className="text-xs text-muted-foreground mt-1">Leave current password blank if you signed up with OAuth.</div>
-              </div>
-              <div className="grid gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Current password</label>
-                  <Input
-                    type="password"
-                    placeholder="Current password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">New password</label>
-                  <Input
-                    type="password"
-                    placeholder="New password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div>
-                <Button onClick={updatePassword} disabled={savingPassword} className="w-full">
-                  {savingPassword ? "Saving..." : "Update Password"}
-                </Button>
-              </div>
-            </div>
-          </div>
+          <PasswordSection
+            currentPassword={currentPassword} setCurrentPassword={setCurrentPassword}
+            newPassword={newPassword} setNewPassword={setNewPassword}
+            savingPassword={savingPassword} onUpdate={updatePassword}
+          />
         </div>
       </div>
     </div>

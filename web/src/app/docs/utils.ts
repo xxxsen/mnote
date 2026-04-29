@@ -46,21 +46,6 @@ export function formatRelativeTime(timestamp?: number): string {
 }
 
 export async function copyToClipboard(text: string): Promise<boolean> {
-  const fallbackCopy = () => {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.setAttribute("readonly", "");
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    const ok = document.execCommand("copy");
-    document.body.removeChild(textarea);
-    return ok;
-  };
-  if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-    return navigator.clipboard.writeText(text).then(() => true).catch(() => fallbackCopy());
-  }
-  return fallbackCopy();
+  if (typeof navigator === "undefined") return false;
+  return navigator.clipboard.writeText(text).then(() => true).catch(() => false);
 }

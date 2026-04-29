@@ -17,7 +17,7 @@ export function usePreviewDoc({ onError }: UsePreviewDocOptions = {}) {
       setPreviewLoading(true);
       try {
         const res = await apiFetch<{ document: Document }>(`/documents/${docID}`);
-        setPreviewDoc(res?.document || null);
+        setPreviewDoc(res.document);
       } catch (err) {
         onError?.(err);
       } finally {

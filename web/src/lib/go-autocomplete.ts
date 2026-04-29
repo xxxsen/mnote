@@ -14,7 +14,7 @@ const GO_BUILTINS = [
   "panic", "print", "println", "real", "recover", "clear", "max", "min",
 ];
 
-const GO_PACKAGE_MEMBERS: Record<string, { importPath: string; members: string[] }> = {
+const GO_PACKAGE_MEMBERS: Partial<Record<string, { importPath: string; members: string[] }>> = {
   fmt: { importPath: "fmt", members: ["Print", "Printf", "Println", "Sprint", "Sprintf", "Sprintln", "Errorf"] },
   strings: {
     importPath: "strings",
@@ -138,6 +138,27 @@ function completeGoMember(context: CompletionContext): CompletionResult | null {
   };
 }
 
+function buildGoCompletions(prefix: string, fenceStartLine: number, doc: Text, pos: number): Completion[] {
+  const options: Completion[] = [];
+
+  const addOption = (option: Completion) => {
+    if (prefix && !option.label.startsWith(prefix)) return;
+    options.push(option);
+  };
+
+  for (const key of GO_KEYWORDS) addOption({ label: key, type: "keyword", boost: 40 });
+  for (const builtin of GO_BUILTINS) addOption({ label: builtin, type: "function", boost: 35 });
+  for (const [pkg, config] of Object.entries(GO_PACKAGE_MEMBERS)) {
+    if (config) addOption({ label: pkg, type: "module", detail: `import: ${config.importPath}`, boost: 30 });
+  }
+
+  const identifiers = collectGoIdentifiers(doc, fenceStartLine, pos);
+  for (const ident of identifiers) addOption({ label: ident, type: "variable", boost: 25 });
+
+  for (const snippet of GO_SNIPPETS) addOption(snippet);
+  return options;
+}
+
 function goCompletionSource(context: CompletionContext): CompletionResult | null {
   const fenceCtx = detectGoFence(context.state.doc, context.pos);
   if (!fenceCtx.inGoFence) return null;
@@ -150,24 +171,7 @@ function goCompletionSource(context: CompletionContext): CompletionResult | null
   const prefix = word?.text || "";
   const from = word?.from ?? context.pos;
 
-  const options: Completion[] = [];
-
-  const addOption = (option: Completion) => {
-    if (prefix && !option.label.startsWith(prefix)) return;
-    options.push(option);
-  };
-
-  for (const key of GO_KEYWORDS) addOption({ label: key, type: "keyword", boost: 40 });
-  for (const builtin of GO_BUILTINS) addOption({ label: builtin, type: "function", boost: 35 });
-  for (const [pkg, config] of Object.entries(GO_PACKAGE_MEMBERS)) {
-    addOption({ label: pkg, type: "module", detail: `import: ${config.importPath}`, boost: 30 });
-  }
-
-  const identifiers = collectGoIdentifiers(context.state.doc, fenceCtx.fenceStartLine, context.pos);
-  for (const ident of identifiers) addOption({ label: ident, type: "variable", boost: 25 });
-
-  for (const snippet of GO_SNIPPETS) addOption(snippet);
-
+  const options = buildGoCompletions(prefix, fenceCtx.fenceStartLine, context.state.doc, context.pos);
   if (options.length === 0) return null;
   return {
     from,

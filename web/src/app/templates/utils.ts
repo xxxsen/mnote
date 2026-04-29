@@ -4,7 +4,7 @@ export const MAX_TAGS = 7;
 export const TAG_NAME_REGEX = /^[\p{Script=Han}A-Za-z0-9]{1,16}$/u;
 
 export const normalizeTemplatePlaceholders = (content: string) =>
-  content.replace(VARIABLE_REGEX, (_raw, key: string) => `{{${String(key || "").trim().toUpperCase()}}}`);
+  content.replace(VARIABLE_REGEX, (_raw, key: string) => `{{${(key || "").trim().toUpperCase()}}}`);
 
 export const formatTemplateMtime = (mtime: number) => {
   if (!mtime) return "Unknown";

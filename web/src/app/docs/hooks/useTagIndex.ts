@@ -3,8 +3,8 @@ import type { Tag } from "@/types";
 import { apiFetch } from "@/lib/api";
 
 export function useTagIndex() {
-  const [tagIndex, setTagIndex] = useState<Record<string, Tag>>({});
-  const tagIndexRef = useRef<Record<string, Tag>>({});
+  const [tagIndex, setTagIndex] = useState<Partial<Record<string, Tag>>>({});
+  const tagIndexRef = useRef<Partial<Record<string, Tag>>>({});
   const tagFetchInFlightRef = useRef(false);
 
   useEffect(() => {
@@ -30,7 +30,7 @@ export function useTagIndex() {
           method: "POST",
           body: JSON.stringify({ ids }),
         });
-        mergeTags(res || []);
+        mergeTags(res);
       } catch (e) {
         console.error(e);
       }
@@ -49,7 +49,7 @@ export function useTagIndex() {
           params.set("q", query);
         }
         const res = await apiFetch<Tag[]>(`/tags?${params.toString()}`);
-        mergeTags(res || []);
+        mergeTags(res);
       } catch (e) {
         console.error(e);
       } finally {

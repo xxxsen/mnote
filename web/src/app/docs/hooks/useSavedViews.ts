@@ -14,7 +14,7 @@ export function useSavedViews({ toast }: UseSavedViewsDeps) {
   const fetchSavedViews = useCallback(async () => {
     try {
       const res = await apiFetch<SavedViewDTO[]>("/saved-views");
-      setSavedViews((res || []).map((item) => ({
+      setSavedViews(res.map((item) => ({
         id: item.id,
         name: item.name,
         search: item.search || "",

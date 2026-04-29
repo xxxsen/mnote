@@ -5,10 +5,10 @@ import { Copy, Pin, Search, Star } from "lucide-react";
 
 function AiSearchCard({ doc, tagIndex, onNavigate }: {
   doc: DocumentWithTags;
-  tagIndex: Record<string, Tag>;
+  tagIndex: Partial<Record<string, Tag>>;
   onNavigate: (path: string) => void;
 }) {
-  const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter((t): t is Tag => Boolean(t)); // eslint-disable-line @typescript-eslint/no-unnecessary-condition
+  const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter((t): t is Tag => Boolean(t));
   return (
     <div
       onClick={() => onNavigate(`/docs/${doc.id}`)}
@@ -35,14 +35,14 @@ function AiSearchCard({ doc, tagIndex, onNavigate }: {
 function DocumentCard({ doc, index, tagIndex, showShared, onNavigate, onPinToggle, onStarToggle, onCopyShare }: {
   doc: DocumentWithTags;
   index: number;
-  tagIndex: Record<string, Tag>;
+  tagIndex: Partial<Record<string, Tag>>;
   showShared: boolean;
   onNavigate: (path: string) => void;
   onPinToggle: (e: React.MouseEvent, doc: DocumentWithTags) => void;
   onStarToggle: (e: React.MouseEvent, doc: DocumentWithTags) => void;
   onCopyShare: (token: string) => void;
 }) {
-  const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter((t): t is Tag => Boolean(t)); // eslint-disable-line @typescript-eslint/no-unnecessary-condition
+  const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter((t): t is Tag => Boolean(t));
   return (
     <div
       key={doc.id || `${doc.title}-${doc.mtime}-${index}`}
@@ -106,7 +106,7 @@ export interface DocumentGridProps {
   loadingMore: boolean;
   hasMore: boolean;
   showShared: boolean;
-  tagIndex: Record<string, Tag>;
+  tagIndex: Partial<Record<string, Tag>>;
   loadMoreRef: React.RefObject<HTMLDivElement | null>;
   onNavigate: (path: string) => void;
   onPinToggle: (e: React.MouseEvent, doc: DocumentWithTags) => void;

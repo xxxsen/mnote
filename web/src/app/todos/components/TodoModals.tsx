@@ -1,6 +1,6 @@
 "use client";
 
-import { Todo } from "@/types";
+import type { Todo } from "@/types";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Circle, X } from "lucide-react";
 
@@ -42,7 +42,7 @@ export function DayViewModal({ dayViewDate, dayViewTodos, onClose, onToggleDone,
                 className={`group/todo rounded-lg border px-3 py-2 flex items-start gap-2 ${todo.done === 1 ? "bg-muted/40 border-transparent opacity-80" : "bg-background border-border"}`}
               >
                 <button
-                  onClick={() => void onToggleDone(todo)}
+                  onClick={() => onToggleDone(todo)}
                   className="mt-0.5 shrink-0 text-muted-foreground hover:text-indigo-500 transition-colors"
                 >
                   {todo.done === 1 ? (

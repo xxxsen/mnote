@@ -53,11 +53,17 @@ export default function DocsPage() {
   const ie = useImportExport({ fetchSummary, fetchTags, fetchSidebarTags: sidebar.fetchSidebarTags, tagSearch: sidebar.tagSearch, toast });
   const { savedViews, fetchSavedViews, handleSaveCurrentView, removeSavedView } = useSavedViews({ toast });
 
-  useEffect(() => { setActiveTagIndex(0); }, [search, showTagSelector]); // eslint-disable-line react-hooks/set-state-in-effect
+  useEffect(() => {
+    setActiveTagIndex(0); // eslint-disable-line react-hooks/set-state-in-effect -- reset index on search change
+  }, [search, showTagSelector]);
 
-  useEffect(() => { // eslint-disable-line react-hooks/set-state-in-effect
+  useEffect(() => {
     const storedEmail = getAuthEmail();
-    if (storedEmail) { setUserEmail(storedEmail); setAvatarUrl(generatePixelAvatar(storedEmail)); return; }
+    if (storedEmail) {
+      setUserEmail(storedEmail); // eslint-disable-line react-hooks/set-state-in-effect -- initialize from localStorage on mount
+      setAvatarUrl(generatePixelAvatar(storedEmail));
+      return;
+    }
     setAvatarUrl(generatePixelAvatar("anon"));
   }, []);
 
@@ -75,8 +81,12 @@ export default function DocsPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => { if (!showUserMenu) setShowImportMenu(false); }, [showUserMenu]); // eslint-disable-line react-hooks/set-state-in-effect
-  useEffect(() => { if (showUserMenu) setShowCreateMenu(false); }, [showUserMenu]); // eslint-disable-line react-hooks/set-state-in-effect
+  useEffect(() => {
+    if (!showUserMenu) setShowImportMenu(false); // eslint-disable-line react-hooks/set-state-in-effect -- close submenu when parent closes
+  }, [showUserMenu]);
+  useEffect(() => {
+    if (showUserMenu) setShowCreateMenu(false); // eslint-disable-line react-hooks/set-state-in-effect -- close other menu when user menu opens
+  }, [showUserMenu]);
 
   const fetchTagSuggestions = useCallback(async (query: string) => {
     if (!query) { setTagSuggestions([]); return; }
@@ -103,7 +113,7 @@ export default function DocsPage() {
   useEffect(() => { if (!showTagSelector) setTagSuggestions([]); }, [showTagSelector]); // eslint-disable-line react-hooks/set-state-in-effect
 
   useEffect(() => {
-    if (!selectedTag || tagIndex[selectedTag]) return; // eslint-disable-line @typescript-eslint/no-unnecessary-condition
+    if (!selectedTag || tagIndex[selectedTag]) return;
     void fetchTagsByIDs([selectedTag]);
   }, [fetchTagsByIDs, selectedTag, tagIndex]);
 

@@ -38,7 +38,7 @@ export function VariableModal({ variableValues, setVariableValues, previewConten
               <Button variant="outline" onClick={onCancel}>
                 Cancel
               </Button>
-              <Button onClick={() => void onApply(variableValues)} disabled={creatingDoc}>
+              <Button onClick={() => onApply(variableValues)} disabled={creatingDoc}>
                 Apply
               </Button>
             </div>

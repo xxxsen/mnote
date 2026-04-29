@@ -1,4 +1,5 @@
 import type React from "react";
+import type { ShareComment } from "@/types";
 
 export interface SharedContentProps {
   previewRef: React.RefObject<HTMLDivElement | null>;
@@ -7,7 +8,7 @@ export interface SharedContentProps {
 }
 
 export interface CommentItemProps {
-  comment: import("@/types").ShareComment;
+  comment: ShareComment;
   token: string;
   accessPassword: string;
   canAnnotate: boolean;

@@ -53,34 +53,19 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
-  const { requireAuth = true, headers = {}, ...rest } = options;
+function redirectToLogin(): never {
+  removeAuthToken();
+  removeAuthEmail();
+  window.location.href = "/login";
+  throw new ApiError("Unauthorized", 401);
+}
 
-  const authHeaders: Record<string, string> = {};
-  const token = getAuthToken();
-  if (token) {
-    authHeaders["Authorization"] = `Bearer ${token}`;
-  }
+function extractErrorMessage(payload: unknown): string {
+  const p = payload as { msg?: string; message?: string };
+  return p.msg || p.message || "API Error";
+}
 
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-      ...headers,
-    },
-    ...rest,
-  });
-
-  if (res.status === 401 && requireAuth) {
-    removeAuthToken();
-    removeAuthEmail();
-    window.location.href = "/login";
-    throw new ApiError("Unauthorized", 401);
-  }
-
-  if (res.status === 204) return {} as T;
-
-  const payload = await res.json().catch(() => ({}));
+function parsePayload(payload: unknown, res: Response, requireAuth: boolean): unknown {
   if (!payload || typeof payload !== "object") {
     throw new ApiError(`API Error: ${res.status}`, res.status);
   }
@@ -89,19 +74,42 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
     if (!res.ok) {
       throw new ApiError(`API Error: ${res.status}`, res.status);
     }
-    return payload as T;
+    return payload;
   }
   if (code !== 0) {
     if (code === ERR_UNAUTHORIZED && requireAuth) {
-      removeAuthToken();
-      removeAuthEmail();
-      window.location.href = "/login";
-      throw new ApiError("Unauthorized", code);
+      redirectToLogin();
     }
-    const msg = (payload as { msg?: string; message?: string }).msg || (payload as { message?: string }).message || "API Error";
-    throw new ApiError(msg, code);
+    throw new ApiError(extractErrorMessage(payload), code);
   }
-  return (payload as { data?: T }).data as T;
+  return (payload as { data?: unknown }).data;
+}
+
+export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
+  const { requireAuth = true, headers: headerInit = {}, ...rest } = options;
+
+  const mergedHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const token = getAuthToken();
+  if (token) {
+    mergedHeaders["Authorization"] = `Bearer ${token}`;
+  }
+  Object.assign(mergedHeaders, headerInit as Record<string, string>);
+
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    headers: mergedHeaders,
+    ...rest,
+  });
+
+  if (res.status === 401 && requireAuth) {
+    redirectToLogin();
+  }
+
+  if (res.status === 204) return {} as T;
+
+  const payload = await res.json().catch(() => ({}));
+  return parsePayload(payload, res, requireAuth) as T;
 }
 
 export interface UploadResult {
@@ -122,28 +130,21 @@ export async function uploadFile(file: File): Promise<UploadResult> {
   });
 
   if (res.status === 401) {
-    removeAuthToken();
-    removeAuthEmail();
-    window.location.href = "/login";
-    throw new ApiError("Unauthorized", 401);
+    redirectToLogin();
   }
 
-  const data = await res.json();
+  const data: unknown = await res.json();
   if (!data || typeof data !== "object") {
     throw new ApiError(`API Error: ${res.status}`, res.status);
   }
   const code = (data as { code?: number }).code;
   if (typeof code === "number" && code !== 0) {
     if (code === ERR_UNAUTHORIZED) {
-      removeAuthToken();
-      removeAuthEmail();
-      window.location.href = "/login";
-      throw new ApiError("Unauthorized", code);
+      redirectToLogin();
     }
-    const msg = (data as { msg?: string; message?: string }).msg || (data as { message?: string }).message || "API Error";
-    throw new ApiError(msg, code);
+    throw new ApiError(extractErrorMessage(data), code);
   }
-  if (data && typeof data === "object" && "data" in data) {
+  if ("data" in data) {
     return (data as { data?: UploadResult }).data as UploadResult;
   }
   return data as UploadResult;
