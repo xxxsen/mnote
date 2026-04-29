@@ -403,4 +403,53 @@ describe("useTemplates", () => {
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
   });
+
+  it("createTemplate error shows toast", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
+      "/templates/t1": fullTemplate("t1", "T1"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    mockApiFetch.mockRejectedValueOnce(new Error("create fail"));
+    await act(async () => { void result.current.createTemplate(); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("deleteTemplate error shows toast", async () => {
+    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
+      "/templates/t1": fullTemplate("t1", "T1"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    mockApiFetch.mockRejectedValueOnce(new Error("delete fail"));
+    await act(async () => { void result.current.deleteTemplate("t1", "T1"); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+    vi.unstubAllGlobals();
+  });
+
+  it("prepareUseTemplate opens variable modal", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
+      "/templates/t1": { ...fullTemplate("t1", "T1"), content: "# {{VAR1}}\nHello {{SYS:DATE}}" },
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await waitFor(() => { expect(result.current.selected).toBeTruthy(); });
+    await act(async () => { result.current.prepareUseTemplate(); });
+    await waitFor(() => { expect(result.current.showVariableModal).toBe(true); });
+  });
+
+  it("prepareUseTemplate no-op when no template selected", async () => {
+    setupApiRouter({ "/templates/meta": { items: [], total: 0 }, "/tags/ids": [] });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.prepareUseTemplate(); });
+    expect(result.current.showVariableModal).toBe(false);
+  });
 });

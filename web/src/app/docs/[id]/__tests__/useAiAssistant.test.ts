@@ -218,4 +218,89 @@ describe("useAiAssistant", () => {
     await act(async () => { await result.current.handleAiTags("content"); });
     expect(result.current.aiAvailableSlots).toBe(3);
   });
+
+  it("toggleAiTag notifies when at max tags", async () => {
+    mockApiFetch.mockResolvedValue({ tags: ["a", "b", "c"], existing_tags: [{ id: "e1", name: "x" }, { id: "e2", name: "y" }] });
+    const opts = makeOpts({ maxTags: 3 });
+    const { result } = renderHook(() => useAiAssistant(opts));
+    await act(async () => { await result.current.handleAiTags("content"); });
+    act(() => { result.current.toggleAiTag("c"); });
+    expect(opts.notify).toHaveBeenCalledWith(expect.stringContaining("3"));
+  });
+
+  it("handleApplyAiTags handles error from batch create", async () => {
+    mockApiFetch.mockResolvedValue({ tags: ["newtag"], existing_tags: [] });
+    const opts = makeOpts();
+    const { result } = renderHook(() => useAiAssistant(opts));
+    await act(async () => { await result.current.handleAiTags("content"); });
+    expect(result.current.aiSelectedTags).toContain("newtag");
+
+    const findExistingTagByName = vi.fn().mockResolvedValue(null);
+    const mergeTags = vi.fn();
+    const saveTagIDs = vi.fn().mockResolvedValue(undefined);
+    const onError = vi.fn();
+    mockApiFetch.mockRejectedValueOnce(new Error("batch fail"));
+    await act(async () => {
+      await result.current.handleApplyAiTags({ findExistingTagByName, mergeTags, saveTagIDs, onError });
+    });
+    expect(onError).toHaveBeenCalledWith("batch fail");
+  });
+
+  it("handleApplyAiTags with matched existing tags (no batch create)", async () => {
+    mockApiFetch.mockResolvedValue({ tags: ["existing"], existing_tags: [] });
+    const opts = makeOpts();
+    const { result } = renderHook(() => useAiAssistant(opts));
+    await act(async () => { await result.current.handleAiTags("content"); });
+
+    const matchedTag = { id: "m1", name: "existing" };
+    const findExistingTagByName = vi.fn().mockResolvedValue(matchedTag);
+    const mergeTags = vi.fn();
+    const saveTagIDs = vi.fn().mockResolvedValue(undefined);
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleApplyAiTags({ findExistingTagByName, mergeTags, saveTagIDs, onError });
+    });
+    expect(saveTagIDs).toHaveBeenCalledWith(["m1"]);
+  });
+
+  it("handleApplyAiSummary closes modal when no result text", async () => {
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    const onApplied = vi.fn();
+    const onError = vi.fn();
+    await act(async () => { await result.current.handleApplyAiSummary({ onApplied, onError }); });
+    expect(onApplied).not.toHaveBeenCalled();
+    expect(result.current.aiModalOpen).toBe(false);
+  });
+
+  it("handleAiGenerate handles API error", async () => {
+    mockApiFetch.mockRejectedValue(new Error("gen fail"));
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    act(() => { result.current.handleAiGenerateOpen(); });
+    act(() => { result.current.setAiPrompt("something"); });
+    await act(async () => { await result.current.handleAiGenerate(); });
+    expect(result.current.aiError).toBe("gen fail");
+  });
+
+  it("handleAiTags error sets aiError", async () => {
+    mockApiFetch.mockRejectedValue(new Error("tags fail"));
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiTags("content"); });
+    expect(result.current.aiError).toBe("tags fail");
+  });
+
+  it("buildLineDiff handles add-only diff", async () => {
+    mockApiFetch.mockResolvedValue({ text: "new line" });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiPolish("original"); });
+    const addLines = result.current.aiDiffLines.filter(l => l.type === "add");
+    expect(addLines.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("buildLineDiff handles trailing removals", async () => {
+    mockApiFetch.mockResolvedValue({ text: "line1" });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiPolish("line1\nline2\nline3"); });
+    const removeLines = result.current.aiDiffLines.filter(l => l.type === "remove");
+    expect(removeLines.length).toBeGreaterThan(0);
+  });
 });

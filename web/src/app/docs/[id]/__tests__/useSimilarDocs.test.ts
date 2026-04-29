@@ -101,4 +101,29 @@ describe("useSimilarDocs", () => {
     await act(async () => { result.current.handleToggleSimilar(); });
     expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("exclude_id=d1"));
   });
+
+  it("fetchSimilar returns empty for short query", async () => {
+    mockApiFetch.mockResolvedValue({ items: [{ id: "s1", title: "S1", score: 0.9 }] });
+    const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "A" }));
+    await act(async () => { result.current.handleToggleSimilar(); });
+    expect(result.current.similarDocs).toEqual([]);
+    expect(mockApiFetch).not.toHaveBeenCalled();
+  });
+
+  it("auto-fetches when expanded and title changes", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockApiFetch.mockResolvedValue({ items: [{ id: "s1", title: "S1", score: 0.8 }] });
+    const { result, rerender } = renderHook(
+      ({ title }) => useSimilarDocs({ docId: "d1", title }),
+      { initialProps: { title: "Test Doc" } }
+    );
+    await act(async () => { result.current.handleToggleSimilar(); });
+    await waitFor(() => { expect(result.current.similarDocs).toHaveLength(1); });
+    mockApiFetch.mockClear();
+    mockApiFetch.mockResolvedValue({ items: [{ id: "s2", title: "S2", score: 0.7 }] });
+    rerender({ title: "Updated Title" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+    await waitFor(() => { expect(mockApiFetch).toHaveBeenCalled(); });
+    vi.useRealTimers();
+  });
 });

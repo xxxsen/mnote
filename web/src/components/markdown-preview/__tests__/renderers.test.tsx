@@ -6,7 +6,8 @@ vi.mock("@/components/code-sandbox", () => ({
   CodeSandbox: ({ code }: { code: string }) => <pre data-testid="sandbox">{code}</pre>,
 }));
 vi.mock("../code-block", () => ({
-  default: ({ children }: { children: string }) => <code data-testid="code-block">{children}</code>,
+  default: ({ children, fileName, language }: { children: string; fileName?: string; language?: string }) =>
+    <code data-testid="code-block" data-filename={fileName || ""} data-language={language || ""}>{children}</code>,
 }));
 vi.mock("../mermaid-block", () => ({
   default: ({ code }: { code: string }) => <div data-testid="mermaid">{code}</div>,
@@ -224,5 +225,27 @@ describe("buildMarkdownComponents", () => {
     const Img = comps.img as React.FC<{ src?: string; alt?: string }>;
     const { container } = render(<Img src="https://example.com/uploads/photo.png" alt="A photo" />);
     expect(container.textContent).toContain("photo.png");
+  });
+
+  it("code block with numeric prefix parses line range", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Code = comps.code as React.FC<{ className?: string; children: React.ReactNode }>;
+    const { container } = render(<Code className="language-1:5:src/main.go">func main()</Code>);
+    const block = container.querySelector("[data-testid='code-block']");
+    expect(block?.getAttribute("data-filename")).toContain("main.go");
+  });
+
+  it("img handles invalid URL gracefully", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const Img = comps.img as React.FC<{ src?: string; alt?: string }>;
+    const { container } = render(<Img src="" alt="empty" />);
+    expect(container.querySelector("img")).toBeTruthy();
+  });
+
+  it("a renderer handles /docs/ link", () => {
+    const comps = buildMarkdownComponents(noop, noop);
+    const A = comps.a as React.FC<{ node?: Record<string, unknown>; href?: string; children: React.ReactNode }>;
+    const { container } = render(<A href="/docs/doc1">My Doc</A>);
+    expect(container.querySelector("[data-testid='wikilink']")).toBeTruthy();
   });
 });

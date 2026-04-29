@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   createSlugger, getHastText, convertWikilinks, extractHeadings,
-  buildTocMarkdown, injectToc,
+  buildTocMarkdown, injectToc, toSafeInlineStyle, copyToClipboard,
 } from "../helpers";
 
 describe("createSlugger", () => {
@@ -168,5 +168,59 @@ describe("injectToc", () => {
     const content = "```\n[toc]\n```";
     const result = injectToc(content, "toc-content");
     expect(result).not.toContain("```toc");
+  });
+});
+
+describe("toSafeInlineStyle", () => {
+  it("returns empty for falsy value", () => {
+    expect(toSafeInlineStyle(null)).toEqual({});
+    expect(toSafeInlineStyle(undefined)).toEqual({});
+    expect(toSafeInlineStyle("")).toEqual({});
+  });
+
+  it("parses style string", () => {
+    const result = toSafeInlineStyle("color: red; font-size: 14px");
+    expect(result).toEqual({ color: "red", fontSize: "14px" });
+  });
+
+  it("handles object style", () => {
+    const result = toSafeInlineStyle({ color: "blue", "font-size": "16px" });
+    expect(result).toEqual({ color: "blue", fontSize: "16px" });
+  });
+
+  it("returns empty for non-string non-object", () => {
+    expect(toSafeInlineStyle(42)).toEqual({});
+    expect(toSafeInlineStyle(true)).toEqual({});
+  });
+
+  it("ignores empty declarations", () => {
+    expect(toSafeInlineStyle(";;")).toEqual({});
+  });
+});
+
+describe("copyToClipboard", () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it("uses clipboard API when available", async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    const result = await copyToClipboard("test");
+    expect(result).toBe(true);
+  });
+
+  it("falls back to execCommand when clipboard fails", async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) } });
+    const textarea = { value: "", setAttribute: vi.fn(), style: {} as CSSStyleDeclaration, select: vi.fn() };
+    const origCreate = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      if (tag === "textarea") return textarea as unknown as HTMLTextAreaElement;
+      return origCreate(tag);
+    });
+    vi.spyOn(document.body, "appendChild").mockImplementation(n => n);
+    vi.spyOn(document.body, "removeChild").mockImplementation(n => n);
+    (document as unknown as Record<string, unknown>).execCommand = vi.fn().mockReturnValue(true);
+    const result = await copyToClipboard("test");
+    expect(result).toBe(true);
+    expect(textarea.select).toHaveBeenCalled();
+    delete (document as unknown as Record<string, unknown>).execCommand;
   });
 });

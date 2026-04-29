@@ -54,4 +54,47 @@ describe("useDocumentActions", () => {
     rerender();
     expect(result.current).toBe(first);
   });
+
+  it("deleteDocument calls service", async () => {
+    mockService.deleteDocument.mockResolvedValue(undefined as never);
+    const { result } = renderHook(() => useDocumentActions("d1"));
+    await result.current.deleteDocument();
+    expect(mockService.deleteDocument).toHaveBeenCalledWith("d1");
+  });
+
+  it("listVersions calls service", async () => {
+    mockService.listVersions.mockResolvedValue([] as never);
+    const { result } = renderHook(() => useDocumentActions("d1"));
+    await result.current.listVersions();
+    expect(mockService.listVersions).toHaveBeenCalledWith("d1");
+  });
+
+  it("createShare calls service", async () => {
+    mockService.createShare.mockResolvedValue({ token: "abc" } as never);
+    const { result } = renderHook(() => useDocumentActions("d1"));
+    await result.current.createShare();
+    expect(mockService.createShare).toHaveBeenCalledWith("d1");
+  });
+
+  it("getShare calls service", async () => {
+    mockService.getShare.mockResolvedValue(null as never);
+    const { result } = renderHook(() => useDocumentActions("d1"));
+    await result.current.getShare();
+    expect(mockService.getShare).toHaveBeenCalledWith("d1");
+  });
+
+  it("updateShareConfig calls service with payload", async () => {
+    mockService.updateShareConfig.mockResolvedValue(undefined as never);
+    const { result } = renderHook(() => useDocumentActions("d1"));
+    const payload = { expires_at: 0, permission: "view" as const, allow_download: true };
+    await result.current.updateShareConfig(payload);
+    expect(mockService.updateShareConfig).toHaveBeenCalledWith("d1", payload);
+  });
+
+  it("revokeShare calls service", async () => {
+    mockService.revokeShare.mockResolvedValue(undefined as never);
+    const { result } = renderHook(() => useDocumentActions("d1"));
+    await result.current.revokeShare();
+    expect(mockService.revokeShare).toHaveBeenCalledWith("d1");
+  });
 });

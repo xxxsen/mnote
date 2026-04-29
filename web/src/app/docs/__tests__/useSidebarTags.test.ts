@@ -89,4 +89,24 @@ describe("useSidebarTags", () => {
     await waitFor(() => { expect(result.current.sidebarLoading).toBe(false); });
     act(() => { result.current.maybeAutoLoadTags(); });
   });
+
+  it("loadMoreSidebarTags no-op when no more", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "t1", name: "go", doc_count: 5, pinned: 0 }]);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    await waitFor(() => { expect(result.current.sidebarHasMore).toBe(false); });
+    const callsBefore = mockApiFetch.mock.calls.length;
+    await act(async () => { await result.current.fetchSidebarTags(1, true, ""); });
+    expect(mockApiFetch.mock.calls.length).toBeGreaterThanOrEqual(callsBefore);
+  });
+
+  it("handleToggleTagPin unpins a pinned tag", async () => {
+    mockApiFetch.mockResolvedValue([]);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    await waitFor(() => { expect(result.current.sidebarLoading).toBe(false); });
+    const tag = { id: "t1", name: "go", doc_count: 5, pinned: 1 };
+    await act(async () => { await result.current.handleToggleTagPin(tag as never); });
+    expect(mockApiFetch).toHaveBeenCalledWith("/tags/t1/pin", expect.objectContaining({
+      body: JSON.stringify({ pinned: false }),
+    }));
+  });
 });

@@ -120,4 +120,43 @@ describe("useScrollSync", () => {
     act(() => { result.current.handleEditorScroll(); });
     expect(preview.scrollTop).toBe(0);
   });
+
+  it("handleEditorScroll clears existing timer on consecutive calls", () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const scrollDOM = makeScrollDOM(200, 1000, 400);
+    const editorViewRef = { current: { scrollDOM } as never };
+    const { result } = renderHook(() => useScrollSync({ loading: false, editorViewRef }));
+
+    const preview = makePreviewDiv(0, 2000, 400);
+    Object.defineProperty(result.current.previewRef, "current", { value: preview, writable: true });
+
+    act(() => { result.current.handleEditorScroll(); });
+    expect(result.current.scrollingSource.current).toBe("editor");
+    scrollDOM.scrollTop = 300;
+    act(() => { result.current.handleEditorScroll(); });
+    expect(result.current.scrollingSource.current).toBe("editor");
+    vi.advanceTimersByTime(150);
+    expect(result.current.scrollingSource.current).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("handlePreviewScroll clears existing timer and resets forcePreviewSyncRef", () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const scrollDOM = makeScrollDOM(0, 2000, 400);
+    const editorViewRef = { current: { scrollDOM } as never };
+    const { result } = renderHook(() => useScrollSync({ loading: false, editorViewRef }));
+
+    const preview = makePreviewDiv(300, 1000, 400);
+    Object.defineProperty(result.current.previewRef, "current", { value: preview, writable: true });
+    result.current.forcePreviewSyncRef.current = true;
+
+    act(() => { result.current.handlePreviewScroll(); });
+    expect(result.current.scrollingSource.current).toBe("preview");
+    preview.scrollTop = 400;
+    act(() => { result.current.handlePreviewScroll(); });
+    vi.advanceTimersByTime(150);
+    expect(result.current.scrollingSource.current).toBeNull();
+    expect(result.current.forcePreviewSyncRef.current).toBe(false);
+    vi.useRealTimers();
+  });
 });

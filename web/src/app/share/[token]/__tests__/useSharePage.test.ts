@@ -202,6 +202,52 @@ describe("useSharePage", () => {
     vi.useRealTimers();
   });
 
+  it("scrollToElement scrolls element into view when no container", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail());
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    const el = document.createElement("div");
+    el.scrollIntoView = vi.fn();
+    result.current.scrollToElement(el);
+    expect(el.scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+  });
+
+  it("permissionHint for read-only", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail({ permission: 1 }));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(result.current.permissionHint).toBe("Read access only");
+  });
+
+  it("permissionHint for annotate", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail({ permission: 2 }));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(result.current.permissionHint).toBe("Can comment on this share");
+  });
+
+  it("extractDocTitle extracts h1 from content", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail({ document: { id: "d1", title: "", content: "# My Title\nBody", ctime: 0, mtime: 0 } }));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(document.title).toBe("My Title");
+  });
+
+  it("extractDocTitle truncates long first line", async () => {
+    const longLine = "A".repeat(100);
+    mockApiFetch.mockResolvedValue(makeDetail({ document: { id: "d1", title: "", content: longLine, ctime: 0, mtime: 0 } }));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(document.title).toHaveLength(53);
+  });
+
+  it("extractDocTitle detects setext heading", async () => {
+    mockApiFetch.mockResolvedValue(makeDetail({ document: { id: "d1", title: "", content: "My Title\n========\nBody", ctime: 0, mtime: 0 } }));
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(document.title).toBe("My Title");
+  });
+
   it("handleExport creates download link", async () => {
     mockApiFetch.mockResolvedValue(makeDetail());
     const click = vi.fn();

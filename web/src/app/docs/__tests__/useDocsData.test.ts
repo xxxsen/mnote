@@ -205,4 +205,34 @@ describe("useDocsData", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     expect(result.current.aiSearchDocs).toEqual([]);
   });
+
+  it("fetchDocs append deduplicates existing docs", async () => {
+    const docs20 = Array.from({ length: 20 }, (_, i) => ({ id: `d${i}`, title: `T${i}`, tags: [], tag_ids: [], pinned: 0, starred: 0 }));
+    mockApiFetch.mockResolvedValue(docs20);
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(result.current.docs).toHaveLength(20);
+    expect(result.current.hasMore).toBe(true);
+
+    const overlap = [{ id: "d0", title: "T0", tags: [], tag_ids: [] }, { id: "d20", title: "T20", tags: [], tag_ids: [] }];
+    mockApiFetch.mockResolvedValue(overlap);
+    await act(async () => { await result.current.fetchDocs(20, true); });
+    expect(result.current.docs).toHaveLength(21);
+  });
+
+  it("IntersectionObserver is set up with loadMoreRef", async () => {
+    const observeSpy = vi.fn();
+    const disconnectSpy = vi.fn();
+    vi.stubGlobal("IntersectionObserver", vi.fn().mockImplementation((cb: IntersectionObserverCallback) => {
+      setTimeout(() => cb([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver), 0);
+      return { observe: observeSpy, disconnect: disconnectSpy };
+    }));
+    const docs20 = Array.from({ length: 20 }, (_, i) => ({ id: `d${i}`, title: `T${i}`, tags: [], tag_ids: [], pinned: 0, starred: 0 }));
+    mockApiFetch.mockResolvedValue(docs20);
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    const div = document.createElement("div");
+    (result.current.loadMoreRef as React.MutableRefObject<HTMLDivElement | null>).current = div;
+    vi.unstubAllGlobals();
+  });
 });

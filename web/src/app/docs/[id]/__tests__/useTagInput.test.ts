@@ -237,4 +237,42 @@ describe("useTagInput", () => {
     act(() => { result.current.handleTagInputChange({ target: { value: "你好！" } } as never); });
     expect(result.current.tagQuery).toBe("你好！");
   });
+
+  it("handleTagInputKeyDown Enter notifies when at max tags", async () => {
+    stableSearchTags.mockResolvedValue([]);
+    const opts = makeOpts({ selectedTagIDs: ["t1", "t2", "t3", "t4", "t5"], maxTags: 5 });
+    const { result } = renderHook(() => useTagInput(opts));
+    act(() => { result.current.handleTagInputChange({ target: { value: "newtag" } } as never); });
+    await vi.waitFor(() => { expect(result.current.trimmedTagQuery).toBe("newtag"); });
+    await act(async () => {
+      result.current.handleTagInputKeyDown({ key: "Enter", preventDefault: vi.fn() } as never);
+    });
+    expect(stableNotify).toHaveBeenCalledWith(expect.stringContaining("5"));
+  });
+
+  it("handleTagInputKeyDown Enter notifies invalid tag name", async () => {
+    stableSearchTags.mockResolvedValue([]);
+    const invalidValidator = (_v: string) => false;
+    const opts = makeOpts({ isValidTagName: invalidValidator });
+    const { result } = renderHook(() => useTagInput(opts));
+    act(() => { result.current.handleTagInputChange({ target: { value: "bad" } } as never); });
+    await vi.waitFor(() => { expect(result.current.trimmedTagQuery).toBe("bad"); });
+    await act(async () => {
+      result.current.handleTagInputKeyDown({ key: "Enter", preventDefault: vi.fn() } as never);
+    });
+    expect(stableNotify).toHaveBeenCalledWith(expect.stringContaining("letters"));
+  });
+
+  it("handleTagInputKeyDown Enter with no dropdown items creates tag", async () => {
+    stableSearchTags.mockResolvedValue([]);
+    const opts = makeOpts();
+    const { result } = renderHook(() => useTagInput(opts));
+    act(() => { result.current.handleTagInputChange({ target: { value: "newtag" } } as never); });
+    await vi.waitFor(() => { expect(result.current.trimmedTagQuery).toBe("newtag"); });
+    mockApiFetch.mockResolvedValueOnce({ id: "t3", name: "newtag" });
+    await act(async () => {
+      result.current.handleTagInputKeyDown({ key: "Enter", preventDefault: vi.fn() } as never);
+    });
+    expect(stableSaveTagIDs).toHaveBeenCalled();
+  });
 });

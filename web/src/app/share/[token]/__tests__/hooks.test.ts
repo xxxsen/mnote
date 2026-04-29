@@ -125,6 +125,41 @@ describe("useShareComments", () => {
     act(() => { result.current.setInlineReplyContent("reply text"); });
     expect(result.current.inlineReplyContent).toBe("reply text");
   });
+
+  it("handleLoadMoreComments triggers append fetch", async () => {
+    mockApiFetch.mockResolvedValue({ items: Array.from({ length: 10 }, (_, i) => ({ id: `c${i}`, content: `c${i}` })), total: 20 });
+    const opts = makeOpts();
+    const { result } = renderHook(() => useShareComments(opts));
+    await waitFor(() => { expect(result.current.comments).toHaveLength(10); });
+    expect(result.current.commentsHasMore).toBe(true);
+    mockApiFetch.mockResolvedValueOnce({ items: [{ id: "c10", content: "c10" }], total: 20 });
+    await act(async () => { result.current.handleLoadMoreComments(); });
+    await waitFor(() => { expect(result.current.comments.length).toBeGreaterThanOrEqual(10); });
+  });
+
+  it("fetchComments background mode does not set loading", async () => {
+    mockApiFetch.mockResolvedValue({ items: [{ id: "c1", content: "hi" }], total: 1 });
+    const opts = makeOpts();
+    const { result } = renderHook(() => useShareComments(opts));
+    await waitFor(() => { expect(result.current.comments).toHaveLength(1); });
+    expect(result.current.commentsLoading).toBe(false);
+  });
+
+  it("handleSubmitComment does nothing when detail is null", async () => {
+    mockApiFetch.mockResolvedValue({ items: [], total: 0 });
+    const opts = makeOpts({ detail: stableNullDetail });
+    const { result } = renderHook(() => useShareComments(opts));
+    await waitFor(() => { expect(result.current.commentsLoading).toBe(false); });
+    act(() => { result.current.setAnnotationContent("Hello"); });
+    await act(async () => { await result.current.handleSubmitComment(); });
+    expect(mockApiFetch).not.toHaveBeenCalledWith(expect.stringContaining("comments"), expect.objectContaining({ method: "POST" }));
+  });
+
+  it("accessPassword is included in query string", async () => {
+    mockApiFetch.mockResolvedValue({ items: [], total: 0 });
+    renderHook(() => useShareComments(makeOpts({ accessPassword: "secret" })));
+    await waitFor(() => { expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("password=secret"), expect.objectContaining({ requireAuth: false })); });
+  });
 });
 
 describe("useShareToc", () => {
