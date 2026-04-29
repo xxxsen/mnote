@@ -65,4 +65,28 @@ describe("useSidebarTags", () => {
     const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
     await waitFor(() => { expect(result.current.sidebarHasMore).toBe(false); });
   });
+
+  it("sidebarHasMore is true when exactly 20 tags returned", async () => {
+    const tags = Array.from({ length: 20 }, (_, i) => ({ id: `t${i}`, name: `tag${i}`, doc_count: 1, pinned: 0 }));
+    mockApiFetch.mockResolvedValue(tags);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    await waitFor(() => { expect(result.current.sidebarHasMore).toBe(true); });
+  });
+
+  it("fetchSidebarTags can be called directly", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "t1", name: "go", doc_count: 5, pinned: 0 }]);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    await waitFor(() => { expect(result.current.sidebarLoading).toBe(false); });
+    mockApiFetch.mockResolvedValue([{ id: "t2", name: "rust", doc_count: 3, pinned: 0 }]);
+    await act(async () => { await result.current.fetchSidebarTags(0, false, "rust"); });
+    expect(result.current.sidebarTags).toHaveLength(1);
+    expect(result.current.sidebarTags[0].name).toBe("rust");
+  });
+
+  it("maybeAutoLoadTags does nothing without scroll ref", async () => {
+    mockApiFetch.mockResolvedValue([]);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    await waitFor(() => { expect(result.current.sidebarLoading).toBe(false); });
+    act(() => { result.current.maybeAutoLoadTags(); });
+  });
 });

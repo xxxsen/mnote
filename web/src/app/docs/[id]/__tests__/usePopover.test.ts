@@ -69,4 +69,47 @@ describe("usePopover", () => {
     expect(result.current.sizeButtonRef).toBeDefined();
     expect(result.current.emojiButtonRef).toBeDefined();
   });
+
+  it("handleColor with empty color does nothing", () => {
+    const { result } = renderHook(() => usePopover({ handleFormat: stableHandleFormat }));
+    act(() => { result.current.handleColor(""); });
+    expect(stableHandleFormat).not.toHaveBeenCalled();
+  });
+
+  it("handleSize with empty size does nothing", () => {
+    const { result } = renderHook(() => usePopover({ handleFormat: stableHandleFormat }));
+    act(() => { result.current.handleSize(""); });
+    expect(stableHandleFormat).not.toHaveBeenCalled();
+  });
+
+  it("pointerdown outside popover closes it", () => {
+    const { result } = renderHook(() => usePopover({ handleFormat: stableHandleFormat }));
+    act(() => { result.current.setActivePopover("color"); });
+    const event = new PointerEvent("pointerdown", { bubbles: true });
+    Object.defineProperty(event, "target", { value: document.body });
+    act(() => { window.dispatchEvent(event); });
+    expect(result.current.activePopover).toBeNull();
+  });
+
+  it("pointerdown on popover trigger does not close", () => {
+    const { result } = renderHook(() => usePopover({ handleFormat: stableHandleFormat }));
+    act(() => { result.current.setActivePopover("color"); });
+    const trigger = document.createElement("button");
+    trigger.setAttribute("data-popover-trigger", "true");
+    document.body.appendChild(trigger);
+    const event = new PointerEvent("pointerdown", { bubbles: true });
+    Object.defineProperty(event, "target", { value: trigger });
+    act(() => { window.dispatchEvent(event); });
+    expect(result.current.activePopover).toBe("color");
+    document.body.removeChild(trigger);
+  });
+
+  it("popoverAnchor updates from button ref getBoundingClientRect", () => {
+    const { result } = renderHook(() => usePopover({ handleFormat: stableHandleFormat }));
+    const btn = document.createElement("button");
+    Object.defineProperty(btn, "getBoundingClientRect", { value: () => ({ bottom: 100, left: 50, top: 80, right: 150, width: 100, height: 20 }) });
+    (result.current.colorButtonRef as { current: HTMLButtonElement | null }).current = btn;
+    act(() => { result.current.setActivePopover("color"); });
+    expect(result.current.popoverAnchor).toBeTruthy();
+  });
 });

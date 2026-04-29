@@ -72,4 +72,33 @@ describe("useSimilarDocs", () => {
     await waitFor(() => { expect(result.current.similarLoading).toBe(false); });
     expect(result.current.similarDocs).toEqual([]);
   });
+
+  it("toggle fetches only when expanding", async () => {
+    mockApiFetch.mockResolvedValue({ items: [{ id: "s1", title: "S1", score: 0.5 }] });
+    const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "Test Doc" }));
+    await act(async () => { result.current.handleToggleSimilar(); });
+    await waitFor(() => { expect(result.current.similarDocs).toHaveLength(1); });
+    mockApiFetch.mockClear();
+    act(() => { result.current.handleToggleSimilar(); });
+    expect(mockApiFetch).not.toHaveBeenCalled();
+  });
+
+  it("similarIconVisible toggles dynamically with title changes", () => {
+    const { result, rerender } = renderHook(
+      ({ title }) => useSimilarDocs({ docId: "d1", title }),
+      { initialProps: { title: "" } }
+    );
+    expect(result.current.similarIconVisible).toBe(false);
+    rerender({ title: "Long enough title" });
+    expect(result.current.similarIconVisible).toBe(true);
+    rerender({ title: "X" });
+    expect(result.current.similarIconVisible).toBe(false);
+  });
+
+  it("fetchSimilar sends docId in API call", async () => {
+    mockApiFetch.mockResolvedValue({ items: [] });
+    const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "Test Doc" }));
+    await act(async () => { result.current.handleToggleSimilar(); });
+    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("exclude_id=d1"));
+  });
 });
