@@ -275,4 +275,118 @@ describe("useTagInput", () => {
     });
     expect(stableSaveTagIDs).toHaveBeenCalled();
   });
+
+  it("handleTagDropdownSelect with use type selects existing tag", async () => {
+    stableSearchTags.mockResolvedValue([{ id: "t99", name: "newtag" }]);
+    stableSaveTagIDs.mockResolvedValue(undefined);
+    const opts = makeOpts();
+    const { result } = renderHook(() => useTagInput(opts));
+    await act(async () => {
+      result.current.handleTagDropdownSelect({ type: "use", tag: { id: "t99", name: "newtag" } });
+    });
+    await vi.waitFor(() => { expect(stableSaveTagIDs).toHaveBeenCalled(); });
+  });
+
+  it("selectTagByID skips if already selected", async () => {
+    const opts = makeOpts({ selectedTagIDs: ["t1"] });
+    const { result } = renderHook(() => useTagInput(opts));
+    await act(async () => {
+      result.current.handleTagDropdownSelect({ type: "suggestion", tag: { id: "t1", name: "go" } });
+    });
+    expect(stableSaveTagIDs).not.toHaveBeenCalled();
+  });
+
+  it("selectTagByID notifies at max tags", async () => {
+    const opts = makeOpts({ selectedTagIDs: ["t1", "t2", "t3", "t4", "t5"], maxTags: 5 });
+    const { result } = renderHook(() => useTagInput(opts));
+    await act(async () => {
+      result.current.handleTagDropdownSelect({ type: "suggestion", tag: { id: "new1", name: "go" } });
+    });
+    expect(stableNotify).toHaveBeenCalledWith(expect.stringContaining("5"));
+  });
+
+  it("handleAddTag error calls notifyError", async () => {
+    stableSearchTags.mockResolvedValue([]);
+    const localNotifyError = vi.fn();
+    const opts = makeOpts({ notifyError: localNotifyError });
+    mockApiFetch.mockRejectedValue(new Error("create fail"));
+    const { result } = renderHook(() => useTagInput(opts));
+    act(() => { result.current.handleTagInputChange({ target: { value: "newtag" } } as never); });
+    await vi.waitFor(() => { expect(result.current.trimmedTagQuery).toBe("newtag"); });
+    await vi.waitFor(() => { expect(result.current.tagSearchLoading).toBe(false); });
+    await act(async () => {
+      result.current.handleTagInputKeyDown({ key: "Enter", preventDefault: vi.fn() } as never);
+    });
+    await vi.waitFor(() => { expect(localNotifyError).toHaveBeenCalledWith("create fail"); });
+  });
+
+  it("handleTagInputKeyDown ArrowDown with no items is no-op", () => {
+    const { result } = renderHook(() => useTagInput(makeOpts()));
+    act(() => { result.current.handleTagInputChange({ target: { value: "x" } } as never); });
+    act(() => {
+      result.current.handleTagInputKeyDown({ key: "ArrowDown", preventDefault: vi.fn() } as never);
+    });
+  });
+
+  it("handleTagInputKeyDown ArrowUp with no items is no-op", () => {
+    const { result } = renderHook(() => useTagInput(makeOpts()));
+    act(() => { result.current.handleTagInputChange({ target: { value: "x" } } as never); });
+    act(() => {
+      result.current.handleTagInputKeyDown({ key: "ArrowUp", preventDefault: vi.fn() } as never);
+    });
+  });
+
+  it("handleTagInputKeyDown Enter when no query calls handleAddTag", () => {
+    const { result } = renderHook(() => useTagInput(makeOpts()));
+    act(() => {
+      result.current.handleTagInputKeyDown({ key: "Enter", preventDefault: vi.fn() } as never);
+    });
+  });
+
+  it("findExistingTagByName returns cached tag", async () => {
+    const { result } = renderHook(() => useTagInput(makeOpts()));
+    const found = await act(async () => result.current.findExistingTagByName("go"));
+    expect(found).toEqual(expect.objectContaining({ id: "t1", name: "go" }));
+  });
+
+  it("findExistingTagByName returns null for empty name", async () => {
+    const { result } = renderHook(() => useTagInput(makeOpts()));
+    const found = await act(async () => result.current.findExistingTagByName(""));
+    expect(found).toBeNull();
+  });
+
+  it("findExistingTagByName searches and caches", async () => {
+    stableSearchTags.mockResolvedValue([{ id: "t10", name: "newone" }]);
+    const opts = makeOpts();
+    const { result } = renderHook(() => useTagInput(opts));
+    const found = await act(async () => result.current.findExistingTagByName("newone"));
+    expect(found).toEqual(expect.objectContaining({ id: "t10" }));
+    expect(opts.mergeTags).toHaveBeenCalledWith([expect.objectContaining({ id: "t10" })]);
+  });
+
+  it("findExistingTagByName returns null on search error", async () => {
+    stableSearchTags.mockRejectedValue(new Error("fail"));
+    const { result } = renderHook(() => useTagInput(makeOpts()));
+    const found = await act(async () => result.current.findExistingTagByName("unknown"));
+    expect(found).toBeNull();
+  });
+
+  it("addTagByName existing tag already selected is no-op", async () => {
+    stableSearchTags.mockResolvedValue([{ id: "t1", name: "go" }]);
+    const opts = makeOpts({ selectedTagIDs: ["t1"] });
+    const { result } = renderHook(() => useTagInput(opts));
+    act(() => { result.current.handleTagInputChange({ target: { value: "go" } } as never); });
+    await vi.waitFor(() => { expect(result.current.trimmedTagQuery).toBe("go"); });
+    await vi.waitFor(() => { expect(result.current.tagSearchLoading).toBe(false); });
+    await act(async () => {
+      result.current.handleTagInputKeyDown({ key: "Enter", preventDefault: vi.fn() } as never);
+    });
+    expect(stableSaveTagIDs).not.toHaveBeenCalled();
+  });
+
+  it("handleTagCompositionEnd filters and truncates input", () => {
+    const { result } = renderHook(() => useTagInput(makeOpts()));
+    act(() => { result.current.handleTagCompositionEnd({ currentTarget: { value: "测试标签这是一个很长的输入需要截断!" } } as never); });
+    expect(result.current.tagQuery.length).toBeLessThanOrEqual(16);
+  });
 });

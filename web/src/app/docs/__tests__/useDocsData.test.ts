@@ -235,4 +235,63 @@ describe("useDocsData", () => {
     (result.current.loadMoreRef).current = div;
     vi.unstubAllGlobals();
   });
+
+  it("handlePinToggle unpins already-pinned document", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "d1", title: "T", pinned: 1, starred: 0, tags: [], tag_ids: [] }]);
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    mockApiFetch.mockResolvedValue(undefined);
+    await act(async () => {
+      await result.current.handlePinToggle({ stopPropagation: vi.fn() } as never, { id: "d1", pinned: 1 } as never);
+    });
+    expect(mockApiFetch).toHaveBeenCalledWith("/documents/d1/pin", expect.objectContaining({ body: JSON.stringify({ pinned: false }) }));
+  });
+
+  it("handleStarToggle unstars already-starred document", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "d1", title: "T", starred: 1, tags: [], tag_ids: [] }]);
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    mockApiFetch.mockResolvedValue(undefined);
+    await act(async () => {
+      await result.current.handleStarToggle({ stopPropagation: vi.fn() } as never, { id: "d1", starred: 1 } as never);
+    });
+    expect(mockApiFetch).toHaveBeenCalledWith("/documents/d1/star", expect.objectContaining({ body: JSON.stringify({ starred: false }) }));
+  });
+
+  it("shared items without tag_ids skip fetchTagsByIDs", async () => {
+    const fetchTagsByIDs = vi.fn().mockResolvedValue(undefined);
+    mockApiFetch.mockResolvedValue({ items: [{ id: "s1", title: "S", mtime: 100, token: "tk" }] });
+    renderHook(() => useDocsData(makeDeps({ showShared: true, fetchTagsByIDs })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(fetchTagsByIDs).not.toHaveBeenCalled();
+  });
+
+  it("docs with provided tags in tagIndex skip fetchTagsByIDs", async () => {
+    const fetchTagsByIDs = vi.fn().mockResolvedValue(undefined);
+    mockApiFetch.mockResolvedValue([{ id: "d1", title: "T", tags: [{ id: "t1", name: "go" }], tag_ids: ["t1"] }]);
+    renderHook(() => useDocsData(makeDeps({ fetchTagsByIDs, tagIndexRef: { current: { t1: { id: "t1", name: "go" } } } })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(fetchTagsByIDs).toHaveBeenCalledWith([]);
+  });
+
+  it("search with starred filter does not trigger aiSearch", async () => {
+    mockApiFetch.mockResolvedValue([]);
+    const { result } = renderHook(() => useDocsData(makeDeps({ search: "test", showStarred: true })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(result.current.aiSearchDocs).toEqual([]);
+  });
+
+  it("search with selectedTag does not trigger aiSearch", async () => {
+    mockApiFetch.mockResolvedValue([]);
+    const { result } = renderHook(() => useDocsData(makeDeps({ search: "test", selectedTag: "t1" })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(result.current.aiSearchDocs).toEqual([]);
+  });
+
+  it("shared items with search query", async () => {
+    mockApiFetch.mockResolvedValue({ items: [] });
+    renderHook(() => useDocsData(makeDeps({ showShared: true, search: "my doc" })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("q=my+doc"));
+  });
 });
