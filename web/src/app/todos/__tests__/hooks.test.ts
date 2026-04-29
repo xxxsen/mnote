@@ -111,4 +111,101 @@ describe("useTodoCalendar", () => {
     const { result } = renderHook(() => useTodoCalendar());
     expect(result.current.visibleMonth).toBeInstanceOf(Date);
   });
+
+  it("handleCreateTodo shows error when content empty", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openCreatePanel(new Date(2025, 0, 15)); });
+    act(() => { result.current.setNewTodoContent(""); });
+    await act(async () => { await result.current.handleCreateTodo(); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("handleCreateTodo error shows toast", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    mockTodoService.create.mockRejectedValue(new Error("fail"));
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openCreatePanel(new Date(2025, 0, 15)); });
+    act(() => { result.current.setNewTodoContent("Task"); });
+    await act(async () => { await result.current.handleCreateTodo(); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("handleToggleDone error shows toast", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([makeTodo()]);
+    mockTodoService.toggleDone.mockRejectedValue(new Error("fail"));
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await act(async () => { await result.current.handleToggleDone(makeTodo()); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("handleUpdateTodoContent error shows toast", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([makeTodo()]);
+    mockTodoService.updateContent.mockRejectedValue(new Error("fail"));
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openEditPanel(makeTodo()); });
+    act(() => { result.current.setEditTodoContent("Updated"); });
+    await act(async () => { await result.current.handleUpdateTodoContent(); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("handleUpdateTodoContent empty content shows error", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([makeTodo()]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openEditPanel(makeTodo()); });
+    act(() => { result.current.setEditTodoContent("  "); });
+    await act(async () => { await result.current.handleUpdateTodoContent(); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("Escape key closes create panel", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openCreatePanel(new Date(2025, 0, 1)); });
+    expect(result.current.createOpen).toBe(true);
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(result.current.createOpen).toBe(false);
+  });
+
+  it("Escape key closes day view", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openDayView("2025-01-15"); });
+    expect(result.current.dayViewOpen).toBe(true);
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(result.current.dayViewOpen).toBe(false);
+  });
+
+  it("closeEditPanel closes edit dialog", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([makeTodo()]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.openEditPanel(makeTodo()); });
+    expect(result.current.editOpen).toBe(true);
+    act(() => { result.current.closeEditPanel(); });
+    expect(result.current.editOpen).toBe(false);
+  });
+
+  it("todosByDate returns todos for a given date", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([makeTodo({ due_date: "2025-01-15" })]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    const todos = result.current.todosByDate("2025-01-15");
+    expect(todos).toHaveLength(1);
+  });
+
+  it("todosByDate returns empty for date with no todos", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([makeTodo({ due_date: "2025-01-15" })]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    const todos = result.current.todosByDate("2025-01-20");
+    expect(todos).toHaveLength(0);
+  });
 });

@@ -1,0 +1,68 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook, act, waitFor } from "@testing-library/react";
+import { apiFetch } from "@/lib/api";
+import { useSidebarTags } from "../hooks/useSidebarTags";
+
+vi.mock("@/lib/api", () => ({ apiFetch: vi.fn() }));
+
+const mockApiFetch = vi.mocked(apiFetch);
+const stableToast = vi.fn();
+
+beforeEach(() => { vi.clearAllMocks(); });
+
+describe("useSidebarTags", () => {
+  it("initializes with empty state", () => {
+    mockApiFetch.mockResolvedValue([]);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    expect(result.current.sidebarTags).toEqual([]);
+    expect(result.current.sidebarLoading).toBe(false);
+    expect(result.current.tagSearch).toBe("");
+  });
+
+  it("fetches tags on mount", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "t1", name: "go", doc_count: 5, pinned: 0 }]);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    await waitFor(() => { expect(result.current.sidebarTags).toHaveLength(1); });
+  });
+
+  it("searches tags when tagSearch changes", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "t2", name: "rust", doc_count: 3, pinned: 0 }]);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    act(() => { result.current.setTagSearch("rust"); });
+    await waitFor(() => { expect(result.current.sidebarTags).toHaveLength(1); });
+  });
+
+  it("handleToggleTagPin toggles pin", async () => {
+    mockApiFetch.mockResolvedValue([]);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    await waitFor(() => { expect(result.current.sidebarLoading).toBe(false); });
+    const tag = { id: "t1", name: "go", doc_count: 5, pinned: 0 };
+    await act(async () => { await result.current.handleToggleTagPin(tag as never); });
+    expect(mockApiFetch).toHaveBeenCalledWith("/tags/t1/pin", expect.objectContaining({ method: "PUT" }));
+  });
+
+  it("handleToggleTagPin error shows toast", async () => {
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.includes("/pin")) return Promise.reject(new Error("fail"));
+      return Promise.resolve([]);
+    }) as typeof apiFetch);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    await waitFor(() => { expect(result.current.sidebarLoading).toBe(false); });
+    const tag = { id: "t1", name: "go", doc_count: 5, pinned: 0 };
+    await act(async () => { await result.current.handleToggleTagPin(tag as never); });
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("fetchSidebarTags handles error", async () => {
+    mockApiFetch.mockRejectedValue(new Error("fail"));
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    await waitFor(() => { expect(result.current.sidebarLoading).toBe(false); });
+    expect(result.current.sidebarTags).toEqual([]);
+  });
+
+  it("sidebarHasMore is false when less than 20 tags returned", async () => {
+    mockApiFetch.mockResolvedValue([{ id: "t1", name: "go", doc_count: 5, pinned: 0 }]);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    await waitFor(() => { expect(result.current.sidebarHasMore).toBe(false); });
+  });
+});
