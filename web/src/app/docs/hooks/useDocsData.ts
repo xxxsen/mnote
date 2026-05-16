@@ -14,6 +14,20 @@ interface UseDocsDataDeps {
   tagIndexRef: { current: Partial<Record<string, Tag>> };
 }
 
+const isAbortError = (e: unknown): boolean =>
+  e instanceof DOMException && e.name === "AbortError";
+
+function mapSharedItem(item: SharedItem): DocumentWithTags {
+  return {
+    id: item.id, user_id: "", title: item.title,
+    content: item.summary || "", summary: item.summary || "",
+    state: 1, pinned: 0, starred: 0,
+    ctime: item.mtime, mtime: item.mtime,
+    tags: [], tag_ids: item.tag_ids || [],
+    share_token: item.token,
+  };
+}
+
 export function useDocsData(deps: UseDocsDataDeps) {
   const { search, selectedTag, showStarred, showShared, mergeTags, fetchTagsByIDs, tagIndexRef } = deps;
   const [docs, setDocs] = useState<DocumentWithTags[]>([]);
@@ -29,40 +43,48 @@ export function useDocsData(deps: UseDocsDataDeps) {
   const [aiSearching, setAiSearching] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const fetchInFlightRef = useRef(false);
+  const fetchAbortRef = useRef<AbortController | null>(null);
+  const aiSearchAbortRef = useRef<AbortController | null>(null);
 
   const fetchAiSearch = useCallback(async (query: string) => {
+    aiSearchAbortRef.current?.abort();
     if (!query) { setAiSearchDocs([]); return; }
+    const controller = new AbortController();
+    aiSearchAbortRef.current = controller;
     setAiSearching(true);
     try {
-      const res = await apiFetch<{ items: DocumentWithTags[] }>(`/ai/search?q=${encodeURIComponent(query)}`);
+      const res = await apiFetch<{ items: DocumentWithTags[] }>(
+        `/ai/search?q=${encodeURIComponent(query)}`,
+        { signal: controller.signal },
+      );
       setAiSearchDocs(res.items);
     } catch (e) {
+      if (isAbortError(e)) return;
       console.error(e);
       setAiSearchDocs([]);
     } finally {
-      setAiSearching(false);
+      if (aiSearchAbortRef.current === controller) {
+        aiSearchAbortRef.current = null;
+        setAiSearching(false);
+      }
     }
   }, []);
 
   const fetchDocs = useCallback(async (offset: number, append: boolean) => {
     if (fetchInFlightRef.current) return;
+    fetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    fetchAbortRef.current = controller;
     fetchInFlightRef.current = true;
     if (append) { setLoadingMore(true); } else { setLoading(true); }
     try {
       if (showShared) {
         const params = new URLSearchParams();
         if (search) params.set("q", search);
-        const res = await apiFetch<{ items: SharedItem[] }>(`/shares?${params.toString()}`);
+        const res = await apiFetch<{ items: SharedItem[] }>(`/shares?${params.toString()}`, { signal: controller.signal });
         const items = res.items;
         const tagIDs = new Set<string>();
-        setDocs(items.map((item): DocumentWithTags => ({
-          id: item.id, user_id: "", title: item.title,
-          content: item.summary || "", summary: item.summary || "",
-          state: 1, pinned: 0, starred: 0,
-          ctime: item.mtime, mtime: item.mtime,
-          tags: [], tag_ids: item.tag_ids || [],
-          share_token: item.token,
-        })));
+        setDocs(items.map(mapSharedItem));
         items.forEach((item) => {
           (item.tag_ids ?? []).forEach((id) => tagIDs.add(id));
         });
@@ -78,7 +100,7 @@ export function useDocsData(deps: UseDocsDataDeps) {
       query.set("include", "tags");
       query.set("limit", "20");
       query.set("offset", String(offset));
-      const res = await apiFetch<DocumentWithTags[]>(`/documents?${query.toString()}`);
+      const res = await apiFetch<DocumentWithTags[]>(`/documents?${query.toString()}`, { signal: controller.signal });
       const enrichedDocs = res.map((doc) => ({
         ...doc, tag_ids: doc.tag_ids || [], tags: doc.tags || [],
       }));
@@ -104,11 +126,15 @@ export function useDocsData(deps: UseDocsDataDeps) {
       setHasMore(res.length === 20);
       setNextOffset(offset + res.length);
     } catch (e) {
+      if (isAbortError(e)) return;
       console.error(e);
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      fetchInFlightRef.current = false;
+      if (fetchAbortRef.current === controller) fetchAbortRef.current = null;
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setLoadingMore(false);
+        fetchInFlightRef.current = false;
+      }
     }
   }, [fetchTagsByIDs, mergeTags, search, selectedTag, showStarred, showShared, tagIndexRef]);
 
@@ -195,10 +221,15 @@ export function useDocsData(deps: UseDocsDataDeps) {
       if (search && !search.startsWith("/") && !showStarred && !showShared && !selectedTag) {
         void fetchAiSearch(search);
       } else {
+        aiSearchAbortRef.current?.abort();
         setAiSearchDocs([]);
       }
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      fetchAbortRef.current?.abort();
+      aiSearchAbortRef.current?.abort();
+    };
   }, [fetchDocs, showStarred, showShared, selectedTag, search, fetchAiSearch]);
 
   return {

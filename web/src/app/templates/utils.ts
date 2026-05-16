@@ -11,19 +11,30 @@ export const formatTemplateMtime = (mtime: number) => {
   return new Date(mtime * 1000).toLocaleString();
 };
 
+const formatLocalDate = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+const formatLocalTime = (d: Date) => {
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${h}:${min}`;
+};
+
 export const resolveSystemVariableClient = (key: string) => {
   const now = new Date();
   const normalized = key.trim().toUpperCase();
   if (normalized === "SYS:TODAY" || normalized === "SYS:DATE") {
-    return now.toISOString().slice(0, 10);
+    return formatLocalDate(now);
   }
   if (normalized === "SYS:TIME") {
-    return now.toTimeString().slice(0, 5);
+    return formatLocalTime(now);
   }
   if (normalized === "SYS:DATETIME" || normalized === "SYS:NOW") {
-    const date = now.toISOString().slice(0, 10);
-    const time = now.toTimeString().slice(0, 5);
-    return `${date} ${time}`;
+    return `${formatLocalDate(now)} ${formatLocalTime(now)}`;
   }
   return "";
 };

@@ -73,23 +73,26 @@ export default function AssetsPage() {
   }, [loadAssets]);
 
   useEffect(() => {
+    if (!selected) {
+      setReferences([]);
+      return;
+    }
+    const controller = new AbortController();
     const fetchReferences = async () => {
-      if (!selected) {
-        setReferences([]);
-        return;
-      }
       setLoadingReferences(true);
       try {
-        const items = await apiFetch<AssetReference[]>(`/assets/${selected.id}/references`);
-        setReferences(items);
+        const items = await apiFetch<AssetReference[]>(`/assets/${selected.id}/references`, { signal: controller.signal });
+        if (!controller.signal.aborted) setReferences(items);
       } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
         toast({ description: err instanceof Error ? err.message : "Failed to load references", variant: "error" });
-        setReferences([]);
+        if (!controller.signal.aborted) setReferences([]);
       } finally {
-        setLoadingReferences(false);
+        if (!controller.signal.aborted) setLoadingReferences(false);
       }
     };
     void fetchReferences();
+    return () => { controller.abort(); };
   }, [selected, toast]);
 
   const copyText = async (value: string, message: string) => {

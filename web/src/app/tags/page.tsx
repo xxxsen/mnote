@@ -26,13 +26,16 @@ export default function TagsPage() {
   const [hasMore, setHasMore] = useState(true);
   const [offset, setOffset] = useState(0);
   const fetchingRef = useRef(false);
+  const fetchAbortRef = useRef<AbortController | null>(null);
   const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TagWithUsage | null>(null);
   const returnTo = getSafeReturn(searchParams.get("return"));
 
   const fetchData = useCallback(async (nextOffset: number, append: boolean) => {
-    if (fetchingRef.current) return;
+    fetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    fetchAbortRef.current = controller;
     fetchingRef.current = true;
     if (append) {
       setLoadingMore(true);
@@ -46,7 +49,7 @@ export default function TagsPage() {
       if (search.trim()) {
         params.set("q", search.trim());
       }
-      const items = await apiFetch<{ id: string; name: string; count: number }[]>(`/tags/summary?${params.toString()}`);
+      const items = await apiFetch<{ id: string; name: string; count: number }[]>(`/tags/summary?${params.toString()}`, { signal: controller.signal });
       const next: TagWithUsage[] = items.map((tag) => ({
         id: tag.id,
         name: tag.name,
@@ -56,12 +59,16 @@ export default function TagsPage() {
       setHasMore(items.length === 10);
       setOffset(nextOffset + items.length);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       console.error(e);
       toast({ description: e instanceof Error ? e : "Failed to load tags data", variant: "error" });
     } finally {
-      fetchingRef.current = false;
-      setLoading(false);
-      setLoadingMore(false);
+      if (fetchAbortRef.current === controller) fetchAbortRef.current = null;
+      if (!controller.signal.aborted) {
+        fetchingRef.current = false;
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, [search, toast]);
 
@@ -69,6 +76,7 @@ export default function TagsPage() {
     setOffset(0);
     setHasMore(true);
     void fetchData(0, false);
+    return () => { fetchAbortRef.current?.abort(); };
   }, [fetchData]);
 
   const handleBack = useCallback(() => {

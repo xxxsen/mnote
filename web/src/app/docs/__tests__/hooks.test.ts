@@ -247,7 +247,7 @@ describe("useSidebarTags", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(300); });
     act(() => { result.current.setTagSearch("go"); });
     await act(async () => { await vi.advanceTimersByTimeAsync(300); });
-    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("q=go"));
+    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("q=go"), expect.anything());
   });
 
   it("handleToggleTagPin pins/unpins tag", async () => {

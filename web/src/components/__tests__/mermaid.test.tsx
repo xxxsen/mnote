@@ -54,4 +54,22 @@ describe("Mermaid", () => {
     render(<Mermaid chart="graph TD; A-->B;" cacheKey="test-key" />);
     await waitFor(() => { expect(mermaid.render).toHaveBeenCalled(); });
   });
+
+  it("resets state when cacheKey changes between renders", async () => {
+    const { rerender, container } = render(<Mermaid chart="graph A;" cacheKey="key-a" />);
+    await waitFor(() => { expect(mermaid.render).toHaveBeenCalled(); });
+    rerender(<Mermaid chart="graph B;" cacheKey="key-b-fresh" />);
+    expect(container.querySelector(".mermaid-container")).toBeTruthy();
+  });
+
+  it("uses cached svg when re-rendering with a previously cached key", async () => {
+    render(<Mermaid chart="graph TD; A-->B;" cacheKey="cached-key" />);
+    await waitFor(() => { expect(mermaid.render).toHaveBeenCalled(); });
+    vi.clearAllMocks();
+    const { container } = render(<Mermaid chart="graph TD; A-->B;" cacheKey="cached-key" />);
+    await waitFor(() => {
+      expect(container.querySelector(".mermaid-container")).toBeTruthy();
+    });
+    expect(mermaid.render).not.toHaveBeenCalled();
+  });
 });

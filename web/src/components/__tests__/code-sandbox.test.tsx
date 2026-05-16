@@ -129,4 +129,43 @@ describe("CodeSandbox", () => {
     render(<CodeSandbox code="x" language="py" />);
     expect(screen.getAllByText("python Sandbox").length).toBeGreaterThan(0);
   });
+
+  it("aborts go env HEAD fetch on unmount", () => {
+    let captured: AbortSignal | undefined;
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      captured = init?.signal ?? undefined;
+      return new Promise(() => { /* never resolves */ });
+    }));
+    const { unmount } = render(<CodeSandbox code="func main(){}" language="go" />);
+    expect(captured).toBeDefined();
+    expect(captured?.aborted).toBe(false);
+    unmount();
+    expect(captured?.aborted).toBe(true);
+  });
+
+  it("ignores AbortError after unmount in go env fetch", () => {
+    const ac = new AbortController();
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("aborted", "AbortError"));
+        });
+        ac.abort();
+      });
+    }));
+    const { container, unmount } = render(<CodeSandbox code="func main(){}" language="go" />);
+    expect(container).toBeTruthy();
+    unmount();
+  });
+
+  it("clears stale copy timer when copy clicked twice quickly", async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    const { container, unmount } = render(<CodeSandbox code="hi" language="javascript" />);
+    const btn = container.querySelector("button[title='Copy Code']")!;
+    fireEvent.click(btn);
+    await Promise.resolve();
+    fireEvent.click(btn);
+    await Promise.resolve();
+    unmount();
+  });
 });

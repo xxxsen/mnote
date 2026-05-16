@@ -19,13 +19,19 @@ export const ThemedSyntaxHighlighter =
 
 const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps) => {
   const [copied, setCopied] = React.useState(false);
+  const copiedTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => () => {
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+  }, []);
 
   /* v8 ignore start -- clipboard interaction requires real browser API */
   const handleCopyLocal = React.useCallback(() => {
     void copyToClipboard(rawCode).then((ok) => {
       if (ok) {
         setCopied(true);
-        setTimeout(() => setCopied(false), 1000);
+        if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = setTimeout(() => setCopied(false), 1000);
       }
     });
   }, [rawCode]);
@@ -54,6 +60,7 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
         </span>
         <button
           type="button"
+          aria-label="Copy code"
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();

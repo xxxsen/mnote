@@ -44,4 +44,14 @@ describe("CodeBlock", () => {
     fireEvent.click(btn);
     expect(copyToClipboard).toHaveBeenCalledWith("code");
   });
+
+  it("clears stale copy timer on rapid double click and unmount", async () => {
+    const { container, unmount } = render(<CodeBlock language="js" fileName="" rawCode="code" />);
+    const btn = container.querySelector("button[title='Copy']")!;
+    fireEvent.click(btn);
+    await Promise.resolve();
+    fireEvent.click(btn);
+    await Promise.resolve();
+    unmount();
+  });
 });

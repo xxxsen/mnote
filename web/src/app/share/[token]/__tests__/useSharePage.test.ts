@@ -84,6 +84,32 @@ describe("useSharePage", () => {
     vi.useRealTimers();
   });
 
+  it("showToast clears prior timer when called rapidly", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockApiFetch.mockResolvedValue(makeDetail());
+    const { result } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.showToast("First", 500); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    act(() => { result.current.showToast("Second", 500); });
+    expect(result.current.toast).toBe("Second");
+    await act(async () => { await vi.advanceTimersByTimeAsync(450); });
+    expect(result.current.toast).toBe("Second");
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(result.current.toast).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("cleans up toast timer on unmount", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockApiFetch.mockResolvedValue(makeDetail());
+    const { result, unmount } = renderHook(() => useSharePage());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.showToast("Bye", 1000); });
+    unmount();
+    vi.useRealTimers();
+  });
+
   it("slugify converts headings to slugs", async () => {
     mockApiFetch.mockResolvedValue(makeDetail());
     const { result } = renderHook(() => useSharePage());

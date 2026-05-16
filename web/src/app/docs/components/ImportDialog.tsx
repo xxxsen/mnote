@@ -31,7 +31,12 @@ function UploadStep({ importSource, importFileName, onImportFile }: {
         <label className="inline-flex items-center gap-2 mt-4 cursor-pointer rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold hover:bg-accent">
           <Upload className="h-4 w-4" />
           Choose file
-          <input type="file" accept=".zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) onImportFile(file); }} />
+          <input type="file" accept=".zip" className="hidden" onChange={(event) => {
+            const input = event.target;
+            const file = input.files?.[0];
+            if (file) onImportFile(file);
+            input.value = "";
+          }} />
         </label>
         {importFileName && <div className="text-xs text-muted-foreground mt-2">{importFileName}</div>}
       </div>
@@ -150,7 +155,14 @@ export function ImportDialog(props: ImportDialogProps) {
               {importSource === "hedgedoc" ? "Upload a HedgeDoc export ZIP to import notes" : "Upload a notes JSON ZIP to import notes"}
             </div>
           </div>
-          <button className="text-muted-foreground hover:text-foreground" onClick={onClose} disabled={importStep === "importing"}>
+          <button
+            type="button"
+            aria-label="Close"
+            title="Close"
+            className="text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={onClose}
+            disabled={importStep === "importing"}
+          >
             <X className="h-4 w-4" />
           </button>
         </div>

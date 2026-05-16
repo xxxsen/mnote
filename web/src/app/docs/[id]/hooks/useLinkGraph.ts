@@ -1,7 +1,10 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import type { Document as MnoteDocument } from "@/types";
 import { extractLinkedDocIDs } from "../utils";
+
+const isAbortError = (e: unknown): boolean =>
+  e instanceof DOMException && e.name === "AbortError";
 
 export function useLinkGraph(opts: {
   docId: string;
@@ -13,12 +16,21 @@ export function useLinkGraph(opts: {
   const [backlinks, setBacklinks] = useState<MnoteDocument[]>([]);
   const [outboundLinks, setOutboundLinks] = useState<MnoteDocument[]>([]);
 
+  const backlinksAbortRef = useRef<AbortController | null>(null);
+  const outboundAbortRef = useRef<AbortController | null>(null);
+
   const loadBacklinks = useCallback(async () => {
+    if (backlinksAbortRef.current) backlinksAbortRef.current.abort();
+    const controller = new AbortController();
+    backlinksAbortRef.current = controller;
     setBacklinks([]);
     try {
-      const data = await apiFetch<MnoteDocument[]>(`/documents/${docId}/backlinks`);
+      const data = await apiFetch<MnoteDocument[]>(`/documents/${docId}/backlinks`, { signal: controller.signal });
+      /* v8 ignore next -- defensive abort guard: race between await resolve and controller.abort() */
+      if (controller.signal.aborted) return;
       setBacklinks(data);
-    } catch {
+    } catch (err) {
+      if (isAbortError(err)) return;
       setBacklinks([]);
     }
   }, [docId]);
@@ -27,17 +39,29 @@ export function useLinkGraph(opts: {
   const loadOutboundLinks = useCallback(async (value: string) => {
     const linkIDs = extractLinkedDocIDs(value, docId);
     if (linkIDs.length === 0) { setOutboundLinks([]); return; }
+    if (outboundAbortRef.current) outboundAbortRef.current.abort();
+    const controller = new AbortController();
+    outboundAbortRef.current = controller;
     try {
       const settled = await Promise.all(
         linkIDs.slice(0, 24).map(async (did) => {
           try {
-            const detail = await apiFetch<{ document: MnoteDocument }>(`/documents/${did}`);
+            const detail = await apiFetch<{ document: MnoteDocument }>(`/documents/${did}`, { signal: controller.signal });
             return detail.document;
-          } catch { return null; }
+          } catch (err) {
+            if (isAbortError(err)) throw err;
+            return null;
+          }
         })
       );
+      /* v8 ignore next -- defensive abort guard: race between await resolve and controller.abort() */
+      if (controller.signal.aborted) return;
       setOutboundLinks(settled.filter((d): d is MnoteDocument => d !== null));
-    } catch { setOutboundLinks([]); } /* v8 ignore -- defensive: inner catch already handles per-doc errors */
+    } catch (err) {
+      if (isAbortError(err)) return;
+      /* v8 ignore next -- defensive: inner catch already handles per-doc errors */
+      setOutboundLinks([]);
+    }
   }, [docId]);
 
   useEffect(() => {
@@ -48,6 +72,15 @@ export function useLinkGraph(opts: {
     const timer = window.setTimeout(() => { void loadOutboundLinks(previewContent); }, 220);
     return () => window.clearTimeout(timer);
   }, [loadOutboundLinks, previewContent]);
+
+  useEffect(() => {
+    return () => {
+      /* v8 ignore start -- unmount cleanup: refs may be null if no fetch was initiated */
+      if (backlinksAbortRef.current) backlinksAbortRef.current.abort();
+      if (outboundAbortRef.current) outboundAbortRef.current.abort();
+      /* v8 ignore stop */
+    };
+  }, []);
 
   useEffect(() => {
     setOutboundLinks([]); // eslint-disable-line react-hooks/set-state-in-effect -- reset on route change

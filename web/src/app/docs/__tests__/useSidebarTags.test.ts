@@ -143,4 +143,22 @@ describe("useSidebarTags", () => {
     act(() => { result.current.maybeAutoLoadTags(); });
     expect(mockApiFetch).toHaveBeenCalled();
   });
+
+  it("aborts previous fetch when fetchSidebarTags called again", async () => {
+    let aborted = false;
+    mockApiFetch.mockImplementationOnce((_url, opts) => new Promise<unknown>((_resolve, reject) => {
+      opts?.signal?.addEventListener("abort", () => {
+        aborted = true;
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    }));
+    mockApiFetch.mockResolvedValueOnce([{ id: "t2", name: "rust", doc_count: 1, pinned: 0 }]);
+    const { result } = renderHook(() => useSidebarTags({ toast: stableToast }));
+    await act(async () => {
+      const first = result.current.fetchSidebarTags(0, false, "first");
+      const second = result.current.fetchSidebarTags(0, false, "second");
+      await Promise.all([first, second]);
+    });
+    expect(aborted).toBe(true);
+  });
 });

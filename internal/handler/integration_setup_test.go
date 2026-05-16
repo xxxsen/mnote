@@ -22,7 +22,7 @@ import (
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
 	"github.com/xxxsen/mnote/internal/repo"
 	"github.com/xxxsen/mnote/internal/service"
-	"github.com/xxxsen/mnote/test/testutil"
+	"github.com/xxxsen/mnote/internal/testutil"
 )
 
 type noopSender struct{}

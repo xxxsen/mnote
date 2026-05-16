@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Play, Terminal, Loader2, AlertCircle, ChevronRight, Hash, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -71,20 +71,30 @@ export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
   const [copied, setCopied] = useState(false);
   const isGoLang = language === 'go' || language === 'golang';
   const [goEnvReady, setGoEnvReady] = useState<boolean | 'checking'>(isGoLang ? 'checking' : true);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (isGoLang) {
-      fetch('/yaegi.wasm', { method: 'HEAD' })
-        .then(res => setGoEnvReady(res.ok))
-        .catch(() => setGoEnvReady(false));
-    }
+    if (!isGoLang) return;
+    const controller = new AbortController();
+    fetch('/yaegi.wasm', { method: 'HEAD', signal: controller.signal })
+      .then(res => { if (!controller.signal.aborted) setGoEnvReady(res.ok); })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setGoEnvReady(false);
+      });
+    return () => controller.abort();
   }, [isGoLang]);
+
+  useEffect(() => () => {
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+  }, []);
 
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1000);
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => setCopied(false), 1000);
     } catch (err) {
       console.error("Failed to copy code:", err);
     }

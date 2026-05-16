@@ -228,7 +228,7 @@ function SettingsContent() {
                 <div className="px-4 py-6 text-sm text-muted-foreground">Loading providers...</div>
               )}
               {enabledProviders.map(({ key, label, icon: Icon }) => {
-                const status = bindings[key];
+                const status = bindings[key] ?? { bound: false };
                 return (
                   <div key={key} className="flex items-center justify-between gap-4 px-4 py-4 border-b border-border/70 last:border-b-0">
                     <div className="flex items-center gap-3">

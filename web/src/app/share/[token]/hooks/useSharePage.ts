@@ -34,6 +34,7 @@ export function useSharePage() {
   const [passwordError, setPasswordError] = useState("");
   const [guestAuthor, setGuestAuthor] = useState("");
   const previewRef = useRef<HTMLDivElement>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const doc = detail?.document;
   const canAnnotate = detail?.permission === 2;
@@ -42,7 +43,17 @@ export function useSharePage() {
 
   const showToast = useCallback((message: string, durationMs = 2500) => {
     setToast(message);
-    window.setTimeout(() => setToast(null), durationMs);
+    if (toastTimerRef.current !== null) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, durationMs);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) clearTimeout(toastTimerRef.current);
+    };
   }, []);
 
   const toc = useShareToc(previewRef, doc);
@@ -196,11 +207,22 @@ export function useSharePage() {
       return false;
     };
     let attempts = 0;
-    const tryScroll = () => { if (scrollToHash()) return; attempts += 1; if (attempts < 12) window.setTimeout(tryScroll, 100); };
+    let cancelled = false;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    const tryScroll = () => {
+      if (cancelled) return;
+      if (scrollToHash()) return;
+      attempts += 1;
+      if (attempts < 12) timerId = setTimeout(tryScroll, 100);
+    };
     tryScroll();
     const onHashChange = () => { attempts = 0; tryScroll(); };
     window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
+    return () => {
+      cancelled = true;
+      if (timerId !== null) clearTimeout(timerId);
+      window.removeEventListener("hashchange", onHashChange);
+    };
   }, [doc, slugify, getElementById, scrollToElement]);
   /* v8 ignore stop */
 

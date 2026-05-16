@@ -127,8 +127,12 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const handleStarToggle = useCallback(async () => {
     const next = starred ? 0 : 1; setStarred(next);
     try { await apiFetch(`/documents/${docId}/star`, { method: "PUT", body: JSON.stringify({ starred: next === 1 }) }); }
-    catch (e) { console.error(e); setStarred(starred); }
-  }, [docId, starred]);
+    catch (e) {
+      console.error(e);
+      setStarred(starred);
+      toast({ description: e instanceof Error ? e : "Failed to update star", variant: "error" });
+    }
+  }, [docId, starred, toast]);
 
   const handleExportMarkdown = useCallback(() => { downloadFile(contentRef.current, `${title || "untitled"}.md`, "text/markdown"); }, [title, contentRef]);
   const handleExportConfluenceHTML = useCallback(async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Share } from "@/types";
 import { useDocumentActions } from "./useDocumentActions";
 
@@ -22,6 +22,13 @@ export function useShareLink({ docId, onError }: UseShareLinkOptions) {
   const [shareUrl, setShareUrl] = useState("");
   const [activeShare, setActiveShare] = useState<Share | null>(null);
   const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) clearTimeout(copiedTimerRef.current);
+    };
+  }, []);
 
   const handleShare = useCallback(async () => {
     try {
@@ -80,7 +87,11 @@ export function useShareLink({ docId, onError }: UseShareLinkOptions) {
     void navigator.clipboard.writeText(shareUrl)
       .then(() => {
         setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        if (copiedTimerRef.current !== null) clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = setTimeout(() => {
+          setCopied(false);
+          copiedTimerRef.current = null;
+        }, 2000);
       })
       .catch(() => { /* clipboard write failed */ });
   }, [shareUrl]);

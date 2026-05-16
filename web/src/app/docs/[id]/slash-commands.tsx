@@ -19,6 +19,14 @@ import {
 } from "lucide-react";
 import type { SlashCommand } from "./types";
 
+const currentLocalDate = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
 export const SLASH_COMMANDS: SlashCommand[] = [
   { id: "h1", label: "Heading 1", keywords: ["title", "#"], icon: <Heading1 className="h-4 w-4" />, action: (s) => s.handleFormat("line", "# ") },
   { id: "h2", label: "Heading 2", keywords: ["subtitle", "##"], icon: <Heading2 className="h-4 w-4" />, action: (s) => s.handleFormat("line", "## ") },
@@ -35,7 +43,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { id: "link", label: "Link", keywords: ["url"], icon: <Link2 className="h-4 w-4" />, action: (s) => s.insertTextAtCursor("[title](https://)") },
   { id: "image", label: "Image", keywords: ["media"], icon: <ImageIcon className="h-4 w-4" />, action: (s) => s.insertTextAtCursor("![alt](https://)") },
   { id: "callout", label: "Callout", keywords: ["note", "tip", "warning"], icon: <ListChecks className="h-4 w-4" />, action: (s) => s.insertTextAtCursor(":::info\nNote\n:::\n") },
-  { id: "date", label: "Current Date", keywords: ["today", "time"], icon: <CalendarDays className="h-4 w-4" />, action: (s) => s.insertTextAtCursor(new Date().toISOString().slice(0, 10)) },
+  { id: "date", label: "Current Date", keywords: ["today", "time"], icon: <CalendarDays className="h-4 w-4" />, action: (s) => s.insertTextAtCursor(currentLocalDate()) },
   { id: "time", label: "Current Time", keywords: ["clock"], icon: <Clock3 className="h-4 w-4" />, action: (s) => s.insertTextAtCursor(new Date().toLocaleTimeString("en-US", { hour12: false })) },
   { id: "divider", label: "Divider", keywords: ["hr", "line"], icon: <Minus className="h-4 w-4" />, action: (s) => s.insertTextAtCursor("\n---\n") },
 ];
