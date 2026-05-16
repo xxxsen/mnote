@@ -177,7 +177,7 @@ export function HeaderBar(props: HeaderBarProps) {
           />
         </div>
         {search && !showTagSelector && (
-          <button onClick={onClearSearch} className="shrink-0"><X className="h-4 w-4 text-muted-foreground hover:text-foreground" /></button>
+          <button type="button" aria-label="Clear search" title="Clear search" onClick={onClearSearch} className="shrink-0"><X className="h-4 w-4 text-muted-foreground hover:text-foreground" /></button>
         )}
         {showTagSelector && (
           <TagSelectorDropdown tagSelectorRef={tagSelectorRef} filteredTags={filteredTags} activeTagIndex={activeTagIndex} search={search} onSelect={selectTag} />

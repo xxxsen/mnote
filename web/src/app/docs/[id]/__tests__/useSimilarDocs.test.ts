@@ -99,7 +99,7 @@ describe("useSimilarDocs", () => {
     mockApiFetch.mockResolvedValue({ items: [] });
     const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "Test Doc" }));
     await act(async () => { result.current.handleToggleSimilar(); });
-    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("exclude_id=d1"));
+    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("exclude_id=d1"), expect.anything());
   });
 
   it("fetchSimilar returns empty for short query", async () => {
@@ -125,5 +125,44 @@ describe("useSimilarDocs", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
     await waitFor(() => { expect(mockApiFetch).toHaveBeenCalled(); });
     vi.useRealTimers();
+  });
+
+  it("ignores AbortError without clearing docs", async () => {
+    mockApiFetch.mockRejectedValueOnce(new DOMException("aborted", "AbortError"));
+    const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "Test Doc" }));
+    await act(async () => { result.current.handleToggleSimilar(); });
+    await waitFor(() => { expect(result.current.similarLoading).toBe(false); });
+    expect(result.current.similarDocs).toEqual([]);
+  });
+
+  it("aborts previous fetch when called rapidly", async () => {
+    let aborted = false;
+    mockApiFetch.mockImplementationOnce(((_url: string, opts?: { signal?: AbortSignal }) => new Promise<unknown>((_resolve, reject) => {
+      opts?.signal?.addEventListener("abort", () => {
+        aborted = true;
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    })));
+    mockApiFetch.mockResolvedValueOnce({ items: [{ id: "s2", title: "S2", score: 0.8 }] });
+    const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "Test Doc" }));
+    await act(async () => { result.current.handleToggleSimilar(); });
+    await act(async () => { result.current.handleToggleSimilar(); });
+    await act(async () => { result.current.handleToggleSimilar(); });
+    await waitFor(() => { expect(aborted).toBe(true); });
+  });
+
+  it("aborts pending fetch on unmount", async () => {
+    let aborted = false;
+    mockApiFetch.mockImplementationOnce(((_url: string, opts?: { signal?: AbortSignal }) => new Promise<unknown>((_resolve, reject) => {
+      opts?.signal?.addEventListener("abort", () => {
+        aborted = true;
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    })));
+    const { result, unmount } = renderHook(() => useSimilarDocs({ docId: "d1", title: "Test Doc" }));
+    await act(async () => { result.current.handleToggleSimilar(); });
+    unmount();
+    await new Promise(r => setTimeout(r, 10));
+    expect(aborted).toBe(true);
   });
 });

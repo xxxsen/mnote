@@ -144,11 +144,14 @@ export function useImportExport(deps: UseImportExportDeps) {
       /* v8 ignore stop */
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
-        const payload = await res.json().catch(() => ({}));
-        const code = payload?.code;
-        if (typeof code === "number" && code !== 0) {
-          throw new ApiError(payload?.msg || payload?.message || "Export failed", code);
+        const payload = await res.json().catch(() => null);
+        if (payload) {
+          const code = payload?.code;
+          if (typeof code === "number" && code !== 0) {
+            throw new ApiError(payload?.msg || payload?.message || "Export failed", code);
+          }
         }
+        return;
       }
       /* v8 ignore start -- blob download requires real browser APIs */
       const blob = await res.blob();

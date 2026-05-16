@@ -422,6 +422,41 @@ describe("useImportExport", () => {
     vi.unstubAllGlobals();
   });
 
+  it("handleExportNotes with JSON error response without msg field uses fallback", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: () => Promise.resolve({ code: 500 }),
+    }));
+    const deps = makeDeps();
+    const { result } = renderHook(() => useImportExport(deps));
+    await act(async () => { await result.current.handleExportNotes(); });
+    expect(deps.toast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+    vi.unstubAllGlobals();
+  });
+
+  it("handleExportNotes without content-type header treats as non-JSON download", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      headers: new Headers(),
+      blob: () => Promise.resolve(new Blob(["data"])),
+    }));
+    vi.stubGlobal("URL", { createObjectURL: vi.fn().mockReturnValue("blob:url"), revokeObjectURL: vi.fn() });
+    const origCreateElement = document.createElement.bind(document);
+    const fakeLink = { click: vi.fn(), href: "", download: "", remove: vi.fn() };
+    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      if (tag === "a") return fakeLink as unknown as HTMLAnchorElement;
+      return origCreateElement(tag);
+    });
+    vi.spyOn(document.body, "appendChild").mockImplementation((node) => node);
+    const deps = makeDeps();
+    const { result } = renderHook(() => useImportExport(deps));
+    await act(async () => { await result.current.handleExportNotes(); });
+    expect(deps.toast).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("handleImportFile handles JSON error code 0 (success)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       status: 200,

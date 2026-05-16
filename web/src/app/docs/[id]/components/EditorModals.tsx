@@ -52,7 +52,7 @@ export function DocPreviewModal({ previewDoc, previewLoading, onClose, onOpenFul
           </div>
           <div className="flex items-center gap-2">
             {!previewLoading && <Button variant="outline" size="sm" className="h-8 rounded-lg text-xs" onClick={() => onOpenFull(previewDoc?.id || "")}>Open Full Note</Button>}
-            <button onClick={onClose} className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors" title="Close"><X className="h-4 w-4" /></button>
+            <button type="button" aria-label="Close" onClick={onClose} className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors" title="Close"><X className="h-4 w-4" /></button>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-6 md:p-10 no-scrollbar bg-card/30">
@@ -89,7 +89,7 @@ export function PreviewModal({ show, title, content, onClose, onTocLoaded }: Pre
               <p className="text-[10px] text-muted-foreground font-mono">PREVIEW MODE</p>
             </div>
           </div>
-          <button onClick={onClose} className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors" title="Close"><X className="h-4 w-4" /></button>
+          <button type="button" aria-label="Close" onClick={onClose} className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors" title="Close"><X className="h-4 w-4" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-6 md:p-10 no-scrollbar bg-card/30">
           <article className="w-full bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 relative overflow-visible">

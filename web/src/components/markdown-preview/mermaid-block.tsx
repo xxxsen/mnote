@@ -246,6 +246,8 @@ const MermaidModal = memo(({
           </span>
           <div className="flex items-center gap-2">
             <button
+              type="button"
+              aria-label="Toggle debug"
               className={`h-8 w-8 flex items-center justify-center rounded-full border transition-colors ${showDebug ? "border-primary text-primary bg-primary/10" : "border-border text-muted-foreground hover:text-foreground"}`}
               onClick={() => setShowDebug((prev) => !prev)}
               title="Toggle debug"
@@ -253,6 +255,8 @@ const MermaidModal = memo(({
               <Bug className="h-4 w-4" />
             </button>
             <button
+              type="button"
+              aria-label="Close"
               className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors"
               onClick={onClose}
               title="Close"
@@ -297,12 +301,18 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
   const [copied, setCopied] = React.useState(false);
   const [showModal, setShowModal] = React.useState(false);
   const normalized = chart.trim();
+  const copiedTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+  }, []);
 
   const handleCopyLocal = React.useCallback(() => {
     void copyToClipboard(chart).then((ok) => {
       if (ok) {
         setCopied(true);
-        setTimeout(() => setCopied(false), 1000);
+        if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = setTimeout(() => setCopied(false), 1000);
       }
     });
   }, [chart]);
@@ -335,6 +345,7 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
           <div className="flex items-center gap-1">
             <button
               type="button"
+              aria-label="Open preview"
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -347,6 +358,7 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
             </button>
             <button
               type="button"
+              aria-label="Copy diagram code"
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();

@@ -8,7 +8,7 @@ import (
 
 	"github.com/xxxsen/mnote/internal/repo"
 	"github.com/xxxsen/mnote/internal/service"
-	"github.com/xxxsen/mnote/test/testutil"
+	"github.com/xxxsen/mnote/internal/testutil"
 )
 
 func TestDocumentServiceVersioningAndDelete(t *testing.T) {

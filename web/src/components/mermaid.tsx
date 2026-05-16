@@ -15,7 +15,16 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
   const [svg, setSvg] = useState<string>(() => svgCache.get(resolvedCacheKey) || "");
   const [error, setError] = useState<boolean>(false);
   const [isRendered, setIsRendered] = useState(() => svgCache.has(resolvedCacheKey));
+  const [lastCacheKey, setLastCacheKey] = useState(resolvedCacheKey);
   const initialized = useRef(false);
+
+  if (lastCacheKey !== resolvedCacheKey) {
+    setLastCacheKey(resolvedCacheKey);
+    const cached = svgCache.get(resolvedCacheKey);
+    setSvg(cached ?? "");
+    setIsRendered(cached !== undefined);
+    setError(false);
+  }
 
   /* v8 ignore start -- mermaid rendering requires real browser environment */
   useEffect(() => {
@@ -56,10 +65,7 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
   useEffect(() => {
     const normalized = chart.trim();
     if (!normalized || normalized === "undefined" || !ref.current) return;
-    
-    if (svgCache.has(resolvedCacheKey) && svg === svgCache.get(resolvedCacheKey)) {
-      return;
-    }
+    if (svgCache.has(resolvedCacheKey)) return;
 
     const id = `mermaid-${Math.random().toString(36).slice(2, 11)}`;
     let isMounted = true;
@@ -82,7 +88,7 @@ const Mermaid = memo(({ chart, cacheKey }: MermaidProps) => {
     return () => {
       isMounted = false;
     };
-  }, [chart, svg, resolvedCacheKey]);
+  }, [chart, resolvedCacheKey]);
 
   useEffect(() => {
     if (!ref.current) return;

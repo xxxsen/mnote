@@ -15,13 +15,16 @@ export function useSidebarTags({ toast }: UseSidebarTagsDeps) {
   const [sidebarOffset, setSidebarOffset] = useState(0);
   const [tagSearch, setTagSearch] = useState("");
   const sidebarFetchInFlightRef = useRef(false);
+  const sidebarAbortRef = useRef<AbortController | null>(null);
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const tagListRef = useRef<HTMLDivElement>(null);
   const tagAutoLoadAtRef = useRef(0);
 
   const fetchSidebarTags = useCallback(
     async (offset: number, append: boolean, query: string) => {
-      if (sidebarFetchInFlightRef.current) return;
+      sidebarAbortRef.current?.abort();
+      const controller = new AbortController();
+      sidebarAbortRef.current = controller;
       sidebarFetchInFlightRef.current = true;
       setSidebarLoading(true);
       try {
@@ -29,16 +32,20 @@ export function useSidebarTags({ toast }: UseSidebarTagsDeps) {
         params.set("limit", "20");
         params.set("offset", String(offset));
         if (query) params.set("q", query);
-        const res = await apiFetch<TagSummary[]>(`/tags/summary?${params.toString()}`);
+        const res = await apiFetch<TagSummary[]>(`/tags/summary?${params.toString()}`, { signal: controller.signal });
         const next = res;
         setSidebarTags((prev) => (append ? [...prev, ...next] : next));
         setSidebarHasMore(next.length === 20);
         setSidebarOffset(offset + next.length);
       } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
         console.error(e);
       } finally {
-        sidebarFetchInFlightRef.current = false;
-        setSidebarLoading(false);
+        if (sidebarAbortRef.current === controller) sidebarAbortRef.current = null;
+        if (!controller.signal.aborted) {
+          sidebarFetchInFlightRef.current = false;
+          setSidebarLoading(false);
+        }
       }
     },
     [],
@@ -90,7 +97,10 @@ export function useSidebarTags({ toast }: UseSidebarTagsDeps) {
       setSidebarHasMore(true);
       void fetchSidebarTags(0, false, tagSearch.trim());
     }, 200);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      sidebarAbortRef.current?.abort();
+    };
   }, [fetchSidebarTags, tagSearch]);
 
   return {

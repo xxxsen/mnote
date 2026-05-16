@@ -23,6 +23,8 @@ export function DayViewModal({ dayViewDate, dayViewTodos, onClose, onToggleDone,
           </div>
           <button
             type="button"
+            aria-label="Close"
+            title="Close"
             className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             onClick={onClose}
           >
@@ -96,6 +98,8 @@ export function CreateTodoModal({ selectedDate, newTodoContent, setNewTodoConten
           </div>
           <button
             type="button"
+            aria-label="Close"
+            title="Close"
             className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             onClick={onClose}
           >
@@ -156,6 +160,8 @@ export function EditTodoModal({ editingTodoDueDate, editTodoContent, setEditTodo
           </div>
           <button
             type="button"
+            aria-label="Close"
+            title="Close"
             className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             onClick={onClose}
           >

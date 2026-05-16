@@ -276,4 +276,14 @@ describe("MermaidBlock", () => {
     const overlay = Array.from(monos).find(el => (el.textContent ?? "").includes("svg:"));
     expect(overlay).toBeTruthy();
   });
+
+  it("clears stale copy timer on rapid double click and unmount", async () => {
+    const { container, unmount } = render(<MermaidBlock chart="graph TD; A-->B;" />);
+    const btn = container.querySelector("button[title='Copy']")!;
+    fireEvent.click(btn);
+    await Promise.resolve();
+    fireEvent.click(btn);
+    await Promise.resolve();
+    unmount();
+  });
 });

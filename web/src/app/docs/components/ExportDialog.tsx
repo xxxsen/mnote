@@ -16,7 +16,13 @@ export function ExportDialog({ onClose, onExport }: ExportDialogProps) {
             <div className="text-sm font-bold">Export Notes</div>
             <div className="text-[11px] text-muted-foreground">Export all notes as JSON zip</div>
           </div>
-          <button className="text-muted-foreground hover:text-foreground" onClick={onClose}>
+          <button
+            type="button"
+            aria-label="Close"
+            title="Close"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={onClose}
+          >
             <X className="h-4 w-4" />
           </button>
         </div>

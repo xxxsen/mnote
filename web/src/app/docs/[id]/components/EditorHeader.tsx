@@ -79,6 +79,8 @@ export function EditorHeader({
         <Button
           variant="ghost"
           size="icon"
+          aria-label={showDetails ? "Hide details" : "Show details"}
+          title={showDetails ? "Hide details" : "Show details"}
           onClick={() => { setShowDetails(!showDetails); }}
           className={`h-8 w-8 ${showDetails ? "bg-accent text-foreground" : "text-muted-foreground"}`}
         >

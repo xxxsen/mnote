@@ -157,4 +157,31 @@ describe("useWikilinkMenu", () => {
     act(() => { handled = result.current.handleWikilinkKeyDown({ key: "a", preventDefault: vi.fn() } as never); });
     expect(handled).toBe(false);
   });
+
+  it("aborts pending search when query rapidly changes", async () => {
+    let aborted = false;
+    mockApiFetch.mockImplementationOnce((_url, opts) => {
+      return new Promise<unknown>((_resolve, reject) => {
+        opts?.signal?.addEventListener("abort", () => {
+          aborted = true;
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+    });
+    mockApiFetch.mockResolvedValueOnce([{ id: "second", title: "Second" }]);
+    const { result } = renderHook(() => useWikilinkMenu(makeOpts()));
+    act(() => { result.current.setWikilinkMenu({ open: true, x: 0, y: 0, query: "first", from: 0 }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    act(() => { result.current.setWikilinkMenu({ open: true, x: 0, y: 0, query: "second", from: 0 }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    await waitFor(() => { expect(aborted).toBe(true); });
+  });
+
+  it("ignores AbortError catch and keeps state stable", async () => {
+    mockApiFetch.mockImplementationOnce(() => Promise.reject(new DOMException("aborted", "AbortError")));
+    const { result } = renderHook(() => useWikilinkMenu(makeOpts()));
+    act(() => { result.current.setWikilinkMenu({ open: true, x: 0, y: 0, query: "any", from: 0 }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    expect(result.current.wikilinkResults).toEqual([]);
+  });
 });

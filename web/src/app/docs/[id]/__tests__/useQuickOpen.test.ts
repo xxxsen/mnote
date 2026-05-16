@@ -107,4 +107,22 @@ describe("useQuickOpen", () => {
     });
     expect(result.current.showQuickOpen).toBe(true);
   });
+
+  it("fetchQuickOpenSearch ignores AbortError without resetting state", async () => {
+    mockApiFetch.mockResolvedValueOnce([]);
+    mockApiFetch.mockRejectedValueOnce(new DOMException("aborted", "AbortError"));
+    const { result } = renderHook(() => useQuickOpen({ onSelectDocument: stableOnSelect }));
+    act(() => { result.current.handleOpenQuickOpen(); });
+    act(() => { result.current.setQuickOpenQuery("query"); });
+    await new Promise(r => setTimeout(r, 250));
+    expect(result.current.quickOpenResults).toEqual([]);
+  });
+
+  it("fetchRecentDocs ignores AbortError without resetting state", async () => {
+    mockApiFetch.mockRejectedValueOnce(new DOMException("aborted", "AbortError"));
+    const { result } = renderHook(() => useQuickOpen({ onSelectDocument: stableOnSelect }));
+    act(() => { result.current.handleOpenQuickOpen(); });
+    await new Promise(r => setTimeout(r, 50));
+    expect(result.current.quickOpenRecent).toEqual([]);
+  });
 });

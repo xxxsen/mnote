@@ -53,7 +53,7 @@ function AiModalHeader({ aiTitle, aiLoading, closeAiModal }: { aiTitle: string; 
           <div className="text-[11px] text-muted-foreground">{aiLoading ? "Generating..." : "Review before applying"}</div>
         </div>
       </div>
-      <button className="text-muted-foreground hover:text-foreground" onClick={closeAiModal} disabled={aiLoading}><X className="h-4 w-4" /></button>
+      <button type="button" aria-label="Close" title="Close" className="text-muted-foreground hover:text-foreground" onClick={closeAiModal} disabled={aiLoading}><X className="h-4 w-4" /></button>
     </div>
   );
 }
@@ -139,7 +139,7 @@ function TagsPanel(props: {
           <div className="flex flex-wrap gap-2">
             {aiExistingTags.map((tag) => {
               const removed = aiRemovedTagIDs.includes(tag.id);
-              return (<button key={tag.id} className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${removed ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-black text-white border-black"}`} onClick={() => toggleExistingTag(tag.id)}>#{tag.name}</button>);
+              return (<button type="button" key={tag.id} aria-pressed={!removed} className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${removed ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-black text-white border-black"}`} onClick={() => toggleExistingTag(tag.id)}>#{tag.name}</button>);
             })}
           </div>
         )}
@@ -150,7 +150,7 @@ function TagsPanel(props: {
           <div className="flex flex-wrap gap-2">
             {aiSuggestedTags.map((tag) => {
               const checked = aiSelectedTags.includes(tag);
-              return (<button key={tag} className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${checked ? "bg-black text-white border-black" : "bg-background border-border"} hover:bg-accent`} onClick={() => toggleAiTag(tag)}>#{tag}</button>);
+              return (<button type="button" key={tag} aria-pressed={checked} className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${checked ? "bg-black text-white border-black" : "bg-background border-border"} hover:bg-accent`} onClick={() => toggleAiTag(tag)}>#{tag}</button>);
             })}
           </div>
         )}

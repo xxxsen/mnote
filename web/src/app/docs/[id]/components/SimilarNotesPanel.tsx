@@ -35,8 +35,8 @@ export function SimilarNotesPanel(props: SimilarNotesPanelProps) {
               <span className="text-xs font-bold uppercase tracking-wider">Similar Notes</span>
             </div>
             <div className="flex items-center gap-1">
-              <button onClick={onCollapse} className="p-1 text-muted-foreground hover:text-foreground transition-colors" title="Collapse"><ChevronRight className="h-3.5 w-3.5 rotate-90" /></button>
-              <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground transition-colors" title="Close"><X className="h-3.5 w-3.5" /></button>
+              <button type="button" aria-label="Collapse" onClick={onCollapse} className="p-1 text-muted-foreground hover:text-foreground transition-colors" title="Collapse"><ChevronRight className="h-3.5 w-3.5 rotate-90" /></button>
+              <button type="button" aria-label="Close" onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground transition-colors" title="Close"><X className="h-3.5 w-3.5" /></button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-2 no-scrollbar">

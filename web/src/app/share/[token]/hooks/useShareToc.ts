@@ -37,8 +37,14 @@ export function useShareToc(previewRef: RefObject<HTMLDivElement | null>, doc: {
   useEffect(() => {
     const hasToken = doc ? /\[(toc|TOC)]/.test(doc.content) : false;
     if (!tocContent || !hasToken) {
-      const frame = requestAnimationFrame(() => setShowFloatingToc(false));
-      return () => cancelAnimationFrame(frame);
+      let cancelled = false;
+      const frame = requestAnimationFrame(() => {
+        if (!cancelled) setShowFloatingToc(false);
+      });
+      return () => {
+        cancelled = true;
+        cancelAnimationFrame(frame);
+      };
     }
     const container = previewRef.current;
     if (!container) return;

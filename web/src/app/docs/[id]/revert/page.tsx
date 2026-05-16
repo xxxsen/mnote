@@ -73,7 +73,13 @@ function useRevertData(id: string, versionParam: string | null, versionId: strin
       }
     };
 
-    if (id && (versionParam || versionId)) { void loadData(); }
+    if (id && (versionParam || versionId)) {
+      void loadData();
+    } else if (id) {
+      router.push(`/docs/${id}`);
+    } else {
+      setLoading(false);
+    }
   }, [id, versionId, versionParam, router]);
 
   return { doc, selectedVersion, diffRows, loading };

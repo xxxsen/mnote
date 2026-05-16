@@ -42,21 +42,21 @@ describe("useDocsData", () => {
     mockApiFetch.mockResolvedValue([]);
     renderHook(() => useDocsData(makeDeps({ search: "test" })));
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
-    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("q=test"));
+    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("q=test"), expect.anything());
   });
 
   it("fetches with starred filter", async () => {
     mockApiFetch.mockResolvedValue([]);
     renderHook(() => useDocsData(makeDeps({ showStarred: true })));
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
-    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("starred=1"));
+    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("starred=1"), expect.anything());
   });
 
   it("fetches with tag filter", async () => {
     mockApiFetch.mockResolvedValue([]);
     renderHook(() => useDocsData(makeDeps({ selectedTag: "t1" })));
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
-    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("tag_id=t1"));
+    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("tag_id=t1"), expect.anything());
   });
 
   it("fetchSummary gets doc summary", async () => {
@@ -292,7 +292,7 @@ describe("useDocsData", () => {
     mockApiFetch.mockResolvedValue({ items: [] });
     renderHook(() => useDocsData(makeDeps({ showShared: true, search: "my doc" })));
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
-    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("q=my+doc"));
+    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("q=my+doc"), expect.anything());
   });
 
   it("handlePinToggle rollback restores original state on API failure (multiple docs)", async () => {
@@ -385,5 +385,60 @@ describe("useDocsData", () => {
     expect(d1?.starred).toBe(1);
     const d2 = result.current.docs.find(d => d.id === "d2");
     expect(d2?.starred).toBe(0);
+  });
+
+  it("fetchDocs ignores AbortError when search changes during in-flight request", async () => {
+    let firstReject: ((err: unknown) => void) | null = null;
+    mockApiFetch.mockImplementationOnce((_url, opts) => {
+      return new Promise((_resolve, reject) => {
+        firstReject = reject;
+        opts?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+    });
+    mockApiFetch.mockResolvedValue([]);
+    const { result, rerender } = renderHook(
+      (deps: ReturnType<typeof makeDeps>) => useDocsData(deps),
+      { initialProps: makeDeps({ search: "first" }) },
+    );
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    rerender(makeDeps({ search: "second" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    expect(firstReject).not.toBeNull();
+    expect(result.current.loading).toBe(false);
+  });
+
+  it("fetchAiSearch ignores AbortError when query changes mid-flight", async () => {
+    let abortPromiseSettled = false;
+    mockApiFetch.mockImplementationOnce((_url, opts) => {
+      return new Promise((_resolve, reject) => {
+        opts?.signal?.addEventListener("abort", () => {
+          abortPromiseSettled = true;
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+    });
+    mockApiFetch.mockResolvedValueOnce({ items: [{ id: "ai-second" }] });
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => {
+      void result.current.fetchAiSearch("first");
+      await result.current.fetchAiSearch("second");
+    });
+    expect(abortPromiseSettled).toBe(true);
+    expect(result.current.aiSearchDocs).toHaveLength(1);
+  });
+
+  it("fetchDocs returns early when already in flight", async () => {
+    let releaseFn: () => void = () => undefined;
+    mockApiFetch.mockImplementationOnce(() => new Promise((resolve) => {
+      releaseFn = () => resolve([]);
+    }));
+    const { result } = renderHook(() => useDocsData(makeDeps()));
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    const callsBefore = mockApiFetch.mock.calls.length;
+    await act(async () => { await result.current.fetchDocs(0, false); });
+    expect(mockApiFetch.mock.calls.length).toBe(callsBefore);
+    releaseFn();
   });
 });

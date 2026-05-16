@@ -73,13 +73,13 @@ export function InlineTagBar(props: InlineTagBarProps) {
               />
             </div>
           ) : (
-            <button onClick={() => setInlineTagMode(true)} className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 transition-colors whitespace-nowrap" title="Add tag">
+            <button type="button" onClick={() => setInlineTagMode(true)} className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 transition-colors whitespace-nowrap" title="Add tag">
               <Tags className="h-3.5 w-3.5" />Add tag
             </button>
           )
         )}
         <div className="flex-1" />
-        <button onClick={handleOpenQuickOpen} className="hidden md:inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-700 transition-colors whitespace-nowrap" title="Quick Open (Cmd+K)">
+        <button type="button" onClick={handleOpenQuickOpen} className="hidden md:inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-700 transition-colors whitespace-nowrap" title="Quick Open (Cmd+K)">
           <Command className="h-3 w-3" />Open
         </button>
       </div>

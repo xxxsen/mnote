@@ -308,7 +308,6 @@ export const buildTocMarkdown = (headings: Heading[]) => {
 };
 
 export const injectToc = (content: string, toc: string) => {
-  if (!toc) return content.replace(/\[(toc|TOC)]/g, "");
   const lines = content.split("\n");
   let inCodeBlock = false;
   const result: string[] = [];
@@ -320,7 +319,7 @@ export const injectToc = (content: string, toc: string) => {
       continue;
     }
     if (!inCodeBlock && tocTokenRegex.test(trimmed)) {
-      result.push("```toc\n" + toc + "\n```");
+      if (toc) result.push("```toc\n" + toc + "\n```");
       continue;
     }
     result.push(line);

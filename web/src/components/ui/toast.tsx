@@ -90,6 +90,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 </div>
                 <button
                   type="button"
+                  aria-label="Dismiss notification"
+                  title="Dismiss"
                   className="text-xs opacity-60 hover:opacity-100"
                   onClick={() => remove(item.id)}
                 >

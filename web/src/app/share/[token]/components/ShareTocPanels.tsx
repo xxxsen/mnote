@@ -16,7 +16,7 @@ export function FloatingToc({
     <div className="fixed top-24 right-8 z-30 hidden w-72 rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md xl:block animate-in fade-in slide-in-from-right-4 duration-500">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60">
         <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">On this page</div>
-        <button onClick={() => setTocCollapsed(!tocCollapsed)} className="p-1 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all">
+        <button type="button" aria-label={tocCollapsed ? "Expand contents" : "Collapse contents"} title={tocCollapsed ? "Expand contents" : "Collapse contents"} onClick={() => setTocCollapsed(!tocCollapsed)} className="p-1 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all">
           {tocCollapsed ? <Menu className="h-3 w-3" /> : <X className="h-3 w-3" />}
         </button>
       </div>
@@ -63,7 +63,7 @@ export function MobileToc({
       <div className="relative w-80 bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between p-4 border-b border-slate-100">
           <span className="font-bold text-slate-900">Contents</span>
-          <Button size="icon" variant="ghost" onClick={onClose}><X className="h-5 w-5" /></Button>
+          <Button size="icon" variant="ghost" aria-label="Close contents" title="Close contents" onClick={onClose}><X className="h-5 w-5" /></Button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
           <ReactMarkdown

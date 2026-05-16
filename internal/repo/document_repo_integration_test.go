@@ -10,7 +10,7 @@ import (
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
 	"github.com/xxxsen/mnote/internal/repo"
-	"github.com/xxxsen/mnote/test/testutil"
+	"github.com/xxxsen/mnote/internal/testutil"
 )
 
 func TestDocumentRepoCRUDAndIsolation(t *testing.T) {

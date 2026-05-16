@@ -39,7 +39,9 @@ export function QuickOpenDialog(props: QuickOpenDialogProps) {
               else if (e.key === "Enter") { e.preventDefault(); onSelect(docs[index]); }
             }}
           />
-          <X className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground" onClick={onClose} />
+          <button type="button" aria-label="Close" title="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
         </div>
         <div className="max-h-[50vh] overflow-y-auto p-2">
           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 py-2">{showSearchResults ? "Search Results" : "Recent Updates"}</div>

@@ -131,4 +131,43 @@ describe("useShareLink", () => {
     act(() => { result.current.handleCopyLink(); });
     expect(result.current.copied).toBe(false);
   });
+
+  it("handleCopyLink resets copied state after timer", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    stableCreateShare.mockResolvedValue({ token: "abc", id: "s1" });
+    const { result } = renderHook(() => useShareLink({ docId: "d1" }));
+    await act(async () => { await result.current.handleShare(); });
+    act(() => { result.current.handleCopyLink(); });
+    await waitFor(() => { expect(result.current.copied).toBe(true); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+    expect(result.current.copied).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("handleCopyLink clears previous timer when invoked twice", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    stableCreateShare.mockResolvedValue({ token: "abc", id: "s1" });
+    const { result } = renderHook(() => useShareLink({ docId: "d1" }));
+    await act(async () => { await result.current.handleShare(); });
+    act(() => { result.current.handleCopyLink(); });
+    await waitFor(() => { expect(result.current.copied).toBe(true); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    act(() => { result.current.handleCopyLink(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1700); });
+    expect(result.current.copied).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(result.current.copied).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("cleans up copied timer on unmount", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    stableCreateShare.mockResolvedValue({ token: "abc", id: "s1" });
+    const { result, unmount } = renderHook(() => useShareLink({ docId: "d1" }));
+    await act(async () => { await result.current.handleShare(); });
+    act(() => { result.current.handleCopyLink(); });
+    await waitFor(() => { expect(result.current.copied).toBe(true); });
+    unmount();
+    vi.useRealTimers();
+  });
 });

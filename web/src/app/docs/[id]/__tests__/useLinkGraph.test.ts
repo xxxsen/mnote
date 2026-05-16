@@ -186,4 +186,36 @@ describe("useLinkGraph", () => {
     rerender({ docId: "d2" });
     expect(result.current.outboundLinks).toEqual([]);
   });
+
+  it("ignores AbortError on backlinks fetch", async () => {
+    mockApiFetch.mockRejectedValue(new DOMException("aborted", "AbortError"));
+    const { result } = renderHook(() => useLinkGraph({ docId: "d1", title: "T", previewContent: "" }));
+    await new Promise(r => setTimeout(r, 30));
+    expect(result.current.backlinks).toEqual([]);
+  });
+
+  it("ignores AbortError on outbound fetch", async () => {
+    stableExtract.mockReturnValue(["o1"]);
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.includes("/backlinks")) return Promise.resolve([]);
+      return Promise.reject(new DOMException("aborted", "AbortError"));
+    }));
+    const { result } = renderHook(() => useLinkGraph({ docId: "d1", title: "T", previewContent: "links" }));
+    await new Promise(r => setTimeout(r, 260));
+    expect(result.current.outboundLinks).toEqual([]);
+  });
+
+  it("aborts pending fetches on unmount", async () => {
+    let backlinksAborted = false;
+    mockApiFetch.mockImplementationOnce(((_url: string, opts?: { signal?: AbortSignal }) => new Promise<unknown>((_resolve, reject) => {
+      opts?.signal?.addEventListener("abort", () => {
+        backlinksAborted = true;
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    })));
+    const { unmount } = renderHook(() => useLinkGraph({ docId: "d1", title: "T", previewContent: "" }));
+    unmount();
+    await new Promise(r => setTimeout(r, 10));
+    expect(backlinksAborted).toBe(true);
+  });
 });

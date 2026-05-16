@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { SimilarDoc } from "../types";
 
+const isAbortError = (e: unknown): boolean =>
+  e instanceof DOMException && e.name === "AbortError";
+
 type UseSimilarDocsOptions = {
   docId: string;
   title: string;
@@ -17,6 +20,7 @@ export function useSimilarDocs({ docId, title }: UseSimilarDocsOptions) {
 
   const similarTimerRef = useRef<number | null>(null);
   const skipSimilarFetchRef = useRef(false);
+  const fetchAbortRef = useRef<AbortController | null>(null);
 
   const fetchSimilar = useCallback(
     async (query: string) => {
@@ -24,14 +28,24 @@ export function useSimilarDocs({ docId, title }: UseSimilarDocsOptions) {
         setSimilarDocs([]);
         return;
       }
+      if (fetchAbortRef.current) fetchAbortRef.current.abort();
+      const controller = new AbortController();
+      fetchAbortRef.current = controller;
       setSimilarLoading(true);
       try {
-        const res = await apiFetch<{ items: SimilarDoc[] }>(`/ai/search?q=${encodeURIComponent(query)}&limit=5&exclude_id=${docId}`);
+        const res = await apiFetch<{ items: SimilarDoc[] }>(
+          `/ai/search?q=${encodeURIComponent(query)}&limit=5&exclude_id=${docId}`,
+          { signal: controller.signal },
+        );
+        /* v8 ignore next -- defensive abort guard: race between await resolve and controller.abort() */
+        if (controller.signal.aborted) return;
         setSimilarDocs(res.items);
-      } catch {
+      } catch (err) {
+        if (isAbortError(err)) return;
         setSimilarDocs([]);
       } finally {
-        setSimilarLoading(false);
+        /* v8 ignore next -- defensive abort check in finally: aborted controllers skip setLoading */
+        if (!controller.signal.aborted) setSimilarLoading(false);
       }
     },
     [docId]
@@ -63,6 +77,13 @@ export function useSimilarDocs({ docId, title }: UseSimilarDocsOptions) {
       }
     };
   }, [title, fetchSimilar, similarCollapsed]);
+
+  useEffect(() => {
+    return () => {
+      /* v8 ignore next -- unmount cleanup: ref may be null if no fetch was initiated */
+      if (fetchAbortRef.current) fetchAbortRef.current.abort();
+    };
+  }, []);
 
   const handleToggleSimilar = useCallback(() => {
     if (similarCollapsed) {

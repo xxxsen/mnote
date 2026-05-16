@@ -93,7 +93,7 @@ function FloatingPanelHeader(props: {
           {hasSummaryPanel && <TabButton label="Summary" active={floatingPanelTab === "summary"} onClick={() => selectTab("summary")} />}
         </div>
       </div>
-      <button onClick={() => setTocCollapsed(!tocCollapsed)} className="shrink-0 p-1 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all">
+      <button type="button" aria-label={tocCollapsed ? "Expand panel" : "Collapse panel"} title={tocCollapsed ? "Expand panel" : "Collapse panel"} onClick={() => setTocCollapsed(!tocCollapsed)} className="shrink-0 p-1 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all">
         {tocCollapsed ? <Menu className="h-3 w-3" /> : <X className="h-3 w-3" />}
       </button>
     </div>
@@ -128,7 +128,7 @@ function FloatingPanelContent(props: {
 
 function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${active ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}>
+    <button type="button" aria-pressed={active} onClick={onClick} className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide transition-colors ${active ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"}`}>
       {label}
     </button>
   );

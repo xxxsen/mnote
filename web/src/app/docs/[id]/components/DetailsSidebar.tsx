@@ -237,7 +237,7 @@ function ShareTabContent(props: {
             <div className="text-[11px] text-muted-foreground">Password</div>
             <div className="min-w-0 relative">
               <input type="text" value={sharePasswordInput} maxLength={6} inputMode="text" autoComplete="off" onChange={(e) => onPasswordChange(e.target.value.replace(/[^A-Za-z0-9]/g, "").slice(0, 6))} onBlur={() => onPasswordSave(sharePasswordInput)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onPasswordSave(sharePasswordInput); } }} placeholder="Set password" className="h-8 w-full min-w-0 rounded-md border border-border bg-background px-2 pr-9 text-xs" />
-              <button type="button" className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground" onClick={onPasswordClear} title="Clear password"><X className="h-3.5 w-3.5" /></button>
+              <button type="button" aria-label="Clear password" className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground" onClick={onPasswordClear} title="Clear password"><X className="h-3.5 w-3.5" /></button>
             </div>
           </div>
         </div>

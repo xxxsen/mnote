@@ -30,17 +30,24 @@ export function useWikilinkMenu(opts: {
       return;
     }
     if (wikilinkTimerRef.current) window.clearTimeout(wikilinkTimerRef.current);
+    const controller = new AbortController();
     wikilinkTimerRef.current = window.setTimeout(() => {
       setWikilinkLoading(true);
       const params = new URLSearchParams();
       if (wikilinkMenu.query) params.set("q", wikilinkMenu.query);
       params.set("limit", "8");
-      apiFetch<{ id: string; title: string }[]>(`/documents?${params.toString()}`)
-        .then((docs) => { setWikilinkResults(docs); })
-        .catch(() => { setWikilinkResults([]); })
-        .finally(() => { setWikilinkLoading(false); });
+      apiFetch<{ id: string; title: string }[]>(`/documents?${params.toString()}`, { signal: controller.signal })
+        .then((docs) => { if (!controller.signal.aborted) setWikilinkResults(docs); })
+        .catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          setWikilinkResults([]);
+        })
+        .finally(() => { if (!controller.signal.aborted) setWikilinkLoading(false); });
     }, 200);
-    return () => { if (wikilinkTimerRef.current) window.clearTimeout(wikilinkTimerRef.current); };
+    return () => {
+      if (wikilinkTimerRef.current) window.clearTimeout(wikilinkTimerRef.current);
+      controller.abort();
+    };
   }, [wikilinkMenu.open, wikilinkMenu.query]);
 
   useEffect(() => {

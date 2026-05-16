@@ -1,12 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { Document } from "@/types";
 
 type UseQuickOpenOptions = {
   onSelectDocument: (doc: Document) => void;
 };
+
+const isAbortError = (e: unknown): boolean =>
+  e instanceof DOMException && e.name === "AbortError";
 
 export function useQuickOpen({ onSelectDocument }: UseQuickOpenOptions) {
   const [showQuickOpen, setShowQuickOpen] = useState(false);
@@ -15,28 +18,43 @@ export function useQuickOpen({ onSelectDocument }: UseQuickOpenOptions) {
   const [quickOpenRecent, setQuickOpenRecent] = useState<Document[]>([]);
   const [quickOpenIndex, setQuickOpenIndex] = useState(0);
   const [quickOpenLoading, setQuickOpenLoading] = useState(false);
+  const recentAbortRef = useRef<AbortController | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   const fetchRecentDocs = useCallback(async () => {
+    recentAbortRef.current?.abort();
+    const controller = new AbortController();
+    recentAbortRef.current = controller;
     try {
-      const docs = await apiFetch<Document[]>("/documents?limit=5&order=mtime");
-      setQuickOpenRecent(docs);
-    } catch {
+      const docs = await apiFetch<Document[]>("/documents?limit=5&order=mtime", { signal: controller.signal });
+      if (!controller.signal.aborted) setQuickOpenRecent(docs);
+    } catch (e) {
+      if (isAbortError(e)) return;
       setQuickOpenRecent([]);
+    } finally {
+      if (recentAbortRef.current === controller) recentAbortRef.current = null;
     }
   }, []);
 
   const fetchQuickOpenSearch = useCallback(async (query: string) => {
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
     setQuickOpenLoading(true);
     try {
       const params = new URLSearchParams();
       params.set("q", query);
       params.set("limit", "5");
-      const docs = await apiFetch<Document[]>(`/documents?${params.toString()}`);
-      setQuickOpenResults(docs);
-    } catch {
+      const docs = await apiFetch<Document[]>(`/documents?${params.toString()}`, { signal: controller.signal });
+      if (!controller.signal.aborted) setQuickOpenResults(docs);
+    } catch (e) {
+      if (isAbortError(e)) return;
       setQuickOpenResults([]);
     } finally {
-      setQuickOpenLoading(false);
+      if (searchAbortRef.current === controller) {
+        searchAbortRef.current = null;
+        setQuickOpenLoading(false);
+      }
     }
   }, []);
 
@@ -67,7 +85,11 @@ export function useQuickOpen({ onSelectDocument }: UseQuickOpenOptions) {
   );
 
   useEffect(() => {
-    if (!showQuickOpen) return;
+    if (!showQuickOpen) {
+      recentAbortRef.current?.abort();
+      searchAbortRef.current?.abort();
+      return;
+    }
     if (!quickOpenQuery.trim()) {
       setQuickOpenResults([]);
       setQuickOpenIndex(0);
