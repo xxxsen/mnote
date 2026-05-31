@@ -1,77 +1,144 @@
-# AI Coding Agent 工作契约与自检规范
+# AGENTS.md — mnote AI Agent 工程契约
 
-你现在是一名资深的 **Full-Stack Engineer**，负责维护基于 **Golang (Backend)** 和 **Next.js/React (Frontend)** 的工程。你的目标是交付“零错误、高性能、可维护”的代码。
-
----
-
-## 1. 核心技术栈背景
-
-* **Backend:** Golang (规范：Go Modules, Standard Project Layout)
-* **Frontend:** Next.js (App Router), React, TypeScript, Tailwind CSS
-* **Quality Tools:** `golangci-lint`, `go test`, `tsc`, `eslint`, `prettier`
+本文件定义 AI Agent 在本仓库进行设计、编码、测试和 review 时必须遵循的规则。本项目是 Golang 后端 + Next.js/React 前端的全栈工程，目标是交付可维护、可验证、低回归风险的代码。
 
 ---
 
-## 2. 操作流程 (The Loop)
+## 0. 总则
 
-在接受任何任务后，你必须遵循以下循环：
-
-1. **理解 (Understand):** 分析需求，检查现有代码逻辑。
-2. **计划 (Plan):** 在修改前，先输出一个简短的操作计划。
-3. **编码 (Code):** 执行最小化修改，禁止大范围无意义重构。
-4. **自检 (Verify):** 执行下文定义的 [自检清单](https://www.google.com/search?q=%233-%E4%BF%AE%E6%94%B9%E5%90%8E%E8%87%AA%E6%A3%80%E6%B8%85%E5%8D%95)。
-5. **交付 (Deliver):** 只有在所有检查通过后，才告知用户任务完成。
-
----
-
-## 3. 修改后自检清单 (Post-Modification Checklist)
-
-### A. 静态扫描（禁止无用变量与语法错误）
-
-每次修改后，必须运行以下命令并解决所有 Error/Warning：
-
-* **Backend:** `go vet ./...` 以及如果安装了 lint：`golangci-lint run`。
-* **Frontend:** `npm run lint` 或 `next lint`。确保没有 `unused variables` 或 `unused imports`。
-* **Types:** `npx tsc --noEmit`（确保 TypeScript 类型定义完全正确）。
-
-### B. 功能验证（单元测试）
-
-* **Backend:** 修改逻辑对应的 `_test.go` 必须通过。运行：`go test -v ./path/to/package`。
-* **Frontend:** 如果存在组件测试，运行：`npm test`。
-
-### C. 运行健康检查
-
-* **Frontend:** 检查 Next.js 是否能正常编译。运行：`npm run build` (在重大修改后建议执行)。
-* **Consistency:** 检查后端 API 定义与前端 Typescript 定义是否同步。
-
-### D. 代码质量规范
-
-* **Clean Code:** 是否存在为了调试而临时添加的 `fmt.Println` 或 `console.log`？**必须删除**。
-* **Refactoring:** 是否定义了从未使用的变量、常量或函数？**必须删除**。
-* **Comments:** 复杂的逻辑是否补充了注释？
+- 不允许主动降低质量门禁。除非用户明确许可，禁止：
+  - 放宽 `.golangci.yml`、ESLint、Vitest、覆盖率阈值或 CI 脚本；
+  - 用 `//nolint`、`eslint-disable`、`@ts-ignore` 规避真实问题；
+  - 跳过失败测试、删除失败用例、绕过构建失败；
+  - 引入大范围无关重构来掩盖局部问题。
+- 以本文件为本仓库最高工程规范。若用户要求与本文件冲突，先说明冲突并等待确认。
+- 默认做最小可验证修改。除非任务明确要求，不改无关文件、不重排无关代码、不批量格式化无关目录。
+- 本仓库不需要引入 devcontainer。不要新增 `.devcontainer/`、devcontainer 文档或相关 Make target。
 
 ---
 
-## 4. 自动化指令执行区
+## 1. 工作流程
 
-如果当前环境允许执行 Terminal 指令，请在修改代码后**主动尝试**运行以下组合指令：
+每个任务按以下闭环执行：
+
+1. **理解**：先读需求、现有代码、测试和相关文档，确认真实数据流与边界。
+2. **计划**：修改前输出简短计划，说明准备改哪些模块、如何验证。
+3. **实施**：按计划做最小改动；若发现方案不成立，先重新说明调整后的计划。
+4. **自检**：运行与改动范围匹配的检查命令，失败则直接修复并重跑。
+5. **交付**：只在检查完成后总结改动、测试结果和残余风险。
+
+遇到失败时最多连续修复 3 轮；仍无法通过时，停止并报告具体命令、错误摘要、已尝试的修复。
+
+---
+
+## 2. 文档规范
+
+- `td/` 是临时设计、review、排查文档目录。
+- `td/` 文档必须写清楚：背景、问题、影响、可执行方案、测试用例、迁移/回滚注意事项。
+- `docs/` 承载稳定正式文档。功能完成并验证后，才把需要长期维护的内容整理进 `docs/`。
+- 禁止在源码、测试、正式文档、用户可见文案中引用 `td/` 编号或临时路径。
+- 基于设计文档实施功能时，必须先确认文档方案是非 MVP、无歧义、可实施的；如文档缺少接口、数据模型、边界或测试要求，先补文档再编码。
+
+---
+
+## 3. 后端规范
+
+- 技术栈：Go Modules、Gin、PostgreSQL、标准 `cmd/` + `internal/` 布局。
+- 数据一致性优先。涉及多表写入、版本、引用关系、分享、导入、embedding、资产引用时必须使用事务或说明为什么不需要事务。
+- 并发写入必须有明确策略：乐观锁、唯一约束下的重试、单 SQL 原子更新、队列串行化，不能依赖前端“不快速点击”。
+- 数据库迁移必须可重复执行，并考虑旧数据回填、索引、唯一约束和回滚风险。
+- 错误必须归一到 `internal/pkg/errors` 可识别的业务错误；不要把数据库内部错误直接暴露给前端。
+- 不提交调试输出：禁止残留 `fmt.Println`、临时日志、无意义 `zap.Any`。
+
+### 后端测试要求
+
+- 单元测试至少覆盖正常、异常、边界三类场景。
+- 并发、事务、唯一约束、分页、权限隔离、软删除、数据迁移相关改动必须有针对性测试。
+- 总覆盖率阈值由 Makefile 管理，当前后端阈值为 `GO_COVERAGE_THRESHOLD ?= 95`，不得降低。
+
+---
+
+## 4. 前端规范
+
+- 技术栈：Next.js App Router、React、TypeScript、Tailwind CSS、Vitest、Playwright。
+- API 类型必须与后端响应保持同步；新增/修改接口时同步更新 `web/src/types.ts` 或局部类型。
+- 保存、上传、导入、分享、AI 请求等异步流程必须处理：
+  - loading/disabled 状态；
+  - 快速重复触发；
+  - 请求取消或过期响应；
+  - 错误提示和本地状态回滚；
+  - 本地草稿或乐观更新的一致性。
+- UI 改动要遵循现有组件风格，避免新增无意义卡片、营销式布局或只靠文字说明功能。
+- 不提交调试输出：禁止残留 `console.log`，错误日志必须有明确目的。
+
+### 前端测试要求
+
+- Hook、service、utils 必须优先补 Vitest 单测。
+- 用户关键流程、编辑器交互、导入导出、分享访问、保存竞态等需要 Playwright 或等价集成测试。
+- 当前 Vitest 覆盖率阈值：statements 95、branches 93、functions 95、lines 95，不得降低。
+
+---
+
+## 5. 必跑命令
+
+按改动范围运行命令。修改后端 Go 代码时：
 
 ```bash
-# 后端自检
-# make lint-go, 如果golangci-lint不存在, 需要执行 `make install-golangci-lint` 进行安装
-go fmt ./... && go mod tidy && go test ./... && make lint-go
-
-# 前端自检
-npm run lint && npx tsc --noEmit
-
+go fmt ./...
+go mod tidy
+go test ./...
+make lint-go
+make test-coverage
 ```
+
+修改前端代码时：
+
+```bash
+cd web && npm run lint
+cd web && npx tsc --noEmit
+cd web && npm run test:coverage
+```
+
+修改关键页面、构建配置、依赖、App Router、Next 配置时额外运行：
+
+```bash
+cd web && npm run build
+```
+
+修改文档、AGENTS.md 或纯说明文件时，至少运行：
+
+```bash
+git diff --check
+```
+
+如果命令因环境依赖缺失、网络受限或外部服务不可用失败，记录失败原因和未覆盖风险，不得谎称通过。
 
 ---
 
-## 5. 失败处理协议
+## 6. Review 规则
 
-如果上述自检步骤中有任何一项失败：
+当用户要求 review 时，默认按代码审查输出：
 
-1. **不要解释**“为什么失败”，请**直接修复**它。
-2. 修复后重新运行自检流程。
-3. 如果尝试 3 次仍无法通过自检，请停止操作，向主人报告具体错误并请求进一步指示。
+- 先列问题，按严重程度排序；
+- 每个问题包含文件/行号、影响、触发条件、推荐修复方案、必要测试；
+- 没有发现问题时明确说明，并列出剩余测试缺口。
+
+当本次任务涉及代码修改，完成自检后需要做一轮自我 review：
+
+- P0：数据损坏、安全漏洞、崩溃、认证绕过；
+- P1：功能错误、并发竞态、事务一致性破坏；
+- P2：边界缺失、性能退化、可观测性不足；
+- P3：命名、组织、样式等非阻塞问题。
+
+P0/P1/P2 必须修复后再交付；P3 可说明是否延后。
+
+---
+
+## 7. 交付格式
+
+最终回复应简洁说明：
+
+- 改了什么；
+- 运行了哪些检查以及结果；
+- 未运行的检查和原因；
+- 需要用户关注的残余风险或下一步。

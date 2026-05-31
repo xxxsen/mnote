@@ -16,3 +16,4 @@ web/public/yaegi.wasm
 /.cache
 /testdata
 *.out
+/td
