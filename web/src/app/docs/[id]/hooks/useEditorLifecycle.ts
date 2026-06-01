@@ -11,12 +11,10 @@ type DocumentDetail = {
 
 type DocumentActions = {
   getDocument: () => Promise<DocumentDetail>;
-  saveDocument: (title: string, content: string) => Promise<void>;
 };
 
 type UseEditorLifecycleOptions = {
   id: string;
-  saving: boolean;
   hasUnsavedChanges: boolean;
   contentRef: RefObject<string>;
   lastSavedContentRef: RefObject<string>;
@@ -29,7 +27,10 @@ type UseEditorLifecycleOptions = {
     hasDraftOverride: boolean;
   }) => void;
   onLoadError: (err: unknown) => void;
-  onAutoSaved: (payload: { title: string; timestamp: number }) => void;
+  // requestSave is invoked by the auto-save tick. The hook does not own the
+  // save protocol any more (see FE-1 / useEditorSaveQueue); it only schedules
+  // requests and lets the queue coordinate single-flight execution.
+  requestSave: (snapshot: { title: string; content: string }) => void;
 };
 
 function loadDraft(id: string, serverContent: string): { initialContent: string; hasDraftOverride: boolean } {
@@ -50,7 +51,6 @@ function loadDraft(id: string, serverContent: string): { initialContent: string;
 
 export function useEditorLifecycle({
   id,
-  saving,
   hasUnsavedChanges,
   contentRef,
   lastSavedContentRef,
@@ -59,19 +59,19 @@ export function useEditorLifecycle({
   onLoadingChange,
   onLoaded,
   onLoadError,
-  onAutoSaved,
+  requestSave,
 }: UseEditorLifecycleOptions) {
   const onLoadingChangeRef = useRef(onLoadingChange);
   const onLoadedRef = useRef(onLoaded);
   const onLoadErrorRef = useRef(onLoadError);
-  const onAutoSavedRef = useRef(onAutoSaved);
+  const requestSaveRef = useRef(requestSave);
 
   useEffect(() => {
     onLoadingChangeRef.current = onLoadingChange;
     onLoadedRef.current = onLoaded;
     onLoadErrorRef.current = onLoadError;
-    onAutoSavedRef.current = onAutoSaved;
-  }, [onAutoSaved, onLoadError, onLoaded, onLoadingChange]);
+    requestSaveRef.current = requestSave;
+  }, [onLoadError, onLoaded, onLoadingChange, requestSave]);
 
   const fetchDoc = useCallback(async () => {
     onLoadingChangeRef.current(true);
@@ -89,26 +89,18 @@ export function useEditorLifecycle({
     }
   }, [contentRef, documentActions, id, lastSavedContentRef]);
 
-  const handleAutoSave = useCallback(async () => {
+  const handleAutoSave = useCallback(() => {
     const latestContent = contentRef.current;
-    if (latestContent === lastSavedContentRef.current || saving) return;
+    if (latestContent === lastSavedContentRef.current) return;
 
     const derivedTitle = extractTitleFromContent(latestContent);
     if (!derivedTitle) return;
 
-    try {
-      await documentActions.saveDocument(derivedTitle, latestContent);
-      lastSavedContentRef.current = latestContent;
-      const timestamp = Math.floor(Date.now() / 1000);
-      onAutoSavedRef.current({ title: derivedTitle, timestamp });
-      /* v8 ignore next 3 -- SSR guard untestable in jsdom */
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem(`mnote:draft:${id}`);
-      }
-    } catch {
-      return;
-    }
-  }, [contentRef, documentActions, extractTitleFromContent, id, lastSavedContentRef, saving]);
+    // Hand the snapshot to the queue; the queue takes care of skipping when
+    // a save is already in flight and of preserving the local draft on
+    // failure (we deliberately do not touch localStorage here any more).
+    requestSaveRef.current({ title: derivedTitle, content: latestContent });
+  }, [contentRef, extractTitleFromContent, lastSavedContentRef]);
 
   useEffect(() => {
     if (!id) return;
@@ -117,7 +109,7 @@ export function useEditorLifecycle({
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      void handleAutoSave();
+      handleAutoSave();
     }, 10000);
     return () => window.clearInterval(interval);
   }, [handleAutoSave]);

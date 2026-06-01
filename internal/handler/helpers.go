@@ -1,6 +1,8 @@
 package handler
 
 import (
+	stderrors "errors"
+
 	"github.com/gin-gonic/gin"
 	"github.com/xxxsen/common/logutil"
 	"github.com/xxxsen/common/trace"
@@ -34,6 +36,14 @@ func handleError(c *gin.Context, err error) {
 		zap.Any("user_email", userEmail),
 		zap.Error(err),
 	)
+
+	var conflict *appErr.ConflictError
+	if stderrors.As(err, &conflict) {
+		response.ErrorWithData(c, conflict.Code(), conflict.Message(), gin.H{
+			"current": conflict.Current,
+		})
+		return
+	}
 
 	normalized := appErr.Normalize(err)
 	response.Error(c, normalized.Code(), normalized.Message())

@@ -16,12 +16,6 @@ type todoRepo interface { //nolint:interfacebloat // mirrors repo.TodoRepo
 	Delete(ctx context.Context, userID, todoID string) error
 }
 
-type savedViewRepo interface {
-	List(ctx context.Context, userID string) ([]model.SavedView, error)
-	Create(ctx context.Context, view *model.SavedView) error
-	Delete(ctx context.Context, userID, id string) error
-}
-
 type tagRepo interface { //nolint:interfacebloat // mirrors repo.TagRepo
 	Create(ctx context.Context, tag *model.Tag) error
 	CreateBatch(ctx context.Context, tags []model.Tag) error
@@ -86,6 +80,7 @@ type documentRepo interface { //nolint:interfacebloat // mirrors repo.DocumentRe
 	Create(ctx context.Context, doc *model.Document) error
 	Update(ctx context.Context, doc *model.Document) error
 	GetByID(ctx context.Context, userID, docID string) (*model.Document, error)
+	GetByIDForUpdate(ctx context.Context, userID, docID string) (*model.Document, error)
 	GetByTitle(ctx context.Context, userID, title string) (*model.Document, error)
 	List(ctx context.Context, userID string, starred *int,
 		limit, offset uint, orderBy string) ([]model.Document, error)
@@ -109,9 +104,8 @@ type documentSummaryRepo interface {
 	ListPendingDocuments(ctx context.Context, limit int, maxMtime int64) ([]model.Document, error)
 }
 
-type versionRepo interface { //nolint:interfacebloat // mirrors repo.VersionRepo
+type versionRepo interface {
 	Create(ctx context.Context, version *model.DocumentVersion) error
-	GetLatestVersion(ctx context.Context, userID, docID string) (int, error)
 	GetByVersion(ctx context.Context, userID, docID string, version int) (*model.DocumentVersion, error)
 	ListSummaries(ctx context.Context, userID, docID string) ([]model.DocumentVersionSummary, error)
 	ListByUser(ctx context.Context, userID string) ([]model.DocumentVersion, error)
@@ -126,7 +120,7 @@ type shareRepo interface { //nolint:interfacebloat // mirrors repo.ShareRepo
 	RevokeByDocument(ctx context.Context, userID, docID string, mtime int64) error
 	GetByToken(ctx context.Context, token string) (*model.Share, error)
 	GetActiveByDocument(ctx context.Context, userID, docID string) (*model.Share, error)
-	ListActiveDocuments(ctx context.Context, userID, query string) ([]repo.SharedDocument, error)
+	ListActiveDocuments(ctx context.Context, userID, query string, now int64) ([]repo.SharedDocument, error)
 	CreateComment(ctx context.Context, comment *model.ShareComment) error
 	ListCommentsByShare(ctx context.Context, shareID string,
 		limit, offset int) ([]model.ShareComment, error)
@@ -157,8 +151,11 @@ type embeddingRepo interface { //nolint:interfacebloat // mirrors repo.Embedding
 	SearchChunks(ctx context.Context, userID string,
 		query []float32, threshold float32, topK int) ([]repo.ChunkSearchResult, error)
 	GetByDocID(ctx context.Context, docID string) (*model.DocumentEmbedding, error)
-	ListStaleDocuments(ctx context.Context, limit int,
-		maxMtime int64) ([]model.Document, error)
+	ListStaleDocuments(ctx context.Context, limit int, now int64) ([]model.Document, error)
+	UpsertPending(ctx context.Context, docID, userID, contentHash string,
+		contentMtime int64) error
+	Claim(ctx context.Context, docID string, lockedUntil, now int64) (bool, error)
+	MarkFailed(ctx context.Context, docID, errMsg string, nextRetryAt int64) error
 }
 
 type importJobRepo interface { //nolint:interfacebloat // mirrors repo.ImportJobRepo

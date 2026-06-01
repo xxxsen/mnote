@@ -23,6 +23,9 @@ function mapSharedItem(item: SharedItem): DocumentWithTags {
     content: item.summary || "", summary: item.summary || "",
     state: 1, pinned: 0, starred: 0,
     ctime: item.mtime, mtime: item.mtime,
+    // Shared-document listings do not surface content_hash/revision because
+    // the viewer never edits through this path. Defaults match a fresh doc.
+    content_hash: "", content_mtime: 0, content_revision: 1,
     tags: [], tag_ids: item.tag_ids || [],
     share_token: item.token,
   };

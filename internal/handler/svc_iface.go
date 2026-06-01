@@ -30,6 +30,8 @@ type IDocumentService interface { //nolint:interfacebloat // mirrors service.Doc
 		starred *int, limit, offset uint, orderBy string) ([]model.Document, error)
 	Get(ctx context.Context, userID, docID string) (*model.Document, error)
 	Update(ctx context.Context, userID, docID string, input service.DocumentUpdateInput) error
+	Save(ctx context.Context, userID, docID string,
+		input service.DocumentUpdateInput) (*model.SaveDocumentResult, error)
 	UpdateTags(ctx context.Context, userID, docID string, tagIDs []string) error
 	UpdateSummary(ctx context.Context, userID, docID, summary string) error
 	UpdatePinned(ctx context.Context, userID, docID string, pinned int) error
@@ -73,12 +75,6 @@ type IExportService interface {
 	Export(ctx context.Context, userID string) (*service.ExportPayload, error)
 	ExportNotesZip(ctx context.Context, userID string) (string, error)
 	ConvertMarkdownToConfluenceHTML(ctx context.Context, userID, docID string) (string, error)
-}
-
-type ISavedViewService interface {
-	List(ctx context.Context, userID string) ([]model.SavedView, error)
-	Create(ctx context.Context, userID string, input service.SavedViewCreateInput) (*model.SavedView, error)
-	Delete(ctx context.Context, userID, id string) error
 }
 
 type IAIHandlerService interface {

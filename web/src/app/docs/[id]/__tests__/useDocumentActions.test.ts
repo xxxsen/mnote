@@ -41,11 +41,11 @@ describe("useDocumentActions", () => {
     expect(mockService.getDocument).toHaveBeenCalledWith("d1");
   });
 
-  it("saveDocument calls service with docId and params", async () => {
-    mockService.saveDocument.mockResolvedValue(undefined);
+  it("saveDocument calls service with docId and params including base_revision", async () => {
+    mockService.saveDocument.mockResolvedValue({ id: "d1", content_revision: 4 } as never);
     const { result } = renderHook(() => useDocumentActions("d1"));
-    await result.current.saveDocument("Title", "Content");
-    expect(mockService.saveDocument).toHaveBeenCalledWith("d1", { title: "Title", content: "Content" });
+    await result.current.saveDocument("Title", "Content", 3);
+    expect(mockService.saveDocument).toHaveBeenCalledWith("d1", { title: "Title", content: "Content", base_revision: 3 });
   });
 
   it("memoizes across renders with same docId", () => {

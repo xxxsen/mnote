@@ -187,7 +187,16 @@ type SharedDocument struct {
 	AllowDownload int
 }
 
-func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID, query string) ([]SharedDocument, error) {
+// ListActiveDocuments returns the documents the user currently has shared.
+//
+// BE-4: An expired share row is still in state=active until the next manual
+// revoke or cleanup job, so we additionally filter by expires_at. expires_at=0
+// means "no expiry"; any positive value must be in the future relative to
+// `now`. `now` is passed in (rather than read inside the SQL) so the service
+// layer can inject a deterministic clock in tests.
+func (r *ShareRepo) ListActiveDocuments(
+	ctx context.Context, userID, query string, now int64,
+) ([]SharedDocument, error) {
 	sqlStr := `
 		SELECT d.id, d.title, COALESCE(ds.summary,
 			'') AS summary, d.mtime, s.token, s.expires_at, s.permission, s.allow_download
@@ -195,8 +204,9 @@ func (r *ShareRepo) ListActiveDocuments(ctx context.Context, userID, query strin
 		JOIN documents d ON d.id = s.document_id AND d.user_id = s.user_id
 		LEFT JOIN document_summaries ds ON ds.document_id = d.id AND ds.user_id = d.user_id
 		WHERE s.user_id = ? AND s.state = ? AND d.state = ?
+		  AND (s.expires_at = 0 OR s.expires_at >= ?)
 	`
-	args := []any{userID, ShareStateActive, DocumentStateNormal}
+	args := []any{userID, ShareStateActive, DocumentStateNormal, now}
 	if query != "" {
 		sqlStr += " AND (d.title LIKE ? OR d.content LIKE ?)"
 		like := "%" + query + "%"

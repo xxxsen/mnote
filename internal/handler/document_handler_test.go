@@ -8,8 +8,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/xxxsen/mnote/internal/model"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/service"
 )
 
@@ -167,11 +169,37 @@ func TestDocumentHandler_List_WithIncludeTags(t *testing.T) {
 
 func TestDocumentHandler_Update_Success(t *testing.T) {
 	mock := newDocMock()
-	mock.updateFn = func(_ context.Context, _, docID string, _ service.DocumentUpdateInput) error {
+	mock.saveFn = func(_ context.Context, _, docID string, in service.DocumentUpdateInput) (*model.SaveDocumentResult, error) {
 		assert.Equal(t, "d1", docID)
-		return nil
+		assert.Equal(t, int64(5), in.BaseRevision)
+		return &model.SaveDocumentResult{
+			ID: docID, ContentRevision: 6, ContentHash: "hash", ContentMtime: 1000, Mtime: 1000,
+		}, nil
 	}
 	h := &DocumentHandler{documents: mock}
+	r := newTestRouter()
+	r.PUT("/documents/:id", withUserID("u1"), h.Update)
+
+	base := int64(5)
+	w := httptest.NewRecorder()
+	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "Updated", BaseRevision: &base})
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	resp := parseResponseT(t, w)
+	assert.Equal(t, float64(0), resp["code"])
+	data, ok := resp["data"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, float64(6), data["content_revision"])
+	assert.Equal(t, float64(6), data["version"])
+	assert.Equal(t, "hash", data["content_hash"])
+}
+
+// TestDocumentHandler_Update_RequiresBaseRevision guards BE-3: PUT must
+// reject requests that do not supply a base_revision, since the optimistic
+// concurrency check is the only protection against lost updates.
+func TestDocumentHandler_Update_RequiresBaseRevision(t *testing.T) {
+	h := &DocumentHandler{documents: newDocMock()}
 	r := newTestRouter()
 	r.PUT("/documents/:id", withUserID("u1"), h.Update)
 
@@ -179,7 +207,38 @@ func TestDocumentHandler_Update_Success(t *testing.T) {
 	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "Updated"})
 	r.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	resp := parseResponseT(t, w)
+	assert.NotEqual(t, float64(0), resp["code"])
+	assert.Contains(t, resp["message"], "base_revision")
+}
+
+// TestDocumentHandler_Update_ConflictIncludesCurrent guards BE-3: when the
+// save service returns a ConflictError, the handler must respond with a
+// structured 409-code payload that includes the current server snapshot.
+func TestDocumentHandler_Update_ConflictIncludesCurrent(t *testing.T) {
+	mock := newDocMock()
+	mock.saveFn = func(_ context.Context, _, _ string, _ service.DocumentUpdateInput) (*model.SaveDocumentResult, error) {
+		return nil, appErr.NewConflict(appErr.ConflictData{
+			ID: "d1", Title: "Server", Content: "Server body",
+			ContentRevision: 9, ContentMtime: 1234,
+		})
+	}
+	h := &DocumentHandler{documents: mock}
+	r := newTestRouter()
+	r.PUT("/documents/:id", withUserID("u1"), h.Update)
+
+	base := int64(5)
+	w := httptest.NewRecorder()
+	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "Client", BaseRevision: &base})
+	r.ServeHTTP(w, req)
+	resp := parseResponseT(t, w)
+	assert.NotEqual(t, float64(0), resp["code"])
+	data, ok := resp["data"].(map[string]any)
+	require.True(t, ok, "conflict response must include data: %v", resp)
+	current, ok := data["current"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "d1", current["id"])
+	assert.Equal(t, float64(9), current["content_revision"])
 }
 
 func TestDocumentHandler_Update_EmptyTitle(t *testing.T) {
@@ -597,15 +656,16 @@ func TestDocumentHandler_Get_IncludeTagsListError(t *testing.T) {
 
 func TestDocumentHandler_Update_ServiceError(t *testing.T) {
 	mock := newDocMock()
-	mock.updateFn = func(_ context.Context, _, _ string, _ service.DocumentUpdateInput) error {
-		return errors.New("update failed")
+	mock.saveFn = func(_ context.Context, _, _ string, _ service.DocumentUpdateInput) (*model.SaveDocumentResult, error) {
+		return nil, errors.New("update failed")
 	}
 	h := &DocumentHandler{documents: mock}
 	r := newTestRouter()
 	r.PUT("/documents/:id", withUserID("u1"), h.Update)
 
+	base := int64(1)
 	w := httptest.NewRecorder()
-	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "T"})
+	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "T", BaseRevision: &base})
 	r.ServeHTTP(w, req)
 
 	resp := parseResponseT(t, w)
@@ -614,9 +674,9 @@ func TestDocumentHandler_Update_ServiceError(t *testing.T) {
 
 func TestDocumentHandler_Update_WithTagIDs(t *testing.T) {
 	mock := newDocMock()
-	mock.updateFn = func(_ context.Context, _, _ string, input service.DocumentUpdateInput) error {
+	mock.saveFn = func(_ context.Context, _, _ string, input service.DocumentUpdateInput) (*model.SaveDocumentResult, error) {
 		assert.Equal(t, []string{"t1", "t2"}, input.TagIDs)
-		return nil
+		return &model.SaveDocumentResult{ID: "d1", ContentRevision: 2}, nil
 	}
 	h := &DocumentHandler{documents: mock}
 	r := newTestRouter()
@@ -624,7 +684,8 @@ func TestDocumentHandler_Update_WithTagIDs(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	tags := []string{"t1", "t2"}
-	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "T", TagIDs: &tags})
+	base := int64(1)
+	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "T", TagIDs: &tags, BaseRevision: &base})
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)

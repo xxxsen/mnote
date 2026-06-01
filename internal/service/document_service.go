@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
@@ -21,6 +23,36 @@ import (
 	"github.com/xxxsen/mnote/internal/repo"
 )
 
+// computeDocumentHash returns the canonical SHA-256 of "title\ncontent" used
+// to detect body changes between saves. Title participates because users
+// frequently rename without touching the body and we still want the search
+// index/embedding to refresh in that case.
+func computeDocumentHash(title, content string) string {
+	sum := sha256.Sum256([]byte(title + "\n" + content))
+	return hex.EncodeToString(sum[:])
+}
+
+// documentAssetSyncer is the narrow surface DocumentService needs from
+// AssetService. Defining it locally lets tests substitute a stub without
+// constructing a full AssetService and lets refreshReferences exercise its
+// failure branches (the concrete *AssetService can satisfy it directly).
+type documentAssetSyncer interface {
+	SyncDocumentReferences(ctx context.Context, userID, docID, content string) error
+	RemoveDocumentReferences(ctx context.Context, userID, docID string) error
+}
+
+// documentAIClient is the surface DocumentService needs from AIService. It
+// covers save-time bookkeeping (MarkEmbeddingPending), semantic search, and
+// summarization so we can substitute a stub from tests. The concrete
+// *AIService satisfies all three methods.
+type documentAIClient interface {
+	MarkEmbeddingPending(ctx context.Context, userID, docID, contentHash string, now int64) error
+	SemanticSearch(
+		ctx context.Context, userID, query string, topK int, excludeID string,
+	) ([]string, []float32, error)
+	Summarize(ctx context.Context, input string) (string, error)
+}
+
 type DocumentService struct {
 	db             *sql.DB
 	docs           documentRepo
@@ -30,9 +62,12 @@ type DocumentService struct {
 	shares         shareRepo
 	tagRepo        tagRepo
 	userRepo       userRepo
-	ai             *AIService
-	assets         *AssetService
+	ai             documentAIClient
+	assets         documentAssetSyncer
 	versionMaxKeep int
+	// nowFunc is injectable so tests can pin the clock used by share-expiry
+	// filtering (BE-4). Production uses timeutil.NowMilli().
+	nowFunc func() int64
 }
 
 const (
@@ -52,11 +87,32 @@ func NewDocumentService(
 	ai *AIService,
 	versionMaxKeep int,
 ) *DocumentService {
-	return &DocumentService{
+	svc := &DocumentService{
 		db: db, docs: docs, summaries: summaries, versions: versions,
 		tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo,
-		ai: ai, versionMaxKeep: versionMaxKeep,
+		versionMaxKeep: versionMaxKeep,
+		nowFunc:        timeutil.NowUnix,
 	}
+	if ai != nil {
+		svc.ai = ai
+	}
+	return svc
+}
+
+// SetNowFunc overrides the clock used for time-sensitive queries (e.g. the
+// expires_at filter in share listings). Tests use this to make share expiry
+// deterministic without sleeping. Callers must pass a non-nil function;
+// passing nil is a programming error (the service is unusable without a
+// clock) and would silently break expires_at filtering, so we panic.
+func (s *DocumentService) SetNowFunc(now func() int64) {
+	if now == nil {
+		panic("DocumentService.SetNowFunc: now must not be nil")
+	}
+	s.nowFunc = now
+}
+
+func (s *DocumentService) now() int64 {
+	return s.nowFunc()
 }
 
 func (s *DocumentService) runInTx(ctx context.Context, fn func(ctx context.Context) error) error {
@@ -70,8 +126,19 @@ func (s *DocumentService) runInTx(ctx context.Context, fn func(ctx context.Conte
 }
 
 func (s *DocumentService) SetAssetService(assets *AssetService) {
+	if assets == nil {
+		s.assets = nil
+		return
+	}
 	s.assets = assets
 }
+
+// setAssetSyncer / setEmbeddingNotifier are test seams that let unit tests
+// substitute the narrow interfaces directly. They are intentionally
+// package-private so production callers go through SetAssetService /
+// NewDocumentService.
+func (s *DocumentService) setAssetSyncer(a documentAssetSyncer) { s.assets = a }
+func (s *DocumentService) setAIClient(c documentAIClient)       { s.ai = c }
 
 type DocumentSummary struct {
 	Recent       []model.Document
@@ -197,16 +264,15 @@ func (s *DocumentService) UpdateTags(ctx context.Context, userID, docID string, 
 	})
 }
 
+// UpdateSummary only writes the document_summaries row. BE-2 deliberately
+// removed the document.mtime/content_mtime touch so that summary regeneration
+// does not invalidate the embedding state.
 func (s *DocumentService) UpdateSummary(ctx context.Context, userID, docID, summary string) error {
 	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
 		return fmt.Errorf("get by id: %w", err)
 	}
-	now := timeutil.NowUnix()
-	if err := s.summaries.Upsert(ctx, userID, docID, summary, now); err != nil {
+	if err := s.summaries.Upsert(ctx, userID, docID, summary, timeutil.NowUnix()); err != nil {
 		return fmt.Errorf("upsert: %w", err)
-	}
-	if err := s.docs.TouchMtime(ctx, userID, docID, now); err != nil {
-		return fmt.Errorf("touch mtime: %w", err)
 	}
 	return nil
 }
@@ -237,7 +303,7 @@ func (
 	query string) ([]SharedDocumentSummary,
 	error,
 ) {
-	items, err := s.shares.ListActiveDocuments(ctx, userID, query)
+	items, err := s.shares.ListActiveDocuments(ctx, userID, query, s.now())
 	if err != nil {
 		return nil, fmt.Errorf("list active documents: %w", err)
 	}
@@ -791,11 +857,20 @@ type DocumentCreateInput struct {
 	Summary string
 }
 
+// DocumentUpdateInput is the unified save payload used by both the editor
+// save path (where BaseRevision is required) and internal callers such as
+// the import service (where BaseRevision is left at its zero value to opt
+// out of optimistic concurrency control).
 type DocumentUpdateInput struct {
 	Title   string
 	Content string
 	TagIDs  []string
 	Summary *string
+	// BaseRevision is the content_revision the client last observed. When
+	// non-zero the service performs an optimistic concurrency check inside
+	// the save transaction; when zero the caller is asserting that
+	// concurrency is handled out-of-band (used by server-side imports).
+	BaseRevision int64
 }
 
 func extractLinkIDs(content string) []string {
@@ -813,17 +888,115 @@ func extractLinkIDs(content string) []string {
 
 var linkRegex = regexp.MustCompile(`\/docs\/([a-zA-Z0-9_\-]+)`)
 
+// Update is the back-compatible save entry point: it runs the unified save
+// transaction but does not surface SaveDocumentResult. New callers that need
+// the post-save revision should use Save instead.
 func (s *DocumentService) Update(ctx context.Context, userID, docID string, input DocumentUpdateInput) error {
-	return s.runInTx(ctx, func(txCtx context.Context) error {
-		return s.updateImpl(txCtx, userID, docID, input)
-	})
+	_, err := s.Save(ctx, userID, docID, input)
+	return err
 }
 
-func (s *DocumentService) updateImpl(ctx context.Context, userID, docID string, input DocumentUpdateInput) error {
+// Save executes a single atomic save transaction guarded by SELECT FOR
+// UPDATE on the documents row. When input.BaseRevision is non-zero and does
+// not match the current server-side revision the save is rejected with a
+// *errors.ConflictError carrying the current snapshot, leaving every other
+// table untouched. The returned SaveDocumentResult mirrors exactly what the
+// transaction committed so the client can update its local state without an
+// extra read.
+func (
+	s *DocumentService) Save(ctx context.Context,
+	userID,
+	docID string,
+	input DocumentUpdateInput) (*model.SaveDocumentResult,
+	error,
+) {
+	var result *model.SaveDocumentResult
+	if err := s.runInTx(ctx, func(txCtx context.Context) error {
+		r, err := s.saveImpl(txCtx, userID, docID, input)
+		if err != nil {
+			return err
+		}
+		result = r
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// saveImpl runs the body of Save inside a transaction. The work is split
+// into small helpers so each step (lock+conflict, document update, version
+// snapshot, tag refresh, references) is independently readable and the
+// orchestrator stays well below the gocyclo threshold.
+func (
+	s *DocumentService) saveImpl(ctx context.Context,
+	userID,
+	docID string,
+	input DocumentUpdateInput) (*model.SaveDocumentResult,
+	error,
+) {
+	current, err := s.lockForSave(ctx, userID, docID, input.BaseRevision)
+	if err != nil {
+		return nil, err
+	}
 	now := timeutil.NowUnix()
+	newRevision := current.ContentRevision + 1
+	newHash := computeDocumentHash(input.Title, input.Content)
+	if err := s.persistDocument(ctx, userID, docID, input, now, newRevision, newHash); err != nil {
+		return nil, err
+	}
+	if err := s.recordVersion(ctx, userID, docID, input, now, newRevision); err != nil {
+		return nil, err
+	}
+	if err := s.applyTagChanges(ctx, userID, docID, input.TagIDs); err != nil {
+		return nil, err
+	}
+	if err := s.refreshReferences(ctx, userID, docID, input.Content, now, newHash); err != nil {
+		return nil, err
+	}
+	return &model.SaveDocumentResult{
+		ID:              docID,
+		ContentRevision: newRevision,
+		ContentHash:     newHash,
+		ContentMtime:    now,
+		Mtime:           now,
+	}, nil
+}
+
+// lockForSave takes the row-level write lock and rejects stale writers via
+// the optimistic base_revision check before any further mutation. Returns
+// a ConflictError (not a generic error) when base_revision is stale so
+// the handler can translate it into a 409 with the current snapshot.
+func (s *DocumentService) lockForSave(
+	ctx context.Context, userID, docID string, baseRevision int64,
+) (*model.Document, error) {
+	current, err := s.docs.GetByIDForUpdate(ctx, userID, docID)
+	if err != nil {
+		return nil, fmt.Errorf("lock document: %w", err)
+	}
+	if baseRevision != 0 && baseRevision != current.ContentRevision {
+		return nil, appErr.NewConflict(appErr.ConflictData{
+			ID:              current.ID,
+			Title:           current.Title,
+			Content:         current.Content,
+			ContentRevision: current.ContentRevision,
+			ContentMtime:    current.ContentMtime,
+		})
+	}
+	return current, nil
+}
+
+func (s *DocumentService) persistDocument(
+	ctx context.Context,
+	userID, docID string,
+	input DocumentUpdateInput,
+	now, newRevision int64,
+	newHash string,
+) error {
 	doc := &model.Document{
-		ID: docID, UserID: userID, Title: input.Title,
-		Content: input.Content, Mtime: now,
+		ID: docID, UserID: userID,
+		Title: input.Title, Content: input.Content, Mtime: now,
+		ContentHash: newHash, ContentMtime: now, ContentRevision: newRevision,
 	}
 	if err := s.docs.Update(ctx, doc); err != nil {
 		return fmt.Errorf("update: %w", err)
@@ -833,13 +1006,18 @@ func (s *DocumentService) updateImpl(ctx context.Context, userID, docID string, 
 			return fmt.Errorf("upsert: %w", err)
 		}
 	}
-	versionNumber := 1
-	if latest, err := s.versions.GetLatestVersion(ctx, userID, docID); err == nil {
-		versionNumber = latest + 1
-	}
+	return nil
+}
+
+func (s *DocumentService) recordVersion(
+	ctx context.Context,
+	userID, docID string,
+	input DocumentUpdateInput,
+	now, newRevision int64,
+) error {
 	version := &model.DocumentVersion{
 		ID: newID(), UserID: userID, DocumentID: docID,
-		Version: versionNumber, Title: input.Title,
+		Version: int(newRevision), Title: input.Title,
 		Content: input.Content, Ctime: now,
 	}
 	if err := s.versions.Create(ctx, version); err != nil {
@@ -848,24 +1026,45 @@ func (s *DocumentService) updateImpl(ctx context.Context, userID, docID string, 
 	if err := s.pruneVersions(ctx, userID, docID); err != nil {
 		return fmt.Errorf("prune versions: %w", err)
 	}
-	if input.TagIDs != nil {
-		if err := s.tags.DeleteByDoc(ctx, userID, docID); err != nil {
-			return fmt.Errorf("delete by doc: %w", err)
-		}
-		for _, tagID := range input.TagIDs {
-			dt := &model.DocumentTag{UserID: userID, DocumentID: docID, TagID: tagID}
-			if err := s.tags.Add(ctx, dt); err != nil {
-				return fmt.Errorf("add: %w", err)
-			}
+	return nil
+}
+
+func (s *DocumentService) applyTagChanges(
+	ctx context.Context, userID, docID string, tagIDs []string,
+) error {
+	if tagIDs == nil {
+		return nil
+	}
+	if err := s.tags.DeleteByDoc(ctx, userID, docID); err != nil {
+		return fmt.Errorf("delete by doc: %w", err)
+	}
+	for _, tagID := range tagIDs {
+		dt := &model.DocumentTag{UserID: userID, DocumentID: docID, TagID: tagID}
+		if err := s.tags.Add(ctx, dt); err != nil {
+			return fmt.Errorf("add: %w", err)
 		}
 	}
-	linkIDs := extractLinkIDs(input.Content)
+	return nil
+}
+
+func (s *DocumentService) refreshReferences(
+	ctx context.Context,
+	userID, docID, content string,
+	now int64,
+	newHash string,
+) error {
+	linkIDs := extractLinkIDs(content)
 	if err := s.docs.UpdateLinks(ctx, userID, docID, linkIDs, now); err != nil {
 		return fmt.Errorf("update links: %w", err)
 	}
 	if s.assets != nil {
-		if err := s.assets.SyncDocumentReferences(ctx, userID, docID, input.Content); err != nil {
+		if err := s.assets.SyncDocumentReferences(ctx, userID, docID, content); err != nil {
 			return fmt.Errorf("sync document references: %w", err)
+		}
+	}
+	if s.ai != nil {
+		if err := s.ai.MarkEmbeddingPending(ctx, userID, docID, newHash, now); err != nil {
+			return fmt.Errorf("mark embedding pending: %w", err)
 		}
 	}
 	return nil
@@ -882,6 +1081,9 @@ func (
 		ID: newID(), UserID: userID, Title: input.Title,
 		Content: input.Content, State: repo.DocumentStateNormal,
 		Pinned: 0, Ctime: now, Mtime: now,
+		ContentHash:     computeDocumentHash(input.Title, input.Content),
+		ContentMtime:    now,
+		ContentRevision: 1,
 	}
 	if err := s.runInTx(ctx, func(txCtx context.Context) error {
 		return s.createImpl(txCtx, userID, doc, input)

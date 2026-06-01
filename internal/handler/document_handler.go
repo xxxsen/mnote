@@ -22,10 +22,11 @@ func NewDocumentHandler(documents IDocumentService) *DocumentHandler {
 }
 
 type documentRequest struct {
-	Title   string    `json:"title"`
-	Content string    `json:"content"`
-	TagIDs  *[]string `json:"tag_ids"`
-	Summary *string   `json:"summary"`
+	Title        string    `json:"title"`
+	Content      string    `json:"content"`
+	TagIDs       *[]string `json:"tag_ids"`
+	Summary      *string   `json:"summary"`
+	BaseRevision *int64    `json:"base_revision,omitempty"`
 }
 
 type tagUpdateRequest struct {
@@ -36,18 +37,21 @@ type summaryUpdateRequest struct {
 	Summary *string `json:"summary"`
 }
 type documentListItem struct {
-	ID      string      `json:"id"`
-	UserID  string      `json:"user_id"`
-	Title   string      `json:"title"`
-	Content string      `json:"content"`
-	Summary string      `json:"summary"`
-	State   int         `json:"state"`
-	Pinned  int         `json:"pinned"`
-	Starred int         `json:"starred"`
-	Ctime   int64       `json:"ctime"`
-	Mtime   int64       `json:"mtime"`
-	TagIDs  []string    `json:"tag_ids"`
-	Tags    []model.Tag `json:"tags,omitempty"`
+	ID              string      `json:"id"`
+	UserID          string      `json:"user_id"`
+	Title           string      `json:"title"`
+	Content         string      `json:"content"`
+	Summary         string      `json:"summary"`
+	State           int         `json:"state"`
+	Pinned          int         `json:"pinned"`
+	Starred         int         `json:"starred"`
+	Ctime           int64       `json:"ctime"`
+	Mtime           int64       `json:"mtime"`
+	ContentHash     string      `json:"content_hash"`
+	ContentMtime    int64       `json:"content_mtime"`
+	ContentRevision int64       `json:"content_revision"`
+	TagIDs          []string    `json:"tag_ids"`
+	Tags            []model.Tag `json:"tags,omitempty"`
 }
 
 func (h *DocumentHandler) Create(c *gin.Context) {
@@ -136,17 +140,20 @@ func buildListItems(
 			tagIDs = []string{}
 		}
 		item := documentListItem{
-			ID:      doc.ID,
-			UserID:  doc.UserID,
-			Title:   doc.Title,
-			Content: doc.Content,
-			Summary: doc.Summary,
-			State:   doc.State,
-			Pinned:  doc.Pinned,
-			Starred: doc.Starred,
-			Ctime:   doc.Ctime,
-			Mtime:   doc.Mtime,
-			TagIDs:  tagIDs,
+			ID:              doc.ID,
+			UserID:          doc.UserID,
+			Title:           doc.Title,
+			Content:         doc.Content,
+			Summary:         doc.Summary,
+			State:           doc.State,
+			Pinned:          doc.Pinned,
+			Starred:         doc.Starred,
+			Ctime:           doc.Ctime,
+			Mtime:           doc.Mtime,
+			ContentHash:     doc.ContentHash,
+			ContentMtime:    doc.ContentMtime,
+			ContentRevision: doc.ContentRevision,
+			TagIDs:          tagIDs,
 		}
 		if includeTags {
 			tags := make([]model.Tag, 0, len(tagIDs))
@@ -269,21 +276,35 @@ func (h *DocumentHandler) Update(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalid, "title required")
 		return
 	}
+	if req.BaseRevision == nil || *req.BaseRevision <= 0 {
+		response.Error(c, errcode.ErrInvalid, "base_revision required")
+		return
+	}
 	var tagIDs []string
 	if req.TagIDs != nil {
 		tagIDs = *req.TagIDs
 	}
-	err := h.documents.Update(c.Request.Context(), getUserID(c), c.Param("id"), service.DocumentUpdateInput{
-		Title:   req.Title,
-		Content: req.Content,
-		TagIDs:  tagIDs,
-		Summary: req.Summary,
-	})
+	result, err := h.documents.Save(c.Request.Context(), getUserID(c), c.Param("id"),
+		service.DocumentUpdateInput{
+			Title:        req.Title,
+			Content:      req.Content,
+			TagIDs:       tagIDs,
+			Summary:      req.Summary,
+			BaseRevision: *req.BaseRevision,
+		},
+	)
 	if err != nil {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, gin.H{"ok": true})
+	response.Success(c, gin.H{
+		"id":               result.ID,
+		"version":          result.ContentRevision,
+		"content_revision": result.ContentRevision,
+		"content_hash":     result.ContentHash,
+		"content_mtime":    result.ContentMtime,
+		"mtime":            result.Mtime,
+	})
 }
 
 func (h *DocumentHandler) UpdateTags(c *gin.Context) {
@@ -442,18 +463,21 @@ func (h *DocumentHandler) Backlinks(c *gin.Context) {
 			}
 		}
 		items = append(items, documentListItem{
-			ID:      doc.ID,
-			UserID:  doc.UserID,
-			Title:   doc.Title,
-			Content: doc.Content,
-			Summary: doc.Summary,
-			State:   doc.State,
-			Pinned:  doc.Pinned,
-			Starred: doc.Starred,
-			Ctime:   doc.Ctime,
-			Mtime:   doc.Mtime,
-			Tags:    docTags,
-			TagIDs:  docTagIDs,
+			ID:              doc.ID,
+			UserID:          doc.UserID,
+			Title:           doc.Title,
+			Content:         doc.Content,
+			Summary:         doc.Summary,
+			State:           doc.State,
+			Pinned:          doc.Pinned,
+			Starred:         doc.Starred,
+			Ctime:           doc.Ctime,
+			Mtime:           doc.Mtime,
+			ContentHash:     doc.ContentHash,
+			ContentMtime:    doc.ContentMtime,
+			ContentRevision: doc.ContentRevision,
+			Tags:            docTags,
+			TagIDs:          docTagIDs,
 		})
 	}
 

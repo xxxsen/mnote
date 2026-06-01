@@ -48,9 +48,14 @@ const ERR_UNAUTHORIZED = 10000001;
 
 export class ApiError extends Error {
   code: number;
-  constructor(message: string, code: number) {
+  // data carries the structured payload that the backend attaches to
+  // certain non-zero responses (e.g. save conflict snapshots from BE-3).
+  // It is intentionally typed as unknown; callers narrow per error code.
+  data?: unknown;
+  constructor(message: string, code: number, data?: unknown) {
     super(message);
     this.code = code;
+    this.data = data;
     this.name = "ApiError";
   }
 }
@@ -64,7 +69,7 @@ function redirectToLogin(): never {
 
 function extractErrorMessage(payload: unknown): string {
   const p = payload as { msg?: string; message?: string };
-  return p.msg || p.message || "API Error";
+  return p.message || p.msg || "API Error";
 }
 
 function parsePayload(payload: unknown, res: Response, requireAuth: boolean): unknown {
@@ -82,7 +87,11 @@ function parsePayload(payload: unknown, res: Response, requireAuth: boolean): un
     if (code === ERR_UNAUTHORIZED && requireAuth) {
       redirectToLogin();
     }
-    throw new ApiError(extractErrorMessage(payload), code);
+    throw new ApiError(
+      extractErrorMessage(payload),
+      code,
+      (payload as { data?: unknown }).data,
+    );
   }
   return (payload as { data?: unknown }).data;
 }

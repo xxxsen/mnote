@@ -15,18 +15,16 @@ const makeDocDetail = (content = "# Hello") => ({
   tags: [],
 });
 
-const makeOpts = (overrides = {}) => {
+const makeOpts = (overrides: Record<string, unknown> = {}) => {
   const contentRef = { current: "" };
   const lastSavedContentRef = { current: "" };
   return {
     id: "d1",
-    saving: false,
     hasUnsavedChanges: false,
     contentRef,
     lastSavedContentRef,
     documentActions: {
       getDocument: vi.fn().mockResolvedValue(makeDocDetail()),
-      saveDocument: vi.fn().mockResolvedValue(undefined),
     },
     extractTitleFromContent: (v: string) => {
       const match = v.match(/^#\s+(.+)/m);
@@ -35,7 +33,7 @@ const makeOpts = (overrides = {}) => {
     onLoadingChange: vi.fn(),
     onLoaded: vi.fn(),
     onLoadError: vi.fn(),
-    onAutoSaved: vi.fn(),
+    requestSave: vi.fn(),
     ...overrides,
   };
 };
@@ -75,7 +73,6 @@ describe("useEditorLifecycle", () => {
     const opts = makeOpts({
       documentActions: {
         getDocument: vi.fn().mockRejectedValue(new Error("fetch fail")),
-        saveDocument: vi.fn(),
       },
     });
     renderHook(() => useEditorLifecycle(opts));
@@ -101,6 +98,20 @@ describe("useEditorLifecycle", () => {
     setTimeoutSpy.mockRestore();
   });
 
+  it("writes draft contents after the debounce timer fires", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const opts = makeOpts({ hasUnsavedChanges: true });
+    renderHook(() => useEditorLifecycle(opts));
+    await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
+    opts.contentRef.current = "# Draft Body";
+    await vi.advanceTimersByTimeAsync(500);
+    const stored = localStorage.getItem("mnote:draft:d1");
+    expect(stored).not.toBeNull();
+    const parsed = JSON.parse(stored!);
+    expect(parsed.content).toBe("# Draft Body");
+    vi.useRealTimers();
+  });
+
   it("cleans invalid draft from localStorage", async () => {
     localStorage.setItem("mnote:draft:d1", "not-json{{{");
     const opts = makeOpts();
@@ -109,7 +120,9 @@ describe("useEditorLifecycle", () => {
     expect(localStorage.getItem("mnote:draft:d1")).toBeNull();
   });
 
-  it("auto-save saves document when content changed", async () => {
+  // FE-1: lifecycle no longer issues PUTs itself; it must hand the
+  // snapshot to the queue via requestSave so single-flight semantics hold.
+  it("auto-save calls requestSave when content changed", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const opts = makeOpts();
 
@@ -119,21 +132,10 @@ describe("useEditorLifecycle", () => {
     opts.contentRef.current = "# Updated Title\nNew content";
 
     await vi.advanceTimersByTimeAsync(10100);
-    expect(opts.documentActions.saveDocument).toHaveBeenCalledWith("Updated Title", "# Updated Title\nNew content");
-    vi.useRealTimers();
-  });
-
-  it("auto-save skips when saving is true", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const opts = makeOpts({ saving: true });
-    opts.contentRef.current = "# Changed";
-    opts.lastSavedContentRef.current = "# Hello";
-
-    renderHook(() => useEditorLifecycle(opts));
-    await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
-
-    await vi.advanceTimersByTimeAsync(10100);
-    expect(opts.documentActions.saveDocument).not.toHaveBeenCalled();
+    expect(opts.requestSave).toHaveBeenCalledWith({
+      title: "Updated Title",
+      content: "# Updated Title\nNew content",
+    });
     vi.useRealTimers();
   });
 
@@ -147,7 +149,7 @@ describe("useEditorLifecycle", () => {
     await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
 
     await vi.advanceTimersByTimeAsync(10100);
-    expect(opts.documentActions.saveDocument).not.toHaveBeenCalled();
+    expect(opts.requestSave).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
@@ -161,55 +163,7 @@ describe("useEditorLifecycle", () => {
     await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
 
     await vi.advanceTimersByTimeAsync(10100);
-    expect(opts.documentActions.saveDocument).not.toHaveBeenCalled();
-    vi.useRealTimers();
-  });
-
-  it("auto-save calls onAutoSaved after successful save", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const opts = makeOpts();
-
-    renderHook(() => useEditorLifecycle(opts));
-    await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
-
-    opts.contentRef.current = "# Title\nBody";
-
-    await vi.advanceTimersByTimeAsync(10100);
-    expect(opts.onAutoSaved).toHaveBeenCalledWith(expect.objectContaining({ title: "Title" }));
-    vi.useRealTimers();
-  });
-
-  it("auto-save removes draft on success", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    localStorage.setItem("mnote:draft:d1", JSON.stringify({ content: "old" }));
-    const opts = makeOpts();
-
-    renderHook(() => useEditorLifecycle(opts));
-    await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
-
-    opts.contentRef.current = "# New Title\nBody";
-
-    await vi.advanceTimersByTimeAsync(10100);
-    expect(localStorage.getItem("mnote:draft:d1")).toBeNull();
-    vi.useRealTimers();
-  });
-
-  it("auto-save handles save error gracefully", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const opts = makeOpts({
-      documentActions: {
-        getDocument: vi.fn().mockResolvedValue(makeDocDetail()),
-        saveDocument: vi.fn().mockRejectedValue(new Error("save fail")),
-      },
-    });
-
-    renderHook(() => useEditorLifecycle(opts));
-    await vi.waitFor(() => { expect(opts.onLoaded).toHaveBeenCalled(); });
-
-    opts.contentRef.current = "# Title\nBody";
-
-    await vi.advanceTimersByTimeAsync(10100);
-    expect(opts.onAutoSaved).not.toHaveBeenCalled();
+    expect(opts.requestSave).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 

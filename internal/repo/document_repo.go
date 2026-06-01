@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -26,17 +27,53 @@ func NewDocumentRepo(db *sql.DB) *DocumentRepo {
 	return &DocumentRepo{db: db}
 }
 
+// documentSelectColumns is the canonical column list returned from the
+// documents table. Adding a new column requires also updating the scan
+// targets in scanDocument below.
+var documentSelectColumns = []string{
+	"id", "user_id", "title", "content",
+	"state", "pinned", "starred", "ctime", "mtime",
+	"content_hash", "content_mtime", "content_revision",
+}
+
+// rowScanner abstracts *sql.Row and *sql.Rows so scanDocument can be reused
+// from both QueryRow and Query call sites without leaking the database/sql
+// types into model assembly.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanDocument(rs rowScanner, doc *model.Document) error {
+	if err := rs.Scan(
+		&doc.ID, &doc.UserID, &doc.Title, &doc.Content,
+		&doc.State, &doc.Pinned, &doc.Starred, &doc.Ctime, &doc.Mtime,
+		&doc.ContentHash, &doc.ContentMtime, &doc.ContentRevision,
+	); err != nil {
+		return fmt.Errorf("scan document: %w", err)
+	}
+	return nil
+}
+
 func (r *DocumentRepo) Create(ctx context.Context, doc *model.Document) error {
+	if doc.ContentRevision == 0 {
+		doc.ContentRevision = 1
+	}
+	if doc.ContentMtime == 0 {
+		doc.ContentMtime = doc.Mtime
+	}
 	data := map[string]any{
-		"id":      doc.ID,
-		"user_id": doc.UserID,
-		"title":   doc.Title,
-		"content": doc.Content,
-		"state":   doc.State,
-		"pinned":  doc.Pinned,
-		"starred": doc.Starred,
-		"ctime":   doc.Ctime,
-		"mtime":   doc.Mtime,
+		"id":               doc.ID,
+		"user_id":          doc.UserID,
+		"title":            doc.Title,
+		"content":          doc.Content,
+		"state":            doc.State,
+		"pinned":           doc.Pinned,
+		"starred":          doc.Starred,
+		"ctime":            doc.Ctime,
+		"mtime":            doc.Mtime,
+		"content_hash":     doc.ContentHash,
+		"content_mtime":    doc.ContentMtime,
+		"content_revision": doc.ContentRevision,
 	}
 	sqlStr, args, err := builder.BuildInsert("documents", []map[string]any{data})
 	if err != nil {
@@ -53,6 +90,10 @@ func (r *DocumentRepo) Create(ctx context.Context, doc *model.Document) error {
 	return nil
 }
 
+// Update writes title/content along with the content_* metadata that the
+// caller has computed (typically inside a transaction guarded by
+// GetByIDForUpdate). The optimistic check uses (id, user_id, state) only;
+// concurrency control is the caller's responsibility via SELECT FOR UPDATE.
 func (r *DocumentRepo) Update(ctx context.Context, doc *model.Document) error {
 	where := map[string]any{
 		"id":      doc.ID,
@@ -60,9 +101,12 @@ func (r *DocumentRepo) Update(ctx context.Context, doc *model.Document) error {
 		"state":   DocumentStateNormal,
 	}
 	update := map[string]any{
-		"title":   doc.Title,
-		"content": doc.Content,
-		"mtime":   doc.Mtime,
+		"title":            doc.Title,
+		"content":          doc.Content,
+		"mtime":            doc.Mtime,
+		"content_hash":     doc.ContentHash,
+		"content_mtime":    doc.ContentMtime,
+		"content_revision": doc.ContentRevision,
 	}
 	sqlStr, args, err := builder.BuildUpdate("documents", where, update)
 	if err != nil {
@@ -81,6 +125,27 @@ func (r *DocumentRepo) Update(ctx context.Context, doc *model.Document) error {
 		return appErr.ErrNotFound
 	}
 	return nil
+}
+
+// GetByIDForUpdate returns the document with a row-level FOR UPDATE lock so
+// that concurrent save attempts serialize behind the same transaction. It
+// must be called inside a transaction; outside one the lock is released
+// immediately and provides no protection.
+func (r *DocumentRepo) GetByIDForUpdate(
+	ctx context.Context, userID, docID string,
+) (*model.Document, error) {
+	const q = `SELECT id, user_id, title, content, state, pinned, starred, ctime, mtime,
+        content_hash, content_mtime, content_revision
+        FROM documents WHERE id = $1 AND user_id = $2 AND state = $3 FOR UPDATE`
+	row := conn(ctx, r.db).QueryRowContext(ctx, q, docID, userID, DocumentStateNormal)
+	var doc model.Document
+	if err := scanDocument(row, &doc); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, appErr.ErrNotFound
+		}
+		return nil, fmt.Errorf("scan: %w", err)
+	}
+	return &doc, nil
 }
 
 func (r *DocumentRepo) updateDocField(ctx context.Context, userID, docID string, update map[string]any) error {
@@ -126,10 +191,7 @@ func (r *DocumentRepo) GetByID(ctx context.Context, userID, docID string) (*mode
 		"user_id": userID,
 		"state":   DocumentStateNormal,
 	}
-	sqlStr, args, err := builder.BuildSelect("documents", where, []string{
-		"id", "user_id", "title", "content",
-		"state", "pinned", "starred", "ctime", "mtime",
-	})
+	sqlStr, args, err := builder.BuildSelect("documents", where, documentSelectColumns)
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)
 	}
@@ -146,8 +208,7 @@ func (r *DocumentRepo) GetByID(ctx context.Context, userID, docID string) (*mode
 		return nil, appErr.ErrNotFound
 	}
 	var doc model.Document
-	if err := rows.Scan(&doc.ID, &doc.UserID, &doc.Title, &doc.Content, &doc.State, &doc.Pinned, &doc.Starred,
-		&doc.Ctime, &doc.Mtime); err != nil {
+	if err := scanDocument(rows, &doc); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
 	return &doc, nil
@@ -161,10 +222,7 @@ func (r *DocumentRepo) GetByTitle(ctx context.Context, userID, title string) (*m
 		"_orderby": "mtime desc",
 		"_limit":   []uint{0, 1},
 	}
-	sqlStr, args, err := builder.BuildSelect("documents", where, []string{
-		"id", "user_id", "title", "content",
-		"state", "pinned", "starred", "ctime", "mtime",
-	})
+	sqlStr, args, err := builder.BuildSelect("documents", where, documentSelectColumns)
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)
 	}
@@ -181,8 +239,7 @@ func (r *DocumentRepo) GetByTitle(ctx context.Context, userID, title string) (*m
 		return nil, appErr.ErrNotFound
 	}
 	var doc model.Document
-	if err := rows.Scan(&doc.ID, &doc.UserID, &doc.Title, &doc.Content, &doc.State, &doc.Pinned, &doc.Starred,
-		&doc.Ctime, &doc.Mtime); err != nil {
+	if err := scanDocument(rows, &doc); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
 	return &doc, nil
@@ -213,10 +270,7 @@ func (
 	if limit > 0 {
 		where["_limit"] = []uint{offset, limit}
 	}
-	sqlStr, args, err := builder.BuildSelect("documents", where, []string{
-		"id", "user_id", "title", "content",
-		"state", "pinned", "starred", "ctime", "mtime",
-	})
+	sqlStr, args, err := builder.BuildSelect("documents", where, documentSelectColumns)
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)
 	}
@@ -229,8 +283,7 @@ func (
 	docs := make([]model.Document, 0)
 	for rows.Next() {
 		var doc model.Document
-		if err := rows.Scan(&doc.ID, &doc.UserID, &doc.Title, &doc.Content, &doc.State, &doc.Pinned, &doc.Starred,
-			&doc.Ctime, &doc.Mtime); err != nil {
+		if err := scanDocument(rows, &doc); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		docs = append(docs, doc)
@@ -255,10 +308,7 @@ func (r *DocumentRepo) ListByIDs(ctx context.Context, userID string, docIDs []st
 		"_custom_ids": builder.In{"id": ids},
 		"_orderby":    "pinned desc, ctime desc",
 	}
-	sqlStr, args, err := builder.BuildSelect("documents", where, []string{
-		"id", "user_id", "title", "content",
-		"state", "pinned", "starred", "ctime", "mtime",
-	})
+	sqlStr, args, err := builder.BuildSelect("documents", where, documentSelectColumns)
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)
 	}
@@ -271,8 +321,7 @@ func (r *DocumentRepo) ListByIDs(ctx context.Context, userID string, docIDs []st
 	docs := make([]model.Document, 0)
 	for rows.Next() {
 		var doc model.Document
-		if err := rows.Scan(&doc.ID, &doc.UserID, &doc.Title, &doc.Content, &doc.State, &doc.Pinned, &doc.Starred,
-			&doc.Ctime, &doc.Mtime); err != nil {
+		if err := scanDocument(rows, &doc); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		docs = append(docs, doc)
@@ -336,10 +385,7 @@ func (
 	if limit > 0 {
 		where["_limit"] = []uint{offset, limit}
 	}
-	sqlStr, args, err := builder.BuildSelect("documents", where, []string{
-		"id", "user_id", "title", "content",
-		"state", "pinned", "starred", "ctime", "mtime",
-	})
+	sqlStr, args, err := builder.BuildSelect("documents", where, documentSelectColumns)
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)
 	}
@@ -352,8 +398,7 @@ func (
 	docs := make([]model.Document, 0)
 	for rows.Next() {
 		var doc model.Document
-		if err := rows.Scan(&doc.ID, &doc.UserID, &doc.Title, &doc.Content, &doc.State, &doc.Pinned, &doc.Starred,
-			&doc.Ctime, &doc.Mtime); err != nil {
+		if err := scanDocument(rows, &doc); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		docs = append(docs, doc)
@@ -452,10 +497,7 @@ func (r *DocumentRepo) GetBacklinks(ctx context.Context, userID, targetID string
 		"_orderby": "mtime desc",
 	}
 
-	sqlStr, args, err := builder.BuildSelect("documents", where, []string{
-		"id", "user_id", "title", "content",
-		"state", "pinned", "starred", "ctime", "mtime",
-	})
+	sqlStr, args, err := builder.BuildSelect("documents", where, documentSelectColumns)
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)
 	}
@@ -469,8 +511,7 @@ func (r *DocumentRepo) GetBacklinks(ctx context.Context, userID, targetID string
 	docs := make([]model.Document, 0)
 	for rows.Next() {
 		var doc model.Document
-		if err := rows.Scan(&doc.ID, &doc.UserID, &doc.Title, &doc.Content, &doc.State, &doc.Pinned, &doc.Starred,
-			&doc.Ctime, &doc.Mtime); err != nil {
+		if err := scanDocument(rows, &doc); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		docs = append(docs, doc)

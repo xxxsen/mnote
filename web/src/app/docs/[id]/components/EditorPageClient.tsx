@@ -19,6 +19,7 @@ import { usePreviewDoc } from "../hooks/usePreviewDoc";
 import { useAiAssistant } from "../hooks/useAiAssistant";
 import { useSimilarDocs } from "../hooks/useSimilarDocs";
 import { useEditorLifecycle } from "../hooks/useEditorLifecycle";
+import { useEditorSaveQueue } from "../hooks/useEditorSaveQueue";
 import { useScrollSync } from "../hooks/useScrollSync";
 import { useEditorContent } from "../hooks/useEditorContent";
 import { useSlashMenu } from "../hooks/useSlashMenu";
@@ -48,11 +49,9 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const [summary, setSummary] = useState("");
   const [starred, setStarred] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<"summary" | "history" | "share">("summary");
   const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(loadThemePreference);
-  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
 
@@ -61,11 +60,42 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const quickOpen = useQuickOpen({ onSelectDocument: (doc) => { router.push(`/docs/${doc.id}`); } });
   const documentActions = useDocumentActions(docId);
   const tagActionsHook = useTagActions(docId);
-  const tagState = useTagState({ tagActions: tagActionsHook, toast, setLastSavedAt });
 
   const notifyAi = useCallback((message: string) => { toast({ description: message }); }, [toast]);
   const ai = useAiAssistant({ docId, maxTags: MAX_TAGS, normalizeTagName, isValidTagName, notify: notifyAi });
   const sim = useSimilarDocs({ docId, title });
+
+  const saveQueue = useEditorSaveQueue({
+    // Seed at 1 because the documents table defaults content_revision to 1.
+    // The real revision (which may be much higher on legacy documents that
+    // were backfilled from MAX(version)) is published synchronously via
+    // resyncRevision in the onLoaded callback below, before the user can
+    // trigger any save action.
+    initialRevision: 1,
+    initialSavedContent: "",
+    initialSavedTitle: "",
+    save: (snapshot, baseRevision) => documentActions.saveDocument(snapshot.title, snapshot.content, baseRevision),
+    onSaved: ({ snapshot }) => {
+      lastSavedContentRef.current = snapshot.content;
+      setTitle(snapshot.title);
+      ec.setHasUnsavedChanges(false);
+      if (typeof window !== "undefined") window.localStorage.removeItem(`mnote:draft:${docId}`);
+    },
+    onConflict: () => {
+      // Preserve the in-progress draft; only surface the state so the footer
+      // can render the conflict banner. The next requestSave the user
+      // triggers will reuse the freshly-bumped serverRevisionRef.
+      toast({ description: "Saved version is behind the server; please save again to merge.", variant: "error" });
+    },
+    onError: (err) => {
+      console.error(err);
+      toast({ description: err instanceof Error ? err : "Failed to save", variant: "error" });
+    },
+  });
+  const saving = saveQueue.status === "SAVING" || saveQueue.status === "QUEUED";
+  const lastSavedAt = saveQueue.lastSavedAt;
+  const setLastSavedAt = saveQueue.setLastSavedAt;
+  const tagState = useTagState({ tagActions: tagActionsHook, toast, setLastSavedAt });
 
   const ec = useEditorContent({ editorViewRef, contentRef, lastSavedContentRef });
   const scrollSync = useScrollSync({ loading, editorViewRef });
@@ -80,19 +110,27 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const editorExt = useEditorExtensions({ currentThemeId, updateCursorInfo: ec.updateCursorInfo, startTransition: ec.startTransition, setSlashMenu: slashMenu.setSlashMenu, setWikilinkMenu: wikilinkMenu.setWikilinkMenu });
 
   useEditorLifecycle({
-    id: docId, saving, hasUnsavedChanges: ec.hasUnsavedChanges, contentRef, lastSavedContentRef, documentActions, extractTitleFromContent,
+    id: docId, hasUnsavedChanges: ec.hasUnsavedChanges, contentRef, lastSavedContentRef, documentActions, extractTitleFromContent,
     onLoadingChange: setLoading,
     onLoaded: ({ initialContent, detail, hasDraftOverride }) => {
       ec.setContent(initialContent); ec.setPreviewContent(initialContent); ec.setHasUnsavedChanges(hasDraftOverride);
       setTitle(extractTitleFromContent(initialContent));
       setSummary(detail.document.summary || ""); setStarred(detail.document.starred || 0);
       tagState.setSelectedTagIDs(detail.tag_ids); tagState.setAllTags(detail.tags ?? []);
-      setLastSavedAt(detail.document.mtime);
+      // Rely on the dedicated content_revision/content_mtime fields so that
+      // summary/tag/star mtime bumps cannot poison the save protocol's
+      // optimistic concurrency check.
+      saveQueue.resyncRevision({
+        revision: detail.document.content_revision || 1,
+        title: extractTitleFromContent(initialContent),
+        content: detail.document.content,
+        mtime: detail.document.content_mtime || detail.document.mtime || null,
+      });
       const text = initialContent || "";
       ec.setCharCount(text.length); ec.setWordCount(text.trim().split(/\s+/).filter((w) => w.length > 0).length);
     },
     onLoadError: (err) => { toast({ description: err instanceof Error ? err : "Document not found", variant: "error" }); router.push("/docs"); },
-    onAutoSaved: ({ title: derivedTitle, timestamp }) => { setTitle(derivedTitle); setLastSavedAt(timestamp); ec.setHasUnsavedChanges(false); },
+    requestSave: saveQueue.requestSave,
   });
 
   useEffect(() => { inlineTag.setInlineTagMode(false); inlineTag.setInlineTagValue(""); }, [docId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -103,21 +141,14 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     if (view) view.dispatch({ effects: themeCompartment.reconfigure(getThemeById(themeId).extension) });
   }, []);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(() => {
     const latestContent = contentRef.current;
     const derivedTitle = extractTitleFromContent(latestContent);
     if (!derivedTitle) { toast({ description: "Please add a title using markdown heading (Title + ===)." }); return; }
-    setSaving(true);
-    try {
-      await documentActions.saveDocument(derivedTitle, latestContent);
-      lastSavedContentRef.current = latestContent;
-      setTitle(derivedTitle); setLastSavedAt(Math.floor(Date.now() / 1000)); ec.setHasUnsavedChanges(false);
-      if (typeof window !== "undefined") window.localStorage.removeItem(`mnote:draft:${docId}`);
-    } catch (err) {
-      console.error(err);
-      toast({ description: err instanceof Error ? err : "Failed to save", variant: "error" });
-    } finally { setSaving(false); }
-  }, [documentActions, docId, toast, ec, contentRef, lastSavedContentRef]);
+    // Hand the snapshot to the queue; the queue enforces single-flight
+    // semantics so back-to-back Ctrl+S presses cannot create overlapping PUTs.
+    saveQueue.requestSave({ title: derivedTitle, content: latestContent });
+  }, [contentRef, toast, saveQueue]);
 
   const handleDelete = useCallback(async () => {
     try { await documentActions.deleteDocument(); router.push("/docs"); }
@@ -151,7 +182,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const handleRevert = useCallback((v: DocumentVersionSummary) => { router.push(`/docs/${docId}/revert?version=${v.version}`); }, [router, docId]);
 
   useEffect(() => { if (typeof document === "undefined") return; document.title = title ? `${title} - Micro Note` : "micro note"; }, [title]);
-  useEffect(() => { const h = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); void handleSave(); } }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [handleSave]);
+  useEffect(() => { const h = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); handleSave(); } }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [handleSave]);
   useEffect(() => { return () => { const view = editorViewRef.current; if (view && pasteHandlerRef.current) view.dom.removeEventListener("paste", pasteHandlerRef.current, true); }; }, []);
   useEffect(() => { return () => { if (ec.previewUpdateTimerRef.current) window.clearTimeout(ec.previewUpdateTimerRef.current); if (scrollSync.scrollSyncTimerRef.current) window.clearTimeout(scrollSync.scrollSyncTimerRef.current); }; }, [ec.previewUpdateTimerRef, scrollSync.scrollSyncTimerRef]);
 
@@ -179,7 +210,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
       ec={ec} scrollSync={scrollSync} popover={popover} slashMenu={slashMenu} wikilinkMenu={wikilinkMenu}
       linkGraphHook={linkGraphHook} floatingPanel={floatingPanel} inlineTag={inlineTag} editorExt={editorExt}
       preview={preview} share={share} quickOpen={quickOpen} tagState={tagState} ai={ai} sim={sim} documentActions={documentActions}
-      title={title} summary={summary} starred={starred} saving={saving}
+      title={title} summary={summary} starred={starred} saving={saving} saveStatus={saveQueue.status}
       showDetails={showDetails} setShowDetails={setShowDetails} activeTab={activeTab} setActiveTab={setActiveTab}
       currentThemeId={currentThemeId} lastSavedAt={lastSavedAt}
       showDeleteConfirm={showDeleteConfirm} setShowDeleteConfirm={setShowDeleteConfirm}

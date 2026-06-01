@@ -5,13 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, removeAuthToken, removeAuthEmail, getAuthEmail } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 import type { Document, Tag } from "@/types";
-import type { SavedView } from "./types";
 import { generatePixelAvatar, copyToClipboard } from "./utils";
 import { useTagIndex } from "./hooks/useTagIndex";
 import { useSidebarTags } from "./hooks/useSidebarTags";
 import { useDocsData } from "./hooks/useDocsData";
 import { useImportExport } from "./hooks/useImportExport";
-import { useSavedViews } from "./hooks/useSavedViews";
 import { Sidebar } from "./components/Sidebar";
 import { HeaderBar } from "./components/HeaderBar";
 import { DocumentGrid } from "./components/DocumentGrid";
@@ -51,7 +49,6 @@ export default function DocsPage() {
     fetchSummary, fetchSharedSummary, handlePinToggle, handleStarToggle,
   } = useDocsData({ search, selectedTag, showStarred, showShared, mergeTags, fetchTagsByIDs, tagIndexRef });
   const ie = useImportExport({ fetchSummary, fetchTags, fetchSidebarTags: sidebar.fetchSidebarTags, tagSearch: sidebar.tagSearch, toast });
-  const { savedViews, fetchSavedViews, handleSaveCurrentView, removeSavedView } = useSavedViews({ toast });
 
   useEffect(() => {
     setActiveTagIndex(0); // eslint-disable-line react-hooks/set-state-in-effect -- reset index on search change
@@ -123,8 +120,7 @@ export default function DocsPage() {
     void fetchTags("");
     void fetchSummary();
     void fetchSharedSummary();
-    void fetchSavedViews();
-  }, [fetchTags, fetchSummary, fetchSharedSummary, fetchSavedViews]);
+  }, [fetchTags, fetchSummary, fetchSharedSummary]);
 
   useEffect(() => {
     const oauthStatus = searchParams.get("oauth");
@@ -167,14 +163,6 @@ export default function DocsPage() {
     }
   }, [toast]);
 
-  const handleApplySavedView = useCallback((view: SavedView) => {
-    setSearch(view.search || "");
-    setSelectedTag(view.selectedTag || "");
-    setShowStarred(view.showStarred);
-    setShowShared(view.showShared);
-    setShowTagSelector(false);
-  }, []);
-
   const navigate = useCallback((path: string) => router.push(path), [router]);
 
   return (
@@ -182,7 +170,7 @@ export default function DocsPage() {
       <Sidebar
         selectedTag={selectedTag} showStarred={showStarred} showShared={showShared}
         totalDocs={totalDocs} starredTotal={starredTotal} sharedTotal={sharedTotal}
-        recentDocs={recentDocs} tagIndex={tagIndex} savedViews={savedViews} search={search}
+        recentDocs={recentDocs} tagIndex={tagIndex}
         sidebarTags={sidebar.sidebarTags} sidebarLoading={sidebar.sidebarLoading} sidebarHasMore={sidebar.sidebarHasMore}
         tagSearch={sidebar.tagSearch} sidebarScrollRef={sidebar.sidebarScrollRef} tagListRef={sidebar.tagListRef}
         onSelectTag={(id) => { setSelectedTag(id); setShowStarred(false); setShowShared(false); }}
@@ -191,9 +179,6 @@ export default function DocsPage() {
         onShowShared={() => { setSelectedTag(""); setShowStarred(false); setShowShared(true); }}
         onNavigate={navigate}
         onTagSearchChange={sidebar.setTagSearch}
-        onSaveCurrentView={() => handleSaveCurrentView({ search, selectedTag, showStarred, showShared })}
-        onApplySavedView={handleApplySavedView}
-        onRemoveSavedView={removeSavedView}
         onToggleTagPin={sidebar.handleToggleTagPin}
         onAutoLoadTags={sidebar.maybeAutoLoadTags}
       />

@@ -329,7 +329,7 @@ func TestDocumentService_GetActiveShare(t *testing.T) {
 
 func TestDocumentService_ListSharedDocuments(t *testing.T) {
 	shares := &mockShareRepo{
-		listActiveDocumentsFn: func(context.Context, string, string) ([]repo.SharedDocument, error) {
+		listActiveDocumentsFn: func(context.Context, string, string, int64) ([]repo.SharedDocument, error) {
 			return []repo.SharedDocument{{ID: "d1", Title: "Shared Note", Token: "tok1"}}, nil
 		},
 	}
@@ -343,6 +343,30 @@ func TestDocumentService_ListSharedDocuments(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
 	assert.Equal(t, "tok1", result[0].Token)
+}
+
+// TestDocumentService_ListSharedDocuments_InjectsNow guards BE-4: the
+// service must forward the injected now() value (here 7777) to the repo so
+// the share-expiry SQL filter is evaluated against the same clock the rest
+// of the service uses.
+func TestDocumentService_ListSharedDocuments_InjectsNow(t *testing.T) {
+	var gotNow int64
+	shares := &mockShareRepo{
+		listActiveDocumentsFn: func(_ context.Context, _, _ string, now int64) ([]repo.SharedDocument, error) {
+			gotNow = now
+			return nil, nil
+		},
+	}
+	tags := &mockDocumentTagRepo{
+		listTagIDsByDocIDsFn: func(context.Context, string, []string) (map[string][]string, error) {
+			return map[string][]string{}, nil
+		},
+	}
+	svc := newDocSvc(nil, nil, nil, tags, shares)
+	svc.SetNowFunc(func() int64 { return 7777 })
+	_, err := svc.ListSharedDocuments(context.Background(), "u1", "")
+	require.NoError(t, err)
+	assert.Equal(t, int64(7777), gotNow)
 }
 
 func TestDocumentService_ListByTag(t *testing.T) {
@@ -553,16 +577,25 @@ func TestDocumentService_Create(t *testing.T) {
 
 func TestDocumentService_Update(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
+		var updatedDoc *model.Document
 		docs := &mockDocumentRepo{
-			updateFn:      func(context.Context, *model.Document) error { return nil },
+			getByIDForUpdateFn: func(_ context.Context, _, _ string) (*model.Document, error) {
+				return &model.Document{ID: "d1", UserID: "u1", ContentRevision: 3}, nil
+			},
+			updateFn: func(_ context.Context, d *model.Document) error {
+				updatedDoc = d
+				return nil
+			},
 			updateLinksFn: func(context.Context, string, string, []string, int64) error { return nil },
 		}
 		summaries := &mockDocumentSummaryRepo{
 			upsertFn: func(context.Context, string, string, string, int64) error { return nil },
 		}
 		versions := &mockVersionRepo{
-			getLatestVersionFn:  func(context.Context, string, string) (int, error) { return 3, nil },
-			createFn:            func(_ context.Context, v *model.DocumentVersion) error { assert.Equal(t, 4, v.Version); return nil },
+			createFn: func(_ context.Context, v *model.DocumentVersion) error {
+				assert.Equal(t, 4, v.Version)
+				return nil
+			},
 			deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
 		}
 		tags := &mockDocumentTagRepo{
@@ -578,10 +611,16 @@ func TestDocumentService_Update(t *testing.T) {
 			Summary: &summary,
 		})
 		require.NoError(t, err)
+		require.NotNil(t, updatedDoc)
+		assert.Equal(t, int64(4), updatedDoc.ContentRevision)
+		assert.NotEmpty(t, updatedDoc.ContentHash)
 	})
 
 	t.Run("update_error", func(t *testing.T) {
 		docs := &mockDocumentRepo{
+			getByIDForUpdateFn: func(_ context.Context, _, _ string) (*model.Document, error) {
+				return &model.Document{ID: "d1", UserID: "u1", ContentRevision: 1}, nil
+			},
 			updateFn: func(context.Context, *model.Document) error { return errors.New("db error") },
 		}
 		svc := newDocSvc(docs, nil, nil, nil, nil)
@@ -1124,7 +1163,7 @@ func TestDocumentService_GetActiveShare_RepoError(t *testing.T) {
 
 func TestDocumentService_ListSharedDocuments_Error(t *testing.T) {
 	shares := &mockShareRepo{
-		listActiveDocumentsFn: func(context.Context, string, string) ([]repo.SharedDocument, error) {
+		listActiveDocumentsFn: func(context.Context, string, string, int64) ([]repo.SharedDocument, error) {
 			return nil, errors.New("fail")
 		},
 	}
@@ -1135,7 +1174,7 @@ func TestDocumentService_ListSharedDocuments_Error(t *testing.T) {
 
 func TestDocumentService_ListSharedDocuments_TagError(t *testing.T) {
 	shares := &mockShareRepo{
-		listActiveDocumentsFn: func(context.Context, string, string) ([]repo.SharedDocument, error) {
+		listActiveDocumentsFn: func(context.Context, string, string, int64) ([]repo.SharedDocument, error) {
 			return []repo.SharedDocument{{ID: "d1"}}, nil
 		},
 	}
@@ -1350,9 +1389,6 @@ func TestDocumentService_Update_VersionCreateError(t *testing.T) {
 		updateLinksFn: func(context.Context, string, string, []string, int64) error { return nil },
 	}
 	versions := &mockVersionRepo{
-		getLatestVersionFn: func(context.Context, string, string) (int, error) {
-			return 1, nil
-		},
 		createFn: func(context.Context, *model.DocumentVersion) error { return errors.New("create version fail") },
 	}
 	svc := newDocSvc(docs, noopSummaryRepo(), versions, nil, nil)
@@ -1366,8 +1402,7 @@ func TestDocumentService_Update_PruneVersionsError(t *testing.T) {
 		updateLinksFn: func(context.Context, string, string, []string, int64) error { return nil },
 	}
 	versions := &mockVersionRepo{
-		getLatestVersionFn: func(context.Context, string, string) (int, error) { return 1, nil },
-		createFn:           func(context.Context, *model.DocumentVersion) error { return nil },
+		createFn: func(context.Context, *model.DocumentVersion) error { return nil },
 		deleteOldVersionsFn: func(context.Context, string, string, int) error {
 			return errors.New("prune fail")
 		},
@@ -1384,7 +1419,6 @@ func TestDocumentService_Update_TagDeleteError(t *testing.T) {
 		updateLinksFn: func(context.Context, string, string, []string, int64) error { return nil },
 	}
 	versions := &mockVersionRepo{
-		getLatestVersionFn:  func(context.Context, string, string) (int, error) { return 1, nil },
 		createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
 		deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
 	}
@@ -1402,7 +1436,6 @@ func TestDocumentService_Update_UpdateLinkError(t *testing.T) {
 		updateLinksFn: func(context.Context, string, string, []string, int64) error { return errors.New("link fail") },
 	}
 	versions := &mockVersionRepo{
-		getLatestVersionFn:  func(context.Context, string, string) (int, error) { return 1, nil },
 		createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
 		deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
 	}
@@ -2246,19 +2279,196 @@ func TestDocumentService_ResolveAccessibleShareByToken(t *testing.T) {
 	})
 }
 
-func TestDocumentService_UpdateSummary_TouchMtimeError(t *testing.T) {
+// TestDocumentService_Save_ConflictOnStaleBaseRevision covers the BE-3
+// optimistic-locking branch: lockForSave must return ConflictError carrying
+// the current snapshot (and must NOT write anything) when base_revision
+// does not match.
+func TestDocumentService_Save_ConflictOnStaleBaseRevision(t *testing.T) {
+	updateCalled := false
+	docs := &mockDocumentRepo{
+		getByIDForUpdateFn: func(context.Context, string, string) (*model.Document, error) {
+			return &model.Document{
+				ID: "d1", UserID: "u1",
+				Title: "Server title", Content: "Server body",
+				ContentRevision: 9, ContentMtime: 1234,
+			}, nil
+		},
+		updateFn: func(context.Context, *model.Document) error {
+			updateCalled = true
+			return nil
+		},
+	}
+	svc := newDocSvc(docs, nil, nil, nil, nil)
+	_, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{
+		Title: "Local", Content: "Local body", BaseRevision: 5,
+	})
+	require.Error(t, err)
+	var conflict *appErr.ConflictError
+	require.ErrorAs(t, err, &conflict)
+	assert.Equal(t, "d1", conflict.Current.ID)
+	assert.Equal(t, "Server title", conflict.Current.Title)
+	assert.Equal(t, int64(9), conflict.Current.ContentRevision)
+	assert.Equal(t, int64(1234), conflict.Current.ContentMtime)
+	assert.False(t, updateCalled)
+}
+
+// TestDocumentService_Save_LockFailure exercises the GetByIDForUpdate error
+// path inside lockForSave (BE-3): row-level locking failures must surface as
+// wrapped errors and stop the transaction before any mutation occurs.
+func TestDocumentService_Save_LockFailure(t *testing.T) {
+	updateCalled := false
+	docs := &mockDocumentRepo{
+		getByIDForUpdateFn: func(context.Context, string, string) (*model.Document, error) {
+			return nil, errors.New("lock conflict")
+		},
+		updateFn: func(context.Context, *model.Document) error {
+			updateCalled = true
+			return nil
+		},
+	}
+	svc := newDocSvc(docs, nil, nil, nil, nil)
+	_, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{Title: "T", Content: "C"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "lock document")
+	assert.False(t, updateCalled)
+}
+
+// stubAssetSyncer captures calls to refreshReferences so tests can control
+// success/failure of the SyncDocumentReferences branch independent of the
+// concrete AssetService.
+type stubAssetSyncer struct {
+	syncErr   error
+	removeErr error
+	synced    bool
+	removed   bool
+}
+
+func (s *stubAssetSyncer) SyncDocumentReferences(context.Context, string, string, string) error {
+	s.synced = true
+	return s.syncErr
+}
+
+func (s *stubAssetSyncer) RemoveDocumentReferences(context.Context, string, string) error {
+	s.removed = true
+	return s.removeErr
+}
+
+// stubAIClient implements documentAIClient. Only MarkEmbeddingPending is
+// exercised by Save; the other methods are stubs so the interface is fully
+// satisfied for production code paths that may run during tests.
+type stubAIClient struct {
+	markErr error
+	marked  bool
+}
+
+func (s *stubAIClient) MarkEmbeddingPending(context.Context, string, string, string, int64) error {
+	s.marked = true
+	return s.markErr
+}
+
+func (*stubAIClient) SemanticSearch(
+	context.Context, string, string, int, string,
+) ([]string, []float32, error) {
+	return nil, nil, nil
+}
+
+func (*stubAIClient) Summarize(context.Context, string) (string, error) { return "", nil }
+
+// TestDocumentService_Save_UpdateLinksError covers the UpdateLinks failure
+// branch in refreshReferences. The companion test below covers the
+// SyncDocumentReferences and MarkEmbeddingPending branches via the
+// documentAssetSyncer / documentAIClient test seams.
+func TestDocumentService_Save_UpdateLinksError(t *testing.T) {
+	docs := &mockDocumentRepo{
+		getByIDForUpdateFn: func(context.Context, string, string) (*model.Document, error) {
+			return &model.Document{ID: "d1", UserID: "u1", ContentRevision: 1}, nil
+		},
+		updateFn: func(context.Context, *model.Document) error { return nil },
+		updateLinksFn: func(context.Context, string, string, []string, int64) error {
+			return errors.New("link boom")
+		},
+	}
+	versions := &mockVersionRepo{
+		createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
+		deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
+	}
+	svc := newDocSvc(docs, nil, versions, nil, nil)
+	_, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{Title: "T", Content: "C"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update links")
+}
+
+func TestDocumentService_Save_RefreshReferences_AssetAndEmbeddingErrors(t *testing.T) {
+	build := func() *DocumentService {
+		docs := &mockDocumentRepo{
+			getByIDForUpdateFn: func(context.Context, string, string) (*model.Document, error) {
+				return &model.Document{ID: "d1", UserID: "u1", ContentRevision: 1}, nil
+			},
+			updateFn:      func(context.Context, *model.Document) error { return nil },
+			updateLinksFn: func(context.Context, string, string, []string, int64) error { return nil },
+		}
+		versions := &mockVersionRepo{
+			createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
+			deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
+		}
+		return newDocSvc(docs, nil, versions, nil, nil)
+	}
+
+	t.Run("assets_sync_error", func(t *testing.T) {
+		svc := build()
+		assets := &stubAssetSyncer{syncErr: errors.New("assets boom")}
+		svc.setAssetSyncer(assets)
+		_, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{Title: "T", Content: "C"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "sync document references")
+		assert.True(t, assets.synced)
+	})
+
+	t.Run("embedding_mark_pending_error", func(t *testing.T) {
+		svc := build()
+		// assets stub succeeds so we reach the AI branch.
+		svc.setAssetSyncer(&stubAssetSyncer{})
+		ai := &stubAIClient{markErr: errors.New("embed boom")}
+		svc.setAIClient(ai)
+		_, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{Title: "T", Content: "C"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "mark embedding pending")
+		assert.True(t, ai.marked)
+	})
+}
+
+// TestDocumentService_SetNowFunc_NilPanics ensures we reject nil clocks as
+// a programming error rather than silently leaving share expiry filtering
+// broken (BE-4 relies on a deterministic clock).
+func TestDocumentService_SetNowFunc_NilPanics(t *testing.T) {
+	svc := newDocSvc(nil, nil, nil, nil, nil)
+	assert.PanicsWithValue(
+		t,
+		"DocumentService.SetNowFunc: now must not be nil",
+		func() { svc.SetNowFunc(nil) },
+	)
+}
+
+// TestDocumentService_UpdateSummary_DoesNotTouchMtime guards BE-2 behavior:
+// summary updates must not call docs.TouchMtime, which previously caused the
+// embedding stale loop to fire every minute for summary-only edits.
+func TestDocumentService_UpdateSummary_DoesNotTouchMtime(t *testing.T) {
+	touchCalled := false
 	docs := &mockDocumentRepo{
 		getByIDFn: func(context.Context, string, string) (*model.Document, error) {
 			return &model.Document{ID: "d1"}, nil
 		},
-		touchMtimeFn: func(context.Context, string, string, int64) error { return errors.New("fail") },
+		touchMtimeFn: func(context.Context, string, string, int64) error {
+			touchCalled = true
+			return nil
+		},
 	}
 	summaries := &mockDocumentSummaryRepo{
 		upsertFn: func(context.Context, string, string, string, int64) error { return nil },
 	}
 	svc := newDocSvc(docs, summaries, nil, nil, nil)
-	err := svc.UpdateSummary(context.Background(), "u1", "d1", "sum")
-	assert.Error(t, err)
+	require.NoError(t, svc.UpdateSummary(context.Background(), "u1", "d1", "sum"))
+	assert.False(t, touchCalled, "UpdateSummary must not call docs.TouchMtime after BE-2")
 }
 
 func TestDocumentService_UpdateShareConfig_InvalidExpiry(t *testing.T) {

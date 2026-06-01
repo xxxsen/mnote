@@ -21,7 +21,6 @@ func TestRegisterRoutes(t *testing.T) {
 		Tags:       &TagHandler{tags: &mockTagService{}},
 		Export:     &ExportHandler{export: &mockExportService{}},
 		Files:      &FileHandler{store: &mockFileStore{}},
-		SavedViews: &SavedViewHandler{service: &mockSavedViewService{}},
 		AI:         &AIHandler{ai: &mockAIHandlerService{}, documents: &mockDocumentService{}, tags: &mockTagService{}},
 		Import:     &ImportHandler{imports: &mockImportHandlerService{}},
 		Templates:  &TemplateHandler{templates: &mockTemplateHandlerService{}},
@@ -36,4 +35,9 @@ func TestRegisterRoutes(t *testing.T) {
 
 	routes := r.Routes()
 	assert.True(t, len(routes) > 30)
+
+	for _, route := range routes {
+		assert.NotContains(t, route.Path, "/saved-views",
+			"saved views feature must not register routes after deprecation")
+	}
 }

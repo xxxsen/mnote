@@ -20,13 +20,14 @@ describe("docEditorService", () => {
     expect(result).toEqual({ id: "d1", title: "Test" });
   });
 
-  it("saveDocument sends PUT with payload", async () => {
-    mockApiFetch.mockResolvedValue(undefined);
-    await docEditorService.saveDocument("d1", { title: "New", content: "body" });
+  it("saveDocument sends PUT with payload including base_revision", async () => {
+    mockApiFetch.mockResolvedValue({ id: "d1", content_revision: 4, version: 4, content_hash: "h", content_mtime: 1, mtime: 1 });
+    const result = await docEditorService.saveDocument("d1", { title: "New", content: "body", base_revision: 3 });
     expect(mockApiFetch).toHaveBeenCalledWith("/documents/d1", {
       method: "PUT",
-      body: JSON.stringify({ title: "New", content: "body" }),
+      body: JSON.stringify({ title: "New", content: "body", base_revision: 3 }),
     });
+    expect(result.content_revision).toBe(4);
   });
 
   it("deleteDocument sends DELETE", async () => {

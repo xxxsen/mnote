@@ -20,6 +20,7 @@ import (
 
 	"github.com/xxxsen/mnote/internal/ai"
 	"github.com/xxxsen/mnote/internal/model"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
 	"github.com/xxxsen/mnote/internal/repo"
 )
@@ -183,18 +184,49 @@ func computeWeightedScore(
 	return float32(sumWeightScore / sumWeight)
 }
 
+const (
+	// embeddingLeaseSeconds is the worker's claim lease. If a worker crashes
+	// the row will become eligible again once locked_until elapses without
+	// requiring administrative cleanup.
+	embeddingLeaseSeconds int64 = 300
+	// embeddingBackoffBaseSeconds is the first failure backoff. Each failure
+	// doubles the wait up to a cap to keep retries useful without thrashing.
+	embeddingBackoffBaseSeconds int64 = 60
+	embeddingBackoffMaxSeconds  int64 = 3600
+	embeddingMaxLastErrorChars        = 1024
+)
+
+// MarkEmbeddingPending is invoked by the save path inside the same DB
+// transaction. It is a thin wrapper so the document service does not need to
+// know the table layout. When the embeddings repo is unconfigured (tests) it
+// is a no-op.
+func (s *AIService) MarkEmbeddingPending(
+	ctx context.Context, userID, docID, contentHash string, contentMtime int64,
+) error {
+	if s == nil || s.embeddings == nil {
+		return nil
+	}
+	if err := s.embeddings.UpsertPending(ctx, docID, userID, contentHash, contentMtime); err != nil {
+		return fmt.Errorf("upsert pending: %w", err)
+	}
+	return nil
+}
+
+// SyncEmbedding chunks the document, embeds the chunks, and persists both
+// the chunk rows and the parent document_embeddings row. On success it
+// resets the retry state via Save; on failure (other than rate limits, which
+// the caller handles) it surfaces the error so the job loop can record a
+// backoff via MarkFailed.
 func (s *AIService) SyncEmbedding(ctx context.Context, userID, docID, title, content string) error {
 	if s == nil || s.embeddings == nil {
 		return nil
 	}
 	logger := logutil.GetLogger(ctx).With(zap.String("user_id", userID), zap.String("doc_id", docID))
 
-	textToHash := fmt.Sprintf("%s\n%s", title, content)
-	hash := sha256.Sum256([]byte(textToHash))
-	contentHash := hex.EncodeToString(hash[:])
-
+	contentHash := computeEmbeddingHash(title, content)
 	existing, err := s.embeddings.GetByDocID(ctx, docID)
-	if err == nil && existing.ContentHash == contentHash {
+	if err == nil && existing.ContentHash == contentHash &&
+		existing.EmbeddingStatus == model.EmbeddingStatusSucceeded {
 		return nil
 	}
 
@@ -243,46 +275,142 @@ func (s *AIService) SyncEmbedding(ctx context.Context, userID, docID, title, con
 		return err
 	}
 
-	logger.Info("embedding and chunks synced", zap.String("title", title), zap.Int("chunks", len(chunks)))
+	logger.Info("embedding chunks synced", zap.String("title", title), zap.Int("chunks", len(chunks)))
 	return nil
 }
 
-func (s *AIService) ProcessPendingEmbeddings(ctx context.Context, delaySeconds int64) error {
+func computeEmbeddingHash(title, content string) string {
+	sum := sha256.Sum256([]byte(title + "\n" + content))
+	return hex.EncodeToString(sum[:])
+}
+
+// ProcessPendingEmbeddings polls the embedding queue, claims rows with a
+// lease, and dispatches them to SyncEmbedding. Rate-limit errors trigger a
+// cool-down without consuming the retry budget; other failures consume an
+// attempt and schedule the next retry with exponential backoff.
+func (s *AIService) ProcessPendingEmbeddings(ctx context.Context, _ int64) error {
 	if s == nil || s.embeddings == nil {
 		return nil
 	}
-	cutoff := timeutil.NowUnix() - clampDelay(delaySeconds)
-	docs, err := s.embeddings.ListStaleDocuments(ctx, 50, cutoff)
+	logger := logutil.GetLogger(ctx)
+	now := timeutil.NowUnix()
+	docs, err := s.embeddings.ListStaleDocuments(ctx, 50, now)
 	if err != nil {
-		logutil.GetLogger(ctx).Error("failed to list stale documents", zap.Error(err))
+		logger.Error("failed to list stale documents", zap.Error(err))
 		return fmt.Errorf("list stale documents: %w", err)
 	}
 	if len(docs) == 0 {
 		return nil
 	}
-	logutil.GetLogger(ctx).Info("processing stale embeddings", zap.Int("count", len(docs)))
+	logger.Info("embedding queue scan", zap.Int("candidates", len(docs)))
+	claimed := 0
 	for _, doc := range docs {
 		if err := checkCtx(ctx); err != nil {
 			return err
 		}
-		if err := s.processOneEmbedding(ctx, doc); err != nil {
+		processed, err := s.processOneEmbedding(ctx, doc)
+		if err != nil {
 			return err
 		}
+		if processed {
+			claimed++
+		}
 	}
+	logger.Info("embedding queue summary", zap.Int("claimed", claimed))
 	return nil
 }
 
-func (s *AIService) processOneEmbedding(ctx context.Context, doc model.Document) error {
-	logger := logutil.GetLogger(ctx)
-	err := s.SyncEmbedding(ctx, doc.UserID, doc.ID, doc.Title, doc.Content)
+// processOneEmbedding owns the lifecycle of a single queue entry: claim →
+// sync → success or failure bookkeeping. It returns (true, nil) when the
+// worker actually held the claim through completion so callers can report
+// throughput accurately.
+func (s *AIService) processOneEmbedding(ctx context.Context, doc model.Document) (bool, error) {
+	logger := logutil.GetLogger(ctx).With(zap.String("doc_id", doc.ID))
+	now := timeutil.NowUnix()
+	claimed, err := s.claimEmbedding(ctx, doc, now)
 	if err != nil {
-		if isRateLimitErr(err) {
-			logger.Warn("ai rate limit triggered, cooling down...", zap.Error(err))
-			return waitCtx(ctx, 10*time.Second)
-		}
-		logger.Error("failed to sync embeddings", zap.String("doc_id", doc.ID), zap.Error(err))
+		return false, err
 	}
-	return waitCtx(ctx, 100*time.Millisecond)
+	if !claimed {
+		return false, nil
+	}
+	logger.Info("embedding claimed")
+	syncErr := s.SyncEmbedding(ctx, doc.UserID, doc.ID, doc.Title, doc.Content)
+	if syncErr == nil {
+		logger.Info("embedding succeeded")
+		return true, waitCtx(ctx, 100*time.Millisecond)
+	}
+	if isRateLimitErr(syncErr) {
+		logger.Warn("ai rate limit triggered, cooling down...", zap.Error(syncErr))
+		// Revert the row to its prior eligible state by zeroing the lease
+		// without consuming a retry attempt.
+		if err := s.embeddings.UpsertPending(ctx, doc.ID, doc.UserID,
+			"", 0); err != nil {
+			logger.Error("failed to reset embedding lease after rate limit", zap.Error(err))
+		}
+		return false, waitCtx(ctx, 10*time.Second)
+	}
+	attempts := 1
+	if existing, err := s.embeddings.GetByDocID(ctx, doc.ID); err == nil {
+		attempts = existing.Attempts + 1
+	}
+	nextRetryAt := now + embeddingBackoffSeconds(attempts)
+	errMsg := truncateErr(syncErr.Error())
+	if markErr := s.embeddings.MarkFailed(ctx, doc.ID, errMsg, nextRetryAt); markErr != nil {
+		logger.Error("failed to record embedding failure", zap.Error(markErr))
+	}
+	logger.Error("embedding failed",
+		zap.Int("attempts", attempts),
+		zap.Int64("retry_after", nextRetryAt-now),
+		zap.Error(syncErr),
+	)
+	return true, waitCtx(ctx, 100*time.Millisecond)
+}
+
+// claimEmbedding establishes the worker's lease on a single document. When
+// the document has no embedding row yet we seed a pending row first so the
+// subsequent Claim has something to update.
+func (s *AIService) claimEmbedding(ctx context.Context, doc model.Document, now int64) (bool, error) {
+	logger := logutil.GetLogger(ctx).With(zap.String("doc_id", doc.ID))
+	if _, err := s.embeddings.GetByDocID(ctx, doc.ID); err != nil {
+		if !errors.Is(err, appErr.ErrNotFound) {
+			return false, fmt.Errorf("get embedding: %w", err)
+		}
+		// Seed an initial pending row so the row-targeted Claim below has
+		// something to update atomically. We seed with empty content_hash
+		// and mtime=0 so the next save path naturally promotes them to
+		// the real values inside its transaction.
+		if err := s.embeddings.UpsertPending(ctx, doc.ID, doc.UserID, "", 0); err != nil {
+			return false, fmt.Errorf("seed pending embedding: %w", err)
+		}
+	}
+	ok, err := s.embeddings.Claim(ctx, doc.ID, now+embeddingLeaseSeconds, now)
+	if err != nil {
+		logger.Warn("failed to claim embedding", zap.Error(err))
+		return false, nil
+	}
+	return ok, nil
+}
+
+func embeddingBackoffSeconds(attempts int) int64 {
+	if attempts <= 1 {
+		return embeddingBackoffBaseSeconds
+	}
+	secs := embeddingBackoffBaseSeconds
+	for i := 1; i < attempts; i++ {
+		secs *= 2
+		if secs >= embeddingBackoffMaxSeconds {
+			return embeddingBackoffMaxSeconds
+		}
+	}
+	return secs
+}
+
+func truncateErr(msg string) string {
+	if len(msg) <= embeddingMaxLastErrorChars {
+		return msg
+	}
+	return msg[:embeddingMaxLastErrorChars]
 }
 
 func clampDelay(d int64) int64 {

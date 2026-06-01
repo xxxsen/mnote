@@ -300,7 +300,6 @@ type serverRepos struct {
 	embeddingCache *repo.EmbeddingCacheRepo
 	importJob      *repo.ImportJobRepo
 	importJobNote  *repo.ImportJobNoteRepo
-	savedView      *repo.SavedViewRepo
 	template       *repo.TemplateRepo
 	asset          *repo.AssetRepo
 	documentAsset  *repo.DocumentAssetRepo
@@ -322,7 +321,6 @@ func newServerRepos(db *sql.DB) serverRepos {
 		embeddingCache: repo.NewEmbeddingCacheRepo(db),
 		importJob:      repo.NewImportJobRepo(db),
 		importJobNote:  repo.NewImportJobNoteRepo(db),
-		savedView:      repo.NewSavedViewRepo(db),
 		template:       repo.NewTemplateRepo(db),
 		asset:          repo.NewAssetRepo(db),
 		documentAsset:  repo.NewDocumentAssetRepo(db),
@@ -460,10 +458,9 @@ func buildRouterDeps(
 		Export: handler.NewExportHandler(
 			service.NewExportService(r.doc, r.summary, r.version, r.tag, r.docTag),
 		),
-		Files:      fileHandler,
-		SavedViews: handler.NewSavedViewHandler(service.NewSavedViewService(r.savedView)),
-		AI:         handler.NewAIHandler(aiSvc, docSvc, tagSvc),
-		Import:     handler.NewImportHandler(importSvc, cfg.MaxUploadSize, service.SaveTempFile),
+		Files:  fileHandler,
+		AI:     handler.NewAIHandler(aiSvc, docSvc, tagSvc),
+		Import: handler.NewImportHandler(importSvc, cfg.MaxUploadSize, service.SaveTempFile),
 		Templates: handler.NewTemplateHandler(
 			service.NewTemplateService(r.template, docSvc, r.tag),
 		),

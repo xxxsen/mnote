@@ -1,10 +1,24 @@
 package model
 
+type EmbeddingStatus string
+
+const (
+	EmbeddingStatusPending   EmbeddingStatus = "pending"
+	EmbeddingStatusRunning   EmbeddingStatus = "running"
+	EmbeddingStatusSucceeded EmbeddingStatus = "succeeded"
+	EmbeddingStatusFailed    EmbeddingStatus = "failed"
+)
+
 type DocumentEmbedding struct {
-	DocumentID  string `json:"document_id"`
-	UserID      string `json:"user_id"`
-	ContentHash string `json:"content_hash"`
-	Mtime       int64  `json:"mtime"`
+	DocumentID      string          `json:"document_id"`
+	UserID          string          `json:"user_id"`
+	ContentHash     string          `json:"content_hash"`
+	Mtime           int64           `json:"mtime"`
+	EmbeddingStatus EmbeddingStatus `json:"embedding_status"`
+	Attempts        int             `json:"attempts"`
+	NextRetryAt     int64           `json:"next_retry_at"`
+	LockedUntil     int64           `json:"locked_until"`
+	LastError       string          `json:"last_error"`
 }
 
 type ChunkType string

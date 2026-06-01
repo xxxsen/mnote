@@ -29,33 +29,6 @@ func TestVersionRepo_Create(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestVersionRepo_GetLatestVersion(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	r := NewVersionRepo(db)
-	rows := sqlmock.NewRows([]string{"version"}).AddRow(3)
-	mock.ExpectQuery("SELECT").WillReturnRows(rows)
-
-	ver, err := r.GetLatestVersion(context.Background(), "u1", "d1")
-	require.NoError(t, err)
-	assert.Equal(t, 3, ver)
-}
-
-func TestVersionRepo_GetLatestVersion_NotFound(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	r := NewVersionRepo(db)
-	rows := sqlmock.NewRows([]string{"version"})
-	mock.ExpectQuery("SELECT").WillReturnRows(rows)
-
-	_, err = r.GetLatestVersion(context.Background(), "u1", "d1")
-	assert.ErrorIs(t, err, appErr.ErrNotFound)
-}
-
 func TestVersionRepo_List(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -163,29 +136,6 @@ func TestVersionRepo_Create_ExecError(t *testing.T) {
 	r := NewVersionRepo(db)
 	mock.ExpectExec("INSERT INTO").WillReturnError(errDB)
 	err = r.Create(context.Background(), &model.DocumentVersion{ID: "v1"})
-	assert.Error(t, err)
-}
-
-func TestVersionRepo_GetLatestVersion_QueryError(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	r := NewVersionRepo(db)
-	mock.ExpectQuery("SELECT").WillReturnError(errDB)
-	_, err = r.GetLatestVersion(context.Background(), "u1", "d1")
-	assert.Error(t, err)
-}
-
-func TestVersionRepo_GetLatestVersion_ScanError(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	r := NewVersionRepo(db)
-	rows := sqlmock.NewRows([]string{"version"}).AddRow("not_int")
-	mock.ExpectQuery("SELECT").WillReturnRows(rows)
-	_, err = r.GetLatestVersion(context.Background(), "u1", "d1")
 	assert.Error(t, err)
 }
 
@@ -332,19 +282,6 @@ func TestVersionRepo_ListByUser_RowsErr(t *testing.T) {
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 	_, err = r.ListByUser(context.Background(), "u1")
 	assert.Error(t, err)
-}
-
-func TestVersionRepo_GetLatestVersion_RowsErr(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	r := NewVersionRepo(db)
-	rows := sqlmock.NewRows([]string{"version"}).CloseError(errDB)
-	mock.ExpectQuery("SELECT").WillReturnRows(rows)
-	_, err = r.GetLatestVersion(context.Background(), "u1", "d1")
-	assert.Error(t, err)
-	assert.NotErrorIs(t, err, appErr.ErrNotFound)
 }
 
 func TestVersionRepo_GetByVersion_RowsErr(t *testing.T) {

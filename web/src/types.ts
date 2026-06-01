@@ -9,6 +9,13 @@ export interface Document {
   starred: number;
   ctime: number;
   mtime: number;
+  // content_hash/content_mtime/content_revision come from BE-2/BE-3 and
+  // track only body changes so that summary/tag edits don't bump them.
+  // content_revision is the value the save protocol uses for optimistic
+  // concurrency control (see SaveDocumentPayload.base_revision below).
+  content_hash: string;
+  content_mtime: number;
+  content_revision: number;
 }
 
 export interface Tag {

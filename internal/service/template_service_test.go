@@ -301,7 +301,6 @@ func TestTemplateService_CreateDocumentFromTemplate(t *testing.T) {
 		}
 		versions := &mockVersionRepo{
 			createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
-			getLatestVersionFn:  func(context.Context, string, string) (int, error) { return 0, appErr.ErrNotFound },
 			deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
 		}
 		tags := &mockDocumentTagRepo{
@@ -345,7 +344,6 @@ func TestTemplateService_CreateDocumentFromTemplate(t *testing.T) {
 		}
 		versions := &mockVersionRepo{
 			createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
-			getLatestVersionFn:  func(context.Context, string, string) (int, error) { return 0, appErr.ErrNotFound },
 			deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
 		}
 		dtags := &mockDocumentTagRepo{
@@ -394,7 +392,6 @@ func TestTemplateService_CreateDocumentFromTemplate(t *testing.T) {
 		}
 		versions := &mockVersionRepo{
 			createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
-			getLatestVersionFn:  func(context.Context, string, string) (int, error) { return 0, appErr.ErrNotFound },
 			deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
 		}
 		dtags := &mockDocumentTagRepo{

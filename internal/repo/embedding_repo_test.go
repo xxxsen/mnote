@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"regexp"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -90,17 +91,20 @@ func TestEmbeddingRepo_GetByDocID(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	r := NewEmbeddingRepo(db)
-	rows := sqlmock.NewRows([]string{"document_id", "user_id", "content_hash", "mtime"}).
-		AddRow("d1", "u1", "hash1", int64(1000))
+	rows := sqlmock.NewRows([]string{
+		"document_id", "user_id", "content_hash", "mtime",
+		"embedding_status", "attempts", "next_retry_at", "locked_until", "last_error",
+	}).AddRow("d1", "u1", "hash1", int64(1000), "succeeded", 0, int64(0), int64(0), "")
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
 	emb, err := r.GetByDocID(context.Background(), "d1")
 	require.NoError(t, err)
 	assert.Equal(t, "d1", emb.DocumentID)
 	assert.Equal(t, "hash1", emb.ContentHash)
+	assert.Equal(t, model.EmbeddingStatusSucceeded, emb.EmbeddingStatus)
 }
 
-func TestEmbeddingRepo_GetByDocID_Error(t *testing.T) {
+func TestEmbeddingRepo_GetByDocID_NotFound(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
@@ -109,7 +113,7 @@ func TestEmbeddingRepo_GetByDocID_Error(t *testing.T) {
 	mock.ExpectQuery("SELECT").WillReturnError(sql.ErrNoRows)
 
 	_, err = r.GetByDocID(context.Background(), "missing")
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestEmbeddingRepo_SaveChunks_PrepareError(t *testing.T) {
@@ -266,4 +270,180 @@ func TestEmbeddingRepo_ListStaleDocuments(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, docs, 1)
 	assert.Equal(t, "d1", docs[0].ID)
+}
+
+// TestEmbeddingRepo_ListStaleDocuments_QueryShape guards the SQL semantics
+// directly: the WHERE clause must use OR between the "no embedding row",
+// "pending/failed and not locked" and "hash mismatch and not locked"
+// branches. The earlier implementation used AND between the hash check and
+// the status check, which silently dropped freshly-saved rows because the
+// save transaction writes the new content_hash and status='pending' in one
+// shot, making the hashes equal at exactly the moment the work needed to be
+// dispatched. We assert on the literal SQL string exported by the repo so a
+// future edit that reintroduces the AND coupling fails this test loudly.
+// We deliberately do not test execution semantics here because sqlmock
+// cannot run real SQL.
+func TestEmbeddingRepo_ListStaleDocuments_QueryShape(t *testing.T) {
+	// Positive: every key fragment of the new OR-based WHERE clause must
+	// be present in the SQL.
+	for _, frag := range []string{
+		"e.document_id IS NULL",
+		"e.embedding_status IN ('pending', 'failed')",
+		"e.next_retry_at <= $2",
+		"e.locked_until < $2",
+		"d.content_hash <> e.content_hash",
+		"ORDER BY",
+		"LIMIT $3",
+	} {
+		assert.Contains(t, listStaleDocumentsSQL, frag,
+			"ListStaleDocuments SQL is missing required fragment: %s", frag)
+	}
+
+	// Negative: the SQL must not couple the hash check with the status
+	// check via AND inside the same OR branch — that was the original
+	// P0-2 regression. The fix uses three independent OR branches: NULL,
+	// retryable status (no hash check), or hash drift (no status check).
+	// Either composite pattern below would re-introduce the original bug.
+	bad1 := regexp.MustCompile(
+		`d\.content_hash <> e\.content_hash[\s]*AND[\s]*e\.embedding_status IN`)
+	bad2 := regexp.MustCompile(
+		`e\.embedding_status IN[^)]*\)[\s]*AND[\s]*d\.content_hash <> e\.content_hash`)
+	assert.NotRegexp(t, bad1, listStaleDocumentsSQL,
+		"hash check must not gate the pending/failed branch")
+	assert.NotRegexp(t, bad2, listStaleDocumentsSQL,
+		"hash check must not be combined with status check in the same OR branch")
+}
+
+// TestEmbeddingRepo_ListStaleDocuments_PassesArgs verifies the repo binds
+// the documents.state, now and limit parameters in the expected positional
+// order, so the WHERE branches above are evaluated against the right
+// values. sqlmock validates the bound args against the underlying query.
+func TestEmbeddingRepo_ListStaleDocuments_PassesArgs(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	r := NewEmbeddingRepo(db)
+	rows := sqlmock.NewRows([]string{"id", "user_id", "title", "content"}).
+		AddRow("d1", "u1", "T", "C")
+	mock.ExpectQuery(regexp.QuoteMeta("LEFT JOIN document_embeddings e")).
+		WithArgs(DocumentStateNormal, int64(12345), 5).
+		WillReturnRows(rows)
+
+	docs, err := r.ListStaleDocuments(context.Background(), 5, 12345)
+	require.NoError(t, err)
+	require.Len(t, docs, 1)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestEmbeddingRepo_UpsertPending covers the BE-2 helper that flips a
+// document's embedding row back to "pending" inside the save transaction.
+// We mock both the success and failure paths.
+func TestEmbeddingRepo_UpsertPending(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewEmbeddingRepo(db)
+		mock.ExpectExec("INSERT INTO document_embeddings").
+			WithArgs("d1", "u1", "hash", int64(1000)).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+		require.NoError(t, r.UpsertPending(context.Background(), "d1", "u1", "hash", 1000))
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("error", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewEmbeddingRepo(db)
+		mock.ExpectExec("INSERT INTO document_embeddings").
+			WillReturnError(assert.AnError)
+		require.Error(t, r.UpsertPending(context.Background(), "d1", "u1", "hash", 1000))
+	})
+}
+
+// TestEmbeddingRepo_MarkFailed covers the BE-2 retry-bookkeeping update.
+func TestEmbeddingRepo_MarkFailed(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewEmbeddingRepo(db)
+		mock.ExpectExec("UPDATE document_embeddings").
+			WithArgs("d1", int64(1234), "boom").
+			WillReturnResult(sqlmock.NewResult(0, 1))
+		require.NoError(t, r.MarkFailed(context.Background(), "d1", "boom", 1234))
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("error", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewEmbeddingRepo(db)
+		mock.ExpectExec("UPDATE document_embeddings").
+			WillReturnError(assert.AnError)
+		require.Error(t, r.MarkFailed(context.Background(), "d1", "boom", 1234))
+	})
+}
+
+// TestEmbeddingRepo_Claim covers the BE-2 atomic lease acquisition. We
+// assert both branches of the affected-rows check (>0 vs 0) plus the
+// underlying exec and RowsAffected error paths.
+func TestEmbeddingRepo_Claim(t *testing.T) {
+	t.Run("claims_when_row_updated", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewEmbeddingRepo(db)
+		mock.ExpectExec("UPDATE document_embeddings").
+			WithArgs("d1", int64(2000), int64(1000)).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+		ok, err := r.Claim(context.Background(), "d1", 2000, 1000)
+		require.NoError(t, err)
+		assert.True(t, ok)
+	})
+
+	t.Run("returns_false_when_already_held", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewEmbeddingRepo(db)
+		mock.ExpectExec("UPDATE document_embeddings").
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		ok, err := r.Claim(context.Background(), "d1", 2000, 1000)
+		require.NoError(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("exec_error", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewEmbeddingRepo(db)
+		mock.ExpectExec("UPDATE document_embeddings").
+			WillReturnError(assert.AnError)
+		_, err = r.Claim(context.Background(), "d1", 2000, 1000)
+		require.Error(t, err)
+	})
+
+	t.Run("rows_affected_error", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewEmbeddingRepo(db)
+		mock.ExpectExec("UPDATE document_embeddings").
+			WillReturnResult(sqlmock.NewErrorResult(assert.AnError))
+		_, err = r.Claim(context.Background(), "d1", 2000, 1000)
+		require.Error(t, err)
+	})
 }

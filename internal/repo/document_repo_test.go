@@ -13,10 +13,16 @@ import (
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 )
 
-var docCols = []string{"id", "user_id", "title", "content", "state", "pinned", "starred", "ctime", "mtime"}
+var docCols = []string{
+	"id", "user_id", "title", "content", "state", "pinned", "starred",
+	"ctime", "mtime", "content_hash", "content_mtime", "content_revision",
+}
 
 func addDocRow(rows *sqlmock.Rows, id, title string) *sqlmock.Rows {
-	return rows.AddRow(id, "u1", title, "content", 1, 0, 0, int64(1000), int64(2000))
+	return rows.AddRow(
+		id, "u1", title, "content", 1, 0, 0, int64(1000), int64(2000),
+		"hash-"+id, int64(2000), int64(1),
+	)
 }
 
 func TestDocumentRepo_Create(t *testing.T) {
@@ -98,6 +104,52 @@ func TestDocumentRepo_GetByID_NotFound(t *testing.T) {
 
 	_, err = r.GetByID(context.Background(), "u1", "missing")
 	assert.ErrorIs(t, err, appErr.ErrNotFound)
+}
+
+// TestDocumentRepo_GetByIDForUpdate covers the BE-3 row-lock helper. The
+// happy path issues SELECT ... FOR UPDATE; we also verify the not-found and
+// generic-error mappings since both are catastrophic for the save flow.
+func TestDocumentRepo_GetByIDForUpdate(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewDocumentRepo(db)
+		rows := addDocRow(sqlmock.NewRows(docCols), "d1", "Hello")
+		mock.ExpectQuery("FOR UPDATE").
+			WithArgs("d1", "u1", DocumentStateNormal).
+			WillReturnRows(rows)
+		doc, err := r.GetByIDForUpdate(context.Background(), "u1", "d1")
+		require.NoError(t, err)
+		assert.Equal(t, "d1", doc.ID)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewDocumentRepo(db)
+		mock.ExpectQuery("FOR UPDATE").
+			WillReturnRows(sqlmock.NewRows(docCols))
+		_, err = r.GetByIDForUpdate(context.Background(), "u1", "missing")
+		assert.ErrorIs(t, err, appErr.ErrNotFound)
+	})
+
+	t.Run("scan_error", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewDocumentRepo(db)
+		mock.ExpectQuery("FOR UPDATE").
+			WillReturnError(assert.AnError)
+		_, err = r.GetByIDForUpdate(context.Background(), "u1", "d1")
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, appErr.ErrNotFound)
+	})
 }
 
 func TestDocumentRepo_GetByTitle(t *testing.T) {

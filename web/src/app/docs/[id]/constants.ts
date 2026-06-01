@@ -2,6 +2,11 @@ export const MAX_TAGS = 7;
 
 export const FLOATING_PANEL_COLLAPSED_KEY = "mnote:floating-panel-collapsed";
 
+// ERR_CONFLICT_CODE mirrors errcode.ErrConflict on the backend (10000005).
+// It is duplicated here intentionally so the editor save queue can recognise
+// optimistic-concurrency conflicts without depending on a generated client.
+export const ERR_CONFLICT_CODE = 10000005;
+
 export type EmojiTab = {
   key: string;
   label: string;

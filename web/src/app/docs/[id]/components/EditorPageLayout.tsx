@@ -20,6 +20,7 @@ import type { useQuickOpen } from "../hooks/useQuickOpen";
 import type { useTagState } from "../hooks/useTagState";
 import type { useAiAssistant } from "../hooks/useAiAssistant";
 import type { useSimilarDocs } from "../hooks/useSimilarDocs";
+import type { SaveStatus } from "../types";
 
 import { EditorHeader } from "./EditorHeader";
 import { EditorFooter } from "./EditorFooter";
@@ -55,13 +56,13 @@ export type EditorPageLayoutProps = {
   ai: ReturnType<typeof useAiAssistant>;
   sim: ReturnType<typeof useSimilarDocs>;
   documentActions: { listVersions: () => Promise<DocumentVersionSummary[]> };
-  title: string; summary: string; starred: number; saving: boolean;
+  title: string; summary: string; starred: number; saving: boolean; saveStatus: SaveStatus;
   showDetails: boolean; setShowDetails: (v: boolean) => void;
   activeTab: "summary" | "history" | "share"; setActiveTab: (v: "summary" | "history" | "share") => void;
   currentThemeId: ThemeId; lastSavedAt: number | null;
   showDeleteConfirm: boolean; setShowDeleteConfirm: (v: boolean) => void;
   showPreviewModal: boolean; setShowPreviewModal: (v: boolean) => void;
-  handleThemeChange: (id: ThemeId) => void; handleSave: () => Promise<void>; handleDelete: () => Promise<void>;
+  handleThemeChange: (id: ThemeId) => void; handleSave: () => void; handleDelete: () => Promise<void>;
   handleStarToggle: () => Promise<void>; handleExportMarkdown: () => void; handleExportConfluenceHTML: () => Promise<void>;
   handleApplyAiText: () => void; handleRevert: (v: DocumentVersionSummary) => void;
   onCreateEditor: (view: EditorView) => void;
@@ -73,7 +74,7 @@ export function EditorPageLayout(p: EditorPageLayoutProps) {
     <div className="flex flex-col h-screen bg-background relative">
       <EditorHeader router={p.router} title={p.title} handleSave={p.handleSave} saving={p.saving} hasUnsavedChanges={p.ec.hasUnsavedChanges} lastSavedAt={p.lastSavedAt} showDetails={p.showDetails} setShowDetails={p.setShowDetails} starred={p.starred} handleStarToggle={p.handleStarToggle} />
       <EditorMainArea p={p} />
-      <EditorFooter cursorPos={p.ec.cursorPos} wordCount={p.ec.wordCount} charCount={p.ec.charCount} hasUnsavedChanges={p.ec.hasUnsavedChanges} />
+      <EditorFooter cursorPos={p.ec.cursorPos} wordCount={p.ec.wordCount} charCount={p.ec.charCount} hasUnsavedChanges={p.ec.hasUnsavedChanges} saveStatus={p.saveStatus} />
       <EditorOverlays p={p} />
     </div>
   );

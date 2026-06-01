@@ -42,36 +42,6 @@ func (r *VersionRepo) Create(ctx context.Context, version *model.DocumentVersion
 	return nil
 }
 
-func (r *VersionRepo) GetLatestVersion(ctx context.Context, userID, docID string) (int, error) {
-	where := map[string]any{
-		"user_id":     userID,
-		"document_id": docID,
-		"_orderby":    "version desc",
-		"_limit":      []uint{0, 1},
-	}
-	sqlStr, args, err := builder.BuildSelect("document_versions", where, []string{"version"})
-	if err != nil {
-		return 0, fmt.Errorf("build select: %w", err)
-	}
-	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
-	if err != nil {
-		return 0, fmt.Errorf("query: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	if !rows.Next() {
-		if err := rows.Err(); err != nil {
-			return 0, fmt.Errorf("query: %w", err)
-		}
-		return 0, appErr.ErrNotFound
-	}
-	var version int
-	if err := rows.Scan(&version); err != nil {
-		return 0, fmt.Errorf("scan: %w", err)
-	}
-	return version, nil
-}
-
 func (r *VersionRepo) List(ctx context.Context, userID, docID string) ([]model.DocumentVersion, error) {
 	where := map[string]any{
 		"user_id":     userID,

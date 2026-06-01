@@ -103,10 +103,6 @@ func TestNewHandlerConstructors(t *testing.T) {
 		h := NewOAuthHandler(nil)
 		require.NotNil(t, h)
 	})
-	t.Run("NewSavedViewHandler", func(t *testing.T) {
-		h := NewSavedViewHandler(nil)
-		require.NotNil(t, h)
-	})
 	t.Run("NewAuthHandler", func(t *testing.T) {
 		h := NewAuthHandler(nil)
 		require.NotNil(t, h)
