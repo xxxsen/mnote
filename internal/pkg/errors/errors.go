@@ -114,30 +114,3 @@ func IsInvalid(err error) bool {
 func WrapInvalid(message string) error {
 	return Wrap(ErrInvalid, message, nil)
 }
-
-// ConflictError is a SaveDocument-specific conflict carrying the current
-// server-side snapshot so the client can recover without reloading the
-// editor. It transparently satisfies errors.Is(*, ErrConflict).
-type ConflictError struct {
-	*AppError
-	Current ConflictData
-}
-
-// ConflictData mirrors the minimal subset of the document needed to render a
-// conflict UI without leaking unrelated fields.
-type ConflictData struct {
-	ID              string `json:"id"`
-	Title           string `json:"title"`
-	Content         string `json:"content"`
-	ContentRevision int64  `json:"content_revision"`
-	ContentMtime    int64  `json:"content_mtime"`
-}
-
-// NewConflict wraps the standard ErrConflict with the current server snapshot
-// so the HTTP handler can render a structured 409 response.
-func NewConflict(current ConflictData) *ConflictError {
-	return &ConflictError{
-		AppError: Wrap(ErrConflict, ErrConflict.message, nil),
-		Current:  current,
-	}
-}

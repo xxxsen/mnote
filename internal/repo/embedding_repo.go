@@ -9,6 +9,7 @@ import (
 	"github.com/pgvector/pgvector-go"
 
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/dochash"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 )
 
@@ -122,6 +123,58 @@ func (r *EmbeddingRepo) Claim(
 		return false, fmt.Errorf("rows affected: %w", err)
 	}
 	return affected > 0, nil
+}
+
+// ClaimDrift atomically promotes a document_embeddings row to 'running'
+// when it is currently 'succeeded' but its stored content_hash differs
+// from the up-to-date documents.content_hash. This covers drift caused by
+// out-of-band writes or by the legacy backfill: the row's status is the
+// terminal 'succeeded' (so the normal Claim path skips it), yet the body
+// hash has moved on and the worker still needs to re-embed.
+//
+// The update is single-statement so two concurrent workers cannot both
+// promote the same row. A worker that loses the race observes
+// rows-affected = 0 and returns false.
+func (r *EmbeddingRepo) ClaimDrift(
+	ctx context.Context, docID, expectedDocHash string, lockedUntil, now int64,
+) (bool, error) {
+	const query = `
+		UPDATE document_embeddings
+		SET embedding_status = 'running',
+			locked_until = $2
+		WHERE document_id = $1
+			AND embedding_status = 'succeeded'
+			AND content_hash <> $4
+			AND locked_until < $3
+	`
+	res, err := conn(ctx, r.db).ExecContext(ctx, query, docID, lockedUntil, now, expectedDocHash)
+	if err != nil {
+		return false, fmt.Errorf("exec: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("rows affected: %w", err)
+	}
+	return affected > 0, nil
+}
+
+// ResetLeaseToPending zeros the worker lease and switches embedding_status
+// back to 'pending' without touching the row's content_hash / mtime. The
+// rate-limit cool-down path uses this so a transient 429 cannot wipe out
+// the row's currently-valid hash by feeding empty strings through the
+// generic UpsertPending update.
+func (r *EmbeddingRepo) ResetLeaseToPending(ctx context.Context, docID string) error {
+	const query = `
+		UPDATE document_embeddings
+		SET embedding_status = 'pending',
+			locked_until = 0,
+			next_retry_at = 0
+		WHERE document_id = $1
+	`
+	if _, err := conn(ctx, r.db).ExecContext(ctx, query, docID); err != nil {
+		return fmt.Errorf("exec: %w", err)
+	}
+	return nil
 }
 
 func (r *EmbeddingRepo) SaveChunks(ctx context.Context, chunks []*model.ChunkEmbedding) error {
@@ -256,9 +309,16 @@ func (r *EmbeddingRepo) GetByDocID(ctx context.Context, docID string) (*model.Do
 //     documents.content_hash == document_embeddings.content_hash, and a
 //     legacy `AND content_hash <> e.content_hash` predicate would silently
 //     hide every freshly-saved document from the job.
-//  3. The hashes diverge (e.g. a content write happened outside the save
-//     transaction or upgrade migrations left them out of sync) AND no
-//     other worker holds the lease. This branch covers drift recovery.
+//  3. The hashes diverge AND the embedding row is in the terminal
+//     'succeeded' state AND no other worker holds the lease. This is the
+//     drift-recovery branch: it must be restricted to 'succeeded' rows
+//     because Claim and ClaimDrift partition the state machine — Claim
+//     covers pending/failed (retry window controlled by next_retry_at)
+//     and ClaimDrift covers succeeded-but-drifted rows. Without the
+//     status guard, a failed row whose retry window has not yet opened
+//     would be re-listed every scan but neither Claim (next_retry_at >
+//     now) nor ClaimDrift (status != 'succeeded') would match, leaving
+//     the worker in a candidate-but-cannot-process spin loop.
 //
 // Metadata-only updates (summary / tag / pin / star) never call
 // UpsertPending and never touch content_hash, so they cannot trigger any
@@ -267,15 +327,42 @@ func (r *EmbeddingRepo) GetByDocID(ctx context.Context, docID string) (*model.Do
 // The order favors documents whose retry window opened earliest, falling
 // back to oldest content_mtime, so retried failures do not starve fresh
 // changes nor vice versa.
+//
+// The SELECT carries content_hash and content_mtime in addition to the
+// minimal id/user_id/title/content set so that the worker can echo the
+// expected hash into CompleteEmbeddingIfCurrent without re-reading the
+// documents row. Carrying the hash here is what closes the lost-update
+// window described on the completion path: between scan and completion
+// the document may have been re-saved, and the completion call only
+// commits chunks when the locked row's hash still equals this snapshot.
 func (r *EmbeddingRepo) ListStaleDocuments(ctx context.Context, limit int, now int64) ([]model.Document, error) {
-	return queryBasicDocuments(ctx, conn(ctx, r.db), listStaleDocumentsSQL, DocumentStateNormal, now, limit)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, listStaleDocumentsSQL, DocumentStateNormal, now, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var docs []model.Document
+	for rows.Next() {
+		var doc model.Document
+		if err := rows.Scan(
+			&doc.ID, &doc.UserID, &doc.Title, &doc.Content,
+			&doc.ContentHash, &doc.ContentMtime,
+		); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		docs = append(docs, doc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
+	return docs, nil
 }
 
 // listStaleDocumentsSQL is exposed at package scope so a sibling test can
 // run regex assertions against the WHERE clause shape without re-stating
 // the query and risking drift.
 const listStaleDocumentsSQL = `
-		SELECT d.id, d.user_id, d.title, d.content
+		SELECT d.id, d.user_id, d.title, d.content, d.content_hash, d.content_mtime
 		FROM documents d
 		LEFT JOIN document_embeddings e ON d.id = e.document_id
 		WHERE d.state = $1
@@ -287,10 +374,97 @@ const listStaleDocumentsSQL = `
 					AND e.locked_until < $2
 				)
 				OR (
-					d.content_hash <> e.content_hash
+					e.embedding_status = 'succeeded'
+					AND d.content_hash <> e.content_hash
 					AND e.locked_until < $2
 				)
 		  )
 		ORDER BY COALESCE(e.next_retry_at, 0) ASC, d.content_mtime ASC, d.id ASC
 		LIMIT $3
 	`
+
+// CompleteEmbeddingIfCurrent finalizes an embedding work item under a
+// SELECT ... FOR UPDATE lock on the documents row. The caller passes the
+// expectedHash it computed from the worker's snapshot together with the
+// chunks it produced; this method only commits those chunks when the
+// locked row still hashes to that expected value. Otherwise the document
+// has moved on since the snapshot was taken and any write here would
+// silently demote the live content back to the snapshot's body.
+//
+// Behavior is binary:
+//
+//   - Locked row still hashes to expectedHash: replace chunks, mark the
+//     document_embeddings row as 'succeeded' with the recomputed hash,
+//     and normalize documents.content_hash to the same value. The hash
+//     normalisation is a no-op when both sides already match, and
+//     repairs legacy rows that 008's backfill could not reach. Returns
+//     (true, nil).
+//   - Locked row hashes to something else: do NOT touch chunks, do NOT
+//     overwrite either content_hash column, and re-pend the embedding
+//     row for the current hash so the next scan can pick it up cleanly
+//     (the save path also calls UpsertPending, but a worker that
+//     successfully Claim()-ed before the save committed may have left
+//     the row in 'running' — UpsertPending here flushes that stale
+//     lease). Returns (false, nil).
+//
+// All writes happen inside a single transaction. When the caller already
+// runs in a transaction (via WithTx) the existing tx is joined; otherwise
+// a fresh tx is begun and committed on success.
+func (r *EmbeddingRepo) CompleteEmbeddingIfCurrent(
+	ctx context.Context,
+	userID, docID, expectedHash string,
+	chunks []*model.ChunkEmbedding,
+	now int64,
+) (bool, error) {
+	var applied bool
+	err := RunInTx(ctx, r.db, func(txCtx context.Context) error {
+		var title, content string
+		var contentMtime int64
+		row := conn(txCtx, r.db).QueryRowContext(txCtx, `
+			SELECT title, content, content_mtime
+			FROM documents
+			WHERE id = $1 AND user_id = $2 AND state = $3
+			FOR UPDATE
+		`, docID, userID, DocumentStateNormal)
+		if scanErr := row.Scan(&title, &content, &contentMtime); scanErr != nil {
+			if errors.Is(scanErr, sql.ErrNoRows) {
+				return appErr.ErrNotFound
+			}
+			return fmt.Errorf("lock document: %w", scanErr)
+		}
+		currentHash := dochash.Compute(title, content)
+		if currentHash != expectedHash {
+			if err := r.UpsertPending(txCtx, docID, userID, currentHash, contentMtime); err != nil {
+				return fmt.Errorf("re-pend stale embedding: %w", err)
+			}
+			applied = false
+			return nil
+		}
+		if err := r.DeleteChunksByDocID(txCtx, docID); err != nil {
+			return fmt.Errorf("delete chunks: %w", err)
+		}
+		if err := r.SaveChunks(txCtx, chunks); err != nil {
+			return fmt.Errorf("save chunks: %w", err)
+		}
+		if err := r.Save(txCtx, &model.DocumentEmbedding{
+			DocumentID:  docID,
+			UserID:      userID,
+			ContentHash: currentHash,
+			Mtime:       now,
+		}); err != nil {
+			return fmt.Errorf("save embedding: %w", err)
+		}
+		if _, err := conn(txCtx, r.db).ExecContext(txCtx,
+			`UPDATE documents SET content_hash = $2 WHERE id = $1`,
+			docID, currentHash,
+		); err != nil {
+			return fmt.Errorf("normalize content hash: %w", err)
+		}
+		applied = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return applied, nil
+}

@@ -30,7 +30,7 @@ var (
 	errMissingFromBinary  = errors.New("migration recorded in database is missing from binary")
 	errChecksumMismatch   = errors.New("migration checksum mismatch")
 	errLegacyMissingFile  = errors.New("legacy bootstrap: required migration missing from binary")
-	errLegacyMissingTable = errors.New("legacy bootstrap: required column missing from baseline schema")
+	errLegacyMissingTable = errors.New("legacy bootstrap: required tables or columns missing from baseline schema")
 )
 
 // migrationsDir is the embedded FS subdirectory that holds .sql files.
@@ -59,13 +59,27 @@ var legacyMigrationFiles = []string{
 }
 
 // legacyCoreTables lists the business tables that must exist for legacy
-// bootstrap to consider a database "already migrated up to 005".
+// bootstrap to consider a database "already migrated up to 005". It covers
+// every table produced by 001–005 that is still part of the schema; the
+// only intentional omission is saved_views, which 007 will drop, so its
+// absence must not block bootstrap on databases that have already removed
+// it out of band.
 var legacyCoreTables = []string{
-	"users", "documents", "document_versions", "tags", "shares",
+	"users", "documents", "document_versions", "tags", "document_tags", "shares",
+	"oauth_accounts", "email_verification_codes",
+	"document_embeddings", "chunk_embeddings", "embedding_cache",
+	"document_summaries",
+	"document_links",
+	"import_jobs", "import_job_notes",
+	"templates", "assets", "document_assets", "share_comments",
+	"todos",
 }
 
 // legacyCoreColumns describes columns we expect to be present in legacy
-// databases to confirm the baseline schema matches 001–005.
+// databases to confirm the baseline schema matches 001–005. Each entry
+// pins a column that is meaningful to a downstream feature, so missing
+// columns surface as targeted errors rather than as a generic "table
+// exists but is incomplete" failure later at request time.
 var legacyCoreColumns = []struct {
 	Table  string
 	Column string
@@ -77,6 +91,12 @@ var legacyCoreColumns = []struct {
 	{"documents", "starred"},
 	{"document_versions", "version"},
 	{"todos", "due_date"},
+	{"templates", "variables_json"},
+	{"assets", "file_key"},
+	{"document_assets", "asset_id"},
+	{"share_comments", "root_id"},
+	{"import_jobs", "require_content"},
+	{"import_job_notes", "tags_json"},
 }
 
 type Config struct {
@@ -362,15 +382,31 @@ func applyOne(ctx context.Context, c *sql.Conn, f migrationFile) error {
 // no schema_migrations rows. It validates the presence of key tables and
 // columns and refuses to proceed if the baseline does not match.
 //
-// When the database is empty (no core tables present) this function is a
-// no-op and the regular migration loop will execute every file from scratch.
+// Behavior is tristate:
+//   - no legacy tables present → not a legacy database, return nil so the
+//     normal migration loop will execute every file from scratch;
+//   - all legacy tables present → continue with column verification and
+//     write the 001–005 schema_migrations rows;
+//   - some but not all legacy tables present → fail loudly so operators
+//     restore a known-good baseline instead of letting the migrator paper
+//     over the gap with `IF NOT EXISTS` DDL.
 func legacyBootstrapIfNeeded(ctx context.Context, c *sql.Conn, files []migrationFile) error {
-	present, err := coreTablesPresent(ctx, c)
+	presentCount, err := coreTablesPresent(ctx, c)
 	if err != nil {
 		return err
 	}
-	if !present {
+	if presentCount == 0 {
 		return nil
+	}
+	if presentCount < len(legacyCoreTables) {
+		missing, lookupErr := missingLegacyTables(ctx, c)
+		if lookupErr != nil {
+			return fmt.Errorf("legacy bootstrap: %w", lookupErr)
+		}
+		return fmt.Errorf(
+			"%w: tables=%v (partial legacy baseline detected; restore a known-good 005 schema before upgrading)",
+			errLegacyMissingTable, missing,
+		)
 	}
 	if err := verifyLegacyColumns(ctx, c); err != nil {
 		return fmt.Errorf("legacy bootstrap: %w", err)
@@ -414,15 +450,50 @@ func legacyBootstrapIfNeeded(ctx context.Context, c *sql.Conn, files []migration
 	return nil
 }
 
-func coreTablesPresent(ctx context.Context, c *sql.Conn) (bool, error) {
+// coreTablesPresent returns how many of the expected legacy tables already
+// exist in the current schema. The caller treats 0 as "fresh database" and
+// the full count as "complete baseline"; anything in between is a partial
+// baseline and the caller surfaces a hard error via missingLegacyTables.
+func coreTablesPresent(ctx context.Context, c *sql.Conn) (int, error) {
 	const q = `SELECT COUNT(*) FROM information_schema.tables
         WHERE table_schema = current_schema() AND table_name = ANY($1)`
 	row := c.QueryRowContext(ctx, q, pq.Array(legacyCoreTables))
 	var count int
 	if err := row.Scan(&count); err != nil {
-		return false, fmt.Errorf("check core tables: %w", err)
+		return 0, fmt.Errorf("check core tables: %w", err)
 	}
-	return count == len(legacyCoreTables), nil
+	return count, nil
+}
+
+// missingLegacyTables enumerates which of the expected legacy tables are
+// absent, so the bootstrap error message can name them. The caller only
+// invokes this after coreTablesPresent reported a partial match.
+func missingLegacyTables(ctx context.Context, c *sql.Conn) ([]string, error) {
+	const q = `SELECT table_name FROM information_schema.tables
+        WHERE table_schema = current_schema() AND table_name = ANY($1)`
+	rows, err := c.QueryContext(ctx, q, pq.Array(legacyCoreTables))
+	if err != nil {
+		return nil, fmt.Errorf("list legacy tables: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	present := make(map[string]struct{}, len(legacyCoreTables))
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("scan legacy tables: %w", err)
+		}
+		present[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate legacy tables: %w", err)
+	}
+	missing := make([]string, 0, len(legacyCoreTables)-len(present))
+	for _, name := range legacyCoreTables {
+		if _, ok := present[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	return missing, nil
 }
 
 func verifyLegacyColumns(ctx context.Context, c *sql.Conn) error {

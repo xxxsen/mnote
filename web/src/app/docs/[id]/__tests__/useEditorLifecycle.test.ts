@@ -120,8 +120,8 @@ describe("useEditorLifecycle", () => {
     expect(localStorage.getItem("mnote:draft:d1")).toBeNull();
   });
 
-  // FE-1: lifecycle no longer issues PUTs itself; it must hand the
-  // snapshot to the queue via requestSave so single-flight semantics hold.
+  // Lifecycle no longer issues PUTs itself; it must hand the snapshot to
+  // the queue via requestSave so single-flight semantics hold.
   it("auto-save calls requestSave when content changed", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const opts = makeOpts();

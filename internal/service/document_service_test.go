@@ -345,10 +345,10 @@ func TestDocumentService_ListSharedDocuments(t *testing.T) {
 	assert.Equal(t, "tok1", result[0].Token)
 }
 
-// TestDocumentService_ListSharedDocuments_InjectsNow guards BE-4: the
-// service must forward the injected now() value (here 7777) to the repo so
-// the share-expiry SQL filter is evaluated against the same clock the rest
-// of the service uses.
+// TestDocumentService_ListSharedDocuments_InjectsNow guards the
+// share-expiry filter: the service must forward the injected now() value
+// (here 7777) to the repo so the expiry SQL filter is evaluated against
+// the same clock the rest of the service uses.
 func TestDocumentService_ListSharedDocuments_InjectsNow(t *testing.T) {
 	var gotNow int64
 	shares := &mockShareRepo{
@@ -2279,18 +2279,22 @@ func TestDocumentService_ResolveAccessibleShareByToken(t *testing.T) {
 	})
 }
 
-// TestDocumentService_Save_ConflictOnStaleBaseRevision covers the BE-3
-// optimistic-locking branch: lockForSave must return ConflictError carrying
-// the current snapshot (and must NOT write anything) when base_revision
-// does not match.
-func TestDocumentService_Save_ConflictOnStaleBaseRevision(t *testing.T) {
+// TestDocumentService_Save_RejectsStaleSaveSeq guards the save protocol:
+// a save_seq that is <= the current content_revision must be silently
+// ignored (accepted=false) without touching any other table, and the
+// returned metadata must reflect the unchanged server state so the client
+// can fast-forward without re-reading the document.
+func TestDocumentService_Save_RejectsStaleSaveSeq(t *testing.T) {
 	updateCalled := false
+	versionCreated := false
+	embeddingMarked := false
 	docs := &mockDocumentRepo{
 		getByIDForUpdateFn: func(context.Context, string, string) (*model.Document, error) {
 			return &model.Document{
 				ID: "d1", UserID: "u1",
 				Title: "Server title", Content: "Server body",
-				ContentRevision: 9, ContentMtime: 1234,
+				ContentRevision: 9, ContentHash: "server-hash",
+				ContentMtime: 1234, Mtime: 1234,
 			}, nil
 		},
 		updateFn: func(context.Context, *model.Document) error {
@@ -2298,22 +2302,85 @@ func TestDocumentService_Save_ConflictOnStaleBaseRevision(t *testing.T) {
 			return nil
 		},
 	}
-	svc := newDocSvc(docs, nil, nil, nil, nil)
-	_, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{
-		Title: "Local", Content: "Local body", BaseRevision: 5,
+	versions := &mockVersionRepo{
+		createFn: func(context.Context, *model.DocumentVersion) error {
+			versionCreated = true
+			return nil
+		},
+	}
+	svc := newDocSvc(docs, nil, versions, nil, nil)
+	ai := &stubAIClient{}
+	svc.setAIClient(ai)
+	for _, seq := range []int64{5, 9} {
+		result, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{
+			Title: "Local", Content: "Local body", SaveSeq: seq,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.False(t, result.Accepted)
+		assert.Equal(t, "d1", result.ID)
+		assert.Equal(t, int64(9), result.ContentRevision)
+		assert.Equal(t, "server-hash", result.ContentHash)
+		assert.Equal(t, int64(1234), result.ContentMtime)
+		assert.Equal(t, int64(1234), result.Mtime)
+	}
+	assert.False(t, updateCalled, "stale save_seq must not write document")
+	assert.False(t, versionCreated, "stale save_seq must not write versions")
+	assert.False(t, ai.marked, "stale save_seq must not enqueue embedding work")
+	embeddingMarked = ai.marked
+	_ = embeddingMarked
+}
+
+// TestDocumentService_Save_AcceptsFreshSaveSeq guards the accept path: a
+// strictly-greater save_seq must promote the row, write a version row, and
+// notify the embedding queue. The returned ContentRevision must equal the
+// request save_seq (not current+1) because document_versions.version is
+// keyed by save_seq.
+func TestDocumentService_Save_AcceptsFreshSaveSeq(t *testing.T) {
+	var saved *model.Document
+	var versionRow *model.DocumentVersion
+	docs := &mockDocumentRepo{
+		getByIDForUpdateFn: func(context.Context, string, string) (*model.Document, error) {
+			return &model.Document{
+				ID: "d1", UserID: "u1",
+				Title: "Old", Content: "Old body",
+				ContentRevision: 4, ContentHash: "old-hash",
+				ContentMtime: 1000, Mtime: 1000,
+			}, nil
+		},
+		updateFn: func(_ context.Context, d *model.Document) error {
+			saved = d
+			return nil
+		},
+		updateLinksFn: func(context.Context, string, string, []string, int64) error { return nil },
+	}
+	versions := &mockVersionRepo{
+		createFn: func(_ context.Context, v *model.DocumentVersion) error {
+			versionRow = v
+			return nil
+		},
+		deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
+	}
+	svc := newDocSvc(docs, nil, versions, nil, nil)
+	ai := &stubAIClient{}
+	svc.setAIClient(ai)
+
+	result, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{
+		Title: "T", Content: "C", SaveSeq: 7,
 	})
-	require.Error(t, err)
-	var conflict *appErr.ConflictError
-	require.ErrorAs(t, err, &conflict)
-	assert.Equal(t, "d1", conflict.Current.ID)
-	assert.Equal(t, "Server title", conflict.Current.Title)
-	assert.Equal(t, int64(9), conflict.Current.ContentRevision)
-	assert.Equal(t, int64(1234), conflict.Current.ContentMtime)
-	assert.False(t, updateCalled)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Accepted)
+	assert.Equal(t, int64(7), result.ContentRevision)
+	require.NotNil(t, saved)
+	assert.Equal(t, int64(7), saved.ContentRevision)
+	require.NotNil(t, versionRow)
+	assert.Equal(t, 7, versionRow.Version)
+	assert.True(t, ai.marked)
 }
 
 // TestDocumentService_Save_LockFailure exercises the GetByIDForUpdate error
-// path inside lockForSave (BE-3): row-level locking failures must surface as
+// path inside lockForSave: row-level locking failures must surface as
 // wrapped errors and stop the transaction before any mutation occurs.
 func TestDocumentService_Save_LockFailure(t *testing.T) {
 	updateCalled := false
@@ -2439,7 +2506,7 @@ func TestDocumentService_Save_RefreshReferences_AssetAndEmbeddingErrors(t *testi
 
 // TestDocumentService_SetNowFunc_NilPanics ensures we reject nil clocks as
 // a programming error rather than silently leaving share expiry filtering
-// broken (BE-4 relies on a deterministic clock).
+// broken (the expiry filter relies on a deterministic clock).
 func TestDocumentService_SetNowFunc_NilPanics(t *testing.T) {
 	svc := newDocSvc(nil, nil, nil, nil, nil)
 	assert.PanicsWithValue(
@@ -2449,9 +2516,10 @@ func TestDocumentService_SetNowFunc_NilPanics(t *testing.T) {
 	)
 }
 
-// TestDocumentService_UpdateSummary_DoesNotTouchMtime guards BE-2 behavior:
-// summary updates must not call docs.TouchMtime, which previously caused the
-// embedding stale loop to fire every minute for summary-only edits.
+// TestDocumentService_UpdateSummary_DoesNotTouchMtime guards the separation
+// between metadata and content edits: summary updates must not call
+// docs.TouchMtime, which previously caused the embedding stale loop to
+// fire every minute for summary-only edits.
 func TestDocumentService_UpdateSummary_DoesNotTouchMtime(t *testing.T) {
 	touchCalled := false
 	docs := &mockDocumentRepo{
@@ -2468,7 +2536,7 @@ func TestDocumentService_UpdateSummary_DoesNotTouchMtime(t *testing.T) {
 	}
 	svc := newDocSvc(docs, summaries, nil, nil, nil)
 	require.NoError(t, svc.UpdateSummary(context.Background(), "u1", "d1", "sum"))
-	assert.False(t, touchCalled, "UpdateSummary must not call docs.TouchMtime after BE-2")
+	assert.False(t, touchCalled, "UpdateSummary must not call docs.TouchMtime")
 }
 
 func TestDocumentService_UpdateShareConfig_InvalidExpiry(t *testing.T) {

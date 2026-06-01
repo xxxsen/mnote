@@ -145,17 +145,25 @@ type oauthRepo interface { //nolint:interfacebloat // mirrors repo.OAuthRepo
 }
 
 type embeddingRepo interface { //nolint:interfacebloat // mirrors repo.EmbeddingRepo
-	Save(ctx context.Context, emb *model.DocumentEmbedding) error
-	SaveChunks(ctx context.Context, chunks []*model.ChunkEmbedding) error
-	DeleteChunksByDocID(ctx context.Context, docID string) error
 	SearchChunks(ctx context.Context, userID string,
 		query []float32, threshold float32, topK int) ([]repo.ChunkSearchResult, error)
 	GetByDocID(ctx context.Context, docID string) (*model.DocumentEmbedding, error)
 	ListStaleDocuments(ctx context.Context, limit int, now int64) ([]model.Document, error)
 	UpsertPending(ctx context.Context, docID, userID, contentHash string,
 		contentMtime int64) error
+	ResetLeaseToPending(ctx context.Context, docID string) error
 	Claim(ctx context.Context, docID string, lockedUntil, now int64) (bool, error)
+	ClaimDrift(ctx context.Context, docID, expectedDocHash string,
+		lockedUntil, now int64) (bool, error)
 	MarkFailed(ctx context.Context, docID, errMsg string, nextRetryAt int64) error
+	// CompleteEmbeddingIfCurrent commits chunks for a worker snapshot
+	// only when the locked documents row still hashes to expectedHash.
+	// See repo.EmbeddingRepo.CompleteEmbeddingIfCurrent for the full
+	// semantics; the bool return distinguishes "applied" from "stale".
+	CompleteEmbeddingIfCurrent(ctx context.Context,
+		userID, docID, expectedHash string,
+		chunks []*model.ChunkEmbedding, now int64,
+	) (bool, error)
 }
 
 type importJobRepo interface { //nolint:interfacebloat // mirrors repo.ImportJobRepo

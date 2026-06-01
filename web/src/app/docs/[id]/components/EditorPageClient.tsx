@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/toast";
 import type { DocumentVersionSummary } from "@/types";
 
 import { MAX_TAGS } from "../constants";
-import { extractTitleFromContent, downloadFile, normalizeTagName, isValidTagName } from "../utils";
+import { extractTitleFromContent, downloadFile, normalizeTagName, isValidTagName, decideSavedSync } from "../utils";
 
 import { useDocumentActions } from "../hooks/useDocumentActions";
 import { useTagActions } from "../hooks/useTagActions";
@@ -34,6 +34,18 @@ import { useFilePaste } from "../hooks/useFilePaste";
 import { EditorPageLayout } from "./EditorPageLayout";
 
 type EditorPageClientProps = { docId: string };
+
+// buildDraftPayload is intentionally defined at module scope so the
+// Date.now() call inside it stays out of any React render scope. The
+// editor's onSaved callback writes a localStorage draft from a Promise
+// resolution, which is logically post-render, but the
+// react-hooks/purity rule flags impure calls inside callbacks defined
+// during render. Routing the timestamp read through this helper keeps
+// the rule happy without weakening the staleness guarantee — Date.now()
+// is still called at the moment the draft is written, not earlier.
+function buildDraftPayload(content: string): string {
+  return JSON.stringify({ content, updatedAt: Date.now() });
+}
 
 export function EditorPageClient({ docId }: EditorPageClientProps) {
   const router = useRouter();
@@ -74,19 +86,49 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     initialRevision: 1,
     initialSavedContent: "",
     initialSavedTitle: "",
-    save: (snapshot, baseRevision) => documentActions.saveDocument(snapshot.title, snapshot.content, baseRevision),
-    onSaved: ({ snapshot }) => {
+    save: (snapshot, saveSeq) => documentActions.saveDocument(snapshot.title, snapshot.content, saveSeq),
+    onSaved: ({ snapshot, isLatest }) => {
+      // Always advance lastSavedContentRef to the snapshot the server
+      // just accepted so the queue's "skip no-op" guard works against
+      // the latest persisted state on the next requestSave. The
+      // remaining bookkeeping — whether to clear hasUnsavedChanges and
+      // drop the localStorage draft — depends on whether the snapshot
+      // is still the editor's authoritative state. See decideSavedSync.
       lastSavedContentRef.current = snapshot.content;
-      setTitle(snapshot.title);
-      ec.setHasUnsavedChanges(false);
-      if (typeof window !== "undefined") window.localStorage.removeItem(`mnote:draft:${docId}`);
+      const currentContent = contentRef.current;
+      const currentTitle = extractTitleFromContent(currentContent);
+      const action = decideSavedSync({
+        snapshotContent: snapshot.content,
+        snapshotTitle: snapshot.title,
+        currentContent,
+        currentTitle,
+        isLatest,
+      });
+      if (action === "clear") {
+        setTitle(snapshot.title);
+        ec.setHasUnsavedChanges(false);
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(`mnote:draft:${docId}`);
+        }
+        return;
+      }
+      // Keep the surfaced title aligned with the editor's contentRef so
+      // the tab label does not flicker back to the older snapshot's
+      // title while a newer save is in flight; hasUnsavedChanges stays
+      // true so the footer keeps showing "unsynced" until the follow-up
+      // save catches up, and we re-publish the current draft to
+      // localStorage so a crash here does not lose in-progress edits.
+      setTitle(currentTitle);
+      ec.setHasUnsavedChanges(true);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(`mnote:draft:${docId}`, buildDraftPayload(currentContent));
+      }
     },
-    onConflict: () => {
-      // Preserve the in-progress draft; only surface the state so the footer
-      // can render the conflict banner. The next requestSave the user
-      // triggers will reuse the freshly-bumped serverRevisionRef.
-      toast({ description: "Saved version is behind the server; please save again to merge.", variant: "error" });
-    },
+    // A stale save_seq response is not a conflict — the server simply saw
+    // a fresher save first. The queue has already fast-forwarded its local
+    // save_seq, so we deliberately leave the editor's draft untouched and
+    // do not surface a UI banner; the user's next save resumes against the
+    // new save_seq.
     onError: (err) => {
       console.error(err);
       toast({ description: err instanceof Error ? err : "Failed to save", variant: "error" });

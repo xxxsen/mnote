@@ -139,30 +139,6 @@ func TestIsInvalid(t *testing.T) {
 	assert.False(t, IsInvalid(ErrConflict))
 }
 
-// TestNewConflict_CarriesSnapshotAndUnwraps verifies that NewConflict
-// produces an error which (a) carries the supplied ConflictData verbatim and
-// (b) still satisfies errors.Is(*, ErrConflict) so existing conflict
-// detection code keeps working transparently.
-func TestNewConflict_CarriesSnapshotAndUnwraps(t *testing.T) {
-	snap := ConflictData{
-		ID: "doc-1", Title: "Server",
-		Content: "Server body", ContentRevision: 7, ContentMtime: 4242,
-	}
-	cerr := NewConflict(snap)
-	if cerr == nil {
-		t.Fatal("NewConflict returned nil")
-	}
-	if cerr.Current != snap {
-		t.Fatalf("Current = %+v, want %+v", cerr.Current, snap)
-	}
-	if !IsConflict(cerr) {
-		t.Fatal("expected IsConflict to be true for the wrapped error")
-	}
-	if cerr.Code() != ErrConflict.Code() {
-		t.Fatalf("Code = %d, want %d", cerr.Code(), ErrConflict.Code())
-	}
-}
-
 func TestWrapInvalid(t *testing.T) {
 	err := WrapInvalid("bad input")
 	assert.True(t, IsInvalid(err))

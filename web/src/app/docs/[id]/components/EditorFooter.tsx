@@ -11,19 +11,19 @@ type EditorFooterProps = {
   saveStatus: SaveStatus;
 };
 
-// saveStatusVisuals enumerates the five footer states surfaced by the
-// editor save queue: SYNCED, SAVING, QUEUED, CONFLICT and ERROR. Each state
-// has its own copy and indicator color so the user can tell whether the
-// last save committed, is still in flight, was overtaken by a server-side
-// change, or hit a non-conflict failure that needs a manual retry. The
-// CONFLICT and ERROR copies are intentionally directive so the user knows
-// the next action; the editor stays editable in every state so typing
-// continues to land in the queue.
+// saveStatusVisuals enumerates the four footer states surfaced by the
+// editor save queue: SYNCED, SAVING, QUEUED and ERROR. Each state has its
+// own copy and indicator color so the user can tell whether the last save
+// committed, is still in flight, is buffered behind an in-flight request,
+// or hit a non-acceptance failure that needs a manual retry. A stale
+// save_seq response is not a conflict — the queue silently fast-forwards
+// its sequence number and surfaces SYNCED/QUEUED depending on whether
+// there is still buffered work; only network/auth-class failures flip the
+// footer to ERROR.
 const saveStatusVisuals: Record<SaveStatus, { label: string; dot: string }> = {
   SYNCED: { label: "SYNCED", dot: "bg-green-500" },
   SAVING: { label: "SAVING", dot: "bg-sky-500 animate-pulse" },
   QUEUED: { label: "QUEUED", dot: "bg-amber-400" },
-  CONFLICT: { label: "Conflict – save to merge", dot: "bg-orange-500" },
   ERROR: { label: "Save failed – click to retry", dot: "bg-rose-500" },
 };
 

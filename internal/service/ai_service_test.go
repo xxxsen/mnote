@@ -59,15 +59,18 @@ func (m *mockAIChunker) Chunk(ctx context.Context, markdown string) ([]*model.Ch
 }
 
 type mockEmbeddingRepo struct {
-	saveFn                func(ctx context.Context, emb *model.DocumentEmbedding) error
-	saveChunksFn          func(ctx context.Context, chunks []*model.ChunkEmbedding) error
-	deleteChunksByDocIDFn func(ctx context.Context, docID string) error
-	searchChunksFn        func(ctx context.Context, userID string, query []float32, threshold float32, topK int) ([]repo.ChunkSearchResult, error)
-	getByDocIDFn          func(ctx context.Context, docID string) (*model.DocumentEmbedding, error)
-	listStaleDocumentsFn  func(ctx context.Context, limit int, now int64) ([]model.Document, error)
-	upsertPendingFn       func(ctx context.Context, docID, userID, contentHash string, contentMtime int64) error
-	claimFn               func(ctx context.Context, docID string, lockedUntil, now int64) (bool, error)
-	markFailedFn          func(ctx context.Context, docID, errMsg string, nextRetryAt int64) error
+	saveFn                       func(ctx context.Context, emb *model.DocumentEmbedding) error
+	saveChunksFn                 func(ctx context.Context, chunks []*model.ChunkEmbedding) error
+	deleteChunksByDocIDFn        func(ctx context.Context, docID string) error
+	searchChunksFn               func(ctx context.Context, userID string, query []float32, threshold float32, topK int) ([]repo.ChunkSearchResult, error)
+	getByDocIDFn                 func(ctx context.Context, docID string) (*model.DocumentEmbedding, error)
+	listStaleDocumentsFn         func(ctx context.Context, limit int, now int64) ([]model.Document, error)
+	upsertPendingFn              func(ctx context.Context, docID, userID, contentHash string, contentMtime int64) error
+	resetLeaseToPendingFn        func(ctx context.Context, docID string) error
+	claimFn                      func(ctx context.Context, docID string, lockedUntil, now int64) (bool, error)
+	claimDriftFn                 func(ctx context.Context, docID, expectedDocHash string, lockedUntil, now int64) (bool, error)
+	markFailedFn                 func(ctx context.Context, docID, errMsg string, nextRetryAt int64) error
+	completeEmbeddingIfCurrentFn func(ctx context.Context, userID, docID, expectedHash string, chunks []*model.ChunkEmbedding, now int64) (bool, error)
 }
 
 func (m *mockEmbeddingRepo) Save(ctx context.Context, emb *model.DocumentEmbedding) error {
@@ -129,6 +132,22 @@ func (m *mockEmbeddingRepo) Claim(
 	return m.claimFn(ctx, docID, lockedUntil, now)
 }
 
+func (m *mockEmbeddingRepo) ClaimDrift(
+	ctx context.Context, docID, expectedDocHash string, lockedUntil, now int64,
+) (bool, error) {
+	if m.claimDriftFn == nil {
+		return false, nil
+	}
+	return m.claimDriftFn(ctx, docID, expectedDocHash, lockedUntil, now)
+}
+
+func (m *mockEmbeddingRepo) ResetLeaseToPending(ctx context.Context, docID string) error {
+	if m.resetLeaseToPendingFn == nil {
+		return nil
+	}
+	return m.resetLeaseToPendingFn(ctx, docID)
+}
+
 func (m *mockEmbeddingRepo) MarkFailed(
 	ctx context.Context, docID, errMsg string, nextRetryAt int64,
 ) error {
@@ -136,6 +155,20 @@ func (m *mockEmbeddingRepo) MarkFailed(
 		return nil
 	}
 	return m.markFailedFn(ctx, docID, errMsg, nextRetryAt)
+}
+
+// CompleteEmbeddingIfCurrent mirrors repo.EmbeddingRepo's completion
+// helper. Default behavior (no fn injected) is "applied=true so the
+// caller's success path runs", matching what the legacy tests expected
+// before the helper existed.
+func (m *mockEmbeddingRepo) CompleteEmbeddingIfCurrent(
+	ctx context.Context, userID, docID, expectedHash string,
+	chunks []*model.ChunkEmbedding, now int64,
+) (bool, error) {
+	if m.completeEmbeddingIfCurrentFn == nil {
+		return true, nil
+	}
+	return m.completeEmbeddingIfCurrentFn(ctx, userID, docID, expectedHash, chunks, now)
 }
 
 func newTestAIService(mgr *mockAIManager, emb *mockEmbeddingRepo, chunker *mockAIChunker) *AIService {
@@ -454,9 +487,11 @@ func TestAIService_SyncEmbedding(t *testing.T) {
 			getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
 				return nil, errors.New("not found")
 			},
-			deleteChunksByDocIDFn: func(context.Context, string) error { return nil },
-			saveChunksFn:          func(context.Context, []*model.ChunkEmbedding) error { return nil },
-			saveFn:                func(context.Context, *model.DocumentEmbedding) error { return nil },
+			completeEmbeddingIfCurrentFn: func(
+				context.Context, string, string, string, []*model.ChunkEmbedding, int64,
+			) (bool, error) {
+				return true, nil
+			},
 		}
 		mgr := &mockAIManager{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
@@ -517,13 +552,28 @@ func TestAIService_SyncEmbedding(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("delete_chunks_error", func(t *testing.T) {
+	// completes_via_complete_embedding_if_current guards the worker-side
+	// contract that SyncEmbedding hands chunks to the
+	// CompleteEmbeddingIfCurrent helper together with the expected
+	// snapshot hash. The repo helper owns the SELECT FOR UPDATE
+	// transaction; the service must just supply the right inputs and
+	// return cleanly when the helper reports applied=true.
+	t.Run("completes_via_complete_embedding_if_current", func(t *testing.T) {
+		var capturedUser, capturedDoc, capturedHash string
+		var capturedChunks []*model.ChunkEmbedding
 		emb := &mockEmbeddingRepo{
 			getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
 				return nil, errors.New("not found")
 			},
-			deleteChunksByDocIDFn: func(context.Context, string) error {
-				return errors.New("delete fail")
+			completeEmbeddingIfCurrentFn: func(
+				_ context.Context, userID, docID, hash string,
+				chunks []*model.ChunkEmbedding, _ int64,
+			) (bool, error) {
+				capturedUser = userID
+				capturedDoc = docID
+				capturedHash = hash
+				capturedChunks = chunks
+				return true, nil
 			},
 		}
 		mgr := &mockAIManager{
@@ -539,17 +589,27 @@ func TestAIService_SyncEmbedding(t *testing.T) {
 		}
 		svc := newTestAIService(mgr, emb, chunker)
 		err := svc.SyncEmbedding(context.Background(), "u1", "d1", "t", "c")
-		assert.Error(t, err)
+		require.NoError(t, err)
+		assert.Equal(t, "u1", capturedUser)
+		assert.Equal(t, "d1", capturedDoc)
+		assert.Equal(t, computeEmbeddingHash("t", "c"), capturedHash)
+		require.Len(t, capturedChunks, 1)
+		assert.Equal(t, "d1", capturedChunks[0].DocumentID)
 	})
 
-	t.Run("save_chunks_error", func(t *testing.T) {
+	// stale_returns_err_embedding_stale guards the worker race fix: when
+	// the documents row has moved on since the worker took its snapshot,
+	// CompleteEmbeddingIfCurrent reports applied=false and SyncEmbedding
+	// must surface errEmbeddingStale instead of pretending success.
+	t.Run("stale_returns_err_embedding_stale", func(t *testing.T) {
 		emb := &mockEmbeddingRepo{
 			getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
 				return nil, errors.New("not found")
 			},
-			deleteChunksByDocIDFn: func(context.Context, string) error { return nil },
-			saveChunksFn: func(context.Context, []*model.ChunkEmbedding) error {
-				return errors.New("save chunks fail")
+			completeEmbeddingIfCurrentFn: func(
+				context.Context, string, string, string, []*model.ChunkEmbedding, int64,
+			) (bool, error) {
+				return false, nil
 			},
 		}
 		mgr := &mockAIManager{
@@ -565,18 +625,22 @@ func TestAIService_SyncEmbedding(t *testing.T) {
 		}
 		svc := newTestAIService(mgr, emb, chunker)
 		err := svc.SyncEmbedding(context.Background(), "u1", "d1", "t", "c")
-		assert.Error(t, err)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, errEmbeddingStale)
 	})
 
-	t.Run("save_embedding_error", func(t *testing.T) {
+	// propagates_complete_error ensures a transaction failure inside
+	// CompleteEmbeddingIfCurrent surfaces as a regular (non-stale) error
+	// so the worker can record a retry attempt.
+	t.Run("propagates_complete_error", func(t *testing.T) {
 		emb := &mockEmbeddingRepo{
 			getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
 				return nil, errors.New("not found")
 			},
-			deleteChunksByDocIDFn: func(context.Context, string) error { return nil },
-			saveChunksFn:          func(context.Context, []*model.ChunkEmbedding) error { return nil },
-			saveFn: func(context.Context, *model.DocumentEmbedding) error {
-				return errors.New("save emb fail")
+			completeEmbeddingIfCurrentFn: func(
+				context.Context, string, string, string, []*model.ChunkEmbedding, int64,
+			) (bool, error) {
+				return false, errors.New("tx commit failed")
 			},
 		}
 		mgr := &mockAIManager{
@@ -592,7 +656,9 @@ func TestAIService_SyncEmbedding(t *testing.T) {
 		}
 		svc := newTestAIService(mgr, emb, chunker)
 		err := svc.SyncEmbedding(context.Background(), "u1", "d1", "t", "c")
-		assert.Error(t, err)
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, errEmbeddingStale)
+		assert.Contains(t, err.Error(), "complete embedding")
 	})
 }
 
@@ -776,17 +842,18 @@ func TestAIService_ProcessPendingEmbeddings(t *testing.T) {
 
 func TestAIService_ProcessOneEmbedding(t *testing.T) {
 	t.Run("success_marks_succeeded", func(t *testing.T) {
-		saved := false
+		completed := false
 		emb := &mockEmbeddingRepo{
 			getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
 				return nil, appErr.ErrNotFound
 			},
-			deleteChunksByDocIDFn: func(context.Context, string) error { return nil },
-			saveChunksFn:          func(context.Context, []*model.ChunkEmbedding) error { return nil },
-			saveFn: func(_ context.Context, e *model.DocumentEmbedding) error {
-				saved = true
-				assert.NotEmpty(t, e.ContentHash)
-				return nil
+			completeEmbeddingIfCurrentFn: func(
+				_ context.Context, _, _, hash string,
+				_ []*model.ChunkEmbedding, _ int64,
+			) (bool, error) {
+				completed = true
+				assert.NotEmpty(t, hash)
+				return true, nil
 			},
 		}
 		mgr := &mockAIManager{
@@ -805,7 +872,7 @@ func TestAIService_ProcessOneEmbedding(t *testing.T) {
 		processed, err := svc.processOneEmbedding(context.Background(), doc)
 		require.NoError(t, err)
 		assert.True(t, processed)
-		assert.True(t, saved)
+		assert.True(t, completed)
 	})
 
 	t.Run("rate_limit_does_not_consume_attempt", func(t *testing.T) {
@@ -876,7 +943,7 @@ func TestAIService_ProcessOneEmbedding(t *testing.T) {
 	})
 }
 
-// TestAIService_MarkEmbeddingPending exercises the BE-2 wrapper used by the
+// TestAIService_MarkEmbeddingPending exercises the wrapper used by the
 // save transaction. It covers (a) the nil-service no-op, (b) the empty
 // embeddings no-op, (c) the success path, and (d) error wrapping.
 func TestAIService_MarkEmbeddingPending(t *testing.T) {
@@ -922,7 +989,7 @@ func TestAIService_MarkEmbeddingPending(t *testing.T) {
 	})
 }
 
-// TestAIService_ClaimEmbedding exercises the BE-2 claim/lease branches that
+// TestAIService_ClaimEmbedding exercises the claim/lease branches that
 // were missed by the higher-level processOneEmbedding tests: a seed insert
 // when no row exists yet, a hard failure from GetByDocID, a failure from
 // the initial seed write, and a Claim that loses the race (returns false).
@@ -1000,6 +1067,88 @@ func TestAIService_ClaimEmbedding(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, ok)
 	})
+	// drift_path_promotes_succeeded_with_hash_mismatch guards the recovery
+	// loop: when Claim returns false (status='succeeded'), claimEmbedding
+	// must fall through to ClaimDrift and report the drift claim's result.
+	t.Run("drift_path_promotes_succeeded_with_hash_mismatch", func(t *testing.T) {
+		var driftHash string
+		emb := &mockEmbeddingRepo{
+			getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
+				return &model.DocumentEmbedding{DocumentID: "d1", EmbeddingStatus: "succeeded", ContentHash: "old"}, nil
+			},
+			claimFn: func(context.Context, string, int64, int64) (bool, error) { return false, nil },
+			claimDriftFn: func(_ context.Context, _, expected string, _, _ int64) (bool, error) {
+				driftHash = expected
+				return true, nil
+			},
+		}
+		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		ok, err := svc.claimEmbedding(context.Background(), model.Document{ID: "d1", Title: "t", Content: "c"}, 0)
+		require.NoError(t, err)
+		assert.True(t, ok)
+		assert.Equal(t, computeEmbeddingHash("t", "c"), driftHash)
+	})
+	// drift_path_error_returns_false swallows errors from the drift claim
+	// path so the worker can move on to the next candidate instead of
+	// crashing the queue.
+	t.Run("drift_path_error_returns_false", func(t *testing.T) {
+		emb := &mockEmbeddingRepo{
+			getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
+				return &model.DocumentEmbedding{DocumentID: "d1", EmbeddingStatus: "succeeded"}, nil
+			},
+			claimFn: func(context.Context, string, int64, int64) (bool, error) { return false, nil },
+			claimDriftFn: func(context.Context, string, string, int64, int64) (bool, error) {
+				return false, errors.New("drift db error")
+			},
+		}
+		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		ok, err := svc.claimEmbedding(context.Background(), model.Document{ID: "d1"}, 0)
+		require.NoError(t, err)
+		assert.False(t, ok)
+	})
+}
+
+// TestAIService_ProcessOneEmbedding_RateLimitResetsLeaseOnly guards the
+// rate-limit cool-down path: hitting a 429 must clear the worker lease via
+// ResetLeaseToPending without touching content_hash, so the next stale
+// scan still sees the row as already up to date and does not loop on it.
+func TestAIService_ProcessOneEmbedding_RateLimitResetsLeaseOnly(t *testing.T) {
+	upsertCalled := false
+	resetCalled := false
+	emb := &mockEmbeddingRepo{
+		getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
+			return &model.DocumentEmbedding{DocumentID: "d1", ContentHash: "h"}, nil
+		},
+		claimFn: func(context.Context, string, int64, int64) (bool, error) { return true, nil },
+		upsertPendingFn: func(context.Context, string, string, string, int64) error {
+			upsertCalled = true
+			return nil
+		},
+		resetLeaseToPendingFn: func(context.Context, string) error {
+			resetCalled = true
+			return nil
+		},
+	}
+	mgr := &mockAIManager{
+		embedFn: func(context.Context, string, string) ([]float32, error) {
+			return nil, errors.New("ai: 429 rate limit exceeded")
+		},
+		maxInputCharFn: func() int { return 0 },
+	}
+	chunker := &mockAIChunker{
+		chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
+			return []*model.ChunkEmbedding{{Content: "c1", Position: 0}}, nil
+		},
+	}
+	svc := newTestAIService(mgr, emb, chunker)
+	// Use a canceled context so the post-rate-limit waitCtx returns
+	// promptly and the test does not idle for 10 seconds.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	processed, _ := svc.processOneEmbedding(ctx, model.Document{ID: "d1", UserID: "u1", Title: "t", Content: "c"})
+	assert.False(t, processed)
+	assert.True(t, resetCalled, "rate-limit path must call ResetLeaseToPending")
+	assert.False(t, upsertCalled, "rate-limit path must not call UpsertPending (would wipe content_hash)")
 }
 
 // TestTruncateErr covers the long-message branch of truncateErr; the short
@@ -1101,4 +1250,167 @@ func TestProcessPendingEmbeddings_EmptyList(t *testing.T) {
 	svc := newTestAIService(&mockAIManager{maxInputCharFn: func() int { return 0 }}, emb, &mockAIChunker{})
 	err := svc.ProcessPendingEmbeddings(context.Background(), 0)
 	assert.NoError(t, err)
+}
+
+// TestAIService_ProcessPendingEmbeddings_DriftLoopBreaksAfterFirstSuccess
+// asserts the full closed-loop fix for the "stale forever" bug:
+// a document whose embedding row is succeeded-but-drifted must be picked
+// up by ClaimDrift, re-embedded by SyncEmbedding, and — crucially — must
+// have documents.content_hash synced (via CompleteEmbeddingIfCurrent's
+// internal transaction) so the next stale scan no longer reports it.
+//
+//  1. First call: ListStaleDocuments returns the drift candidate; Claim
+//     returns false (status='succeeded'), ClaimDrift returns true, and
+//     CompleteEmbeddingIfCurrent commits the new chunks under the
+//     documents-row lock (returning applied=true).
+//  2. Second call: the mock flips ListStaleDocuments to return empty,
+//     simulating the real ListStaleDocuments query no longer matching
+//     the row because documents.content_hash now equals the embedding
+//     hash. The worker must process zero documents on this pass.
+//
+// The repo-level mock observes the CompleteEmbeddingIfCurrent call with
+// the expected hash, which is the same byte-for-byte fingerprint the
+// production query compares against documents.content_hash.
+func TestAIService_ProcessPendingEmbeddings_DriftLoopBreaksAfterFirstSuccess(t *testing.T) {
+	doc := model.Document{
+		ID:           "d1",
+		UserID:       "u1",
+		Title:        "title",
+		Content:      "body",
+		ContentMtime: 1234,
+	}
+	expectedHash := computeEmbeddingHash(doc.Title, doc.Content)
+
+	listCalls := 0
+	claimCalls := 0
+	claimDriftCalls := 0
+	var completeCalls []string
+
+	emb := &mockEmbeddingRepo{
+		listStaleDocumentsFn: func(context.Context, int, int64) ([]model.Document, error) {
+			listCalls++
+			if listCalls == 1 {
+				return []model.Document{doc}, nil
+			}
+			return nil, nil
+		},
+		getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
+			return &model.DocumentEmbedding{
+				DocumentID:      doc.ID,
+				ContentHash:     "old-drifted-hash",
+				EmbeddingStatus: model.EmbeddingStatusSucceeded,
+			}, nil
+		},
+		claimFn: func(context.Context, string, int64, int64) (bool, error) {
+			claimCalls++
+			return false, nil
+		},
+		claimDriftFn: func(_ context.Context, docID, hash string, _, _ int64) (bool, error) {
+			claimDriftCalls++
+			assert.Equal(t, doc.ID, docID)
+			assert.Equal(t, expectedHash, hash)
+			return true, nil
+		},
+		completeEmbeddingIfCurrentFn: func(
+			_ context.Context, _, docID, hash string,
+			_ []*model.ChunkEmbedding, _ int64,
+		) (bool, error) {
+			completeCalls = append(completeCalls, docID+"="+hash)
+			return true, nil
+		},
+	}
+	mgr := &mockAIManager{
+		embedFn: func(context.Context, string, string) ([]float32, error) {
+			return []float32{0.1, 0.2}, nil
+		},
+		maxInputCharFn: func() int { return 0 },
+	}
+	chunker := &mockAIChunker{
+		chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
+			return []*model.ChunkEmbedding{{Content: "body", Position: 0}}, nil
+		},
+	}
+	svc := newTestAIService(mgr, emb, chunker)
+
+	require.NoError(t, svc.ProcessPendingEmbeddings(context.Background(), 0))
+	assert.Equal(t, 1, listCalls)
+	assert.Equal(t, 1, claimCalls, "Claim must have been tried once before ClaimDrift")
+	assert.Equal(t, 1, claimDriftCalls, "ClaimDrift must have promoted the succeeded-but-drifted row")
+	require.Len(t, completeCalls, 1)
+	assert.Equal(t, doc.ID+"="+expectedHash, completeCalls[0],
+		"CompleteEmbeddingIfCurrent must run with the worker's expected hash")
+
+	require.NoError(t, svc.ProcessPendingEmbeddings(context.Background(), 0))
+	assert.Equal(t, 2, listCalls)
+	assert.Equal(t, 1, claimCalls, "Claim must not run a second time once drift is resolved")
+	assert.Equal(t, 1, claimDriftCalls, "ClaimDrift must not run a second time once drift is resolved")
+	assert.Len(t, completeCalls, 1, "no extra completion call should occur on the second pass")
+}
+
+// TestAIService_ProcessOneEmbedding_StaleSkipsWithoutMarkFailed guards
+// the worker race fix: when a save advances the document between scan
+// and completion, CompleteEmbeddingIfCurrent reports applied=false,
+// SyncEmbedding returns errEmbeddingStale, and processOneEmbedding must
+// treat the stale return as a clean skip — without calling MarkFailed
+// (which would flip the row to 'failed' with a backoff and waste a
+// retry budget for what is a normal race resolution).
+func TestAIService_ProcessOneEmbedding_StaleSkipsWithoutMarkFailed(t *testing.T) {
+	saveCalled := false
+	deleteCalled := false
+	saveChunksCalled := false
+	markFailedCalled := false
+	emb := &mockEmbeddingRepo{
+		getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
+			return &model.DocumentEmbedding{
+				DocumentID:      "d1",
+				ContentHash:     "h-old",
+				EmbeddingStatus: model.EmbeddingStatusPending,
+				Attempts:        0,
+			}, nil
+		},
+		claimFn: func(context.Context, string, int64, int64) (bool, error) { return true, nil },
+		completeEmbeddingIfCurrentFn: func(
+			context.Context, string, string, string, []*model.ChunkEmbedding, int64,
+		) (bool, error) {
+			return false, nil
+		},
+		saveFn: func(context.Context, *model.DocumentEmbedding) error {
+			saveCalled = true
+			return nil
+		},
+		saveChunksFn: func(context.Context, []*model.ChunkEmbedding) error {
+			saveChunksCalled = true
+			return nil
+		},
+		deleteChunksByDocIDFn: func(context.Context, string) error {
+			deleteCalled = true
+			return nil
+		},
+		markFailedFn: func(context.Context, string, string, int64) error {
+			markFailedCalled = true
+			return nil
+		},
+	}
+	mgr := &mockAIManager{
+		embedFn: func(context.Context, string, string) ([]float32, error) {
+			return []float32{0.1}, nil
+		},
+		maxInputCharFn: func() int { return 0 },
+	}
+	chunker := &mockAIChunker{
+		chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
+			return []*model.ChunkEmbedding{{Content: "c1", Position: 0}}, nil
+		},
+	}
+	svc := newTestAIService(mgr, emb, chunker)
+	doc := model.Document{ID: "d1", UserID: "u1", Title: "T", Content: "snapshot-A"}
+	processed, err := svc.processOneEmbedding(context.Background(), doc)
+	require.NoError(t, err)
+	assert.False(t, processed,
+		"stale completion must not count as processed throughput")
+	assert.False(t, markFailedCalled,
+		"stale completion must not consume a retry budget")
+	assert.False(t, saveCalled, "stale must not call Save(succeeded)")
+	assert.False(t, saveChunksCalled, "stale must not call SaveChunks")
+	assert.False(t, deleteCalled, "stale must not call DeleteChunksByDocID")
 }

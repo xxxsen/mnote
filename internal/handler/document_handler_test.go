@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/xxxsen/mnote/internal/model"
-	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/service"
 )
 
@@ -171,18 +170,19 @@ func TestDocumentHandler_Update_Success(t *testing.T) {
 	mock := newDocMock()
 	mock.saveFn = func(_ context.Context, _, docID string, in service.DocumentUpdateInput) (*model.SaveDocumentResult, error) {
 		assert.Equal(t, "d1", docID)
-		assert.Equal(t, int64(5), in.BaseRevision)
+		assert.Equal(t, int64(5), in.SaveSeq)
 		return &model.SaveDocumentResult{
-			ID: docID, ContentRevision: 6, ContentHash: "hash", ContentMtime: 1000, Mtime: 1000,
+			ID: docID, Accepted: true, ContentRevision: 5,
+			ContentHash: "hash", ContentMtime: 1000, Mtime: 1000,
 		}, nil
 	}
 	h := &DocumentHandler{documents: mock}
 	r := newTestRouter()
 	r.PUT("/documents/:id", withUserID("u1"), h.Update)
 
-	base := int64(5)
+	seq := int64(5)
 	w := httptest.NewRecorder()
-	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "Updated", BaseRevision: &base})
+	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "Updated", SaveSeq: &seq})
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -190,15 +190,22 @@ func TestDocumentHandler_Update_Success(t *testing.T) {
 	assert.Equal(t, float64(0), resp["code"])
 	data, ok := resp["data"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, float64(6), data["content_revision"])
-	assert.Equal(t, float64(6), data["version"])
+	assert.Equal(t, float64(5), data["content_revision"])
+	assert.Equal(t, float64(5), data["version"])
 	assert.Equal(t, "hash", data["content_hash"])
+	assert.Equal(t, true, data["accepted"])
+	// The accepted response must not leak the document body back to the
+	// client; the editor owns its in-progress draft.
+	_, hasContent := data["content"]
+	assert.False(t, hasContent, "successful save must not echo the document content")
+	_, hasDoc := data["document"]
+	assert.False(t, hasDoc)
 }
 
-// TestDocumentHandler_Update_RequiresBaseRevision guards BE-3: PUT must
-// reject requests that do not supply a base_revision, since the optimistic
-// concurrency check is the only protection against lost updates.
-func TestDocumentHandler_Update_RequiresBaseRevision(t *testing.T) {
+// TestDocumentHandler_Update_RequiresSaveSeq guards the save protocol: PUT
+// must reject requests that do not supply a save_seq, since the sequence
+// guard is the only protection against lost updates.
+func TestDocumentHandler_Update_RequiresSaveSeq(t *testing.T) {
 	h := &DocumentHandler{documents: newDocMock()}
 	r := newTestRouter()
 	r.PUT("/documents/:id", withUserID("u1"), h.Update)
@@ -209,36 +216,42 @@ func TestDocumentHandler_Update_RequiresBaseRevision(t *testing.T) {
 
 	resp := parseResponseT(t, w)
 	assert.NotEqual(t, float64(0), resp["code"])
-	assert.Contains(t, resp["message"], "base_revision")
+	assert.Contains(t, resp["message"], "save_seq")
 }
 
-// TestDocumentHandler_Update_ConflictIncludesCurrent guards BE-3: when the
-// save service returns a ConflictError, the handler must respond with a
-// structured 409-code payload that includes the current server snapshot.
-func TestDocumentHandler_Update_ConflictIncludesCurrent(t *testing.T) {
+// TestDocumentHandler_Update_StaleSaveSeqOmitsSnapshot guards the save
+// protocol: when the service reports accepted=false for a stale save_seq,
+// the handler must echo only the metadata back (no document content
+// snapshot). The editor relies on this to keep its in-progress draft.
+func TestDocumentHandler_Update_StaleSaveSeqOmitsSnapshot(t *testing.T) {
 	mock := newDocMock()
-	mock.saveFn = func(_ context.Context, _, _ string, _ service.DocumentUpdateInput) (*model.SaveDocumentResult, error) {
-		return nil, appErr.NewConflict(appErr.ConflictData{
-			ID: "d1", Title: "Server", Content: "Server body",
-			ContentRevision: 9, ContentMtime: 1234,
-		})
+	mock.saveFn = func(_ context.Context, _, _ string, in service.DocumentUpdateInput) (*model.SaveDocumentResult, error) {
+		assert.Equal(t, int64(5), in.SaveSeq)
+		return &model.SaveDocumentResult{
+			ID: "d1", Accepted: false, ContentRevision: 9,
+			ContentHash: "server-hash", ContentMtime: 1234, Mtime: 1234,
+		}, nil
 	}
 	h := &DocumentHandler{documents: mock}
 	r := newTestRouter()
 	r.PUT("/documents/:id", withUserID("u1"), h.Update)
 
-	base := int64(5)
+	seq := int64(5)
 	w := httptest.NewRecorder()
-	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "Client", BaseRevision: &base})
+	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "Client", SaveSeq: &seq})
 	r.ServeHTTP(w, req)
 	resp := parseResponseT(t, w)
-	assert.NotEqual(t, float64(0), resp["code"])
+	assert.Equal(t, float64(0), resp["code"], "stale saves are not an error response: %v", resp)
 	data, ok := resp["data"].(map[string]any)
-	require.True(t, ok, "conflict response must include data: %v", resp)
-	current, ok := data["current"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "d1", current["id"])
-	assert.Equal(t, float64(9), current["content_revision"])
+	assert.Equal(t, false, data["accepted"])
+	assert.Equal(t, float64(9), data["content_revision"])
+	_, hasContent := data["content"]
+	assert.False(t, hasContent, "stale-save response must not echo the document content")
+	_, hasTitle := data["title"]
+	assert.False(t, hasTitle)
+	_, hasDoc := data["document"]
+	assert.False(t, hasDoc)
 }
 
 func TestDocumentHandler_Update_EmptyTitle(t *testing.T) {
@@ -663,9 +676,9 @@ func TestDocumentHandler_Update_ServiceError(t *testing.T) {
 	r := newTestRouter()
 	r.PUT("/documents/:id", withUserID("u1"), h.Update)
 
-	base := int64(1)
+	seq := int64(1)
 	w := httptest.NewRecorder()
-	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "T", BaseRevision: &base})
+	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "T", SaveSeq: &seq})
 	r.ServeHTTP(w, req)
 
 	resp := parseResponseT(t, w)
@@ -676,7 +689,7 @@ func TestDocumentHandler_Update_WithTagIDs(t *testing.T) {
 	mock := newDocMock()
 	mock.saveFn = func(_ context.Context, _, _ string, input service.DocumentUpdateInput) (*model.SaveDocumentResult, error) {
 		assert.Equal(t, []string{"t1", "t2"}, input.TagIDs)
-		return &model.SaveDocumentResult{ID: "d1", ContentRevision: 2}, nil
+		return &model.SaveDocumentResult{ID: "d1", Accepted: true, ContentRevision: 2}, nil
 	}
 	h := &DocumentHandler{documents: mock}
 	r := newTestRouter()
@@ -684,8 +697,8 @@ func TestDocumentHandler_Update_WithTagIDs(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	tags := []string{"t1", "t2"}
-	base := int64(1)
-	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "T", TagIDs: &tags, BaseRevision: &base})
+	seq := int64(2)
+	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "T", TagIDs: &tags, SaveSeq: &seq})
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)

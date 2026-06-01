@@ -44,13 +44,6 @@ describe("EditorFooter save status indicator", () => {
     expect(node.textContent).toContain("QUEUED");
   });
 
-  it("renders CONFLICT with a directive label telling the user to save again", () => {
-    renderFooter({ status: "CONFLICT", hasUnsavedChanges: true });
-    const node = getStatus();
-    expect(node.getAttribute("data-status")).toBe("CONFLICT");
-    expect(node.textContent).toContain("Conflict – save to merge");
-  });
-
   it("renders ERROR with a directive label telling the user to retry", () => {
     renderFooter({ status: "ERROR", hasUnsavedChanges: true });
     const node = getStatus();

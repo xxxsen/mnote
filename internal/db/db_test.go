@@ -244,6 +244,49 @@ func TestApplyMigrations_LegacyBootstrapInserts001To005(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+// TestApplyMigrations_LegacyBootstrapMissingTableFails guards the partial
+// baseline detection path: when some but not all of the expected legacy
+// tables are present, bootstrap must fail loudly so operators restore a
+// known-good baseline instead of relying on `IF NOT EXISTS` DDL silently
+// papering over the gap.
+func TestApplyMigrations_LegacyBootstrapMissingTableFails(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	files := newFiles(
+		[2]string{"001_init.sql", "CREATE TABLE u();"},
+	)
+	mock.ExpectExec("SELECT pg_advisory_lock").WithArgs(advisoryLockKey).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("CREATE TABLE IF NOT EXISTS schema_migrations").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("SELECT version, filename, checksum FROM schema_migrations").
+		WillReturnRows(sqlmock.NewRows([]string{"version", "filename", "checksum"}))
+	// One table missing → COUNT returns len-1 → partial.
+	mock.ExpectQuery("SELECT COUNT").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(len(legacyCoreTables) - 1))
+	// Bootstrap then enumerates which tables are missing. Simulate the
+	// `templates` table being absent.
+	presentNames := sqlmock.NewRows([]string{"table_name"})
+	for _, name := range legacyCoreTables {
+		if name == "templates" {
+			continue
+		}
+		presentNames.AddRow(name)
+	}
+	mock.ExpectQuery("SELECT table_name FROM information_schema.tables").
+		WillReturnRows(presentNames)
+	expectUnlock(mock)
+
+	err = applyMigrationsWithFiles(context.Background(), pinConn(t, db), files)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errLegacyMissingTable)
+	assert.Contains(t, err.Error(), "templates")
+	// No schema_migrations rows were written for 001–005.
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestApplyMigrations_LegacyBootstrapMissingColumnFails(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -273,6 +316,63 @@ func TestApplyMigrations_LegacyBootstrapMissingColumnFails(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errLegacyMissingTable)
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestApplyMigrations_LegacyBootstrapMissingAssetFileKeyFails covers the
+// column-validation half of legacy bootstrap. assets.file_key is a
+// business-critical column (uploads cannot reference assets without it),
+// so its absence must surface as a hard error naming the table and column
+// rather than letting the migrator continue.
+func TestApplyMigrations_LegacyBootstrapMissingAssetFileKeyFails(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	files := newFiles(
+		[2]string{"001_init.sql", "CREATE TABLE u();"},
+	)
+	mock.ExpectExec("SELECT pg_advisory_lock").WithArgs(advisoryLockKey).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("CREATE TABLE IF NOT EXISTS schema_migrations").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("SELECT version, filename, checksum FROM schema_migrations").
+		WillReturnRows(sqlmock.NewRows([]string{"version", "filename", "checksum"}))
+	mock.ExpectQuery("SELECT COUNT").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(len(legacyCoreTables)))
+	// Walk the legacyCoreColumns list, returning a row for each entry until
+	// we reach assets.file_key, at which point we return no rows so the
+	// bootstrap rejects the baseline with errLegacyMissingTable.
+	for _, col := range legacyCoreColumns {
+		isFileKey := col.Table == "assets" && col.Column == "file_key"
+		rows := sqlmock.NewRows([]string{"?column?"})
+		if !isFileKey {
+			rows = rows.AddRow(1)
+		}
+		mock.ExpectQuery("FROM information_schema.columns").WillReturnRows(rows)
+		if isFileKey {
+			break
+		}
+	}
+	expectUnlock(mock)
+
+	err = applyMigrationsWithFiles(context.Background(), pinConn(t, db), files)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errLegacyMissingTable)
+	assert.Contains(t, err.Error(), "assets.file_key")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestLegacyCoreTables_OmitsSavedViews documents that saved_views is
+// intentionally not part of the legacy baseline check: migration 007 drops
+// it, so a database that has already removed saved_views out of band must
+// still pass bootstrap and continue to apply 007 idempotently. This is a
+// regression guard against accidentally re-adding saved_views to the list.
+func TestLegacyCoreTables_OmitsSavedViews(t *testing.T) {
+	for _, name := range legacyCoreTables {
+		if name == "saved_views" {
+			t.Fatalf("saved_views must not be part of legacyCoreTables")
+		}
+	}
 }
 
 // TestApplyMigrations_AcquireAndReleaseLockOnSameConnection asserts the
@@ -485,4 +585,68 @@ func TestExecutesMigrationWithEmbeddedSemicolons(t *testing.T) {
 
 	require.NoError(t, applyMigrationsWithFiles(context.Background(), pinConn(t, db), files))
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestMigration008_BackfillsContentHashWithDocumentHashFormula pins the
+// 008 backfill migration to the exact hashing formula used by the Go save
+// path (computeDocumentHash in internal/service/document_service.go). If
+// either the SQL or the Go side drifts, the embedding stale loop re-opens
+// the very gap this migration exists to close, so we lock the contract
+// from both ends:
+//
+//   - The SQL file must declare pgcrypto, must use E'\n' (a one-byte 0x0A
+//     escape) rather than the four-byte literal "\\n", must run the
+//     digest through encode(..., 'hex'), and must only touch rows whose
+//     content_hash is still the empty-string seed.
+//   - sha256(title || "\n" || content), rendered as lower-case hex, is
+//     the canonical fingerprint. We pin a known sample so a future
+//     refactor that accidentally switches the separator or the encoding
+//     fails this test instead of corrupting production data silently.
+func TestMigration008_BackfillsContentHashWithDocumentHashFormula(t *testing.T) {
+	const path = "migrations/008_backfill_document_content_hash.sql"
+	raw, err := fs.ReadFile(migrationsFS, path)
+	require.NoError(t, err, "migration file %s must be embedded", path)
+	sqlText := string(raw)
+
+	// The SQL contract: each phrase below is load-bearing for the
+	// backfill to match computeDocumentHash. Asserting plain substrings
+	// (instead of regexes) keeps the test resilient to whitespace tweaks
+	// while still catching the only meaningful drifts.
+	required := []string{
+		"CREATE EXTENSION IF NOT EXISTS pgcrypto",
+		"E'\\n'",
+		"digest(title || E'\\n' || content, 'sha256')",
+		"encode(",
+		", 'hex')",
+		"WHERE content_hash = ''",
+	}
+	for _, phrase := range required {
+		assert.Contains(t, sqlText, phrase, "migration 008 must contain %q", phrase)
+	}
+
+	// Go-side anchor: sha256("hello" || "\n" || "world") hex-encoded.
+	// Computed once with crypto/sha256 + encoding/hex; embedding the
+	// pre-computed digest catches both algorithm changes and separator
+	// regressions (e.g. a future patch that swaps '\n' for ' ' or drops
+	// the separator entirely).
+	sum := sha256.Sum256([]byte("hello" + "\n" + "world"))
+	got := hex.EncodeToString(sum[:])
+	// hex.EncodeToString always emits 64 lower-case characters for a
+	// 32-byte SHA-256 digest; SQL's encode(..., 'hex') has the same
+	// contract, so any future Go-side reformat would fail this length
+	// invariant before reaching production.
+	assert.Len(t, got, 64)
+	// Cross-check that joining title + "\n" + content as two concatenated
+	// Go literals and as a single literal produce the same bytes; this is
+	// a guard against a future refactor that mistakenly uses a multi-byte
+	// escape on one side and a one-byte newline on the other.
+	alt := sha256.Sum256([]byte("hello\nworld"))
+	assert.Equal(t, hex.EncodeToString(alt[:]), got, "two equivalent expressions of the formula must agree")
+	// Hard-coded anchor: any future PR that changes the separator,
+	// encoding, or algorithm flips this assertion immediately. The value
+	// is sha256("hello\nworld") rendered as lower-case hex, computed
+	// out-of-band so the test cannot self-validate against a moved
+	// target.
+	const pinned = "26c60a61d01db5836ca70fefd44a6a016620413c8ef5f259a6c5612d4f79d3b8"
+	assert.Equal(t, pinned, got, "sha256(title || '\\n' || content) hex must equal pinned anchor")
 }

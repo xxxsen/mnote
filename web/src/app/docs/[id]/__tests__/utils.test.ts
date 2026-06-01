@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { slugify, getText, normalizeTagName, isValidTagName, extractTitleFromContent, randomBase62, extractLinkedDocIDs, downloadFile } from "../utils";
+import { slugify, getText, normalizeTagName, isValidTagName, extractTitleFromContent, randomBase62, extractLinkedDocIDs, downloadFile, decideSavedSync } from "../utils";
 import React from "react";
 
 describe("slugify", () => {
@@ -90,3 +90,64 @@ describe("downloadFile", () => {
 });
 
 import { vi } from "vitest";
+
+describe("decideSavedSync", () => {
+  // Happy path: the just-saved snapshot is exactly what the editor has
+  // and the queue reports no follow-up, so we can clear the draft.
+  it("clears when isLatest is true and snapshot matches editor", () => {
+    expect(
+      decideSavedSync({
+        snapshotContent: "body",
+        snapshotTitle: "title",
+        currentContent: "body",
+        currentTitle: "title",
+        isLatest: true,
+      }),
+    ).toBe("clear");
+  });
+
+  // Queue-side staleness: a newer snapshot is sitting in queuedRef
+  // behind the single-flight lock, so the editor must keep its draft.
+  it("preserves the draft when the queue holds a newer snapshot", () => {
+    expect(
+      decideSavedSync({
+        snapshotContent: "body-A",
+        snapshotTitle: "title-A",
+        currentContent: "body-A",
+        currentTitle: "title-A",
+        isLatest: false,
+      }),
+    ).toBe("preserve_draft");
+  });
+
+  // Editor-side staleness: the user typed more characters after
+  // requestSave was issued but before the underlying PUT resolved, so
+  // the snapshot no longer matches contentRef even though the queue
+  // sees no pending snapshot yet.
+  it("preserves the draft when current content has advanced past snapshot", () => {
+    expect(
+      decideSavedSync({
+        snapshotContent: "body-A",
+        snapshotTitle: "title-A",
+        currentContent: "body-A-then-more",
+        currentTitle: "title-A",
+        isLatest: true,
+      }),
+    ).toBe("preserve_draft");
+  });
+
+  // Title-only drift exercises the heading-derivation path: even when
+  // content is unchanged, a renamed heading must not be treated as
+  // synced because the next save will publish the new title.
+  it("preserves the draft when only the derived title has advanced", () => {
+    expect(
+      decideSavedSync({
+        snapshotContent: "body",
+        snapshotTitle: "Old Title",
+        currentContent: "body",
+        currentTitle: "New Title",
+        isLatest: true,
+      }),
+    ).toBe("preserve_draft");
+  });
+});

@@ -106,9 +106,10 @@ func TestDocumentRepo_GetByID_NotFound(t *testing.T) {
 	assert.ErrorIs(t, err, appErr.ErrNotFound)
 }
 
-// TestDocumentRepo_GetByIDForUpdate covers the BE-3 row-lock helper. The
-// happy path issues SELECT ... FOR UPDATE; we also verify the not-found and
-// generic-error mappings since both are catastrophic for the save flow.
+// TestDocumentRepo_GetByIDForUpdate covers the row-lock helper used by the
+// save path. The happy path issues SELECT ... FOR UPDATE; we also verify
+// the not-found and generic-error mappings since both are catastrophic
+// for the save flow.
 func TestDocumentRepo_GetByIDForUpdate(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		db, mock, err := sqlmock.New()

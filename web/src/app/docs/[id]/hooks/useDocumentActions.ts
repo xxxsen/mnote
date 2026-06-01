@@ -7,11 +7,12 @@ export function useDocumentActions(docId: string) {
   return useMemo(
     () => ({
       getDocument: () => docEditorService.getDocument(docId),
-      // saveDocument forwards base_revision so the backend can enforce the
-      // optimistic concurrency check (BE-3). The returned SaveDocumentResult
-      // is consumed by the save queue to advance its local revision ref.
-      saveDocument: (title: string, content: string, baseRevision: number) =>
-        docEditorService.saveDocument(docId, { title, content, base_revision: baseRevision }),
+      // saveDocument forwards save_seq so the backend can ignore late
+      // requests carrying a stale sequence number. The returned
+      // SaveDocumentResult is consumed by the save queue to advance its
+      // local sequence ref.
+      saveDocument: (title: string, content: string, saveSeq: number) =>
+        docEditorService.saveDocument(docId, { title, content, save_seq: saveSeq }),
       deleteDocument: () => docEditorService.deleteDocument(docId),
       listVersions: () => docEditorService.listVersions(docId),
       createShare: () => docEditorService.createShare(docId),

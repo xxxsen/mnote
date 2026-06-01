@@ -48,9 +48,10 @@ const ERR_UNAUTHORIZED = 10000001;
 
 export class ApiError extends Error {
   code: number;
-  // data carries the structured payload that the backend attaches to
-  // certain non-zero responses (e.g. save conflict snapshots from BE-3).
-  // It is intentionally typed as unknown; callers narrow per error code.
+  // data carries an optional structured payload some backend endpoints
+  // attach to non-zero responses (e.g. validation details). It is typed
+  // as unknown so callers can narrow per error code instead of assuming
+  // a single response shape.
   data?: unknown;
   constructor(message: string, code: number, data?: unknown) {
     super(message);

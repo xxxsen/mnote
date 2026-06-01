@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
@@ -16,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/dochash"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/password"
 	"github.com/xxxsen/mnote/internal/pkg/safeconv"
@@ -23,13 +22,12 @@ import (
 	"github.com/xxxsen/mnote/internal/repo"
 )
 
-// computeDocumentHash returns the canonical SHA-256 of "title\ncontent" used
-// to detect body changes between saves. Title participates because users
-// frequently rename without touching the body and we still want the search
-// index/embedding to refresh in that case.
+// computeDocumentHash is a thin alias over dochash.Compute kept so that
+// existing call sites and tests within this package read naturally. The
+// canonical implementation now lives in internal/pkg/dochash, shared with
+// the embedding worker and the 008 backfill migration.
 func computeDocumentHash(title, content string) string {
-	sum := sha256.Sum256([]byte(title + "\n" + content))
-	return hex.EncodeToString(sum[:])
+	return dochash.Compute(title, content)
 }
 
 // documentAssetSyncer is the narrow surface DocumentService needs from
@@ -66,7 +64,7 @@ type DocumentService struct {
 	assets         documentAssetSyncer
 	versionMaxKeep int
 	// nowFunc is injectable so tests can pin the clock used by share-expiry
-	// filtering (BE-4). Production uses timeutil.NowMilli().
+	// filtering. Production uses timeutil.NowMilli().
 	nowFunc func() int64
 }
 
@@ -264,9 +262,9 @@ func (s *DocumentService) UpdateTags(ctx context.Context, userID, docID string, 
 	})
 }
 
-// UpdateSummary only writes the document_summaries row. BE-2 deliberately
-// removed the document.mtime/content_mtime touch so that summary regeneration
-// does not invalidate the embedding state.
+// UpdateSummary only writes the document_summaries row. We deliberately
+// do not touch document.mtime/content_mtime so summary regeneration does
+// not invalidate the embedding state.
 func (s *DocumentService) UpdateSummary(ctx context.Context, userID, docID, summary string) error {
 	if _, err := s.docs.GetByID(ctx, userID, docID); err != nil {
 		return fmt.Errorf("get by id: %w", err)
@@ -858,19 +856,22 @@ type DocumentCreateInput struct {
 }
 
 // DocumentUpdateInput is the unified save payload used by both the editor
-// save path (where BaseRevision is required) and internal callers such as
-// the import service (where BaseRevision is left at its zero value to opt
-// out of optimistic concurrency control).
+// save path (where SaveSeq is required) and internal callers such as the
+// import service (where SaveSeq is left at its zero value to opt out of
+// the lost-update guard).
 type DocumentUpdateInput struct {
 	Title   string
 	Content string
 	TagIDs  []string
 	Summary *string
-	// BaseRevision is the content_revision the client last observed. When
-	// non-zero the service performs an optimistic concurrency check inside
-	// the save transaction; when zero the caller is asserting that
-	// concurrency is handled out-of-band (used by server-side imports).
-	BaseRevision int64
+	// SaveSeq is the monotonically-increasing client-side save sequence.
+	// When non-zero the service rejects writes whose SaveSeq is not
+	// strictly greater than the document's current content_revision,
+	// returning accepted=false without touching any table. When zero the
+	// caller asserts that concurrency is handled out-of-band (used by
+	// server-side imports, which never collide with the editor save
+	// queue).
+	SaveSeq int64
 }
 
 func extractLinkIDs(content string) []string {
@@ -897,12 +898,13 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 }
 
 // Save executes a single atomic save transaction guarded by SELECT FOR
-// UPDATE on the documents row. When input.BaseRevision is non-zero and does
-// not match the current server-side revision the save is rejected with a
-// *errors.ConflictError carrying the current snapshot, leaving every other
-// table untouched. The returned SaveDocumentResult mirrors exactly what the
-// transaction committed so the client can update its local state without an
-// extra read.
+// UPDATE on the documents row. The accept/reject decision is purely
+// monotonic: request.SaveSeq must be strictly greater than the row's
+// current content_revision, otherwise the request is treated as a late
+// echo from an earlier save and is silently ignored (accepted=false). On
+// the accept path the row's content_revision and document_versions.version
+// are both written as request.SaveSeq, so the next save round-trips
+// against the value the client now publishes.
 func (
 	s *DocumentService) Save(ctx context.Context,
 	userID,
@@ -925,7 +927,7 @@ func (
 }
 
 // saveImpl runs the body of Save inside a transaction. The work is split
-// into small helpers so each step (lock+conflict, document update, version
+// into small helpers so each step (lock+seq check, document update, version
 // snapshot, tag refresh, references) is independently readable and the
 // orchestrator stays well below the gocyclo threshold.
 func (
@@ -935,12 +937,31 @@ func (
 	input DocumentUpdateInput) (*model.SaveDocumentResult,
 	error,
 ) {
-	current, err := s.lockForSave(ctx, userID, docID, input.BaseRevision)
+	current, err := s.lockForSave(ctx, userID, docID)
 	if err != nil {
 		return nil, err
 	}
+	if input.SaveSeq != 0 && input.SaveSeq <= current.ContentRevision {
+		// The client lost the race. Return the post-transaction state so
+		// it can fast-forward save_seq without re-reading the document
+		// and without overwriting its in-progress draft.
+		return &model.SaveDocumentResult{
+			ID:              current.ID,
+			Accepted:        false,
+			ContentRevision: current.ContentRevision,
+			ContentHash:     current.ContentHash,
+			ContentMtime:    current.ContentMtime,
+			Mtime:           current.Mtime,
+		}, nil
+	}
 	now := timeutil.NowUnix()
-	newRevision := current.ContentRevision + 1
+	newRevision := input.SaveSeq
+	if newRevision == 0 {
+		// Internal callers (imports) that opt out of the seq guard still
+		// need a strictly-increasing version number to satisfy the
+		// (user_id, document_id, version) unique index.
+		newRevision = current.ContentRevision + 1
+	}
 	newHash := computeDocumentHash(input.Title, input.Content)
 	if err := s.persistDocument(ctx, userID, docID, input, now, newRevision, newHash); err != nil {
 		return nil, err
@@ -956,6 +977,7 @@ func (
 	}
 	return &model.SaveDocumentResult{
 		ID:              docID,
+		Accepted:        true,
 		ContentRevision: newRevision,
 		ContentHash:     newHash,
 		ContentMtime:    now,
@@ -963,25 +985,17 @@ func (
 	}, nil
 }
 
-// lockForSave takes the row-level write lock and rejects stale writers via
-// the optimistic base_revision check before any further mutation. Returns
-// a ConflictError (not a generic error) when base_revision is stale so
-// the handler can translate it into a 409 with the current snapshot.
+// lockForSave takes the row-level write lock so the save_seq comparison
+// performed by the caller is consistent with the eventual write. Returning
+// the locked row is enough — the accept/reject decision is monotonic and
+// happens outside this helper so that the rejected branch can short-circuit
+// without touching any other table.
 func (s *DocumentService) lockForSave(
-	ctx context.Context, userID, docID string, baseRevision int64,
+	ctx context.Context, userID, docID string,
 ) (*model.Document, error) {
 	current, err := s.docs.GetByIDForUpdate(ctx, userID, docID)
 	if err != nil {
 		return nil, fmt.Errorf("lock document: %w", err)
-	}
-	if baseRevision != 0 && baseRevision != current.ContentRevision {
-		return nil, appErr.NewConflict(appErr.ConflictData{
-			ID:              current.ID,
-			Title:           current.Title,
-			Content:         current.Content,
-			ContentRevision: current.ContentRevision,
-			ContentMtime:    current.ContentMtime,
-		})
 	}
 	return current, nil
 }

@@ -189,11 +189,12 @@ type SharedDocument struct {
 
 // ListActiveDocuments returns the documents the user currently has shared.
 //
-// BE-4: An expired share row is still in state=active until the next manual
-// revoke or cleanup job, so we additionally filter by expires_at. expires_at=0
-// means "no expiry"; any positive value must be in the future relative to
-// `now`. `now` is passed in (rather than read inside the SQL) so the service
-// layer can inject a deterministic clock in tests.
+// An expired share row is still in state=active until the next manual
+// revoke or cleanup job, so we additionally filter by expires_at.
+// expires_at=0 means "no expiry"; any positive value must be in the
+// future relative to `now`. `now` is passed in (rather than read inside
+// the SQL) so the service layer can inject a deterministic clock in
+// tests.
 func (r *ShareRepo) ListActiveDocuments(
 	ctx context.Context, userID, query string, now int64,
 ) ([]SharedDocument, error) {

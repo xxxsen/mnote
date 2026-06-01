@@ -20,6 +20,7 @@ import (
 
 	"github.com/xxxsen/mnote/internal/ai"
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/dochash"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
 	"github.com/xxxsen/mnote/internal/repo"
@@ -28,6 +29,12 @@ import (
 var (
 	ErrAIUnavailable  = ai.ErrUnavailable
 	errInputTextEmpty = errors.New("input text to generate")
+	// errEmbeddingStale flags a SyncEmbedding attempt that hit the
+	// CompleteEmbeddingIfCurrent stale branch. The document has already
+	// been re-queued under its current hash, so the worker treats this
+	// as a clean skip rather than a failure that would consume a retry
+	// budget.
+	errEmbeddingStale = errors.New("embedding stale: document content advanced before worker finished")
 )
 
 type AIService struct {
@@ -59,16 +66,6 @@ func newAIServiceFromInterfaces(
 		chunker:    chunker,
 		cache:      cache,
 	}
-}
-
-func (s *AIService) runInTx(ctx context.Context, fn func(ctx context.Context) error) error {
-	if s.db == nil {
-		return fn(ctx)
-	}
-	if err := repo.RunInTx(ctx, s.db, fn); err != nil {
-		return fmt.Errorf("run in tx: %w", err)
-	}
-	return nil
 }
 
 func (s *AIService) Embed(ctx context.Context, text, taskType string) ([]float32, error) {
@@ -212,20 +209,30 @@ func (s *AIService) MarkEmbeddingPending(
 	return nil
 }
 
-// SyncEmbedding chunks the document, embeds the chunks, and persists both
-// the chunk rows and the parent document_embeddings row. On success it
-// resets the retry state via Save; on failure (other than rate limits, which
-// the caller handles) it surfaces the error so the job loop can record a
-// backoff via MarkFailed.
+// SyncEmbedding chunks the snapshot (title,content) the worker captured at
+// scan time, embeds the chunks, and hands the result to
+// CompleteEmbeddingIfCurrent. The completion call runs SELECT FOR UPDATE on
+// the documents row inside a single transaction: if the locked row still
+// hashes to the snapshot's fingerprint, chunks are committed and the
+// document_embeddings row is flipped to 'succeeded'; otherwise the
+// document has been re-saved since the worker took its snapshot and the
+// chunks are discarded — returning errEmbeddingStale so the worker loop
+// treats it as a clean skip rather than a retry-consuming failure.
+//
+// Generating chunk vectors involves remote AI calls and cannot live
+// inside the documents-row lock; we pay for that by validating against
+// the locked hash at completion time instead of trusting the pre-claim
+// snapshot. Without that validation a slow worker could silently
+// overwrite a freshly-saved body with the previous one's vectors.
 func (s *AIService) SyncEmbedding(ctx context.Context, userID, docID, title, content string) error {
 	if s == nil || s.embeddings == nil {
 		return nil
 	}
 	logger := logutil.GetLogger(ctx).With(zap.String("user_id", userID), zap.String("doc_id", docID))
 
-	contentHash := computeEmbeddingHash(title, content)
+	expectedHash := computeEmbeddingHash(title, content)
 	existing, err := s.embeddings.GetByDocID(ctx, docID)
-	if err == nil && existing.ContentHash == contentHash &&
+	if err == nil && existing.ContentHash == expectedHash &&
 		existing.EmbeddingStatus == model.EmbeddingStatusSucceeded {
 		return nil
 	}
@@ -254,34 +261,27 @@ func (s *AIService) SyncEmbedding(ctx context.Context, userID, docID, title, con
 		chunkEmbeddings = append(chunkEmbeddings, chunk)
 	}
 
-	if err := s.runInTx(ctx, func(txCtx context.Context) error {
-		if err := s.embeddings.DeleteChunksByDocID(txCtx, docID); err != nil {
-			return fmt.Errorf("delete old chunks: %w", err)
-		}
-		if err := s.embeddings.SaveChunks(txCtx, chunkEmbeddings); err != nil {
-			return fmt.Errorf("save chunks: %w", err)
-		}
-		if err := s.embeddings.Save(txCtx, &model.DocumentEmbedding{
-			DocumentID:  docID,
-			UserID:      userID,
-			ContentHash: contentHash,
-			Mtime:       now,
-		}); err != nil {
-			return fmt.Errorf("save embedding record: %w", err)
-		}
-		return nil
-	}); err != nil {
-		logger.Error("failed to sync embedding chunks", zap.Error(err))
-		return err
+	applied, err := s.embeddings.CompleteEmbeddingIfCurrent(ctx, userID, docID, expectedHash, chunkEmbeddings, now)
+	if err != nil {
+		logger.Error("failed to complete embedding", zap.Error(err))
+		return fmt.Errorf("complete embedding: %w", err)
+	}
+	if !applied {
+		logger.Info("embedding skipped: document content advanced since worker snapshot",
+			zap.String("expected_hash", expectedHash))
+		return errEmbeddingStale
 	}
 
 	logger.Info("embedding chunks synced", zap.String("title", title), zap.Int("chunks", len(chunks)))
 	return nil
 }
 
+// computeEmbeddingHash is a thin alias over dochash.Compute. The embedding
+// worker and the document save path must agree on the exact byte layout
+// of this fingerprint, so the implementation is shared in
+// internal/pkg/dochash.
 func computeEmbeddingHash(title, content string) string {
-	sum := sha256.Sum256([]byte(title + "\n" + content))
-	return hex.EncodeToString(sum[:])
+	return dochash.Compute(title, content)
 }
 
 // ProcessPendingEmbeddings polls the embedding queue, claims rows with a
@@ -340,12 +340,24 @@ func (s *AIService) processOneEmbedding(ctx context.Context, doc model.Document)
 		logger.Info("embedding succeeded")
 		return true, waitCtx(ctx, 100*time.Millisecond)
 	}
+	if errors.Is(syncErr, errEmbeddingStale) {
+		// CompleteEmbeddingIfCurrent has already re-pended the row under
+		// the current documents.content_hash, so the next stale scan will
+		// pick it up cleanly. Treat this as a clean skip: we must not
+		// call MarkFailed (it would flip the freshly-pended row back to
+		// 'failed' with a backoff and consume a retry attempt for what
+		// is, semantically, a normal race resolution).
+		logger.Info("embedding skipped: document advanced since worker snapshot")
+		return false, waitCtx(ctx, 100*time.Millisecond)
+	}
 	if isRateLimitErr(syncErr) {
 		logger.Warn("ai rate limit triggered, cooling down...", zap.Error(syncErr))
 		// Revert the row to its prior eligible state by zeroing the lease
-		// without consuming a retry attempt.
-		if err := s.embeddings.UpsertPending(ctx, doc.ID, doc.UserID,
-			"", 0); err != nil {
+		// without consuming a retry attempt. Use a targeted reset so the
+		// row's content_hash / mtime are preserved (UpsertPending would
+		// overwrite them with the empty seed values, which then re-fires
+		// the drift branch on the next scan).
+		if err := s.embeddings.ResetLeaseToPending(ctx, doc.ID); err != nil {
 			logger.Error("failed to reset embedding lease after rate limit", zap.Error(err))
 		}
 		return false, waitCtx(ctx, 10*time.Second)
@@ -367,20 +379,24 @@ func (s *AIService) processOneEmbedding(ctx context.Context, doc model.Document)
 	return true, waitCtx(ctx, 100*time.Millisecond)
 }
 
-// claimEmbedding establishes the worker's lease on a single document. When
-// the document has no embedding row yet we seed a pending row first so the
-// subsequent Claim has something to update.
+// claimEmbedding establishes the worker's lease on a single document. The
+// happy path tries Claim() to pick up a row already marked pending or
+// failed; the drift recovery path tries ClaimDrift() to promote a stale
+// succeeded row whose content_hash no longer matches documents. When the
+// document has no embedding row yet we seed a pending row first so the
+// row-targeted Claim has something to update atomically.
 func (s *AIService) claimEmbedding(ctx context.Context, doc model.Document, now int64) (bool, error) {
 	logger := logutil.GetLogger(ctx).With(zap.String("doc_id", doc.ID))
+	expectedHash := computeEmbeddingHash(doc.Title, doc.Content)
 	if _, err := s.embeddings.GetByDocID(ctx, doc.ID); err != nil {
 		if !errors.Is(err, appErr.ErrNotFound) {
 			return false, fmt.Errorf("get embedding: %w", err)
 		}
-		// Seed an initial pending row so the row-targeted Claim below has
-		// something to update atomically. We seed with empty content_hash
-		// and mtime=0 so the next save path naturally promotes them to
-		// the real values inside its transaction.
-		if err := s.embeddings.UpsertPending(ctx, doc.ID, doc.UserID, "", 0); err != nil {
+		// Seed with the real hash so a Claim picked up here proceeds with
+		// the same hash SyncEmbedding will compute. Seeding with empty
+		// strings would let a concurrent save observe an inconsistent row
+		// during the brief window before Claim flips status to running.
+		if err := s.embeddings.UpsertPending(ctx, doc.ID, doc.UserID, expectedHash, doc.ContentMtime); err != nil {
 			return false, fmt.Errorf("seed pending embedding: %w", err)
 		}
 	}
@@ -389,7 +405,18 @@ func (s *AIService) claimEmbedding(ctx context.Context, doc model.Document, now 
 		logger.Warn("failed to claim embedding", zap.Error(err))
 		return false, nil
 	}
-	return ok, nil
+	if ok {
+		return true, nil
+	}
+	// Fall through to drift recovery: the row exists, its status is
+	// 'succeeded', but documents.content_hash has moved on. ClaimDrift
+	// flips it to 'running' in one statement so two workers cannot race.
+	drift, err := s.embeddings.ClaimDrift(ctx, doc.ID, expectedHash, now+embeddingLeaseSeconds, now)
+	if err != nil {
+		logger.Warn("failed to claim drift embedding", zap.Error(err))
+		return false, nil
+	}
+	return drift, nil
 }
 
 func embeddingBackoffSeconds(attempts int) int64 {

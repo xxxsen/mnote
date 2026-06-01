@@ -27,9 +27,9 @@ type UseEditorLifecycleOptions = {
     hasDraftOverride: boolean;
   }) => void;
   onLoadError: (err: unknown) => void;
-  // requestSave is invoked by the auto-save tick. The hook does not own the
-  // save protocol any more (see FE-1 / useEditorSaveQueue); it only schedules
-  // requests and lets the queue coordinate single-flight execution.
+  // requestSave is invoked by the auto-save tick. The hook does not own
+  // the save protocol; useEditorSaveQueue handles single-flight execution
+  // and we just schedule fresh snapshots through this callback.
   requestSave: (snapshot: { title: string; content: string }) => void;
 };
 

@@ -1,8 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { ApiError } from "@/lib/api";
 
-import { ERR_CONFLICT_CODE } from "../constants";
 import { useEditorSaveQueue, type SaveFn } from "../hooks/useEditorSaveQueue";
 
 type Deferred<T> = { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void };
@@ -24,13 +22,24 @@ function makeOptions(saveImpl: SaveFn) {
     initialSavedTitle: "",
     save: saveImpl,
     onSaved: vi.fn(),
-    onConflict: vi.fn(),
+    onStale: vi.fn(),
     onError: vi.fn(),
   };
 }
 
-const baseResult = (revision: number) => ({
+const acceptedResult = (revision: number) => ({
   id: "d1",
+  accepted: true,
+  version: revision,
+  content_revision: revision,
+  content_hash: `h${revision}`,
+  content_mtime: 1000 + revision,
+  mtime: 1000 + revision,
+});
+
+const staleResult = (revision: number) => ({
+  id: "d1",
+  accepted: false,
   version: revision,
   content_revision: revision,
   content_hash: `h${revision}`,
@@ -39,15 +48,16 @@ const baseResult = (revision: number) => ({
 });
 
 describe("useEditorSaveQueue", () => {
-  // FE-1: same-tick double save must coalesce — only one PUT issues
+  // Same-tick double save must coalesce — only one PUT issues
   // synchronously and the second is folded into the queue, then drained
-  // after the first completes.
+  // after the first completes. The drained save must carry the next
+  // save_seq (initial revision + number of saves issued so far).
   it("coalesces concurrent saves into a single in-flight request", async () => {
-    const calls: { snapshot: { title: string; content: string }; baseRevision: number }[] = [];
-    const gates: Deferred<ReturnType<typeof baseResult>>[] = [];
-    const save: SaveFn = (snapshot, baseRevision) => {
-      const d = deferred<ReturnType<typeof baseResult>>();
-      calls.push({ snapshot, baseRevision });
+    const calls: { snapshot: { title: string; content: string }; saveSeq: number }[] = [];
+    const gates: Deferred<ReturnType<typeof acceptedResult>>[] = [];
+    const save: SaveFn = (snapshot, saveSeq) => {
+      const d = deferred<ReturnType<typeof acceptedResult>>();
+      calls.push({ snapshot, saveSeq });
       gates.push(d);
       return d.promise;
     };
@@ -61,20 +71,22 @@ describe("useEditorSaveQueue", () => {
     });
     expect(calls).toHaveLength(1);
     expect(calls[0].snapshot.content).toBe("v1");
+    // Initial revision was 1, so the first PUT carries save_seq=2.
+    expect(calls[0].saveSeq).toBe(2);
     expect(result.current.status).toBe("QUEUED");
 
     await act(async () => {
-      gates[0].resolve(baseResult(2));
+      gates[0].resolve(acceptedResult(2));
       await Promise.resolve();
       await Promise.resolve();
     });
 
     expect(calls).toHaveLength(2);
     expect(calls[1].snapshot.content).toBe("v2");
-    expect(calls[1].baseRevision).toBe(2);
+    expect(calls[1].saveSeq).toBe(3);
 
     await act(async () => {
-      gates[1].resolve(baseResult(3));
+      gates[1].resolve(acceptedResult(3));
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -82,23 +94,14 @@ describe("useEditorSaveQueue", () => {
     expect(result.current.status).toBe("SYNCED");
     expect(result.current.serverRevision).toBe(3);
     expect(result.current.lastSavedContent).toBe("v2");
-    expect(result.current.lastSavedAt).toBe(baseResult(3).content_mtime);
+    expect(result.current.lastSavedAt).toBe(acceptedResult(3).content_mtime);
   });
 
-  // FE-1: a CONFLICT response must not overwrite the editor's last-saved
+  // An accepted=false response must not overwrite the editor's last-saved
   // content (so hasUnsavedChanges stays true) but must advance the local
-  // server revision so the next save sends the correct base_revision.
-  it("preserves draft and bumps revision on conflict", async () => {
-    const conflictPayload = {
-      id: "d1",
-      title: "Server Title",
-      content: "Server Body",
-      content_revision: 5,
-      content_mtime: 4242,
-    };
-    const save: SaveFn = vi.fn(() =>
-      Promise.reject(new ApiError("conflict", ERR_CONFLICT_CODE, { current: conflictPayload })),
-    );
+  // save_seq so the next save publishes a fresh sequence number.
+  it("preserves draft and fast-forwards save_seq on accepted=false", async () => {
+    const save: SaveFn = vi.fn(() => Promise.resolve(staleResult(5)));
     const opts = makeOptions(save);
 
     const { result } = renderHook(() => useEditorSaveQueue(opts));
@@ -109,25 +112,29 @@ describe("useEditorSaveQueue", () => {
       await Promise.resolve();
     });
 
-    expect(result.current.status).toBe("CONFLICT");
+    // Stale responses are not errors; the queue settles back to SYNCED.
+    expect(result.current.status).toBe("SYNCED");
     // Editor-side last-saved snapshot is intentionally NOT overwritten.
     expect(result.current.lastSavedContent).toBe("");
     expect(result.current.lastSavedTitle).toBe("");
+    // serverRevision tracks the value returned by the server.
     expect(result.current.serverRevision).toBe(5);
-    expect(opts.onConflict).toHaveBeenCalledWith(
-      expect.objectContaining({ current: expect.objectContaining({ content_revision: 5 }) }),
+    expect(opts.onStale).toHaveBeenCalledWith(
+      expect.objectContaining({ result: expect.objectContaining({ content_revision: 5 }) }),
     );
+    // No error should fire on a stale response.
+    expect(opts.onError).not.toHaveBeenCalled();
   });
 
-  // FE-1: a generic save failure must surface ERROR, must not drop the
-  // queued snapshot, and must invoke onError so the page can preserve the
+  // A network/server failure must surface ERROR, must not drop the queued
+  // snapshot, and must invoke onError so the page can preserve the
   // localStorage draft.
   it("retains queued snapshot on generic error", async () => {
     let attempts = 0;
     const save: SaveFn = () => {
       attempts++;
       if (attempts === 1) return Promise.reject(new Error("network"));
-      return Promise.resolve(baseResult(2));
+      return Promise.resolve(acceptedResult(2));
     };
     const opts = makeOptions(save);
 
@@ -142,10 +149,10 @@ describe("useEditorSaveQueue", () => {
     expect(opts.onError).toHaveBeenCalled();
   });
 
-  // FE-1: lastSavedAt must come from the server SaveDocumentResult, not
-  // from Date.now() on the client.
+  // lastSavedAt must come from the server SaveDocumentResult, not from
+  // Date.now() on the client.
   it("uses server-side content_mtime for lastSavedAt", async () => {
-    const save: SaveFn = () => Promise.resolve({ ...baseResult(2), content_mtime: 9999, mtime: 0 });
+    const save: SaveFn = () => Promise.resolve({ ...acceptedResult(2), content_mtime: 9999, mtime: 0 });
     const opts = makeOptions(save);
 
     const { result } = renderHook(() => useEditorSaveQueue(opts));
@@ -158,7 +165,7 @@ describe("useEditorSaveQueue", () => {
   });
 
   it("skips no-op saves", async () => {
-    const save: SaveFn = vi.fn(() => Promise.resolve(baseResult(2)));
+    const save: SaveFn = vi.fn(() => Promise.resolve(acceptedResult(2)));
     const opts = makeOptions(save);
 
     const { result } = renderHook(() => useEditorSaveQueue(opts));
@@ -171,58 +178,6 @@ describe("useEditorSaveQueue", () => {
     });
     expect(save).not.toHaveBeenCalled();
     expect(result.current.status).toBe("SYNCED");
-  });
-
-  // FE-1: non-conflict ApiError responses (e.g. forbidden, server 500)
-  // must still flow into the ERROR branch, not be interpreted as a
-  // conflict by the structured-payload parser.
-  it("treats ApiError with non-conflict code as generic error", async () => {
-    const save: SaveFn = () => Promise.reject(new ApiError("forbidden", 10000003, null));
-    const opts = makeOptions(save);
-    const { result } = renderHook(() => useEditorSaveQueue(opts));
-    await act(async () => {
-      result.current.requestSave({ title: "T", content: "v" });
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(result.current.status).toBe("ERROR");
-    expect(opts.onConflict).not.toHaveBeenCalled();
-    expect(opts.onError).toHaveBeenCalled();
-  });
-
-  it("falls back to ERROR when conflict payload is malformed", async () => {
-    const save: SaveFn = () => Promise.reject(new ApiError("conflict", ERR_CONFLICT_CODE, { current: { id: 1 } }));
-    const opts = makeOptions(save);
-    const { result } = renderHook(() => useEditorSaveQueue(opts));
-    await act(async () => {
-      result.current.requestSave({ title: "T", content: "v" });
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(result.current.status).toBe("ERROR");
-    expect(opts.onConflict).not.toHaveBeenCalled();
-  });
-
-  // Branch coverage for parseConflictData: each guard short-circuits on a
-  // distinct shape of data payload so we exercise them individually.
-  it.each([
-    ["null data", null],
-    ["primitive data", "oops"],
-    ["missing current", { unrelated: 1 }],
-    ["current null", { current: null }],
-    ["current primitive", { current: "string" }],
-  ])("treats ApiError with malformed payload (%s) as generic error", async (_, data) => {
-    const save: SaveFn = () => Promise.reject(new ApiError("conflict", ERR_CONFLICT_CODE, data));
-    const opts = makeOptions(save);
-    const { result } = renderHook(() => useEditorSaveQueue(opts));
-    await act(async () => {
-      result.current.requestSave({ title: "T", content: "v" });
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(result.current.status).toBe("ERROR");
-    expect(opts.onConflict).not.toHaveBeenCalled();
-    expect(opts.onError).toHaveBeenCalled();
   });
 
   it("resyncRevision ignores absent fields", () => {
@@ -238,17 +193,14 @@ describe("useEditorSaveQueue", () => {
     expect(result.current.lastSavedAt).toBeNull();
   });
 
-  // FE-1: after a CONFLICT, the user's next save must reuse the bumped
-  // server revision so the retry succeeds against the latest snapshot.
-  it("retries with the new base_revision after a CONFLICT", async () => {
+  // After a stale response the user's next save must use a save_seq that
+  // is strictly greater than the server's reported content_revision, so
+  // the retry's seq becomes server_revision + 1.
+  it("retries with the next save_seq after an accepted=false response", async () => {
     const save = vi
       .fn<SaveFn>()
-      .mockRejectedValueOnce(
-        new ApiError("conflict", ERR_CONFLICT_CODE, {
-          current: { id: "d1", title: "S", content: "S", content_revision: 5, content_mtime: 0 },
-        }),
-      )
-      .mockResolvedValueOnce(baseResult(6));
+      .mockResolvedValueOnce(staleResult(5))
+      .mockResolvedValueOnce(acceptedResult(6));
     const opts = makeOptions(save);
     const { result } = renderHook(() => useEditorSaveQueue(opts));
 
@@ -257,21 +209,24 @@ describe("useEditorSaveQueue", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(result.current.status).toBe("CONFLICT");
+    expect(result.current.status).toBe("SYNCED");
     expect(result.current.serverRevision).toBe(5);
+    // Draft was not committed; lastSavedContent stays empty.
+    expect(result.current.lastSavedContent).toBe("");
 
     await act(async () => {
       result.current.requestSave({ title: "T2", content: "v2" });
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(save).toHaveBeenLastCalledWith({ title: "T2", content: "v2" }, 5);
+    expect(save).toHaveBeenLastCalledWith({ title: "T2", content: "v2" }, 6);
     expect(result.current.status).toBe("SYNCED");
     expect(result.current.serverRevision).toBe(6);
+    expect(result.current.lastSavedContent).toBe("v2");
   });
 
   it("falls back to mtime when content_mtime is missing", async () => {
-    const save: SaveFn = () => Promise.resolve({ ...baseResult(2), content_mtime: 0, mtime: 5555 });
+    const save: SaveFn = () => Promise.resolve({ ...acceptedResult(2), content_mtime: 0, mtime: 5555 });
     const opts = makeOptions(save);
     const { result } = renderHook(() => useEditorSaveQueue(opts));
     await act(async () => {
@@ -282,10 +237,12 @@ describe("useEditorSaveQueue", () => {
     expect(result.current.lastSavedAt).toBe(5555);
   });
 
-  // FE-1: drainQueue runs even when invoked while a save is in-flight
-  // (defensive bail-out at the very top), so re-entrant scheduling is safe.
-  it("drainQueue is idempotent when called while a save is in-flight", async () => {
-    const gate = deferred<ReturnType<typeof baseResult>>();
+  // drainQueue must remain idempotent when the user re-triggers a save
+  // with an unchanged snapshot while a request is already in flight: the
+  // queue records the snapshot but does not start a second concurrent
+  // request.
+  it("does not fire a second save when the queued snapshot matches the just-saved one", async () => {
+    const gate = deferred<ReturnType<typeof acceptedResult>>();
     const save: SaveFn = vi.fn(() => gate.promise);
     const opts = makeOptions(save);
     const { result } = renderHook(() => useEditorSaveQueue(opts));
@@ -304,55 +261,20 @@ describe("useEditorSaveQueue", () => {
     expect(result.current.status).toBe("QUEUED");
 
     await act(async () => {
-      gate.resolve(baseResult(2));
+      gate.resolve(acceptedResult(2));
       await Promise.resolve();
       await Promise.resolve();
     });
-    // After completion no more saves fire because queued snapshot equals
-    // the just-saved snapshot (hasMore check returns false).
     expect(save).toHaveBeenCalledTimes(1);
     expect(result.current.status).toBe("SYNCED");
-  });
-
-  // FE-1: when CONFLICT/ERROR happen with a queued snapshot pending, the
-  // queue must not drain that pending snapshot automatically — only the
-  // user's next explicit save should retry.
-  it("does not auto-drain pending snapshot after CONFLICT", async () => {
-    const gate = deferred<ReturnType<typeof baseResult>>();
-    const save = vi
-      .fn<SaveFn>()
-      .mockImplementationOnce(() => gate.promise);
-    const opts = makeOptions(save);
-    const { result } = renderHook(() => useEditorSaveQueue(opts));
-
-    act(() => {
-      result.current.requestSave({ title: "T", content: "v1" });
-    });
-    act(() => {
-      result.current.requestSave({ title: "T", content: "v2" });
-    });
-    expect(save).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      gate.reject(
-        new ApiError("conflict", ERR_CONFLICT_CODE, {
-          current: { id: "d1", title: "S", content: "S", content_revision: 5, content_mtime: 0 },
-        }),
-      );
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    // v2 stays queued, no automatic retry.
-    expect(save).toHaveBeenCalledTimes(1);
-    expect(result.current.status).toBe("CONFLICT");
   });
 
   // Branch coverage: hasMore must trigger when only the title differs
   // from the just-saved snapshot (e.g. user renamed mid-save).
   it("requeues a follow-up save when only the title changes", async () => {
-    const gates: Deferred<ReturnType<typeof baseResult>>[] = [];
+    const gates: Deferred<ReturnType<typeof acceptedResult>>[] = [];
     const save: SaveFn = vi.fn(() => {
-      const d = deferred<ReturnType<typeof baseResult>>();
+      const d = deferred<ReturnType<typeof acceptedResult>>();
       gates.push(d);
       return d.promise;
     });
@@ -368,15 +290,15 @@ describe("useEditorSaveQueue", () => {
     expect(save).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      gates[0].resolve(baseResult(2));
+      gates[0].resolve(acceptedResult(2));
       await Promise.resolve();
       await Promise.resolve();
     });
     expect(save).toHaveBeenCalledTimes(2);
-    expect(save).toHaveBeenLastCalledWith({ title: "New", content: "body" }, 2);
+    expect(save).toHaveBeenLastCalledWith({ title: "New", content: "body" }, 3);
 
     await act(async () => {
-      gates[1].resolve(baseResult(3));
+      gates[1].resolve(acceptedResult(3));
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -385,7 +307,7 @@ describe("useEditorSaveQueue", () => {
   });
 
   it("falls back to null when both content_mtime and mtime are zero", async () => {
-    const save: SaveFn = () => Promise.resolve({ ...baseResult(2), content_mtime: 0, mtime: 0 });
+    const save: SaveFn = () => Promise.resolve({ ...acceptedResult(2), content_mtime: 0, mtime: 0 });
     const opts = makeOptions(save);
     const { result } = renderHook(() => useEditorSaveQueue(opts));
     await act(async () => {
@@ -397,11 +319,10 @@ describe("useEditorSaveQueue", () => {
   });
 
   // Branch coverage: requestSave while ERROR is sticky must NOT downgrade
-  // the visible status to QUEUED — error stays surfaced until the user
-  // explicitly retries (and that retry actually fires a save, see the
-  // "treats ApiError" test above for the rejection path).
-  it("preserves ERROR status when a follow-up save is requested in-flight", async () => {
-    const gate = deferred<ReturnType<typeof baseResult>>();
+  // the visible status — error stays surfaced until the user explicitly
+  // retries (and that retry actually fires a save).
+  it("preserves ERROR status after a failed save", async () => {
+    const gate = deferred<ReturnType<typeof acceptedResult>>();
     const save = vi
       .fn<SaveFn>()
       .mockImplementationOnce(() => gate.promise);
@@ -420,8 +341,176 @@ describe("useEditorSaveQueue", () => {
     expect(result.current.status).toBe("ERROR");
   });
 
+  // After an error with a queued snapshot pending, the queue must not
+  // auto-drain that pending snapshot — only the user's next explicit save
+  // should retry.
+  it("does not auto-drain pending snapshot after ERROR", async () => {
+    const gate = deferred<ReturnType<typeof acceptedResult>>();
+    const save = vi
+      .fn<SaveFn>()
+      .mockImplementationOnce(() => gate.promise);
+    const opts = makeOptions(save);
+    const { result } = renderHook(() => useEditorSaveQueue(opts));
+
+    act(() => {
+      result.current.requestSave({ title: "T", content: "v1" });
+    });
+    act(() => {
+      result.current.requestSave({ title: "T", content: "v2" });
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      gate.reject(new Error("boom"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // v2 stays queued, no automatic retry.
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe("ERROR");
+  });
+
+  // Each save_seq must be strictly greater than the previous one issued by
+  // this hook instance, regardless of accept/reject outcome, so the server
+  // can deterministically pick the latest write.
+  it("increments save_seq strictly between consecutive saves", async () => {
+    const seen: number[] = [];
+    const save: SaveFn = (_snapshot, seq) => {
+      seen.push(seq);
+      return Promise.resolve(acceptedResult(seq));
+    };
+    const opts = makeOptions(save);
+    const { result } = renderHook(() => useEditorSaveQueue(opts));
+
+    await act(async () => {
+      result.current.requestSave({ title: "T", content: "a" });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      result.current.requestSave({ title: "T", content: "b" });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      result.current.requestSave({ title: "T", content: "c" });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // Initial revision is 1, so the first save uses 2 and each subsequent
+    // save strictly increments.
+    expect(seen).toEqual([2, 3, 4]);
+  });
+
+  // Branch coverage: after a stale response with a still-pending follow-up
+  // snapshot, the queue must surface QUEUED (not SYNCED) so the footer
+  // continues to show "work in progress" until the next save actually
+  // accepts a write.
+  it("surfaces QUEUED after stale response when a follow-up snapshot is pending", async () => {
+    const gates: Deferred<ReturnType<typeof staleResult> | ReturnType<typeof acceptedResult>>[] = [];
+    const save: SaveFn = vi.fn(() => {
+      const d = deferred<ReturnType<typeof staleResult> | ReturnType<typeof acceptedResult>>();
+      gates.push(d);
+      return d.promise;
+    });
+    const opts = makeOptions(save);
+    const { result } = renderHook(() => useEditorSaveQueue(opts));
+
+    act(() => {
+      result.current.requestSave({ title: "T", content: "v1" });
+    });
+    // While the first save is in-flight, the user keeps typing.
+    act(() => {
+      result.current.requestSave({ title: "T", content: "v2" });
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      gates[0].resolve(staleResult(5));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // Now the queue should be draining v2; status must reflect a pending
+    // queued snapshot rather than SYNCED.
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(["QUEUED", "SAVING"]).toContain(result.current.status);
+
+    await act(async () => {
+      gates[1].resolve(acceptedResult(6));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.status).toBe("SYNCED");
+    expect(result.current.lastSavedContent).toBe("v2");
+  });
+
+  // Race fix: when save A resolves while save B is already queued,
+  // onSaved must report isLatest=false so the editor knows the just-saved
+  // snapshot is no longer authoritative and must not clear the local
+  // draft. The hook decides isLatest by inspecting queuedRef under the
+  // single-flight lock, so the call order (set queued snapshot → resolve
+  // A → onSaved fires) is the contract this test pins.
+  it("reports isLatest=false on onSaved when a newer snapshot is already queued", async () => {
+    const gates: Deferred<ReturnType<typeof acceptedResult>>[] = [];
+    const save: SaveFn = vi.fn(() => {
+      const d = deferred<ReturnType<typeof acceptedResult>>();
+      gates.push(d);
+      return d.promise;
+    });
+    const opts = makeOptions(save);
+    const { result } = renderHook(() => useEditorSaveQueue(opts));
+
+    act(() => {
+      result.current.requestSave({ title: "T", content: "A" });
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+    // While A is in flight the user types more and pushes B onto the queue.
+    act(() => {
+      result.current.requestSave({ title: "T", content: "B" });
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      gates[0].resolve(acceptedResult(2));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(opts.onSaved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isLatest: false,
+        snapshot: { title: "T", content: "A" },
+      }),
+    );
+    // The queue must keep draining B without waiting for an external retry.
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenLastCalledWith({ title: "T", content: "B" }, 3);
+  });
+
+  // Symmetric guard: when no newer snapshot is queued at the moment the
+  // queue commits the save, isLatest must be true so the editor can
+  // safely clear hasUnsavedChanges and the localStorage draft.
+  it("reports isLatest=true when no follow-up snapshot is queued", async () => {
+    const save: SaveFn = () => Promise.resolve(acceptedResult(2));
+    const opts = makeOptions(save);
+    const { result } = renderHook(() => useEditorSaveQueue(opts));
+
+    await act(async () => {
+      result.current.requestSave({ title: "T", content: "v" });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(opts.onSaved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isLatest: true,
+        snapshot: { title: "T", content: "v" },
+      }),
+    );
+  });
+
   it("resyncRevision and setLastSavedAt update state without firing a save", () => {
-    const save: SaveFn = vi.fn(() => Promise.resolve(baseResult(2)));
+    const save: SaveFn = vi.fn(() => Promise.resolve(acceptedResult(2)));
     const opts = makeOptions(save);
 
     const { result } = renderHook(() => useEditorSaveQueue(opts));

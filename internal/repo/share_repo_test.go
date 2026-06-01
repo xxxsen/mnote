@@ -161,9 +161,10 @@ func TestShareRepo_ListActiveDocuments(t *testing.T) {
 	assert.Equal(t, "Doc1", docs[0].Title)
 }
 
-// TestShareRepo_ListActiveDocuments_ExpiryFilter guards BE-4: the SQL must
-// drop rows whose expires_at is positive but already in the past, AND must
-// keep "no expiry" rows (expires_at = 0). go-sqlmock does not execute SQL,
+// TestShareRepo_ListActiveDocuments_ExpiryFilter guards the expiry filter:
+// the SQL must drop rows whose expires_at is positive but already in the
+// past, AND must keep "no expiry" rows (expires_at = 0). go-sqlmock does
+// not execute SQL,
 // so we cannot assert against real PG behavior; instead we pin the literal
 // predicate fragment via regexp.QuoteMeta so future edits cannot silently
 // flip `>=` to `>`, drop the `OR expires_at = 0` branch, or invert the

@@ -172,7 +172,8 @@ func (m *mockDocumentService) Save(
 		}
 		return &model.SaveDocumentResult{
 			ID:              docID,
-			ContentRevision: input.BaseRevision + 1,
+			Accepted:        true,
+			ContentRevision: input.SaveSeq,
 		}, nil
 	}
 	panic("mockDocumentService.Save not configured")
