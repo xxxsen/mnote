@@ -1,6 +1,6 @@
 import type { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
-import type { ReactNode, ReactPortal, RefObject, WheelEventHandler } from "react";
+import type { ReactNode, ReactPortal, RefObject } from "react";
 import type { ThemeId } from "@/lib/editor-themes";
 import type { OutlineEntry } from "@/components/markdown-preview/types";
 import type {
@@ -45,7 +45,7 @@ export interface EditorScrollContract {
   activeTocId: string | null;
   suppressNextSync: () => () => void;
   handlePreviewScroll: () => void;
-  handlePreviewWheel: WheelEventHandler<HTMLDivElement>;
+  handlePreviewWheel: (event: WheelEvent) => void;
   scrollEditorToSourceLine: (sourceLine: number, id: string) => boolean;
   scrollPreviewToHeading: (id: string) => boolean;
 }

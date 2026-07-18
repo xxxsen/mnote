@@ -74,6 +74,12 @@ test("editor midline determines the active Outline section", async ({
 test("preview wheel delegates scrolling to the editor while sync is enabled", async ({
   page,
 }) => {
+  const passiveWheelErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.text().includes("passive event listener")) {
+      passiveWheelErrors.push(message.text());
+    }
+  });
   await page.setViewportSize({ width: 1600, height: 900 });
   const token = await loginTestUser(page);
   const content = [
@@ -91,6 +97,17 @@ test("preview wheel delegates scrolling to the editor while sync is enabled", as
     await page.getByRole("button", { name: "Split view" }).click();
     const preview = page.getByRole("region", { name: "Markdown preview" });
     const editorScroller = page.locator(".cm-scroller");
+    await preview.evaluate((element) => {
+      element.addEventListener(
+        "wheel",
+        (event) => {
+          element.dataset.wheelDefaultPrevented = String(
+            event.defaultPrevented,
+          );
+        },
+        { once: true },
+      );
+    });
     await expect(
       page.getByRole("button", { name: "Scroll sync on" }),
     ).toHaveAttribute("aria-pressed", "true");
@@ -100,6 +117,10 @@ test("preview wheel delegates scrolling to the editor while sync is enabled", as
     );
     await preview.hover();
     await page.mouse.wheel(0, 1400);
+    await expect
+      .poll(() => preview.getAttribute("data-wheel-default-prevented"))
+      .toBe("true");
+    expect(passiveWheelErrors).toEqual([]);
     await expect
       .poll(() => preview.evaluate((element) => element.scrollTop))
       .toBeGreaterThan(200);

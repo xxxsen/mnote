@@ -180,7 +180,7 @@ Markdown 预览的 `h1-h6`、`p`、`li`、`pre`、`blockquote`、`table` 和 `hr
 
 - 编辑区垂直中线对应的源码行同时决定当前 Outline 章节和预览目标，不再分别使用“编辑区顶部”和“预览区顶部”两个基准。
 - `buildOutline` 从原始 Markdown 派生稳定 `id` 与 `sourceLine`；同步时按 `id` 找到实际预览标题 DOM，以相邻标题线性插值，并把目标位置对齐到预览区垂直中线。末节补充文档末尾锚点；无可用标题时回退为两个窗格的归一化中线进度。
-- 鼠标位于右侧预览区时，垂直滚轮事件阻止预览器原生滚动，并把 pixel、line 或 page 模式的增量换算后施加到 CodeMirror 滚动容器；随后仍由编辑器驱动预览。`Ctrl+滚轮` 保留浏览器缩放语义。
+- 鼠标位于右侧预览区时，由预览 DOM 上显式注册的非 passive 原生 `wheel` listener 阻止预览器默认滚动，避免 React passive 事件与同步滚动叠加；pixel、line 或 page 模式的增量换算后施加到 CodeMirror 滚动容器，随后仍由编辑器驱动预览。`Ctrl+滚轮` 保留浏览器缩放语义。
 - 同步开启时直接拖动预览滚动条不会反向移动编辑器，预览会按编辑器当前中线重新对齐，避免两个进度源互相拉扯。
 - 预览正文外层由 `ResizeObserver` 观察。Mermaid 异步渲染、图片或其他媒体改变预览高度后，在编辑器位置不变的前提下重新计算预览位置。
 - 高频事件使用单个 `requestAnimationFrame` 合并；程序化预览滚动的 source lock 至少保持两个 animation frame，覆盖浏览器延迟滚动事件并防止回环。

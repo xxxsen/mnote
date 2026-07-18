@@ -213,7 +213,7 @@ function useDelegatedPreviewWheel(opts: {
     handleEditorScroll,
   } = opts;
   return useCallback(
-    (event: React.WheelEvent<HTMLDivElement>) => {
+    (event: WheelEvent) => {
       if (
         event.ctrlKey ||
         loadingRef.current ||

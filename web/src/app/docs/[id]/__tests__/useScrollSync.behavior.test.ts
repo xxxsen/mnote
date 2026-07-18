@@ -195,7 +195,7 @@ describe("useScrollSync behavior", () => {
         deltaY: 120,
         deltaMode: 0,
         preventDefault,
-      } as unknown as React.WheelEvent<HTMLDivElement>);
+      } as unknown as WheelEvent);
     });
 
     expect(preventDefault).toHaveBeenCalledTimes(1);
@@ -203,6 +203,42 @@ describe("useScrollSync behavior", () => {
     expect(harness.dispatch).not.toHaveBeenCalled();
     act(runNextFrame);
     expect(harness.preview.scrollTop).toBe(200);
+  });
+
+  it("leaves wheel behavior native when synchronization is disabled", () => {
+    const harness = setup(false);
+    const preventDefault = vi.fn();
+
+    act(() => {
+      harness.result.current.handlePreviewWheel({
+        ctrlKey: false,
+        deltaY: 120,
+        deltaMode: 0,
+        preventDefault,
+      } as unknown as WheelEvent);
+    });
+
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(harness.scrollDOM.scrollTop).toBe(200);
+    expect(frames).toHaveLength(0);
+  });
+
+  it("preserves browser zoom for control-wheel in synchronized split mode", () => {
+    const harness = setup();
+    const preventDefault = vi.fn();
+
+    act(() => {
+      harness.result.current.handlePreviewWheel({
+        ctrlKey: true,
+        deltaY: 120,
+        deltaMode: 0,
+        preventDefault,
+      } as unknown as WheelEvent);
+    });
+
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(harness.scrollDOM.scrollTop).toBe(200);
+    expect(frames).toHaveLength(0);
   });
 
   it("re-aligns the preview after Mermaid or media changes its layout", () => {

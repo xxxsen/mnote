@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import MarkdownPreview from "@/components/markdown-preview";
 import type {
   EditorShellFlatContract,
@@ -200,13 +201,18 @@ function EditorPane({ p }: { p: EditorShellFlatContract }) {
 
 function PreviewPane({ p }: { p: EditorShellFlatContract }) {
   const { previewRef, handlePreviewScroll, handlePreviewWheel } = p.scrollSync;
+  useEffect(() => {
+    const preview = previewRef.current;
+    if (!preview) return;
+    preview.addEventListener("wheel", handlePreviewWheel, { passive: false });
+    return () => preview.removeEventListener("wheel", handlePreviewWheel);
+  }, [handlePreviewWheel, previewRef]);
   return (
     <section
       aria-label="Markdown preview"
       className="relative h-full min-w-0 overflow-auto bg-[#f8fafc] selection:bg-indigo-100"
       ref={previewRef}
       onScroll={handlePreviewScroll}
-      onWheel={handlePreviewWheel}
     >
       <div className="sticky top-2 z-10 flex h-0 justify-end px-2">
         <button
