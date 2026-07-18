@@ -153,7 +153,9 @@ type embeddingRepo interface { //nolint:interfacebloat // mirrors repo.Embedding
 		contentMtime int64) error
 	ResetLeaseToPending(ctx context.Context, docID string) error
 	Claim(ctx context.Context, docID string, lockedUntil, now int64) (bool, error)
-	ClaimDrift(ctx context.Context, docID, expectedDocHash string,
+	// ClaimDrift expects the documents.content_hash snapshot returned by
+	// ListStaleDocuments and atomically rejects an obsolete snapshot.
+	ClaimDrift(ctx context.Context, docID, documentHash string,
 		lockedUntil, now int64) (bool, error)
 	MarkFailed(ctx context.Context, docID, errMsg string, nextRetryAt int64) error
 	// CompleteEmbeddingIfCurrent commits chunks for a worker snapshot

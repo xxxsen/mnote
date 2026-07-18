@@ -444,6 +444,21 @@ func TestEmbeddingRepo_Claim(t *testing.T) {
 		assert.True(t, ok)
 	})
 
+	t.Run("query_allows_expired_running_lease", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewEmbeddingRepo(db)
+		mock.ExpectExec("(?s)embedding_status IN \\('pending', 'failed'\\).*OR embedding_status = 'running'").
+			WithArgs("d1", int64(2000), int64(1000)).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+		ok, err := r.Claim(context.Background(), "d1", 2000, 1000)
+		require.NoError(t, err)
+		assert.True(t, ok)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
 	t.Run("returns_false_when_already_held", func(t *testing.T) {
 		db, mock, err := sqlmock.New()
 		require.NoError(t, err)
@@ -495,8 +510,8 @@ func TestEmbeddingRepo_ClaimDrift(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		r := NewEmbeddingRepo(db)
-		mock.ExpectExec("UPDATE document_embeddings").
-			WithArgs("d1", int64(2000), int64(1000), "expected").
+		mock.ExpectExec("(?s)UPDATE document_embeddings AS e.*FROM documents AS d.*d\\.content_hash = \\$4.*e\\.content_hash <> d\\.content_hash").
+			WithArgs("d1", int64(2000), int64(1000), "expected", DocumentStateNormal).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 		ok, err := r.ClaimDrift(context.Background(), "d1", "expected", 2000, 1000)
 		require.NoError(t, err)
@@ -539,6 +554,91 @@ func TestEmbeddingRepo_ClaimDrift(t *testing.T) {
 		_, err = r.ClaimDrift(context.Background(), "d1", "expected", 2000, 1000)
 		require.Error(t, err)
 	})
+
+	// claims_when_documents_hash_diverges_from_row_hash guards the
+	// scan/claim symmetry rule: the stale scan returns the row because
+	// d.content_hash <> e.content_hash, and ClaimDrift must claim it as
+	// long as the caller passes the same d.content_hash value (even
+	// when document_embeddings.content_hash already equals a freshly-
+	// computed title/content hash). Asserting on the bound documentHash
+	// argument here pins that contract — the only valid value to bind
+	// to $4 is the documents.content_hash snapshot.
+	t.Run("claims_when_documents_hash_diverges_from_row_hash", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewEmbeddingRepo(db)
+		// The embedding row's hash is the freshly-computed title/content
+		// hash; documents.content_hash is broken to "bad-doc-hash". The
+		// stale scan keys off documents.content_hash, so the worker
+		// MUST bind "bad-doc-hash" to $4 to be able to claim the row.
+		// (sqlmock does not actually evaluate the SQL — it only verifies
+		// the bound argument, which is the contract we care about here.)
+		mock.ExpectExec("UPDATE document_embeddings AS e").
+			WithArgs("d1", int64(2000), int64(1000), "bad-doc-hash", DocumentStateNormal).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+		ok, err := r.ClaimDrift(context.Background(), "d1", "bad-doc-hash", 2000, 1000)
+		require.NoError(t, err)
+		assert.True(t, ok)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
+// TestEmbeddingRepo_UpsertPendingIfHashChanged covers the stale-worker
+// re-pend. The conflict update must only replace a row for older content;
+// any row already carrying the current hash owns its state and lease.
+func TestEmbeddingRepo_UpsertPendingIfHashChanged(t *testing.T) {
+	t.Run("executes_with_current_hash", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewEmbeddingRepo(db)
+		mock.ExpectExec("INSERT INTO document_embeddings").
+			WithArgs("d1", "u1", "hashB", int64(2000)).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+		require.NoError(t, r.upsertPendingIfHashChanged(
+			context.Background(), "d1", "u1", "hashB", 2000,
+		))
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("same_hash_is_noop", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewEmbeddingRepo(db)
+		mock.ExpectExec("INSERT INTO document_embeddings").
+			WithArgs("d1", "u1", "hashB", int64(2000)).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		require.NoError(t, r.upsertPendingIfHashChanged(
+			context.Background(), "d1", "u1", "hashB", 2000,
+		))
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("error", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		defer func() { _ = db.Close() }()
+
+		r := NewEmbeddingRepo(db)
+		mock.ExpectExec("INSERT INTO document_embeddings").
+			WillReturnError(assert.AnError)
+		require.Error(t, r.upsertPendingIfHashChanged(
+			context.Background(), "d1", "u1", "hash", 1000,
+		))
+	})
+}
+
+func TestEmbeddingRepo_UpsertPendingIfHashChanged_QueryShape(t *testing.T) {
+	assert.Contains(t, upsertPendingIfHashChangedSQL,
+		"WHERE document_embeddings.content_hash <> EXCLUDED.content_hash")
+	assert.NotRegexp(t, regexp.MustCompile("(?s)WHERE.*embedding_status"),
+		upsertPendingIfHashChangedSQL,
+		"same-hash rows must keep pending/running/failed/succeeded state")
 }
 
 // TestEmbeddingRepo_ResetLeaseToPending guards the rate-limit cool-down
@@ -623,8 +723,8 @@ func TestEmbeddingRepo_CompleteEmbeddingIfCurrent_AppliesWhenHashMatches(t *test
 // guards the race fix: when the locked document hashes to a different
 // value than the worker's expected snapshot, the helper must NOT delete
 // or rewrite chunks, must NOT mark succeeded, and must NOT update
-// documents.content_hash. Instead it re-pends the row under the
-// document's current hash so the next stale scan can pick it up.
+// documents.content_hash. It only re-pends an embedding row that still
+// carries an older hash, leaving every current-hash state and lease intact.
 func TestEmbeddingRepo_CompleteEmbeddingIfCurrent_StaleWhenHashDrifted(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -642,7 +742,10 @@ func TestEmbeddingRepo_CompleteEmbeddingIfCurrent_StaleWhenHashDrifted(t *testin
 		WithArgs("d1", "u1", DocumentStateNormal).
 		WillReturnRows(sqlmock.NewRows([]string{"title", "content", "content_mtime"}).
 			AddRow("B-title", "B-content", int64(5000)))
-	mock.ExpectExec("INSERT INTO document_embeddings").
+	// A stale worker may only replace an embedding row for older content.
+	mock.ExpectExec(regexp.QuoteMeta(
+		"WHERE document_embeddings.content_hash <> EXCLUDED.content_hash",
+	)).
 		WithArgs("d1", "u1", currentHash, int64(5000)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
@@ -658,6 +761,45 @@ func TestEmbeddingRepo_CompleteEmbeddingIfCurrent_StaleWhenHashDrifted(t *testin
 	require.NoError(t, err)
 	assert.False(t, applied,
 		"drifted documents row must report stale, not apply")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestEmbeddingRepo_CompleteEmbeddingIfCurrent_StalePreservesCurrentRow
+// verifies that stale completion is still reported when the embedding row
+// already belongs to the current content and the conditional update is a no-op.
+func TestEmbeddingRepo_CompleteEmbeddingIfCurrent_StalePreservesCurrentRow(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	r := NewEmbeddingRepo(db)
+	expectedHash := computeDocumentHashForTest("A-title", "A-content")
+	currentHash := computeDocumentHashForTest("B-title", "B-content")
+	require.NotEqual(t, expectedHash, currentHash)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT title, content, content_mtime\s+FROM documents`).
+		WithArgs("d1", "u1", DocumentStateNormal).
+		WillReturnRows(sqlmock.NewRows([]string{"title", "content", "content_mtime"}).
+			AddRow("B-title", "B-content", int64(7000)))
+	mock.ExpectExec(regexp.QuoteMeta(
+		"WHERE document_embeddings.content_hash <> EXCLUDED.content_hash",
+	)).
+		WithArgs("d1", "u1", currentHash, int64(7000)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	applied, err := r.CompleteEmbeddingIfCurrent(
+		context.Background(), "u1", "d1", expectedHash,
+		[]*model.ChunkEmbedding{{
+			ChunkID: "c1", DocumentID: "d1", UserID: "u1",
+			Content: "chunk", Embedding: []float32{0.1}, Position: 0,
+		}},
+		8000,
+	)
+	require.NoError(t, err)
+	assert.False(t, applied,
+		"slow worker stale completion must report stale even when no re-pend was applied")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

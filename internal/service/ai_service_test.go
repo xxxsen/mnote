@@ -68,7 +68,7 @@ type mockEmbeddingRepo struct {
 	upsertPendingFn              func(ctx context.Context, docID, userID, contentHash string, contentMtime int64) error
 	resetLeaseToPendingFn        func(ctx context.Context, docID string) error
 	claimFn                      func(ctx context.Context, docID string, lockedUntil, now int64) (bool, error)
-	claimDriftFn                 func(ctx context.Context, docID, expectedDocHash string, lockedUntil, now int64) (bool, error)
+	claimDriftFn                 func(ctx context.Context, docID, documentHash string, lockedUntil, now int64) (bool, error)
 	markFailedFn                 func(ctx context.Context, docID, errMsg string, nextRetryAt int64) error
 	completeEmbeddingIfCurrentFn func(ctx context.Context, userID, docID, expectedHash string, chunks []*model.ChunkEmbedding, now int64) (bool, error)
 }
@@ -133,12 +133,12 @@ func (m *mockEmbeddingRepo) Claim(
 }
 
 func (m *mockEmbeddingRepo) ClaimDrift(
-	ctx context.Context, docID, expectedDocHash string, lockedUntil, now int64,
+	ctx context.Context, docID, documentHash string, lockedUntil, now int64,
 ) (bool, error) {
 	if m.claimDriftFn == nil {
 		return false, nil
 	}
-	return m.claimDriftFn(ctx, docID, expectedDocHash, lockedUntil, now)
+	return m.claimDriftFn(ctx, docID, documentHash, lockedUntil, now)
 }
 
 func (m *mockEmbeddingRepo) ResetLeaseToPending(ctx context.Context, docID string) error {
@@ -1069,7 +1069,10 @@ func TestAIService_ClaimEmbedding(t *testing.T) {
 	})
 	// drift_path_promotes_succeeded_with_hash_mismatch guards the recovery
 	// loop: when Claim returns false (status='succeeded'), claimEmbedding
-	// must fall through to ClaimDrift and report the drift claim's result.
+	// must fall through to ClaimDrift and report the drift claim's
+	// result. The hash passed to ClaimDrift MUST be the
+	// documents.content_hash value (doc.ContentHash here) the stale
+	// scan observed — see ClaimDrift's doc-comment for the rationale.
 	t.Run("drift_path_promotes_succeeded_with_hash_mismatch", func(t *testing.T) {
 		var driftHash string
 		emb := &mockEmbeddingRepo{
@@ -1077,16 +1080,73 @@ func TestAIService_ClaimEmbedding(t *testing.T) {
 				return &model.DocumentEmbedding{DocumentID: "d1", EmbeddingStatus: "succeeded", ContentHash: "old"}, nil
 			},
 			claimFn: func(context.Context, string, int64, int64) (bool, error) { return false, nil },
-			claimDriftFn: func(_ context.Context, _, expected string, _, _ int64) (bool, error) {
-				driftHash = expected
+			claimDriftFn: func(_ context.Context, _, hash string, _, _ int64) (bool, error) {
+				driftHash = hash
 				return true, nil
 			},
 		}
 		svc := newTestAIService(&mockAIManager{}, emb, nil)
-		ok, err := svc.claimEmbedding(context.Background(), model.Document{ID: "d1", Title: "t", Content: "c"}, 0)
+		doc := model.Document{
+			ID: "d1", Title: "t", Content: "c", ContentHash: "doc-content-hash",
+		}
+		ok, err := svc.claimEmbedding(context.Background(), doc, 0)
 		require.NoError(t, err)
 		assert.True(t, ok)
-		assert.Equal(t, computeEmbeddingHash("t", "c"), driftHash)
+		assert.Equal(t, "doc-content-hash", driftHash,
+			"ClaimDrift must receive documents.content_hash, not a recomputed title/content hash")
+	})
+
+	// drift_uses_documents_content_hash_when_embedding_hash_matches_title_content
+	// pins the exact symptom guarded by the documents.content_hash
+	// drift fix. Setup mirrors a documents row whose content_hash is
+	// corrupted ("bad-doc-hash") while the embedding row's content_hash
+	// is already the freshly-computed title/content hash. The stale
+	// scan returns this row because the two columns disagree, but if
+	// the worker computed expectedHash from title/content and passed
+	// it to ClaimDrift, the row would never be claimed (the row's
+	// content_hash already equals that recomputed value). Passing
+	// doc.ContentHash ("bad-doc-hash") instead lets ClaimDrift's
+	// "content_hash <> $4" predicate match and the worker can proceed
+	// to repair documents.content_hash via the completion path.
+	t.Run("drift_uses_documents_content_hash_when_embedding_hash_matches_title_content", func(t *testing.T) {
+		titleContentHash := computeEmbeddingHash("title", "body")
+		var driftHash string
+		var claimDriftCalls int
+		emb := &mockEmbeddingRepo{
+			getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
+				return &model.DocumentEmbedding{
+					DocumentID:      "d1",
+					EmbeddingStatus: model.EmbeddingStatusSucceeded,
+					// embedding row already records the correct
+					// title/content fingerprint; the divergence is
+					// entirely on the documents.content_hash side.
+					ContentHash: titleContentHash,
+				}, nil
+			},
+			claimFn: func(context.Context, string, int64, int64) (bool, error) { return false, nil },
+			claimDriftFn: func(_ context.Context, _, hash string, _, _ int64) (bool, error) {
+				claimDriftCalls++
+				driftHash = hash
+				return true, nil
+			},
+		}
+		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		doc := model.Document{
+			ID:           "d1",
+			UserID:       "u1",
+			Title:        "title",
+			Content:      "body",
+			ContentHash:  "bad-doc-hash",
+			ContentMtime: 1000,
+		}
+		ok, err := svc.claimEmbedding(context.Background(), doc, 0)
+		require.NoError(t, err)
+		assert.True(t, ok, "claim must succeed via drift recovery")
+		assert.Equal(t, 1, claimDriftCalls)
+		assert.Equal(t, "bad-doc-hash", driftHash,
+			"ClaimDrift must bind doc.ContentHash to $4 — passing a recomputed hash would leave the row unclaimable")
+		assert.NotEqual(t, titleContentHash, driftHash,
+			"the bound hash must NOT be the freshly-computed title/content hash (that would equal the embedding row's hash and skip the claim)")
 	})
 	// drift_path_error_returns_false swallows errors from the drift claim
 	// path so the worker can move on to the next candidate instead of
@@ -1272,14 +1332,21 @@ func TestProcessPendingEmbeddings_EmptyList(t *testing.T) {
 // the expected hash, which is the same byte-for-byte fingerprint the
 // production query compares against documents.content_hash.
 func TestAIService_ProcessPendingEmbeddings_DriftLoopBreaksAfterFirstSuccess(t *testing.T) {
+	// doc.ContentHash mirrors the documents.content_hash snapshot the
+	// stale scan returned. ClaimDrift must receive this exact value
+	// (not a recomputed title/content hash) so its "content_hash <> $4"
+	// check uses the same basis as the scan; see ClaimDrift's
+	// doc-comment for the broken-documents.content_hash regression
+	// this guards.
 	doc := model.Document{
 		ID:           "d1",
 		UserID:       "u1",
 		Title:        "title",
 		Content:      "body",
+		ContentHash:  "documents-snapshot-hash",
 		ContentMtime: 1234,
 	}
-	expectedHash := computeEmbeddingHash(doc.Title, doc.Content)
+	expectedSyncHash := computeEmbeddingHash(doc.Title, doc.Content)
 
 	listCalls := 0
 	claimCalls := 0
@@ -1308,7 +1375,8 @@ func TestAIService_ProcessPendingEmbeddings_DriftLoopBreaksAfterFirstSuccess(t *
 		claimDriftFn: func(_ context.Context, docID, hash string, _, _ int64) (bool, error) {
 			claimDriftCalls++
 			assert.Equal(t, doc.ID, docID)
-			assert.Equal(t, expectedHash, hash)
+			assert.Equal(t, doc.ContentHash, hash,
+				"ClaimDrift must bind the documents.content_hash snapshot, not the recomputed title/content hash")
 			return true, nil
 		},
 		completeEmbeddingIfCurrentFn: func(
@@ -1337,8 +1405,8 @@ func TestAIService_ProcessPendingEmbeddings_DriftLoopBreaksAfterFirstSuccess(t *
 	assert.Equal(t, 1, claimCalls, "Claim must have been tried once before ClaimDrift")
 	assert.Equal(t, 1, claimDriftCalls, "ClaimDrift must have promoted the succeeded-but-drifted row")
 	require.Len(t, completeCalls, 1)
-	assert.Equal(t, doc.ID+"="+expectedHash, completeCalls[0],
-		"CompleteEmbeddingIfCurrent must run with the worker's expected hash")
+	assert.Equal(t, doc.ID+"="+expectedSyncHash, completeCalls[0],
+		"CompleteEmbeddingIfCurrent must run with the worker's snapshot hash (computed from title/content)")
 
 	require.NoError(t, svc.ProcessPendingEmbeddings(context.Background(), 0))
 	assert.Equal(t, 2, listCalls)

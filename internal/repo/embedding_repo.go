@@ -49,8 +49,8 @@ func (r *EmbeddingRepo) Save(ctx context.Context, emb *model.DocumentEmbedding) 
 }
 
 // UpsertPending marks a document's embedding as pending so the queue picks
-// it up. It clears all transient retry/error fields. Designed to be called
-// from the save transaction right after content changes.
+// it up. It clears all transient retry/error fields. The save transaction is
+// authoritative and must always re-pend after a content change.
 func (r *EmbeddingRepo) UpsertPending(
 	ctx context.Context, docID, userID, contentHash string, contentMtime int64,
 ) error {
@@ -71,6 +71,41 @@ func (r *EmbeddingRepo) UpsertPending(
 			last_error = ''
 	`
 	_, err := conn(ctx, r.db).ExecContext(ctx, query, docID, userID, contentHash, contentMtime)
+	if err != nil {
+		return fmt.Errorf("exec: %w", err)
+	}
+	return nil
+}
+
+// upsertPendingIfHashChangedSQL is package-scoped so tests can guard the
+// conflict predicate without duplicating the production query.
+const upsertPendingIfHashChangedSQL = `
+	INSERT INTO document_embeddings (
+		document_id, user_id, content_hash, mtime,
+		embedding_status, attempts, next_retry_at, locked_until, last_error
+	)
+	VALUES ($1, $2, $3, $4, 'pending', 0, 0, 0, '')
+	ON CONFLICT (document_id) DO UPDATE SET
+		user_id = EXCLUDED.user_id,
+		content_hash = EXCLUDED.content_hash,
+		mtime = EXCLUDED.mtime,
+		embedding_status = 'pending',
+		attempts = 0,
+		next_retry_at = 0,
+		locked_until = 0,
+		last_error = ''
+	WHERE document_embeddings.content_hash <> EXCLUDED.content_hash
+`
+
+// upsertPendingIfHashChanged re-pends an embedding row only while it still
+// represents older content. If another worker has already moved the row to
+// the current hash, its state and lease are authoritative.
+func (r *EmbeddingRepo) upsertPendingIfHashChanged(
+	ctx context.Context, docID, userID, contentHash string, contentMtime int64,
+) error {
+	_, err := conn(ctx, r.db).ExecContext(
+		ctx, upsertPendingIfHashChangedSQL, docID, userID, contentHash, contentMtime,
+	)
 	if err != nil {
 		return fmt.Errorf("exec: %w", err)
 	}
@@ -98,10 +133,9 @@ func (r *EmbeddingRepo) MarkFailed(
 	return nil
 }
 
-// Claim attempts to atomically claim a document for embedding work. It only
-// succeeds when the row is currently pending or failed and its lease has
-// expired; the (status -> running, locked_until) update happens in a single
-// statement so two concurrent workers cannot both win.
+// Claim atomically claims new/retry work or recovers a running row whose
+// worker lease expired. The state/lease update happens in one statement so
+// two concurrent workers cannot both win.
 func (r *EmbeddingRepo) Claim(
 	ctx context.Context, docID string, lockedUntil, now int64,
 ) (bool, error) {
@@ -110,9 +144,14 @@ func (r *EmbeddingRepo) Claim(
 		SET embedding_status = 'running',
 			locked_until = $2
 		WHERE document_id = $1
-			AND embedding_status IN ('pending', 'failed')
-			AND next_retry_at <= $3
 			AND locked_until < $3
+			AND (
+				(
+					embedding_status IN ('pending', 'failed')
+					AND next_retry_at <= $3
+				)
+				OR embedding_status = 'running'
+			)
 	`
 	res, err := conn(ctx, r.db).ExecContext(ctx, query, docID, lockedUntil, now)
 	if err != nil {
@@ -125,29 +164,30 @@ func (r *EmbeddingRepo) Claim(
 	return affected > 0, nil
 }
 
-// ClaimDrift atomically promotes a document_embeddings row to 'running'
-// when it is currently 'succeeded' but its stored content_hash differs
-// from the up-to-date documents.content_hash. This covers drift caused by
-// out-of-band writes or by the legacy backfill: the row's status is the
-// terminal 'succeeded' (so the normal Claim path skips it), yet the body
-// hash has moved on and the worker still needs to re-embed.
-//
-// The update is single-statement so two concurrent workers cannot both
-// promote the same row. A worker that loses the race observes
-// rows-affected = 0 and returns false.
+// ClaimDrift atomically promotes a succeeded row whose embedding hash differs
+// from the current documents hash. documentHash must be the snapshot returned
+// by ListStaleDocuments. Rechecking that snapshot in the UPDATE prevents an
+// obsolete scan result from demoting a newer succeeded row, while still
+// allowing legacy documents.content_hash drift to be repaired.
 func (r *EmbeddingRepo) ClaimDrift(
-	ctx context.Context, docID, expectedDocHash string, lockedUntil, now int64,
+	ctx context.Context, docID, documentHash string, lockedUntil, now int64,
 ) (bool, error) {
 	const query = `
-		UPDATE document_embeddings
+		UPDATE document_embeddings AS e
 		SET embedding_status = 'running',
 			locked_until = $2
-		WHERE document_id = $1
-			AND embedding_status = 'succeeded'
-			AND content_hash <> $4
-			AND locked_until < $3
+		FROM documents AS d
+		WHERE e.document_id = $1
+			AND d.id = e.document_id
+			AND d.state = $5
+			AND d.content_hash = $4
+			AND e.embedding_status = 'succeeded'
+			AND e.content_hash <> d.content_hash
+			AND e.locked_until < $3
 	`
-	res, err := conn(ctx, r.db).ExecContext(ctx, query, docID, lockedUntil, now, expectedDocHash)
+	res, err := conn(ctx, r.db).ExecContext(
+		ctx, query, docID, lockedUntil, now, documentHash, DocumentStateNormal,
+	)
 	if err != nil {
 		return false, fmt.Errorf("exec: %w", err)
 	}
@@ -309,7 +349,9 @@ func (r *EmbeddingRepo) GetByDocID(ctx context.Context, docID string) (*model.Do
 //     documents.content_hash == document_embeddings.content_hash, and a
 //     legacy `AND content_hash <> e.content_hash` predicate would silently
 //     hide every freshly-saved document from the job.
-//  3. The hashes diverge AND the embedding row is in the terminal
+//  3. A running row's lease has expired, so work abandoned by a crashed
+//     worker can be claimed again.
+//  4. The hashes diverge AND the embedding row is in the terminal
 //     'succeeded' state AND no other worker holds the lease. This is the
 //     drift-recovery branch: it must be restricted to 'succeeded' rows
 //     because Claim and ClaimDrift partition the state machine — Claim
@@ -322,7 +364,7 @@ func (r *EmbeddingRepo) GetByDocID(ctx context.Context, docID string) (*model.Do
 //
 // Metadata-only updates (summary / tag / pin / star) never call
 // UpsertPending and never touch content_hash, so they cannot trigger any
-// of the three branches and remain correctly excluded.
+// of these branches and remain correctly excluded.
 //
 // The order favors documents whose retry window opened earliest, falling
 // back to oldest content_mtime, so retried failures do not starve fresh
@@ -374,6 +416,10 @@ const listStaleDocumentsSQL = `
 					AND e.locked_until < $2
 				)
 				OR (
+					e.embedding_status = 'running'
+					AND e.locked_until < $2
+				)
+				OR (
 					e.embedding_status = 'succeeded'
 					AND d.content_hash <> e.content_hash
 					AND e.locked_until < $2
@@ -404,8 +450,9 @@ const listStaleDocumentsSQL = `
 //     row for the current hash so the next scan can pick it up cleanly
 //     (the save path also calls UpsertPending, but a worker that
 //     successfully Claim()-ed before the save committed may have left
-//     the row in 'running' — UpsertPending here flushes that stale
-//     lease). Returns (false, nil).
+//     the row in 'running'). The conditional re-pend only changes a row
+//     whose hash is still old; a newer row for the current hash keeps its
+//     state and lease. Returns (false, nil).
 //
 // All writes happen inside a single transaction. When the caller already
 // runs in a transaction (via WithTx) the existing tx is joined; otherwise
@@ -434,7 +481,9 @@ func (r *EmbeddingRepo) CompleteEmbeddingIfCurrent(
 		}
 		currentHash := dochash.Compute(title, content)
 		if currentHash != expectedHash {
-			if err := r.UpsertPending(txCtx, docID, userID, currentHash, contentMtime); err != nil {
+			if err := r.upsertPendingIfHashChanged(
+				txCtx, docID, userID, currentHash, contentMtime,
+			); err != nil {
 				return fmt.Errorf("re-pend stale embedding: %w", err)
 			}
 			applied = false

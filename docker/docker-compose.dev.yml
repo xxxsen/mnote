@@ -1,0 +1,14 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: mnote
+      POSTGRES_USER: mnote
+      POSTGRES_PASSWORD: mnote_pass
+    ports:
+      - "127.0.0.1:${MNOTE_DEV_DB_PORT:-15432}:5432"
+    volumes:
+      - mnote-dev-db-data:/var/lib/postgresql/data
+
+volumes:
+  mnote-dev-db-data:

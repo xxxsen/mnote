@@ -387,7 +387,6 @@ func (s *AIService) processOneEmbedding(ctx context.Context, doc model.Document)
 // row-targeted Claim has something to update atomically.
 func (s *AIService) claimEmbedding(ctx context.Context, doc model.Document, now int64) (bool, error) {
 	logger := logutil.GetLogger(ctx).With(zap.String("doc_id", doc.ID))
-	expectedHash := computeEmbeddingHash(doc.Title, doc.Content)
 	if _, err := s.embeddings.GetByDocID(ctx, doc.ID); err != nil {
 		if !errors.Is(err, appErr.ErrNotFound) {
 			return false, fmt.Errorf("get embedding: %w", err)
@@ -396,7 +395,8 @@ func (s *AIService) claimEmbedding(ctx context.Context, doc model.Document, now 
 		// the same hash SyncEmbedding will compute. Seeding with empty
 		// strings would let a concurrent save observe an inconsistent row
 		// during the brief window before Claim flips status to running.
-		if err := s.embeddings.UpsertPending(ctx, doc.ID, doc.UserID, expectedHash, doc.ContentMtime); err != nil {
+		seedHash := computeEmbeddingHash(doc.Title, doc.Content)
+		if err := s.embeddings.UpsertPending(ctx, doc.ID, doc.UserID, seedHash, doc.ContentMtime); err != nil {
 			return false, fmt.Errorf("seed pending embedding: %w", err)
 		}
 	}
@@ -411,7 +411,11 @@ func (s *AIService) claimEmbedding(ctx context.Context, doc model.Document, now 
 	// Fall through to drift recovery: the row exists, its status is
 	// 'succeeded', but documents.content_hash has moved on. ClaimDrift
 	// flips it to 'running' in one statement so two workers cannot race.
-	drift, err := s.embeddings.ClaimDrift(ctx, doc.ID, expectedHash, now+embeddingLeaseSeconds, now)
+	//
+	// Pass the documents.content_hash snapshot from ListStaleDocuments.
+	// ClaimDrift atomically verifies that it is still current before changing
+	// the embedding row, while retaining legacy hash-drift recovery.
+	drift, err := s.embeddings.ClaimDrift(ctx, doc.ID, doc.ContentHash, now+embeddingLeaseSeconds, now)
 	if err != nil {
 		logger.Warn("failed to claim drift embedding", zap.Error(err))
 		return false, nil
