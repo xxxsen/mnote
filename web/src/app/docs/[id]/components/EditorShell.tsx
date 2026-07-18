@@ -199,13 +199,14 @@ function EditorPane({ p }: { p: EditorShellFlatContract }) {
 }
 
 function PreviewPane({ p }: { p: EditorShellFlatContract }) {
-  const { previewRef, handlePreviewScroll } = p.scrollSync;
+  const { previewRef, handlePreviewScroll, handlePreviewWheel } = p.scrollSync;
   return (
     <section
       aria-label="Markdown preview"
       className="relative h-full min-w-0 overflow-auto bg-[#f8fafc] selection:bg-indigo-100"
       ref={previewRef}
       onScroll={handlePreviewScroll}
+      onWheel={handlePreviewWheel}
     >
       <div className="sticky top-2 z-10 flex h-0 justify-end px-2">
         <button
@@ -222,7 +223,10 @@ function PreviewPane({ p }: { p: EditorShellFlatContract }) {
           Updating preview…
         </div>
       )}
-      <div className="min-h-full p-4 md:p-8 lg:p-12">
+      <div
+        data-preview-scroll-content
+        className="min-h-full p-4 md:p-8 lg:p-12"
+      >
         <div className="mx-auto max-w-4xl">
           <article className="relative w-full overflow-visible rounded-2xl border border-slate-200/50 bg-white shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)]">
             <div className="p-6 md:p-10 lg:p-12">

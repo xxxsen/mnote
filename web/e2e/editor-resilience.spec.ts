@@ -142,7 +142,7 @@ test("mobile More exposes emoji, color, size, theme and preview inside the viewp
   }
 });
 
-test("structured scroll sync follows sections in both directions and can be disabled", async ({ page }) => {
+test("structured scroll sync keeps the editor authoritative and can be disabled", async ({ page }) => {
   const token = await loginTestUser(page);
   const content = Array.from(
     { length: 40 },
@@ -152,29 +152,50 @@ test("structured scroll sync follows sections in both directions and can be disa
   try {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await openEditor(page, document.id);
+    await page.getByRole("button", { name: "Split view" }).click();
     const editorScroller = page.locator(".cm-scroller");
     const preview = page.getByRole("region", { name: "Markdown preview" });
+    const syncButton = page.getByRole("button", { name: /Scroll sync/ });
+    if ((await syncButton.getAttribute("aria-pressed")) !== "true") {
+      await syncButton.click();
+    }
 
     await editorScroller.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
       element.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
-    await expect.poll(() => preview.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    await expect
+      .poll(() => preview.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+    await page.waitForTimeout(100);
+    const editorAligned = await editorScroller.evaluate(
+      (element) => element.scrollTop,
+    );
+    const previewAligned = await preview.evaluate((element) => element.scrollTop);
 
     await preview.evaluate((element) => {
       element.scrollTop = 0;
       element.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
-    await expect.poll(() => editorScroller.evaluate((element) => element.scrollTop)).toBeLessThan(100);
+    await expect
+      .poll(() => editorScroller.evaluate((element) => element.scrollTop))
+      .toBe(editorAligned);
+    await expect
+      .poll(() => preview.evaluate((element) => element.scrollTop))
+      .toBe(previewAligned);
 
-    await page.getByRole("button", { name: "Scroll sync on" }).click();
-    const before = await editorScroller.evaluate((element) => element.scrollTop);
+    await syncButton.click();
+    await expect(syncButton).toHaveAttribute("aria-pressed", "false");
     await preview.evaluate((element) => {
-      element.scrollTop = element.scrollHeight;
+      element.scrollTop = 0;
       element.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
-    await page.waitForTimeout(100);
-    expect(await editorScroller.evaluate((element) => element.scrollTop)).toBe(before);
+    await expect
+      .poll(() => preview.evaluate((element) => element.scrollTop))
+      .toBe(0);
+    expect(await editorScroller.evaluate((element) => element.scrollTop)).toBe(
+      editorAligned,
+    );
   } finally {
     await deleteDocument(page, token, document.id);
   }

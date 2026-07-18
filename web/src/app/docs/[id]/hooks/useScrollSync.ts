@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EditorView } from "@codemirror/view";
 import { buildOutline } from "@/components/markdown-preview/helpers";
 import type { OutlineEntry } from "@/components/markdown-preview/types";
 import { useOutlineNavigation } from "./useOutlineNavigation";
+import type { EditorView } from "@codemirror/view";
 
 export type SourceMarker = { sourceLine: number; offsetTop: number };
 export type TocHeadingMarker = Pick<OutlineEntry, "sourceLine" | "id">;
+type ViewMode = "edit" | "split" | "preview";
 
 export function interpolatePreviewOffset(
   markers: SourceMarker[],
@@ -29,21 +30,14 @@ export function interpolatePreviewOffset(
   return previous.offsetTop + ratio * (next.offsetTop - previous.offsetTop);
 }
 
-export function nearestSourceLine(
-  markers: SourceMarker[],
-  scrollTop: number,
-): number | null {
-  if (markers.length === 0) return null;
-  let nearest = markers[0];
-  let distance = Math.abs(nearest.offsetTop - scrollTop);
-  for (const marker of markers.slice(1)) {
-    const nextDistance = Math.abs(marker.offsetTop - scrollTop);
-    if (nextDistance < distance) {
-      nearest = marker;
-      distance = nextDistance;
-    }
-  }
-  return nearest.sourceLine;
+export function wheelDeltaToPixels(
+  deltaY: number,
+  deltaMode: number,
+  pageSize: number,
+): number {
+  if (deltaMode === 1) return deltaY * 16;
+  if (deltaMode === 2) return deltaY * pageSize;
+  return deltaY;
 }
 
 export function buildTocHeadingMarkers(content: string): TocHeadingMarker[] {
@@ -96,22 +90,160 @@ export function activeHeadingForPreview(container: HTMLElement): string | null {
   return headings[activeIndex].id;
 }
 
-function readMarkers(container: HTMLElement): SourceMarker[] {
-  return Array.from(
-    container.querySelectorAll<HTMLElement>("[data-source-line]"),
-  )
-    .map((element) => ({
-      sourceLine: Number(element.dataset.sourceLine),
-      offsetTop: element.offsetTop,
-    }))
-    .filter(
-      (marker) => Number.isInteger(marker.sourceLine) && marker.sourceLine > 0,
-    )
-    .sort((a, b) => a.sourceLine - b.sourceLine);
+function readHeadingMarkers(
+  container: HTMLElement,
+  headings: readonly TocHeadingMarker[],
+): SourceMarker[] {
+  const containerTop = container.getBoundingClientRect().top;
+  const elementsByID = new Map(
+    Array.from(
+      container.querySelectorAll<HTMLElement>(
+        "h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]",
+      ),
+    ).map((element) => [element.id, element]),
+  );
+  return headings.flatMap(({ id, sourceLine }) => {
+    const element = elementsByID.get(id);
+    if (!element) return [];
+    return [{
+      sourceLine,
+      offsetTop:
+        element.getBoundingClientRect().top -
+        containerTop +
+        container.scrollTop,
+    }];
+  });
 }
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function useEditorMasterSync(opts: {
+  editorViewRef: React.RefObject<EditorView | null>;
+  previewRef: React.RefObject<HTMLDivElement | null>;
+  headingMarkersRef: React.RefObject<TocHeadingMarker[]>;
+  loadingRef: React.RefObject<boolean>;
+  enabledRef: React.RefObject<boolean>;
+  viewModeRef: React.RefObject<ViewMode>;
+  scrollingSource: React.RefObject<"editor" | "preview" | null>;
+  updateActiveTocId: (id: string | null) => void;
+  releaseAfterSettledFrames: () => void;
+}) {
+  const {
+    editorViewRef,
+    previewRef,
+    headingMarkersRef,
+    loadingRef,
+    enabledRef,
+    viewModeRef,
+    scrollingSource: scrollingSourceRef,
+    updateActiveTocId,
+    releaseAfterSettledFrames,
+  } = opts;
+  return useCallback(() => {
+    const view = editorViewRef.current;
+    if (!view || loadingRef.current) return;
+    const editor = view.scrollDOM;
+    const activationBlock = view.lineBlockAtHeight(
+      editor.scrollTop + editor.clientHeight / 2,
+    );
+    const activationLine = view.state.doc.lineAt(activationBlock.from).number;
+    updateActiveTocId(
+      activeHeadingForSourceLine(headingMarkersRef.current, activationLine),
+    );
+    if (!enabledRef.current || viewModeRef.current !== "split") return;
+
+    const preview = previewRef.current;
+    if (!preview) return;
+    const previewMax = Math.max(
+      0,
+      preview.scrollHeight - preview.clientHeight,
+    );
+    const markers = readHeadingMarkers(preview, headingMarkersRef.current);
+    if (
+      markers.length > 0 &&
+      markers[markers.length - 1].sourceLine < view.state.doc.lines
+    ) {
+      markers.push({
+        sourceLine: view.state.doc.lines,
+        offsetTop: preview.scrollHeight,
+      });
+    }
+    const markerCenter = interpolatePreviewOffset(markers, activationLine);
+    const editorCenterProgress = clamp(
+      (editor.scrollTop + editor.clientHeight / 2) /
+        Math.max(editor.scrollHeight, 1),
+      0,
+      1,
+    );
+    const fallbackCenter = editorCenterProgress * preview.scrollHeight;
+    scrollingSourceRef.current = "editor";
+    preview.scrollTop = clamp(
+      (markerCenter ?? fallbackCenter) - preview.clientHeight / 2,
+      0,
+      previewMax,
+    );
+    releaseAfterSettledFrames();
+  }, [
+    editorViewRef,
+    enabledRef,
+    headingMarkersRef,
+    loadingRef,
+    previewRef,
+    releaseAfterSettledFrames,
+    scrollingSourceRef,
+    updateActiveTocId,
+    viewModeRef,
+  ]);
+}
+
+function useDelegatedPreviewWheel(opts: {
+  editorViewRef: React.RefObject<EditorView | null>;
+  loadingRef: React.RefObject<boolean>;
+  enabledRef: React.RefObject<boolean>;
+  viewModeRef: React.RefObject<ViewMode>;
+  handleEditorScroll: () => void;
+}) {
+  const {
+    editorViewRef,
+    loadingRef,
+    enabledRef,
+    viewModeRef,
+    handleEditorScroll,
+  } = opts;
+  return useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      if (
+        event.ctrlKey ||
+        loadingRef.current ||
+        !enabledRef.current ||
+        viewModeRef.current !== "split"
+      ) {
+        return;
+      }
+      const view = editorViewRef.current;
+      if (!view) return;
+      const delta = wheelDeltaToPixels(
+        event.deltaY,
+        event.deltaMode,
+        view.scrollDOM.clientHeight,
+      );
+      if (delta === 0) return;
+      event.preventDefault();
+      const editorMax = Math.max(
+        0,
+        view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight,
+      );
+      view.scrollDOM.scrollTop = clamp(
+        view.scrollDOM.scrollTop + delta,
+        0,
+        editorMax,
+      );
+      handleEditorScroll();
+    },
+    [editorViewRef, enabledRef, handleEditorScroll, loadingRef, viewModeRef],
+  );
 }
 
 export function useScrollSync(opts: {
@@ -120,6 +252,7 @@ export function useScrollSync(opts: {
   content?: string;
   outline?: readonly OutlineEntry[];
   scopeKey?: string;
+  viewMode?: ViewMode;
   editorViewRef: React.RefObject<EditorView | null>;
 }) {
   const {
@@ -128,6 +261,7 @@ export function useScrollSync(opts: {
     content = "",
     outline,
     scopeKey = "",
+    viewMode = "split",
     editorViewRef,
   } = opts;
   const previewRef = useRef<HTMLDivElement>(null);
@@ -148,6 +282,7 @@ export function useScrollSync(opts: {
   const enabledRef = useRef(enabled);
   const loadingRef = useRef(loading);
   const scopeKeyRef = useRef(scopeKey);
+  const viewModeRef = useRef(viewMode);
   const [activeTocObservation, setActiveTocObservation] = useState({
     scopeKey,
     id: null as string | null,
@@ -158,7 +293,8 @@ export function useScrollSync(opts: {
     enabledRef.current = enabled;
     loadingRef.current = loading;
     scopeKeyRef.current = scopeKey;
-  }, [enabled, headingMarkers, loading, scopeKey]);
+    viewModeRef.current = viewMode;
+  }, [enabled, headingMarkers, loading, scopeKey, viewMode]);
   useEffect(
     () => () => {
       if (frameRef.current !== null) {
@@ -189,8 +325,6 @@ export function useScrollSync(opts: {
       window.cancelAnimationFrame(releaseFrameRef.current);
     }
     releaseFrameRef.current = window.requestAnimationFrame(() => {
-      // CodeMirror applies scrollIntoView during a measured frame. Keep the
-      // originating pane authoritative until its delayed scroll event fires.
       releaseFrameRef.current = window.requestAnimationFrame(() => {
         releaseFrameRef.current = null;
         scrollingSource.current = null;
@@ -209,84 +343,67 @@ export function useScrollSync(opts: {
     scrollSyncTimerRef.current = frameRef.current;
   }, []);
 
+  const syncPreviewFromEditor = useEditorMasterSync({
+    editorViewRef, previewRef, headingMarkersRef, loadingRef, enabledRef,
+    viewModeRef, scrollingSource, updateActiveTocId,
+    releaseAfterSettledFrames,
+  });
+
   const handleEditorScroll = useCallback(() => {
     if (
       scrollingSource.current === "preview" ||
       loadingRef.current ||
       suppressionRef.current
-    )
+    ) {
       return;
-    schedule(() => {
-      const view = editorViewRef.current;
-      if (!view) return;
-      const activationBlock = view.lineBlockAtHeight(
-        view.scrollDOM.scrollTop + view.scrollDOM.clientHeight / 2,
-      );
-      const activationLine = view.state.doc.lineAt(activationBlock.from).number;
-      updateActiveTocId(
-        activeHeadingForSourceLine(headingMarkersRef.current, activationLine),
-      );
-      if (!enabledRef.current) return;
-      const topBlock = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
-      const topVisibleLine = view.state.doc.lineAt(topBlock.from).number;
-      const preview = previewRef.current;
-      if (!preview) return;
-      const editorMax =
-        view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight;
-      const previewMax = Math.max(
-        0,
-        preview.scrollHeight - preview.clientHeight,
-      );
-      if (editorMax <= 0) return;
-      const markerTarget = interpolatePreviewOffset(
-        readMarkers(preview),
-        topVisibleLine,
-      );
-      const fallback = (view.scrollDOM.scrollTop / editorMax) * previewMax;
-      scrollingSource.current = "editor";
-      preview.scrollTop = clamp(markerTarget ?? fallback, 0, previewMax);
-      releaseAfterSettledFrames();
-    });
-  }, [editorViewRef, releaseAfterSettledFrames, schedule, updateActiveTocId]);
+    }
+    schedule(syncPreviewFromEditor);
+  }, [schedule, syncPreviewFromEditor]);
 
   const handlePreviewScroll = useCallback(() => {
     if (
       scrollingSource.current === "editor" ||
       loadingRef.current ||
       suppressionRef.current
-    )
+    ) {
       return;
+    }
     schedule(() => {
       const preview = previewRef.current;
       if (!preview) return;
-      updateActiveTocId(activeHeadingForPreview(preview));
-      if (!enabledRef.current) return;
-      const view = editorViewRef.current;
-      if (!view) return;
-      const sourceLine = nearestSourceLine(
-        readMarkers(preview),
-        preview.scrollTop,
-      );
-      scrollingSource.current = "preview";
-      if (sourceLine !== null && sourceLine <= view.state.doc.lines) {
-        view.dispatch({
-          effects: EditorView.scrollIntoView(
-            view.state.doc.line(sourceLine).from,
-            { y: "start" },
-          ),
-        });
-      } else {
-        const previewMax = preview.scrollHeight - preview.clientHeight;
-        const editorMax =
-          view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight;
-        if (previewMax > 0) {
-          view.scrollDOM.scrollTop =
-            (preview.scrollTop / previewMax) * editorMax;
-        }
+      if (enabledRef.current && viewModeRef.current === "split") {
+        syncPreviewFromEditor();
+        return;
       }
-      releaseAfterSettledFrames();
+      updateActiveTocId(activeHeadingForPreview(preview));
     });
-  }, [editorViewRef, releaseAfterSettledFrames, schedule, updateActiveTocId]);
+  }, [schedule, syncPreviewFromEditor, updateActiveTocId]);
+
+  const handlePreviewWheel = useDelegatedPreviewWheel({
+    editorViewRef, loadingRef, enabledRef, viewModeRef, handleEditorScroll,
+  });
+
+  useEffect(() => {
+    if (
+      loading ||
+      !enabled ||
+      viewMode !== "split" ||
+      typeof ResizeObserver === "undefined"
+    ) {
+      return;
+    }
+    const preview = previewRef.current;
+    const contentRoot = preview?.querySelector<HTMLElement>(
+      "[data-preview-scroll-content]",
+    );
+    if (!preview || !contentRoot) return;
+    const observer = new ResizeObserver(() => {
+      schedule(syncPreviewFromEditor);
+    });
+    observer.observe(contentRoot);
+    schedule(syncPreviewFromEditor);
+    return () => observer.disconnect();
+  }, [enabled, headingMarkers, loading, schedule, scopeKey, syncPreviewFromEditor, viewMode]);
 
   const navigation = useOutlineNavigation({
     editorViewRef,
@@ -294,6 +411,7 @@ export function useScrollSync(opts: {
     suppressionRef,
     scrollingSource,
     updateActiveTocId,
+    handleEditorScroll,
     handlePreviewScroll,
     releaseAfterSettledFrames,
   });
@@ -311,6 +429,7 @@ export function useScrollSync(opts: {
     suppressNextSync,
     handleEditorScroll,
     handlePreviewScroll,
+    handlePreviewWheel,
     ...navigation,
     activeTocId,
   };

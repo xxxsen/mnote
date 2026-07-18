@@ -10,6 +10,7 @@ type NavigationRefs = {
 
 type UseOutlineNavigationOptions = NavigationRefs & {
   updateActiveTocId: (id: string | null) => void;
+  handleEditorScroll: () => void;
   handlePreviewScroll: () => void;
   releaseAfterSettledFrames: () => void;
 };
@@ -32,6 +33,7 @@ export function useOutlineNavigation(options: UseOutlineNavigationOptions) {
     suppressionRef,
     scrollingSource,
     updateActiveTocId,
+    handleEditorScroll,
     handlePreviewScroll,
     releaseAfterSettledFrames,
   } = options;
@@ -56,6 +58,9 @@ export function useOutlineNavigation(options: UseOutlineNavigationOptions) {
       ) {
         return false;
       }
+      if (navigationFrameRef.current !== null) {
+        window.cancelAnimationFrame(navigationFrameRef.current);
+      }
       suppressionRef.current = true;
       updateActiveTocId(id);
       view.dispatch({
@@ -65,9 +70,21 @@ export function useOutlineNavigation(options: UseOutlineNavigationOptions) {
         ),
       });
       releaseAfterSettledFrames();
+      navigationFrameRef.current = window.requestAnimationFrame(() => {
+        navigationFrameRef.current = window.requestAnimationFrame(() => {
+          navigationFrameRef.current = null;
+          handleEditorScroll();
+        });
+      });
       return true;
     },
-    [editorViewRef, releaseAfterSettledFrames, suppressionRef, updateActiveTocId],
+    [
+      editorViewRef,
+      handleEditorScroll,
+      releaseAfterSettledFrames,
+      suppressionRef,
+      updateActiveTocId,
+    ],
   );
 
   const scrollPreviewToHeading = useCallback(

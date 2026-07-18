@@ -207,7 +207,10 @@ function OutlineContent(props: {
         onSelect={(entry) => {
           const effectiveMode =
             isDesktop || p.viewMode === "preview" ? p.viewMode : "edit";
-          if (effectiveMode === "edit") {
+          if (
+            effectiveMode === "edit" ||
+            (effectiveMode === "split" && p.scrollSyncEnabled)
+          ) {
             p.scrollSync.scrollEditorToSourceLine(entry.sourceLine, entry.id);
           } else {
             p.scrollSync.scrollPreviewToHeading(entry.id);

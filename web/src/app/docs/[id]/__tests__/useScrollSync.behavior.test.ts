@@ -40,6 +40,7 @@ describe("useScrollSync behavior", () => {
       content?: string;
       topLine?: number;
       middleLine?: number;
+      viewMode?: "edit" | "split" | "preview";
     } = {},
   ) {
     const scrollDOM = {
@@ -66,13 +67,20 @@ describe("useScrollSync behavior", () => {
       dispatch,
     } as unknown as EditorView;
     const editorViewRef = { current: view };
+    const outline = [
+      { level: 1 as const, text: "Intro", id: "intro", sourceLine: 10 },
+      { level: 2 as const, text: "Details", id: "details", sourceLine: 20 },
+      { level: 2 as const, text: "Later", id: "later", sourceLine: 30 },
+    ];
     const hook = renderHook(
       ({ scopeKey, content }) =>
         useScrollSync({
           loading: false,
           enabled,
           content,
+          outline,
           scopeKey,
+          viewMode: options.viewMode ?? "split",
           editorViewRef,
         }),
       {
@@ -89,26 +97,41 @@ describe("useScrollSync behavior", () => {
       scrollHeight: { configurable: true, value: 1000 },
       clientHeight: { configurable: true, value: 200 },
     });
-    for (const [line, top] of [
-      [10, 100],
-      [30, 500],
+    vi.spyOn(preview, "getBoundingClientRect").mockReturnValue({
+      top: 0,
+    } as DOMRect);
+    const contentRoot = document.createElement("div");
+    contentRoot.dataset.previewScrollContent = "";
+    preview.appendChild(contentRoot);
+    const markersByID = new Map<string, HTMLElement>();
+    for (const [line, top, id] of [
+      [10, 100, "intro"],
+      [20, 300, "details"],
+      [30, 500, "later"],
     ] as const) {
       const marker = document.createElement("h2");
       marker.dataset.sourceLine = String(line);
-      marker.id = line === 10 ? "intro" : "details";
-      Object.defineProperty(marker, "offsetTop", {
-        configurable: true,
-        value: top,
-      });
-      preview.appendChild(marker);
+      marker.id = id;
+      vi.spyOn(marker, "getBoundingClientRect").mockImplementation(
+        () => ({ top: top - preview.scrollTop }) as DOMRect,
+      );
+      markersByID.set(id, marker);
+      contentRoot.appendChild(marker);
     }
     act(() => {
       hook.result.current.previewRef.current = preview;
     });
-    return { ...hook, preview, dispatch, lineBlockAtHeight };
+    return {
+      ...hook,
+      preview,
+      dispatch,
+      lineBlockAtHeight,
+      markersByID,
+      scrollDOM,
+    };
   }
 
-  it("coalesces editor scrolls into one frame and interpolates source markers", () => {
+  it("coalesces editor scrolls and aligns the same source line at both midpoints", () => {
     const harness = setup();
 
     act(() => {
@@ -119,10 +142,10 @@ describe("useScrollSync behavior", () => {
     expect(frames.filter((frame) => frame.cancelled)).toHaveLength(1);
 
     act(runNextFrame);
-    expect(harness.preview.scrollTop).toBe(300);
+    expect(harness.preview.scrollTop).toBe(200);
   });
 
-  it("uses the editor midline for Outline while preserving top-line preview sync", () => {
+  it("uses the editor midline for both Outline and preview synchronization", () => {
     const content = [
       "# Intro",
       ...Array.from({ length: 13 }, () => ""),
@@ -139,13 +162,12 @@ describe("useScrollSync behavior", () => {
     act(() => harness.result.current.handleEditorScroll());
     act(runNextFrame);
 
-    expect(harness.lineBlockAtHeight).toHaveBeenNthCalledWith(1, 300);
-    expect(harness.lineBlockAtHeight).toHaveBeenNthCalledWith(2, 200);
+    expect(harness.lineBlockAtHeight).toHaveBeenCalledWith(300);
     expect(harness.result.current.activeTocId).toBe("later");
-    expect(harness.preview.scrollTop).toBe(300);
+    expect(harness.preview.scrollTop).toBe(400);
   });
 
-  it("maps preview markers back to the editor and supports one-shot suppression", () => {
+  it("re-aligns direct preview scrolling from the editor without dispatching", () => {
     const harness = setup();
     harness.preview.scrollTop = 480;
     const resume = harness.result.current.suppressNextSync();
@@ -158,27 +180,71 @@ describe("useScrollSync behavior", () => {
       harness.result.current.handlePreviewScroll();
     });
     act(runNextFrame);
-    expect(harness.dispatch).toHaveBeenCalledTimes(1);
+
+    expect(harness.preview.scrollTop).toBe(200);
+    expect(harness.dispatch).not.toHaveBeenCalled();
   });
 
-  it("keeps preview scrolling authoritative while CodeMirror settles its delayed scroll", () => {
+  it("delegates preview wheel movement to the editor in synchronized split mode", () => {
     const harness = setup();
-    harness.preview.scrollTop = 480;
+    const preventDefault = vi.fn();
 
-    act(() => harness.result.current.handlePreviewScroll());
+    act(() => {
+      harness.result.current.handlePreviewWheel({
+        ctrlKey: false,
+        deltaY: 120,
+        deltaMode: 0,
+        preventDefault,
+      } as unknown as React.WheelEvent<HTMLDivElement>);
+    });
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(harness.scrollDOM.scrollTop).toBe(320);
+    expect(harness.dispatch).not.toHaveBeenCalled();
     act(runNextFrame);
-    expect(harness.dispatch).toHaveBeenCalledTimes(1);
-    expect(harness.result.current.scrollingSource.current).toBe("preview");
+    expect(harness.preview.scrollTop).toBe(200);
+  });
 
+  it("re-aligns the preview after Mermaid or media changes its layout", () => {
+    let resizeCallback: ResizeObserverCallback | null = null;
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          resizeCallback = callback;
+        }
+        observe = observe;
+        unobserve = vi.fn();
+        disconnect = disconnect;
+      },
+    );
+    const harness = setup();
+
+    harness.rerender({
+      scopeKey: "doc-layout-change",
+      content: "# Intro\n\n## Details",
+    });
+    expect(observe).toHaveBeenCalledWith(
+      harness.preview.querySelector("[data-preview-scroll-content]"),
+    );
     act(runNextFrame);
-    expect(harness.result.current.scrollingSource.current).toBe("preview");
-
-    act(() => harness.result.current.handleEditorScroll());
-    expect(harness.preview.scrollTop).toBe(480);
-
+    expect(harness.preview.scrollTop).toBe(200);
     act(runNextFrame);
-    expect(harness.result.current.scrollingSource.current).toBeNull();
-    expect(harness.preview.scrollTop).toBe(480);
+    act(runNextFrame);
+
+    const details = harness.markersByID.get("details");
+    if (!details || !resizeCallback) throw new Error("resize fixture missing");
+    vi.mocked(details.getBoundingClientRect).mockImplementation(
+      () => ({ top: 500 - harness.preview.scrollTop }) as DOMRect,
+    );
+    act(() => resizeCallback?.([], {} as ResizeObserver));
+    act(runNextFrame);
+
+    expect(harness.preview.scrollTop).toBe(400);
+    expect(harness.scrollDOM.scrollTop).toBe(200);
+    expect(disconnect).not.toHaveBeenCalled();
   });
 
   it("resets reused heading ids across documents while keeping the editor listener stable", () => {
@@ -201,7 +267,7 @@ describe("useScrollSync behavior", () => {
     expect(harness.result.current.activeTocId).toBe("details");
   });
 
-  it("tracks the active section without synchronizing while synchronization is disabled", () => {
+  it("keeps preview independent when synchronization is disabled", () => {
     const harness = setup(false);
 
     act(() => harness.result.current.handleEditorScroll());
@@ -215,7 +281,19 @@ describe("useScrollSync behavior", () => {
     harness.preview.scrollTop = 480;
     act(() => harness.result.current.handlePreviewScroll());
     act(runNextFrame);
-    expect(harness.result.current.activeTocId).toBe("details");
+    expect(harness.result.current.activeTocId).toBe("later");
+    expect(harness.preview.scrollTop).toBe(480);
+    expect(harness.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("keeps pure preview mode independent even when synchronization is enabled", () => {
+    const harness = setup(true, { viewMode: "preview" });
+    harness.preview.scrollTop = 480;
+
+    act(() => harness.result.current.handlePreviewScroll());
+    act(runNextFrame);
+
+    expect(harness.preview.scrollTop).toBe(480);
     expect(harness.dispatch).not.toHaveBeenCalled();
   });
 

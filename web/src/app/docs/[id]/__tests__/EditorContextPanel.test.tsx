@@ -43,6 +43,7 @@ type HarnessProps = {
   docked: boolean;
   docId?: string;
   mode?: "edit" | "split" | "preview";
+  scrollSyncEnabled?: boolean;
   scrollEditor?: ReturnType<typeof vi.fn>;
   scrollPreview?: ReturnType<typeof vi.fn>;
   listVersions?: ReturnType<typeof vi.fn>;
@@ -53,6 +54,7 @@ function ContextHarness({
   docked,
   docId = "doc-a",
   mode = "edit",
+  scrollSyncEnabled = true,
   scrollEditor = vi.fn(),
   scrollPreview = vi.fn(),
   listVersions = vi.fn().mockResolvedValue([]),
@@ -64,6 +66,7 @@ function ContextHarness({
     contextRail,
     outline,
     viewMode: mode,
+    scrollSyncEnabled,
     scrollSync: {
       activeTocId: "intro",
       scrollEditorToSourceLine: scrollEditor,
@@ -187,13 +190,37 @@ describe("EditorContextPanel", () => {
     view.rerender(
       <ContextHarness
         docked
+        mode="split"
+        scrollEditor={scrollEditor}
+        scrollPreview={scrollPreview}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Deep section" }));
+    expect(scrollEditor).toHaveBeenLastCalledWith(12, "deep-section");
+    expect(scrollPreview).not.toHaveBeenCalled();
+
+    view.rerender(
+      <ContextHarness
+        docked
+        mode="split"
+        scrollSyncEnabled={false}
+        scrollEditor={scrollEditor}
+        scrollPreview={scrollPreview}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Deep section" }));
+    expect(scrollPreview).toHaveBeenLastCalledWith("deep-section");
+
+    view.rerender(
+      <ContextHarness
+        docked
         mode="preview"
         scrollEditor={scrollEditor}
         scrollPreview={scrollPreview}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Deep section" }));
-    expect(scrollPreview).toHaveBeenCalledWith("deep-section");
+    expect(scrollPreview).toHaveBeenLastCalledWith("deep-section");
   });
 
   it("switches the same rail between Outline and the original Details menu", () => {

@@ -98,7 +98,14 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const viewPrefs = useEditorViewMode();
   const outline = useMemo(() => buildOutline(ec.previewContent), [ec.previewContent]);
   const contextRail = useEditorContextRail(docId);
-  const scrollSync = useScrollSync({ loading, editorViewRef, enabled: viewPrefs.scrollSyncEnabled, outline, scopeKey: docId });
+  const scrollSync = useScrollSync({
+    loading,
+    editorViewRef,
+    enabled: viewPrefs.scrollSyncEnabled,
+    outline,
+    scopeKey: docId,
+    viewMode: viewPrefs.viewMode,
+  });
   const popover = usePopover({ handleFormat: ec.handleFormat });
   const filePaste = useFilePaste({ insertTextAtCursor: ec.insertTextAtCursor, replacePlaceholder: ec.replacePlaceholder, toast });
 

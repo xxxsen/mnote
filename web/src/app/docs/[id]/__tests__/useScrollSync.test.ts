@@ -6,7 +6,7 @@ import {
   activeHeadingForSourceLine,
   buildTocHeadingMarkers,
   interpolatePreviewOffset,
-  nearestSourceLine,
+  wheelDeltaToPixels,
   useScrollSync,
 } from "../hooks/useScrollSync";
 
@@ -28,13 +28,10 @@ describe("structured scroll sync", () => {
     expect(interpolatePreviewOffset([], 2)).toBeNull();
   });
 
-  it("finds the source marker nearest the preview top", () => {
-    expect(nearestSourceLine([
-      { sourceLine: 1, offsetTop: 0 },
-      { sourceLine: 20, offsetTop: 450 },
-      { sourceLine: 40, offsetTop: 900 },
-    ], 500)).toBe(20);
-    expect(nearestSourceLine([], 500)).toBeNull();
+  it("normalizes wheel deltas for pixel, line, and page modes", () => {
+    expect(wheelDeltaToPixels(12, 0, 600)).toBe(12);
+    expect(wheelDeltaToPixels(3, 1, 600)).toBe(48);
+    expect(wheelDeltaToPixels(1, 2, 600)).toBe(600);
   });
 
   it("builds stable duplicate heading ids with source lines", () => {
@@ -88,6 +85,7 @@ describe("structured scroll sync", () => {
     expect(result.current.activeTocId).toBe("intro");
     expect(result.current.handleEditorScroll).toBeTypeOf("function");
     expect(result.current.handlePreviewScroll).toBeTypeOf("function");
+    expect(result.current.handlePreviewWheel).toBeTypeOf("function");
     expect(result.current.suppressNextSync).toBeTypeOf("function");
     expect(() => result.current.suppressNextSync()).not.toThrow();
   });

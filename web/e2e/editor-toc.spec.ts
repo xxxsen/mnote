@@ -71,7 +71,7 @@ test("editor midline determines the active Outline section", async ({
   }
 });
 
-test("preview wheel scrolling does not snap back while scroll sync is enabled", async ({
+test("preview wheel delegates scrolling to the editor while sync is enabled", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
@@ -95,6 +95,9 @@ test("preview wheel scrolling does not snap back while scroll sync is enabled", 
       page.getByRole("button", { name: "Scroll sync on" }),
     ).toHaveAttribute("aria-pressed", "true");
 
+    const editorBeforeWheel = await editorScroller.evaluate(
+      (element) => element.scrollTop,
+    );
     await preview.hover();
     await page.mouse.wheel(0, 1400);
     await expect
@@ -102,11 +105,137 @@ test("preview wheel scrolling does not snap back while scroll sync is enabled", 
       .toBeGreaterThan(200);
     await expect
       .poll(() => editorScroller.evaluate((element) => element.scrollTop))
-      .toBeGreaterThan(0);
+      .toBeGreaterThan(editorBeforeWheel);
     await page.waitForTimeout(400);
     expect(await preview.evaluate((element) => element.scrollTop)).toBeGreaterThan(
       200,
     );
+  } finally {
+    await deleteDocument(page, token, document.id);
+  }
+});
+
+test("keeps a TOC document aligned when Mermaid changes preview height", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const token = await loginTestUser(page);
+  const sections = Array.from({ length: 5 }, (_, index) => {
+    const number = index + 1;
+    return [
+      `## Section ${number}`,
+      `Section ${number} body. ${"Long content. ".repeat(35)}`,
+      "```mermaid",
+      "flowchart TD",
+      `  S${number}[Section ${number}] --> T${number}[Rendered diagram]`,
+      "```",
+    ].join("\n\n");
+  });
+  const content = [
+    "# Mermaid alignment",
+    "[TOC]",
+    ...sections,
+    "## 6. API 形态",
+    "The target section must occupy the midpoint in both panes.",
+    "## 7. Final section",
+    "Trailing content. ".repeat(80),
+  ].join("\n\n");
+  const document = await createDocument(page, token, content);
+
+  try {
+    await openEditor(page, document.id);
+    await page.getByRole("button", { name: "Split view" }).click();
+    const editorScroller = page.locator(".cm-scroller");
+    const preview = page.getByRole("region", { name: "Markdown preview" });
+    const editorHeading = page
+      .locator(".cm-line")
+      .filter({ hasText: /^## 6\. API 形态$/ });
+    const previewHeading = preview.getByRole("heading", {
+      name: "6. API 形态",
+    });
+
+    await page
+      .locator('[data-outline-id]')
+      .filter({ hasText: "6. API 形态" })
+      .first()
+      .click();
+    await expect(editorHeading).toBeVisible();
+    await preview.locator(".mermaid-container svg").first().waitFor({
+      state: "attached",
+      timeout: 15_000,
+    });
+    await page.waitForTimeout(200);
+    await editorScroller.evaluate((element) => {
+      const heading = Array.from(element.querySelectorAll(".cm-line")).find(
+        (line) => line.textContent === "## 6. API 形态",
+      );
+      if (!heading) throw new Error("target editor heading missing");
+      const headingRect = heading.getBoundingClientRect();
+      const editorRect = element.getBoundingClientRect();
+      element.scrollTop +=
+        headingRect.top - editorRect.top - element.clientHeight / 2;
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+
+    await expect
+      .poll(async () => {
+        const headingBox = await previewHeading.boundingBox();
+        const previewBox = await preview.boundingBox();
+        if (!headingBox || !previewBox) return -1;
+        return (headingBox.y - previewBox.y) / previewBox.height;
+      })
+      .toBeGreaterThan(0.35);
+    await expect
+      .poll(async () => {
+        const headingBox = await previewHeading.boundingBox();
+        const previewBox = await preview.boundingBox();
+        if (!headingBox || !previewBox) return 1;
+        return (headingBox.y - previewBox.y) / previewBox.height;
+      })
+      .toBeLessThan(0.65);
+
+    const before = await page.evaluate(() => {
+      const editor = globalThis.document.querySelector<HTMLElement>(".cm-scroller");
+      const preview = globalThis.document.querySelector<HTMLElement>(
+        '[aria-label="Markdown preview"]',
+      );
+      const heading = Array.from(
+        preview?.querySelectorAll<HTMLElement>("h2") ?? [],
+      ).find((element) => element.textContent === "6. API 形态");
+      if (!editor || !preview || !heading) throw new Error("pane missing");
+      return {
+        editorTop: editor.scrollTop,
+        previewTop: preview.scrollTop,
+        headingY:
+          heading.getBoundingClientRect().top -
+          preview.getBoundingClientRect().top,
+      };
+    });
+    await preview.locator(".mermaid-container").first().evaluate((element) => {
+      element.style.height =
+        String(element.getBoundingClientRect().height + 400) + "px";
+    });
+    await expect
+      .poll(() => preview.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(before.previewTop + 300);
+    const after = await page.evaluate(() => {
+      const editor = globalThis.document.querySelector<HTMLElement>(".cm-scroller");
+      const preview = globalThis.document.querySelector<HTMLElement>(
+        '[aria-label="Markdown preview"]',
+      );
+      const heading = Array.from(
+        preview?.querySelectorAll<HTMLElement>("h2") ?? [],
+      ).find((element) => element.textContent === "6. API 形态");
+      if (!editor || !preview || !heading) throw new Error("pane missing");
+      return {
+        editorTop: editor.scrollTop,
+        headingY:
+          heading.getBoundingClientRect().top -
+          preview.getBoundingClientRect().top,
+      };
+    });
+    expect(after.editorTop).toBe(before.editorTop);
+    expect(Math.abs(after.headingY - before.headingY)).toBeLessThan(8);
   } finally {
     await deleteDocument(page, token, document.id);
   }
@@ -137,7 +266,7 @@ test("tracks the active TOC section from editor and preview scrolling", async ({
     const currentLink = page.locator(
       '[data-outline-id][aria-current="location"]',
     );
-    await expect(currentLink).toHaveText("Intro");
+    await expect(currentLink).toHaveText("Section 1");
 
     await page.getByRole("button", { name: "Scroll sync on" }).click();
     await expect(

@@ -174,23 +174,25 @@ Markdown 命令实现集中在 `commands/markdown-commands.ts`。工具栏和斜
 - React 派生视图通过 transition 更新；
 - 更新超过 250ms 时，预览顶部显示非遮挡式进度提示。
 
-Markdown 预览的 `h1-h6`、`p`、`li`、`pre`、`blockquote`、`table` 和 `hr` 带 `data-source-line`。
+Markdown 预览的 `h1-h6`、`p`、`li`、`pre`、`blockquote`、`table` 和 `hr` 带 `data-source-line`，用于渲染诊断和其他源码关联能力。滚动同步不直接依赖这些属性：`[toc]` 展开、提示块转换等预处理会改变传给 Markdown AST 的行号，因此同步锚点必须使用原始正文派生的 Outline 行号。
 
-滚动同步默认开启，可由用户关闭：
+滚动同步默认开启，可由用户关闭。同步开启的 Split 模式采用编辑器单一主进度模型：
 
-- Editor → Preview：按顶部可见源码行在相邻 source marker 之间插值；没有 marker 才回退总高度比例。
-- Preview → Editor：选择最接近预览顶部的 marker，并用 `EditorView.scrollIntoView` 定位源码行。
-- 写入通过 `requestAnimationFrame` 合并，每帧最多一次。
-- source lock 在程序滚动后至少保持两个 animation frame，以覆盖 CodeMirror 的延迟测量和滚动事件；锁定期间目标窗格的程序化滚动不得反向改写用户正在操作的源窗格。连续滚动会刷新释放时机。
-- 点击目录时抑制双向同步，等待平滑滚动通过 rAF 判定到达目标后，再同步编辑器。
+- 编辑区垂直中线对应的源码行同时决定当前 Outline 章节和预览目标，不再分别使用“编辑区顶部”和“预览区顶部”两个基准。
+- `buildOutline` 从原始 Markdown 派生稳定 `id` 与 `sourceLine`；同步时按 `id` 找到实际预览标题 DOM，以相邻标题线性插值，并把目标位置对齐到预览区垂直中线。末节补充文档末尾锚点；无可用标题时回退为两个窗格的归一化中线进度。
+- 鼠标位于右侧预览区时，垂直滚轮事件阻止预览器原生滚动，并把 pixel、line 或 page 模式的增量换算后施加到 CodeMirror 滚动容器；随后仍由编辑器驱动预览。`Ctrl+滚轮` 保留浏览器缩放语义。
+- 同步开启时直接拖动预览滚动条不会反向移动编辑器，预览会按编辑器当前中线重新对齐，避免两个进度源互相拉扯。
+- 预览正文外层由 `ResizeObserver` 观察。Mermaid 异步渲染、图片或其他媒体改变预览高度后，在编辑器位置不变的前提下重新计算预览位置。
+- 高频事件使用单个 `requestAnimationFrame` 合并；程序化预览滚动的 source lock 至少保持两个 animation frame，覆盖浏览器延迟滚动事件并防止回环。
+- Preview 模式始终独立滚动。Split 模式关闭同步后也允许预览独立滚动；这两种情况下预览滚动只更新 Outline，不移动隐藏或可见的编辑器。
 
 文档上下文栏的 Outline 同时维护当前章节，不依赖滚动同步开关，也不依赖正文是否包含 `[toc]`：
 
-- `buildOutline` 从 Markdown 一次派生 `level`、可见标题文本、稳定 `id` 和 `sourceLine`；预览锚点、内联目录、右侧 Outline、源码定位和滚动同步复用该结构。
+- `buildOutline` 一次派生 `level`、可见标题文本、稳定 `id` 和原始 `sourceLine`；内联目录、右侧 Outline、源码定位和 Split 同步复用该结构。
 - `[toc]` / `[TOC]` 只控制正文中是否插入内联目录。只要正文含标题，右侧 Outline 默认展示；无标题时仍保留整栏 Outline 并显示空状态。
-- Edit 模式点击 Outline 时使用 `EditorView.scrollIntoView` 定位 `sourceLine`，不移动光标；Preview 和 Split 模式定位预览标题 id。
-- Split 同步开启时预览定位后编辑器跟随；同步关闭时只移动预览器。
-- 编辑区滚动时，以编辑区垂直中线对应源码行之前最近的 Markdown 标题作为当前章节；该中线只影响 Outline 激活，Editor → Preview 仍按顶部可见源码行同步。预览区滚动时使用顶部下方 32～96px 的激活线，滚动到底部时选择最后一个标题。
+- Edit 模式以及同步开启的 Split 模式点击 Outline 时，使用 `EditorView.scrollIntoView` 定位原始 `sourceLine`，不移动光标；CodeMirror 完成测量后再从编辑器中线同步预览。
+- Preview 模式以及同步关闭的 Split 模式点击 Outline 时，只定位预览标题 id，不移动编辑器。
+- 编辑器作为主进度时，以编辑区垂直中线对应源码行之前最近的 Markdown 标题作为当前章节。独立预览滚动时使用顶部下方 32～96px 的激活线，滚动到底部时选择最后一个标题。
 - 重复标题按出现顺序追加稳定序号。当前项使用 `aria-current="location"`；仅当当前项离开 Outline 自身可视区域时，才最小幅度滚动右栏。
 
 ## 10. 响应式布局
@@ -262,6 +264,6 @@ Slash/Wikilink 菜单使用 listbox/option 语义，编辑器暴露 `aria-contro
 - 网络错误、Retry 和恢复在线；
 - 桌面三模式、420px 分栏边界、默认 Outline、Outline/Details 原位切换、常驻/折叠右栏、断点切换和移动 drawer；
 - 标题/列表互转、选区边界、撤销重做、输入法和双链菜单；
-- source-line 双向滚动、编辑区中线切章、预览区真实滚轮不回顶、关闭同步、无 `[toc]` 的默认 Outline、三种模式定位、当前章节高亮和 Outline 自身跟随；
+- Outline 标题锚点单向同步、编辑区中线对齐、预览区滚轮委托、Mermaid/媒体布局变化后重新校准、关闭同步、无 `[toc]` 的默认 Outline、三种模式定位、当前章节高亮和 Outline 自身跟随；
 - 全键盘 Dialog/Menu 流程、焦点恢复和控件可访问名称；
 - 大正文连续输入期间不丢字符，预览最终收敛。
