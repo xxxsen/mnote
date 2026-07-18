@@ -169,8 +169,8 @@ OAuth 回调地址：
 
 ### 快速启动
 
-首次安装前端依赖后，`make dev` 会并行启动 Go 后端、Next.js 前端和一个独立的
-pgvector 开发数据库：
+首次安装前端依赖后，`make dev` 会启动一个独立的 pgvector 开发数据库和 Go 后端，
+确认后端端口就绪后再启动 Next.js 前端：
 
 ```bash
 make web-install

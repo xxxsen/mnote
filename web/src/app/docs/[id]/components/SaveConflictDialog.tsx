@@ -23,13 +23,15 @@ type Props = {
   onDownloadMine: () => void;
 };
 
+export const SAVE_CONFLICT_DIALOG_TITLE = "This document changed elsewhere";
+
 export function SaveConflictDialog(props: Props) {
   const [mobileVersion, setMobileVersion] = useState<"local" | "server">("local");
   const canResolve = props.serverContent !== null && !props.loading;
   return (
     <Dialog
       open={props.open}
-      title="This document changed elsewhere"
+      title={SAVE_CONFLICT_DIALOG_TITLE}
       description="Your draft is safe. Compare both versions and explicitly choose what should happen."
       variant="modal"
       size="xl"

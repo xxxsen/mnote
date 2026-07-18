@@ -68,6 +68,28 @@ record_pid() {
   pids+=("$pid")
 }
 
+wait_for_backend() {
+  local pid="$1"
+  local attempt
+
+  echo "[mnote] waiting for backend readiness on :$BACKEND_PORT"
+  for ((attempt = 1; attempt <= 120; attempt++)); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "[mnote] backend exited before becoming ready" >&2
+      wait "$pid" 2>/dev/null || true
+      exit 1
+    fi
+    if (exec 3<>"/dev/tcp/127.0.0.1/$BACKEND_PORT") 2>/dev/null; then
+      echo "[mnote] backend is ready on :$BACKEND_PORT"
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "[mnote] backend did not become ready on :$BACKEND_PORT" >&2
+  exit 1
+}
+
 kill_tree() {
   local pid="$1"
   local child
@@ -241,7 +263,9 @@ echo "[mnote] starting backend on :$BACKEND_PORT with config=$CONFIG_PATH"
   cd "$ROOT"
   go run ./cmd/mnote run --config="$CONFIG_PATH"
 ) &
-record_pid "$!" "backend"
+backend_pid="$!"
+record_pid "$backend_pid" "backend"
+wait_for_backend "$backend_pid"
 
 echo "[mnote] starting web on :$WEB_PORT with API=$API_BASE"
 (

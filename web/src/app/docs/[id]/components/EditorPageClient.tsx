@@ -36,7 +36,10 @@ import { useTagState } from "../hooks/useTagState";
 import { useFilePaste } from "../hooks/useFilePaste";
 import { EditorShell } from "./EditorShell";
 import { DraftRecoveryDialog } from "./DraftRecoveryDialog";
-import { SaveConflictDialog } from "./SaveConflictDialog";
+import {
+  SAVE_CONFLICT_DIALOG_TITLE,
+  SaveConflictDialog,
+} from "./SaveConflictDialog";
 
 type EditorPageClientProps = { docId: string };
 
@@ -155,7 +158,11 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   });
 
   const handleResolveConflict = useCallback(() => {
-    document.querySelector<HTMLElement>('[role="dialog"][data-dialog-title="Resolve save conflict"]')?.focus();
+    document
+      .querySelector<HTMLElement>(
+        `[role="dialog"][data-dialog-title="${SAVE_CONFLICT_DIALOG_TITLE}"]`,
+      )
+      ?.focus();
   }, []);
 
   const onCreateEditor = useEditorDomBindings({

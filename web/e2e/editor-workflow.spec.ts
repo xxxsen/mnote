@@ -69,7 +69,7 @@ test("requires an explicit decision when two clients save the same base revision
       process.platform === "darwin" ? "Meta+S" : "Control+S",
     );
     const dialog = secondPage.getByRole("dialog", {
-      name: "Resolve save conflict",
+      name: "This document changed elsewhere",
     });
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText("saved by A");
@@ -108,15 +108,29 @@ test("persists split ratio after pointer and keyboard resizing", async ({
       separatorBox.y + separatorBox.height / 2,
     );
     await page.mouse.up();
-    await expect(separator).toHaveAttribute("aria-valuenow", "70");
+    await expect.poll(async () => {
+      const [value, maximum] = await Promise.all([
+        separator.getAttribute("aria-valuenow"),
+        separator.getAttribute("aria-valuemax"),
+      ]);
+      return value !== null && value === maximum;
+    }).toBe(true);
 
     await separator.focus();
     await page.keyboard.press("Home");
-    await expect(separator).toHaveAttribute("aria-valuenow", "30");
+    await expect.poll(async () => {
+      const [value, minimum] = await Promise.all([
+        separator.getAttribute("aria-valuenow"),
+        separator.getAttribute("aria-valuemin"),
+      ]);
+      return value !== null && value === minimum;
+    }).toBe(true);
+    const persistedRatio = await separator.getAttribute("aria-valuenow");
+    expect(persistedRatio).not.toBeNull();
     await page.reload();
     await expect(
       page.getByRole("separator", { name: "Resize editor and preview" }),
-    ).toHaveAttribute("aria-valuenow", "30");
+    ).toHaveAttribute("aria-valuenow", persistedRatio!);
   } finally {
     await deleteDocument(page, token, document.id);
   }

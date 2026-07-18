@@ -41,7 +41,9 @@ test("requires a decision for a legacy local draft, including empty content", as
     }, document.id);
 
     await page.goto(`/docs/${document.id}`);
-    const dialog = page.getByRole("dialog", { name: "Recover local draft" });
+    const dialog = page.getByRole("dialog", {
+      name: "A local draft needs your decision",
+    });
     await expect(dialog).toBeVisible();
     await expect(page.locator(".cm-content")).toHaveCount(0);
     await page.keyboard.press("Escape");
