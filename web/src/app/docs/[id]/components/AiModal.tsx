@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { Sparkles, RefreshCw, X } from "lucide-react";
 import MarkdownPreview from "@/components/markdown-preview";
 import type { Tag } from "@/types";
@@ -30,16 +31,12 @@ type AiModalProps = {
 
 export function AiModal(props: AiModalProps) {
   const { open, aiLoading, aiTitle, closeAiModal } = props;
-  if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[170] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={aiLoading ? undefined : closeAiModal} />
-      <div className="relative w-full max-w-5xl bg-background border border-border rounded-2xl shadow-2xl overflow-hidden">
+    <Dialog open={open} title={aiTitle || "AI assistant"} onClose={closeAiModal} className="max-w-5xl overflow-hidden">
         <AiModalHeader aiTitle={aiTitle} aiLoading={aiLoading} closeAiModal={closeAiModal} />
         <AiModalBody {...props} />
         <AiModalFooter {...props} />
-      </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -53,7 +50,7 @@ function AiModalHeader({ aiTitle, aiLoading, closeAiModal }: { aiTitle: string; 
           <div className="text-[11px] text-muted-foreground">{aiLoading ? "Generating..." : "Review before applying"}</div>
         </div>
       </div>
-      <button type="button" aria-label="Close" title="Close" className="text-muted-foreground hover:text-foreground" onClick={closeAiModal} disabled={aiLoading}><X className="h-4 w-4" /></button>
+      <button type="button" aria-label="Close" title="Close" className="text-muted-foreground hover:text-foreground" onClick={closeAiModal}><X className="h-4 w-4" /></button>
     </div>
   );
 }
@@ -94,7 +91,7 @@ function AiModalFooter(props: AiModalProps) {
   const { aiAction, aiLoading, aiResultText, aiSuggestedTags, closeAiModal, handleAiGenerate, handleApplyAiText, handleApplyAiTags, handleApplyAiSummary } = props;
   return (
     <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border">
-      <Button variant="outline" onClick={closeAiModal} disabled={aiLoading}>Cancel</Button>
+      <Button variant="outline" onClick={closeAiModal}>Cancel</Button>
       {aiAction === "generate" && !aiResultText && (<Button onClick={handleAiGenerate} disabled={aiLoading}>Generate</Button>)}
       {aiAction === "tags" && aiSuggestedTags.length > 0 && (<Button onClick={handleApplyAiTags} disabled={aiLoading}>Apply Tags</Button>)}
       {aiAction === "summary" && aiResultText && (<Button onClick={handleApplyAiSummary} disabled={aiLoading}>Use Summary</Button>)}

@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type { Document, Tag } from "@/types";
+import {
+  classifyStoredDraft,
+  type StoredEditorDraft,
+} from "../services/draft-storage";
 
 type DocumentDetail = {
   document: Document;
@@ -26,28 +30,14 @@ type UseEditorLifecycleOptions = {
     detail: DocumentDetail;
     hasDraftOverride: boolean;
   }) => void;
+  onRecoveryRequired?: (payload: {
+    draft: StoredEditorDraft;
+    detail: DocumentDetail;
+  }) => void;
   onLoadError: (err: unknown) => void;
-  // requestSave is invoked by the auto-save tick. The hook does not own
-  // the save protocol; useEditorSaveQueue handles single-flight execution
-  // and we just schedule fresh snapshots through this callback.
   requestSave: (snapshot: { title: string; content: string }) => void;
+  managePersistence?: boolean;
 };
-
-function loadDraft(id: string, serverContent: string): { initialContent: string; hasDraftOverride: boolean } {
-  /* v8 ignore next -- SSR guard untestable in jsdom */
-  if (typeof window === "undefined") return { initialContent: serverContent, hasDraftOverride: false };
-  const draft = window.localStorage.getItem(`mnote:draft:${id}`);
-  if (!draft) return { initialContent: serverContent, hasDraftOverride: false };
-  try {
-    const parsed = JSON.parse(draft) as { content?: string };
-    if (parsed.content && parsed.content !== serverContent) {
-      return { initialContent: parsed.content, hasDraftOverride: true };
-    }
-  } catch {
-    window.localStorage.removeItem(`mnote:draft:${id}`);
-  }
-  return { initialContent: serverContent, hasDraftOverride: false };
-}
 
 export function useEditorLifecycle({
   id,
@@ -58,29 +48,52 @@ export function useEditorLifecycle({
   extractTitleFromContent,
   onLoadingChange,
   onLoaded,
+  onRecoveryRequired,
   onLoadError,
   requestSave,
+  managePersistence = true,
 }: UseEditorLifecycleOptions) {
   const onLoadingChangeRef = useRef(onLoadingChange);
   const onLoadedRef = useRef(onLoaded);
+  const onRecoveryRequiredRef = useRef(onRecoveryRequired);
   const onLoadErrorRef = useRef(onLoadError);
   const requestSaveRef = useRef(requestSave);
 
   useEffect(() => {
     onLoadingChangeRef.current = onLoadingChange;
     onLoadedRef.current = onLoaded;
+    onRecoveryRequiredRef.current = onRecoveryRequired;
     onLoadErrorRef.current = onLoadError;
     requestSaveRef.current = requestSave;
-  }, [onLoadError, onLoaded, onLoadingChange, requestSave]);
+  }, [onLoadError, onLoaded, onLoadingChange, onRecoveryRequired, requestSave]);
 
   const fetchDoc = useCallback(async () => {
     onLoadingChangeRef.current(true);
     try {
       const detail = await documentActions.getDocument();
-      const { initialContent, hasDraftOverride } = loadDraft(id, detail.document.content);
+      const serverContent = detail.document.content;
+      lastSavedContentRef.current = serverContent;
+      const classification = typeof window === "undefined"
+        ? { kind: "use_server" as const }
+        : classifyStoredDraft(window.localStorage, {
+          docId: id,
+          content: serverContent,
+          contentRevision: detail.document.content_revision || 1,
+          contentHash: detail.document.content_hash || "",
+        });
 
+      if (classification.kind === "needs_recovery" && onRecoveryRequiredRef.current) {
+        contentRef.current = serverContent;
+        onRecoveryRequiredRef.current({ draft: classification.draft, detail });
+        return;
+      }
+      const initialContent = classification.kind === "auto_recover"
+        ? classification.draft.content
+        : classification.kind === "needs_recovery"
+          ? classification.draft.content
+          : serverContent;
+      const hasDraftOverride = initialContent !== serverContent;
       contentRef.current = initialContent;
-      lastSavedContentRef.current = detail.document.content;
       onLoadedRef.current({ initialContent, detail, hasDraftOverride });
     } catch (err) {
       onLoadErrorRef.current(err);
@@ -92,50 +105,44 @@ export function useEditorLifecycle({
   const handleAutoSave = useCallback(() => {
     const latestContent = contentRef.current;
     if (latestContent === lastSavedContentRef.current) return;
-
     const derivedTitle = extractTitleFromContent(latestContent);
-    if (!derivedTitle) return;
-
-    // Hand the snapshot to the queue; the queue takes care of skipping when
-    // a save is already in flight and of preserving the local draft on
-    // failure (we deliberately do not touch localStorage here any more).
-    requestSaveRef.current({ title: derivedTitle, content: latestContent });
+    if (derivedTitle) requestSaveRef.current({ title: derivedTitle, content: latestContent });
   }, [contentRef, extractTitleFromContent, lastSavedContentRef]);
 
   useEffect(() => {
-    if (!id) return;
-    void fetchDoc();
+    if (id) void fetchDoc();
   }, [fetchDoc, id]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      handleAutoSave();
-    }, 10000);
+    if (!managePersistence) return;
+    const interval = window.setInterval(handleAutoSave, 10000);
     return () => window.clearInterval(interval);
-  }, [handleAutoSave]);
+  }, [handleAutoSave, managePersistence]);
 
   useEffect(() => {
-    /* v8 ignore next -- SSR guard untestable in jsdom */
-    if (typeof window === "undefined") return;
+    if (!managePersistence || typeof window === "undefined") return;
     const timer = window.setTimeout(() => {
       if (!hasUnsavedChanges) {
         window.localStorage.removeItem(`mnote:draft:${id}`);
         return;
       }
-      const payload = JSON.stringify({ content: contentRef.current, updatedAt: Date.now() });
-      window.localStorage.setItem(`mnote:draft:${id}`, payload);
+      window.localStorage.setItem(
+        `mnote:draft:${id}`,
+        JSON.stringify({ content: contentRef.current, updatedAt: Date.now() }),
+      );
     }, 400);
-
     return () => window.clearTimeout(timer);
-  }, [contentRef, hasUnsavedChanges, id]);
+  }, [contentRef, hasUnsavedChanges, id, managePersistence]);
 
   useEffect(() => {
+    if (!managePersistence) return;
     return () => {
-      /* v8 ignore next -- SSR guard untestable in jsdom */
       if (typeof window !== "undefined" && hasUnsavedChanges) {
-        const payload = JSON.stringify({ content: contentRef.current, updatedAt: Date.now() });
-        window.localStorage.setItem(`mnote:draft:${id}`, payload);
+        window.localStorage.setItem(
+          `mnote:draft:${id}`,
+          JSON.stringify({ content: contentRef.current, updatedAt: Date.now() }),
+        );
       }
     };
-  }, [contentRef, hasUnsavedChanges, id]);
+  }, [contentRef, hasUnsavedChanges, id, managePersistence]);
 }

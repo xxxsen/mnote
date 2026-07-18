@@ -22,10 +22,10 @@ describe("docEditorService", () => {
 
   it("saveDocument sends PUT with payload including save_seq", async () => {
     mockApiFetch.mockResolvedValue({ id: "d1", accepted: true, content_revision: 4, version: 4, content_hash: "h", content_mtime: 1, mtime: 1 });
-    const result = await docEditorService.saveDocument("d1", { title: "New", content: "body", save_seq: 4 });
+    const result = await docEditorService.saveDocument("d1", { title: "New", content: "body", base_revision: 3, save_seq: 4 });
     expect(mockApiFetch).toHaveBeenCalledWith("/documents/d1", {
       method: "PUT",
-      body: JSON.stringify({ title: "New", content: "body", save_seq: 4 }),
+      body: JSON.stringify({ title: "New", content: "body", base_revision: 3, save_seq: 4 }),
     });
     expect(result.content_revision).toBe(4);
     expect(result.accepted).toBe(true);

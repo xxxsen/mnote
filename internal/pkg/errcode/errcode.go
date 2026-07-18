@@ -17,3 +17,5 @@ const (
 	ErrUploadFailed
 	ErrAIUnavailable
 )
+
+const ErrEditorClientUpgradeRequired uint32 = 10000015

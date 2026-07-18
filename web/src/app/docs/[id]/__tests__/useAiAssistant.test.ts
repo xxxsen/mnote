@@ -465,4 +465,19 @@ describe("useAiAssistant", () => {
     await act(async () => { await result.current.handleAiGenerate(); });
     expect(result.current.aiError).toBe("AI request failed");
   });
+
+  it("ignores a response from an AI request closed before a new session opens", async () => {
+    let resolveRequest!: (value: { text: string }) => void;
+    mockApiFetch.mockImplementation(() => new Promise((resolve) => { resolveRequest = resolve; }));
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    let pending!: Promise<void>;
+    act(() => { pending = result.current.handleAiPolish("old content"); });
+    expect(result.current.aiLoading).toBe(true);
+    act(() => { result.current.closeAiModal(); result.current.handleAiGenerateOpen(); });
+    await act(async () => { resolveRequest({ text: "stale result" }); await pending; });
+    expect(result.current.aiModalOpen).toBe(true);
+    expect(result.current.aiAction).toBe("generate");
+    expect(result.current.aiResultText).toBe("");
+    expect(result.current.aiLoading).toBe(false);
+  });
 });

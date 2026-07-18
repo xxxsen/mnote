@@ -87,16 +87,17 @@ func Normalize(err error) *AppError {
 }
 
 var (
-	ErrNotFound           = New(errcode.ErrNotFound, "not found")
-	ErrUnauthorized       = New(errcode.ErrUnauthorized, "unauthorized")
-	ErrForbidden          = New(errcode.ErrForbidden, "forbidden")
-	ErrInvalid            = New(errcode.ErrInvalid, "invalid request")
-	ErrConflict           = New(errcode.ErrConflict, "conflict")
-	ErrTooMany            = New(errcode.ErrTooMany, "too many requests")
-	ErrInternal           = New(errcode.ErrInternal, "internal error")
-	ErrImportTooManyNotes = New(errcode.ErrImportTooManyNotes, "too many notes")
-	ErrImportNoteTooLarge = New(errcode.ErrImportNoteTooLarge, "note too large")
-	ErrImportInvalidJSON  = New(errcode.ErrImportInvalidJSON, "invalid json")
+	ErrNotFound                    = New(errcode.ErrNotFound, "not found")
+	ErrUnauthorized                = New(errcode.ErrUnauthorized, "unauthorized")
+	ErrForbidden                   = New(errcode.ErrForbidden, "forbidden")
+	ErrInvalid                     = New(errcode.ErrInvalid, "invalid request")
+	ErrConflict                    = New(errcode.ErrConflict, "conflict")
+	ErrTooMany                     = New(errcode.ErrTooMany, "too many requests")
+	ErrInternal                    = New(errcode.ErrInternal, "internal error")
+	ErrImportTooManyNotes          = New(errcode.ErrImportTooManyNotes, "too many notes")
+	ErrImportNoteTooLarge          = New(errcode.ErrImportNoteTooLarge, "note too large")
+	ErrImportInvalidJSON           = New(errcode.ErrImportInvalidJSON, "invalid json")
+	ErrEditorClientUpgradeRequired = New(errcode.ErrEditorClientUpgradeRequired, "editor client update required")
 )
 
 func IsNotFound(err error) bool {

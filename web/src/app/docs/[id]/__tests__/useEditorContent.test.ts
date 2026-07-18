@@ -127,7 +127,7 @@ describe("useEditorContent", () => {
     const { result } = renderHook(() => useEditorContent(opts));
     act(() => { result.current.handleInsertTable(); });
     expect(opts.contentRef.current).toContain("Header 1");
-    expect(opts.contentRef.current).toContain("--------");
+    expect(opts.contentRef.current).toContain("| --- | --- |");
   });
 
   it("handleUndo and handleRedo don't crash without view", () => {
@@ -162,7 +162,7 @@ describe("useEditorContent", () => {
     expect(result.current.previewContent).toBe("word1 word2 word3");
     expect(result.current.wordCount).toBe(3);
     expect(result.current.charCount).toBe(17);
-    expect(result.current.hasUnsavedChanges).toBe(true);
+    expect(result.current.hasUnsavedChanges).toBe(false);
     vi.useRealTimers();
   });
 

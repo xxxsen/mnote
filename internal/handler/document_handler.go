@@ -26,10 +26,10 @@ type documentRequest struct {
 	Content string    `json:"content"`
 	TagIDs  *[]string `json:"tag_ids"`
 	Summary *string   `json:"summary"`
-	// SaveSeq is the client-side monotonic save sequence. PUT rejects
-	// requests that omit it because the server can no longer protect
-	// against lost updates without a sequence number.
-	SaveSeq *int64 `json:"save_seq,omitempty"`
+	// BaseRevision is the optimistic-lock precondition. SaveSeq is retained
+	// during rolling upgrades but does not decide conflicts on this HTTP path.
+	BaseRevision *int64 `json:"base_revision,omitempty"`
+	SaveSeq      *int64 `json:"save_seq,omitempty"`
 }
 
 type tagUpdateRequest struct {
@@ -279,6 +279,10 @@ func (h *DocumentHandler) Update(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalid, "title required")
 		return
 	}
+	if req.BaseRevision == nil || *req.BaseRevision <= 0 {
+		response.Error(c, errcode.ErrEditorClientUpgradeRequired, "editor client update required")
+		return
+	}
 	if req.SaveSeq == nil || *req.SaveSeq <= 0 {
 		response.Error(c, errcode.ErrInvalid, "save_seq required")
 		return
@@ -289,24 +293,24 @@ func (h *DocumentHandler) Update(c *gin.Context) {
 	}
 	result, err := h.documents.Save(c.Request.Context(), getUserID(c), c.Param("id"),
 		service.DocumentUpdateInput{
-			Title:   req.Title,
-			Content: req.Content,
-			TagIDs:  tagIDs,
-			Summary: req.Summary,
-			SaveSeq: *req.SaveSeq,
+			Title:        req.Title,
+			Content:      req.Content,
+			TagIDs:       tagIDs,
+			Summary:      req.Summary,
+			BaseRevision: *req.BaseRevision,
+			SaveSeq:      *req.SaveSeq,
 		},
 	)
 	if err != nil {
 		handleError(c, err)
 		return
 	}
-	// The response is intentionally a flat metadata payload — no document
-	// content snapshot is returned even on accepted=false. The client owns
-	// its in-progress draft and only needs to advance its save_seq to the
-	// post-call value to keep submitting fresh saves.
+	// The response is metadata-only. On conflict the client keeps its local
+	// draft and fetches the current server body through the read endpoint.
 	response.Success(c, gin.H{
 		"id":               result.ID,
 		"accepted":         result.Accepted,
+		"reason":           result.Reason,
 		"version":          result.ContentRevision,
 		"content_revision": result.ContentRevision,
 		"content_hash":     result.ContentHash,

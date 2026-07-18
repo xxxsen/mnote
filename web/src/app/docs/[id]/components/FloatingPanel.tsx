@@ -28,7 +28,7 @@ type FloatingPanelProps = {
     positionByID: Record<string, { x: number; y: number }>;
   };
   previewRef: React.RefObject<HTMLDivElement | null>;
-  forcePreviewSyncRef: React.RefObject<boolean>;
+  suppressNextSync: () => () => void;
   handlePreviewScroll: () => void;
   onNavigate: (path: string) => void;
 };
@@ -38,7 +38,7 @@ export function FloatingPanel(props: FloatingPanelProps) {
     showDetails, hasTocPanel, hasMentionsPanel, hasGraphPanel, hasSummaryPanel,
     tocCollapsed, setTocCollapsed, floatingPanelTab, setFloatingPanelTab, setFloatingPanelTouched,
     tocContent, summary, backlinks, outboundLinks, linkGraph,
-    previewRef, forcePreviewSyncRef, handlePreviewScroll, onNavigate,
+    previewRef, suppressNextSync, handlePreviewScroll, onNavigate,
   } = props;
 
   const getElementById = useCallback((id: string) => {
@@ -48,15 +48,22 @@ export function FloatingPanel(props: FloatingPanelProps) {
     return container.querySelector<HTMLElement>(`#${safe}`);
   }, [previewRef]);
 
-  const scrollToElement = useCallback((el: HTMLElement) => {
+  const scrollToElement = useCallback((el: HTMLElement, onSettled: () => void) => {
     const container = previewRef.current;
-    if (!container) return;
-    const isScrollable = container.scrollHeight > container.clientHeight + 1;
-    if (!isScrollable) return;
+    if (!container) { onSettled(); return; }
+    const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+    if (maxScrollTop <= 1) { onSettled(); return; }
     const containerTop = container.getBoundingClientRect().top;
     const targetTop = el.getBoundingClientRect().top;
-    const offset = targetTop - containerTop + container.scrollTop;
-    container.scrollTo({ top: offset, behavior: "smooth" });
+    const target = Math.max(0, Math.min(targetTop - containerTop + container.scrollTop, maxScrollTop));
+    container.scrollTo({ top: target, behavior: "smooth" });
+    let settledFrames = 0;
+    const checkSettled = () => {
+      settledFrames = Math.abs(container.scrollTop - target) < 1 ? settledFrames + 1 : 0;
+      if (settledFrames >= 2) { onSettled(); return; }
+      requestAnimationFrame(checkSettled);
+    };
+    requestAnimationFrame(checkSettled);
   }, [previewRef]);
 
   const hasAnyPanel = hasTocPanel || hasMentionsPanel || hasGraphPanel || hasSummaryPanel;
@@ -71,7 +78,7 @@ export function FloatingPanel(props: FloatingPanelProps) {
     <div className="fixed top-24 right-8 z-30 hidden w-72 rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md xl:block animate-in fade-in slide-in-from-right-4 duration-500">
       <FloatingPanelHeader hasTocPanel={hasTocPanel} hasMentionsPanel={hasMentionsPanel} hasGraphPanel={hasGraphPanel} hasSummaryPanel={hasSummaryPanel} floatingPanelTab={floatingPanelTab} selectTab={selectTab} tocCollapsed={tocCollapsed} setTocCollapsed={setTocCollapsed} />
       {!tocCollapsed && (
-        <FloatingPanelContent floatingPanelTab={floatingPanelTab} hasTocPanel={hasTocPanel} tocContent={tocContent} getElementById={getElementById} scrollToElement={scrollToElement} forcePreviewSyncRef={forcePreviewSyncRef} handlePreviewScroll={handlePreviewScroll} backlinks={backlinks} outboundLinks={outboundLinks} linkGraph={linkGraph} summary={summary} onNavigate={onNavigate} />
+        <FloatingPanelContent floatingPanelTab={floatingPanelTab} hasTocPanel={hasTocPanel} tocContent={tocContent} getElementById={getElementById} scrollToElement={scrollToElement} suppressNextSync={suppressNextSync} handlePreviewScroll={handlePreviewScroll} backlinks={backlinks} outboundLinks={outboundLinks} linkGraph={linkGraph} summary={summary} onNavigate={onNavigate} />
       )}
     </div>
   );
@@ -102,16 +109,16 @@ function FloatingPanelHeader(props: {
 
 function FloatingPanelContent(props: {
   floatingPanelTab: string; hasTocPanel: boolean;
-  tocContent: string; getElementById: (id: string) => HTMLElement | null; scrollToElement: (el: HTMLElement) => void;
-  forcePreviewSyncRef: React.RefObject<boolean>; handlePreviewScroll: () => void;
+  tocContent: string; getElementById: (id: string) => HTMLElement | null; scrollToElement: (el: HTMLElement, onSettled: () => void) => void;
+  suppressNextSync: () => () => void; handlePreviewScroll: () => void;
   backlinks: MnoteDocument[]; outboundLinks: MnoteDocument[];
   linkGraph: FloatingPanelProps["linkGraph"]; summary: string; onNavigate: (path: string) => void;
 }) {
-  const { floatingPanelTab, hasTocPanel, tocContent, getElementById, scrollToElement, forcePreviewSyncRef, handlePreviewScroll, backlinks, outboundLinks, linkGraph, summary, onNavigate } = props;
+  const { floatingPanelTab, hasTocPanel, tocContent, getElementById, scrollToElement, suppressNextSync, handlePreviewScroll, backlinks, outboundLinks, linkGraph, summary, onNavigate } = props;
   return (
     <div className="text-sm max-h-[60vh] overflow-y-auto p-4 custom-scrollbar">
       {floatingPanelTab === "toc" ? (
-        hasTocPanel ? <TocView tocContent={tocContent} getElementById={getElementById} scrollToElement={scrollToElement} forcePreviewSyncRef={forcePreviewSyncRef} handlePreviewScroll={handlePreviewScroll} /> : <div className="text-xs text-slate-400 italic">No TOC available for this note.</div>
+        hasTocPanel ? <TocView tocContent={tocContent} getElementById={getElementById} scrollToElement={scrollToElement} suppressNextSync={suppressNextSync} handlePreviewScroll={handlePreviewScroll} /> : <div className="text-xs text-slate-400 italic">No TOC available for this note.</div>
       ) : floatingPanelTab === "mentions" ? (
         <MentionsView backlinks={backlinks} onNavigate={onNavigate} />
       ) : floatingPanelTab === "graph" ? (
@@ -137,11 +144,11 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
 function TocView(props: {
   tocContent: string;
   getElementById: (id: string) => HTMLElement | null;
-  scrollToElement: (el: HTMLElement) => void;
-  forcePreviewSyncRef: React.RefObject<boolean>;
+  scrollToElement: (el: HTMLElement, onSettled: () => void) => void;
+  suppressNextSync: () => () => void;
   handlePreviewScroll: () => void;
 }) {
-  const { tocContent, getElementById, scrollToElement, forcePreviewSyncRef, handlePreviewScroll } = props;
+  const { tocContent, getElementById, scrollToElement, suppressNextSync, handlePreviewScroll } = props;
   return (
     <div className="toc-wrapper">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={{
@@ -157,7 +164,11 @@ function TocView(props: {
               const targetCandidates = [rawHash, normalizedHash, slugify(rawHash), slugify(normalizedHash)];
               for (const candidate of targetCandidates) {
                 const el = getElementById(candidate);
-                if (el) { scrollToElement(el); requestAnimationFrame(() => { forcePreviewSyncRef.current = true; handlePreviewScroll(); }); break; }
+                if (el) {
+                  const resumeSync = suppressNextSync();
+                  scrollToElement(el, () => { resumeSync(); handlePreviewScroll(); });
+                  break;
+                }
               }
             }} />
           );

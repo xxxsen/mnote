@@ -150,7 +150,7 @@ describe("save queue + page integration (draft preservation race)", () => {
     expect(JSON.parse(stored as string)).toMatchObject({ content: "# B\n\nbody B" });
     // The queue must have started draining B without waiting.
     expect(save).toHaveBeenCalledTimes(2);
-    expect(save).toHaveBeenLastCalledWith({ title: "B", content: "# B\n\nbody B" }, 3);
+    expect(save).toHaveBeenLastCalledWith({ title: "B", content: "# B\n\nbody B" }, 3, 2);
   });
 
   // The follow-up B save fails. The queue surfaces ERROR and the page

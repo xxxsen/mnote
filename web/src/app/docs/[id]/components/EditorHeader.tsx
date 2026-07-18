@@ -1,92 +1,178 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { formatDate } from "@/lib/utils";
-import { ChevronLeft, ChevronRight, Columns, Folder, Home, RefreshCw, Save, Star } from "lucide-react";
+import {
+  ChevronLeft,
+  Columns,
+  Edit3,
+  Eye,
+  Save,
+  Star,
+  Columns2,
+  RefreshCw,
+  ShieldAlert,
+} from "lucide-react";
+import type { EditorSyncStatus } from "../types";
+import type { EditorViewMode } from "../hooks/useEditorViewMode";
 
-type RouterLike = {
-  push: (href: string) => void;
-};
-
-type EditorHeaderProps = {
-  router: RouterLike;
+type Props = {
+  onBack: () => void;
   title: string;
-  handleSave: () => void;
-  saving: boolean;
-  hasUnsavedChanges: boolean;
-  lastSavedAt: number | null;
+  syncStatus: EditorSyncStatus;
+  titleMissing: boolean;
+  onSave: () => void;
+  onRetry: () => void;
+  onResolveConflict: () => void;
   showDetails: boolean;
-  setShowDetails: (v: boolean) => void;
+  setShowDetails: (value: boolean) => void;
   starred: number;
   handleStarToggle: () => void;
+  viewMode: EditorViewMode;
+  setViewMode: (mode: EditorViewMode) => void;
 };
 
-export function EditorHeader({
-  router,
-  title,
-  handleSave,
-  saving,
-  hasUnsavedChanges,
-  lastSavedAt,
-  showDetails,
-  setShowDetails,
-  starred,
-  handleStarToggle,
-}: EditorHeaderProps) {
+function primaryState(props: Props) {
+  const busy = props.syncStatus === "SAVING" || props.syncStatus === "QUEUED";
+  if (props.syncStatus === "ERROR")
+    return { busy, label: "Retry", action: props.onRetry, disabled: false };
+  if (props.syncStatus === "CONFLICT")
+    return {
+      busy,
+      label: "Resolve conflict",
+      action: props.onResolveConflict,
+      disabled: false,
+    };
+  return {
+    busy,
+    label: busy ? "Saving…" : "Save",
+    action: props.onSave,
+    disabled:
+      busy ||
+      props.syncStatus === "SYNCED" ||
+      (props.syncStatus === "LOCAL_CHANGES" && props.titleMissing),
+  };
+}
+
+function PrimaryStatusIcon({
+  status,
+  busy,
+}: {
+  status: EditorSyncStatus;
+  busy: boolean;
+}) {
+  if (status === "CONFLICT") return <ShieldAlert className="mr-1 h-4 w-4" />;
+  if (busy || status === "ERROR")
+    return (
+      <RefreshCw
+        className={busy ? "mr-1 h-4 w-4 animate-spin" : "mr-1 h-4 w-4"}
+      />
+    );
+  return <Save className="mr-1 h-4 w-4" />;
+}
+
+export function EditorHeader(props: Props) {
+  const primary = primaryState(props);
+  const displayTitle = props.title || "Untitled";
+  const starLabel = props.starred ? "Unstar note" : "Star note";
+  const starClass = props.starred ? "text-yellow-500" : "text-muted-foreground";
+  const starIconClass = props.starred ? "fill-current" : "";
   return (
-    <header className="h-14 border-b border-border flex items-center px-4 gap-4 justify-between bg-background/80 backdrop-blur-md z-40 sticky top-0 transition-all duration-300">
-      <div className="flex items-center gap-3 flex-1 min-w-0">
-        <Button variant="ghost" size="icon" onClick={() => router.push("/docs")} className="h-8 w-8">
+    <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-2 border-b border-border bg-background/90 px-2 backdrop-blur-md sm:px-4">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Back to notes"
+          onClick={props.onBack}
+          className="h-10 w-10 shrink-0"
+        >
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground overflow-hidden">
-          <div className="flex items-center gap-1 hover:text-foreground cursor-pointer transition-colors shrink-0" onClick={() => router.push("/docs")}>
-            <Home className="h-3 w-3" />
-            <span className="hidden sm:inline">My Notes</span>
-          </div>
-          <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
-          <div className="flex items-center gap-1 shrink-0">
-            <Folder className="h-3 w-3 opacity-70" />
-            <span className="hidden sm:inline">General</span>
-          </div>
-          <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
-          <div className="font-bold font-mono truncate text-foreground select-none max-w-[120px] sm:max-w-[200px] md:max-w-md">
-            {title || "Untitled"}
-          </div>
+        <div
+          className="min-w-0 truncate font-mono text-sm font-semibold"
+          title={displayTitle}
+        >
+          {displayTitle}
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        {lastSavedAt && (
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 text-[10px] text-muted-foreground font-mono hidden md:flex">
-            <div className={`w-1.5 h-1.5 rounded-full ${hasUnsavedChanges ? "bg-amber-400 animate-pulse" : "bg-green-500"}`} />
-            {hasUnsavedChanges ? "Unsaved Changes" : `Saved: ${formatDate(lastSavedAt)}`}
-          </div>
-        )}
+      <div className="flex shrink-0 items-center gap-1.5">
         <Button
           variant="ghost"
           size="icon"
-          onClick={handleStarToggle}
-          className={`h-8 w-8 transition-colors ${starred ? "text-yellow-500" : "text-muted-foreground"}`}
-          title={starred ? "Unstar" : "Star"}
+          aria-label={starLabel}
+          onClick={props.handleStarToggle}
+          className={`h-10 w-10 ${starClass}`}
         >
-          <Star className={`h-4 w-4 ${starred ? "fill-current" : ""}`} />
+          <Star className={`h-4 w-4 ${starIconClass}`} />
         </Button>
-        <Button size="sm" onClick={handleSave} disabled={saving || !hasUnsavedChanges} className="rounded-xl h-8 text-xs font-bold px-3">
-          {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
-          {saving ? "Saving..." : "Save"}
+        <Button
+          size="sm"
+          onClick={primary.action}
+          disabled={primary.disabled}
+          aria-label={primary.label}
+          className="h-9 rounded-lg px-2 text-xs font-semibold sm:px-3"
+        >
+          <PrimaryStatusIcon status={props.syncStatus} busy={primary.busy} />
+          <span className="hidden min-[420px]:inline">{primary.label}</span>
         </Button>
+        <div
+          className="hidden items-center rounded-lg border border-border p-0.5 lg:flex"
+          aria-label="Editor view mode"
+        >
+          <ModeButton
+            label="Edit"
+            active={props.viewMode === "edit"}
+            onClick={() => props.setViewMode("edit")}
+          >
+            <Edit3 />
+          </ModeButton>
+          <ModeButton
+            label="Split"
+            active={props.viewMode === "split"}
+            onClick={() => props.setViewMode("split")}
+          >
+            <Columns2 />
+          </ModeButton>
+          <ModeButton
+            label="Preview"
+            active={props.viewMode === "preview"}
+            onClick={() => props.setViewMode("preview")}
+          >
+            <Eye />
+          </ModeButton>
+        </div>
         <Button
           variant="ghost"
           size="icon"
-          aria-label={showDetails ? "Hide details" : "Show details"}
-          title={showDetails ? "Hide details" : "Show details"}
-          onClick={() => { setShowDetails(!showDetails); }}
-          className={`h-8 w-8 ${showDetails ? "bg-accent text-foreground" : "text-muted-foreground"}`}
+          aria-label={props.showDetails ? "Hide details" : "Show details"}
+          aria-expanded={props.showDetails}
+          onClick={() => props.setShowDetails(!props.showDetails)}
+          className={`h-10 w-10 ${props.showDetails ? "bg-accent" : "text-muted-foreground"}`}
         >
           <Columns className="h-4 w-4 rotate-90" />
         </Button>
       </div>
     </header>
+  );
+}
+
+function ModeButton(props: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`${props.label} view`}
+      aria-pressed={props.active}
+      title={`${props.label} view`}
+      onClick={props.onClick}
+      className={`flex h-8 w-8 items-center justify-center rounded-md [&_svg]:h-4 [&_svg]:w-4 ${props.active ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+    >
+      {props.children}
+    </button>
   );
 }

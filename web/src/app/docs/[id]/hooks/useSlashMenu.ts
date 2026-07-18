@@ -1,15 +1,26 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import type { EditorView } from "@codemirror/view";
 import type { SlashActionContext, SlashCommand } from "../types";
+import type { MarkdownCommand } from "../commands/markdown-commands";
 import { SLASH_COMMANDS } from "../slash-commands";
 
 export function useSlashMenu(opts: {
   editorViewRef: React.RefObject<EditorView | null>;
   handleFormat: (type: "wrap" | "line", prefix: string, suffix?: string) => void;
+  executeCommand?: (command: MarkdownCommand) => void;
   handleInsertTable: () => void;
   insertTextAtCursor: (text: string) => void;
 }) {
   const { editorViewRef, handleFormat, handleInsertTable, insertTextAtCursor } = opts;
+  const runCommand = useMemo(() => opts.executeCommand ?? ((command: MarkdownCommand) => {
+    if (command.kind === "heading") handleFormat("line", Array(command.level + 1).join("#") + " ");
+    else if (command.kind === "block") handleFormat("line", command.block === "bullet" ? "- " : command.block === "ordered" ? "1. " : command.block === "task" ? "- [ ] " : "> ");
+    else if (command.kind === "inline") {
+      const open = command.mark === "bold" ? "**" : command.mark === "italic" ? "*" : command.mark === "strike" ? "~~" : command.mark === "underline" ? "<u>" : "`";
+      const close = command.mark === "underline" ? "</u>" : open;
+      handleFormat("wrap", open, close);
+    } else if (command.item === "table") handleInsertTable();
+  }), [handleFormat, handleInsertTable, opts.executeCommand]);
 
   const [slashMenu, setSlashMenu] = useState<{ open: boolean; x: number; y: number; filter: string }>({
     open: false, x: 0, y: 0, filter: "",
@@ -46,10 +57,10 @@ export function useSlashMenu(opts: {
       });
     }
 
-    action({ handleFormat, handleInsertTable, insertTextAtCursor });
+    action({ executeCommand: runCommand, handleFormat, handleInsertTable, insertTextAtCursor });
     setSlashIndex(0);
     setSlashMenu(prev => ({ ...prev, open: false }));
-  }, [editorViewRef, handleFormat, handleInsertTable, insertTextAtCursor]);
+  }, [editorViewRef, runCommand, handleFormat, handleInsertTable, insertTextAtCursor]);
 
   const handleSlashKeyDown = useCallback((e: React.KeyboardEvent | KeyboardEvent) => {
     if (!slashMenu.open) return false;

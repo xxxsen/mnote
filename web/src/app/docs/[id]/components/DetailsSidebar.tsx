@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { Share2, Download, Trash2, ChevronDown, X, FileCode, Copy, Check } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import type { DocumentVersionSummary } from "@/types";
@@ -50,6 +51,16 @@ function resolveShareExpireTs(rawValue: string): number {
   return Number.isFinite(ts) && ts > 0 ? ts : 0;
 }
 
+const DETAILS_DOCK_MIN_WIDTH = 1440;
+
+function subscribeDockViewport(onChange: () => void) {
+  window.addEventListener("resize", onChange);
+  return () => window.removeEventListener("resize", onChange);
+}
+
+function getDockViewportSnapshot() { return window.innerWidth >= DETAILS_DOCK_MIN_WIDTH; }
+function getDockViewportServerSnapshot() { return false; }
+
 export function DetailsSidebar(props: DetailsSidebarProps) {
   const {
     showDetails, onClose, activeTab, setActiveTab, summary,
@@ -58,6 +69,7 @@ export function DetailsSidebar(props: DetailsSidebarProps) {
     shareUrl, activeShare, copied, onShare, onLoadShare, onRevokeShare, onCopyLink, onUpdateShareConfig,
   } = props;
 
+  const isDocked = useSyncExternalStore(subscribeDockViewport, getDockViewportSnapshot, getDockViewportServerSnapshot);
   const [versions, setVersions] = useState<DocumentVersionSummary[]>([]);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
@@ -132,10 +144,10 @@ export function DetailsSidebar(props: DetailsSidebarProps) {
   if (!showDetails) return null;
 
   return (
-    <div className="w-80 border-l border-border bg-background flex flex-col absolute right-0 top-0 bottom-0 z-[100] shadow-xl">
+    <DetailsContainer isDocked={isDocked} onClose={onClose}>
       <div className="flex items-center justify-between p-3 border-b border-border">
         <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground px-1">Details</span>
-        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}><X className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" aria-label="Close details" className="h-8 w-8" onClick={onClose}><X className="h-4 w-4" /></Button>
       </div>
       <div className="flex items-center border-b border-border bg-muted/20">
         <button className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "summary" ? "border-b-2 border-foreground" : "text-muted-foreground"}`} onClick={() => setActiveTab("summary")}>Summary</button>
@@ -178,7 +190,32 @@ export function DetailsSidebar(props: DetailsSidebarProps) {
           />
         )}
       </div>
-    </div>
+    </DetailsContainer>
+  );
+}
+
+function DetailsContainer({ isDocked, onClose, children }: {
+  isDocked: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  if (isDocked) {
+    return (
+      <div role="complementary" aria-label="Document details" className="absolute bottom-0 right-0 top-0 z-[100] flex w-80 flex-col border-l border-border bg-background">
+        {children}
+      </div>
+    );
+  }
+  return (
+    <Dialog
+      open
+      title="Document details"
+      onClose={onClose}
+      backdropClassName="!items-stretch !justify-end !p-0"
+      className="ml-auto !max-h-full w-[min(360px,calc(100vw-24px))] !rounded-none border-y-0 border-r-0 flex flex-col overflow-hidden"
+    >
+      {children}
+    </Dialog>
   );
 }
 

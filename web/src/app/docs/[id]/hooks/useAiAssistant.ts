@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { Tag } from "@/types";
 import type { AIAction, DiffLine } from "../types";
@@ -98,6 +98,7 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
   const [aiSelectedTags, setAiSelectedTags] = useState<string[]>([]);
   const [aiRemovedTagIDs, setAiRemovedTagIDs] = useState<string[]>([]);
   const [aiError, setAiError] = useState<string | null>(null);
+  const requestEpochRef = useRef(0);
 
   const aiDiffLines = useMemo(
     () => (aiOriginalText && aiResultText ? buildLineDiff(aiOriginalText, aiResultText) : []),
@@ -120,25 +121,22 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
   }, []);
 
   const closeAiModal = useCallback(() => {
-    setAiModalOpen(false); setAiAction(null); setAiLoading(false); setAiPrompt(""); setAiOriginalText(""); resetAiState();
+    requestEpochRef.current += 1; setAiModalOpen(false); setAiAction(null); setAiLoading(false); setAiPrompt(""); setAiOriginalText(""); resetAiState();
   }, [resetAiState]);
 
   const runAiTextAction = useCallback(
     async (action: AIAction, snapshot: string, emptyMsg: string, endpoint: string, resultKey: "text" | "summary") => {
       if (!snapshot.trim()) { notify(emptyMsg); return; }
-      setAiAction(action);
-      setAiModalOpen(true);
-      setAiLoading(true);
-      setAiOriginalText(snapshot);
-      resetAiState();
+      const requestEpoch = ++requestEpochRef.current;
+      setAiAction(action); setAiModalOpen(true); setAiLoading(true); setAiOriginalText(snapshot); resetAiState();
       try {
         const res = await apiFetch<Record<string, string>>(endpoint, {
           method: "POST", body: JSON.stringify({ text: snapshot }),
         });
-        setAiResultText(res[resultKey] || "");
+        if (requestEpoch === requestEpochRef.current) setAiResultText(res[resultKey] || "");
       } catch (err) {
-        setAiError(err instanceof Error ? err.message : "AI request failed");
-      } finally { setAiLoading(false); }
+        if (requestEpoch === requestEpochRef.current) setAiError(err instanceof Error ? err.message : "AI request failed");
+      } finally { if (requestEpoch === requestEpochRef.current) setAiLoading(false); }
     },
     [notify, resetAiState],
   );
@@ -149,19 +147,21 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
   );
 
   const handleAiGenerateOpen = useCallback(() => {
+    requestEpochRef.current += 1;
     setAiAction("generate"); setAiModalOpen(true); setAiPrompt(""); setAiOriginalText(""); resetAiState();
   }, [resetAiState]);
 
   const handleAiGenerate = useCallback(async () => {
     const prompt = aiPrompt.trim();
     if (!prompt) { setAiError("Please enter a brief description."); return; }
+    const requestEpoch = ++requestEpochRef.current;
     setAiLoading(true); setAiError(null);
     try {
       const res = await apiFetch<{ text: string }>("/ai/generate", { method: "POST", body: JSON.stringify({ prompt }) });
-      setAiResultText(res.text || "");
+      if (requestEpoch === requestEpochRef.current) setAiResultText(res.text || "");
     } catch (err) {
-      setAiError(err instanceof Error ? err.message : "AI request failed");
-    } finally { setAiLoading(false); }
+      if (requestEpoch === requestEpochRef.current) setAiError(err instanceof Error ? err.message : "AI request failed");
+    } finally { if (requestEpoch === requestEpochRef.current) setAiLoading(false); }
   }, [aiPrompt]);
 
   const handleAiSummary = useCallback(
@@ -175,6 +175,7 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
         notify("Please add some content before extracting tags.");
         return;
       }
+      const requestEpoch = ++requestEpochRef.current;
       setAiAction("tags");
       setAiModalOpen(true);
       setAiLoading(true);
@@ -186,6 +187,7 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
           body: JSON.stringify({ document_id: docId, text: snapshot, max_tags: maxTags }),
         });
         const existingTags = res.existing_tags;
+        if (requestEpoch !== requestEpochRef.current) return;
         setAiExistingTags(existingTags);
         setAiRemovedTagIDs([]);
         const selectedNames = new Set(existingTags.map((tag) => tag.name).filter((name): name is string => Boolean(name)));
@@ -199,9 +201,9 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
         const availableSlots = Math.max(0, maxTags - existingTags.length);
         setAiSelectedTags(cleaned.slice(0, availableSlots));
       } catch (err) {
-        setAiError(err instanceof Error ? err.message : "AI request failed");
+        if (requestEpoch === requestEpochRef.current) setAiError(err instanceof Error ? err.message : "AI request failed");
       } finally {
-        setAiLoading(false);
+        if (requestEpoch === requestEpochRef.current) setAiLoading(false);
       }
     },
     [docId, isValidTagName, maxTags, normalizeTagName, notify, resetAiState]
@@ -241,14 +243,13 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
         closeAiModal();
         return;
       }
-      setAiLoading(true);
+      const requestEpoch = ++requestEpochRef.current; setAiLoading(true);
       try {
         await apiFetch(`/documents/${docId}/summary`, { method: "PUT", body: JSON.stringify({ summary: aiResultText }) });
-        onApplied(aiResultText); closeAiModal();
+        onApplied(aiResultText); if (requestEpoch === requestEpochRef.current) closeAiModal();
       } catch (err) {
-        onError(err instanceof Error ? err.message : "Failed to apply summary");
-      } finally { setAiLoading(false);
-      }
+        if (requestEpoch === requestEpochRef.current) onError(err instanceof Error ? err.message : "Failed to apply summary");
+      } finally { if (requestEpoch === requestEpochRef.current) setAiLoading(false); }
     },
     [aiResultText, closeAiModal, docId]
   );
@@ -261,7 +262,7 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
       }
 
       const keptExisting = aiExistingTags.filter((tag) => !aiRemovedTagIDs.includes(tag.id)).map((tag) => tag.id);
-      setAiLoading(true);
+      const requestEpoch = ++requestEpochRef.current; setAiLoading(true);
       try {
         const nextTagIDs = [...keptExisting];
         const { matched, toCreate } = await resolveAiTagCreation(aiSelectedTags, findExistingTagByName);
@@ -289,12 +290,10 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
         }
 
         await saveTagIDs(nextTagIDs);
-        closeAiModal();
+        if (requestEpoch === requestEpochRef.current) closeAiModal();
       } catch (err) {
-        onError(err instanceof Error ? err.message : "Failed to apply tags");
-      } finally {
-        setAiLoading(false);
-      }
+        if (requestEpoch === requestEpochRef.current) onError(err instanceof Error ? err.message : "Failed to apply tags");
+      } finally { if (requestEpoch === requestEpochRef.current) setAiLoading(false); }
     },
     [aiExistingTags, aiRemovedTagIDs, aiSelectedTags, closeAiModal, maxTags, notify]
   );

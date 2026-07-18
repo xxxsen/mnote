@@ -1,162 +1,49 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
-import { useScrollSync } from "../hooks/useScrollSync";
+import { renderHook } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
-function makeScrollDOM(scrollTop = 0, scrollHeight = 1000, clientHeight = 400) {
-  return { scrollTop, scrollHeight, clientHeight };
-}
+import {
+  interpolatePreviewOffset,
+  nearestSourceLine,
+  useScrollSync,
+} from "../hooks/useScrollSync";
 
-function makePreviewDiv(scrollTop = 0, scrollHeight = 1000, clientHeight = 400) {
-  return {
-    scrollTop,
-    scrollHeight,
-    clientHeight,
-  } as unknown as HTMLDivElement;
-}
+describe("structured scroll sync", () => {
+  it("interpolates between adjacent source markers", () => {
+    expect(interpolatePreviewOffset([
+      { sourceLine: 10, offsetTop: 100 },
+      { sourceLine: 20, offsetTop: 300 },
+    ], 15)).toBe(200);
+  });
 
-beforeEach(() => { vi.clearAllMocks(); });
+  it("uses the only available marker at either boundary", () => {
+    const markers = [
+      { sourceLine: 10, offsetTop: 100 },
+      { sourceLine: 20, offsetTop: 300 },
+    ];
+    expect(interpolatePreviewOffset(markers, 2)).toBe(100);
+    expect(interpolatePreviewOffset(markers, 30)).toBe(300);
+    expect(interpolatePreviewOffset([], 2)).toBeNull();
+  });
 
-describe("useScrollSync", () => {
-  it("returns expected structure", () => {
-    const editorViewRef = { current: null };
-    const { result } = renderHook(() => useScrollSync({ loading: false, editorViewRef }));
+  it("finds the source marker nearest the preview top", () => {
+    expect(nearestSourceLine([
+      { sourceLine: 1, offsetTop: 0 },
+      { sourceLine: 20, offsetTop: 450 },
+      { sourceLine: 40, offsetTop: 900 },
+    ], 500)).toBe(20);
+    expect(nearestSourceLine([], 500)).toBeNull();
+  });
+
+  it("exposes rAF handlers and one-shot TOC suppression", () => {
+    const { result } = renderHook(() => useScrollSync({
+      loading: false,
+      enabled: true,
+      editorViewRef: { current: null },
+    }));
     expect(result.current.previewRef).toBeDefined();
     expect(result.current.handleEditorScroll).toBeTypeOf("function");
     expect(result.current.handlePreviewScroll).toBeTypeOf("function");
-    expect(result.current.scrollingSource).toBeDefined();
-    expect(result.current.forcePreviewSyncRef).toBeDefined();
-  });
-
-  it("handleEditorScroll syncs preview", () => {
-    const scrollDOM = makeScrollDOM(200, 1000, 400);
-    const editorViewRef = { current: { scrollDOM } as never };
-    const { result } = renderHook(() => useScrollSync({ loading: false, editorViewRef }));
-
-    const preview = makePreviewDiv(0, 2000, 400);
-    Object.defineProperty(result.current.previewRef, "current", { value: preview, writable: true });
-
-    act(() => { result.current.handleEditorScroll(); });
-    const expected = (200 / 600) * (2000 - 400);
-    expect(Math.abs(preview.scrollTop - expected)).toBeLessThan(1);
-  });
-
-  it("handleEditorScroll skipped when loading", () => {
-    const scrollDOM = makeScrollDOM(200, 1000, 400);
-    const editorViewRef = { current: { scrollDOM } as never };
-    const { result } = renderHook(() => useScrollSync({ loading: true, editorViewRef }));
-
-    const preview = makePreviewDiv(0, 2000, 400);
-    Object.defineProperty(result.current.previewRef, "current", { value: preview, writable: true });
-
-    act(() => { result.current.handleEditorScroll(); });
-    expect(preview.scrollTop).toBe(0);
-  });
-
-  it("handleEditorScroll skipped when no editor view", () => {
-    const editorViewRef = { current: null };
-    const { result } = renderHook(() => useScrollSync({ loading: false, editorViewRef }));
-    act(() => { result.current.handleEditorScroll(); });
-  });
-
-  it("handlePreviewScroll syncs editor", () => {
-    const scrollDOM = makeScrollDOM(0, 2000, 400);
-    const editorViewRef = { current: { scrollDOM } as never };
-    const { result } = renderHook(() => useScrollSync({ loading: false, editorViewRef }));
-
-    const preview = makePreviewDiv(300, 1000, 400);
-    Object.defineProperty(result.current.previewRef, "current", { value: preview, writable: true });
-
-    act(() => { result.current.handlePreviewScroll(); });
-    const expected = (300 / 600) * (2000 - 400);
-    expect(Math.abs(scrollDOM.scrollTop - expected)).toBeLessThan(1);
-  });
-
-  it("handlePreviewScroll skipped when loading", () => {
-    const scrollDOM = makeScrollDOM(0, 2000, 400);
-    const editorViewRef = { current: { scrollDOM } as never };
-    const { result } = renderHook(() => useScrollSync({ loading: true, editorViewRef }));
-
-    const preview = makePreviewDiv(300, 1000, 400);
-    Object.defineProperty(result.current.previewRef, "current", { value: preview, writable: true });
-
-    act(() => { result.current.handlePreviewScroll(); });
-    expect(scrollDOM.scrollTop).toBe(0);
-  });
-
-  it("handleEditorScroll ignores when scrolling source is preview", () => {
-    const scrollDOM = makeScrollDOM(200, 1000, 400);
-    const editorViewRef = { current: { scrollDOM } as never };
-    const { result } = renderHook(() => useScrollSync({ loading: false, editorViewRef }));
-
-    const preview = makePreviewDiv(0, 2000, 400);
-    Object.defineProperty(result.current.previewRef, "current", { value: preview, writable: true });
-
-    result.current.scrollingSource.current = "preview";
-    act(() => { result.current.handleEditorScroll(); });
-    expect(preview.scrollTop).toBe(0);
-  });
-
-  it("handlePreviewScroll ignores when scrolling source is editor", () => {
-    const scrollDOM = makeScrollDOM(0, 2000, 400);
-    const editorViewRef = { current: { scrollDOM } as never };
-    const { result } = renderHook(() => useScrollSync({ loading: false, editorViewRef }));
-
-    const preview = makePreviewDiv(300, 1000, 400);
-    Object.defineProperty(result.current.previewRef, "current", { value: preview, writable: true });
-
-    result.current.scrollingSource.current = "editor";
-    act(() => { result.current.handlePreviewScroll(); });
-    expect(scrollDOM.scrollTop).toBe(0);
-  });
-
-  it("handleEditorScroll no-ops when maxScroll is 0", () => {
-    const scrollDOM = makeScrollDOM(0, 400, 400);
-    const editorViewRef = { current: { scrollDOM } as never };
-    const { result } = renderHook(() => useScrollSync({ loading: false, editorViewRef }));
-
-    const preview = makePreviewDiv(0, 2000, 400);
-    Object.defineProperty(result.current.previewRef, "current", { value: preview, writable: true });
-
-    act(() => { result.current.handleEditorScroll(); });
-    expect(preview.scrollTop).toBe(0);
-  });
-
-  it("handleEditorScroll clears existing timer on consecutive calls", () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const scrollDOM = makeScrollDOM(200, 1000, 400);
-    const editorViewRef = { current: { scrollDOM } as never };
-    const { result } = renderHook(() => useScrollSync({ loading: false, editorViewRef }));
-
-    const preview = makePreviewDiv(0, 2000, 400);
-    Object.defineProperty(result.current.previewRef, "current", { value: preview, writable: true });
-
-    act(() => { result.current.handleEditorScroll(); });
-    expect(result.current.scrollingSource.current).toBe("editor");
-    scrollDOM.scrollTop = 300;
-    act(() => { result.current.handleEditorScroll(); });
-    expect(result.current.scrollingSource.current).toBe("editor");
-    vi.advanceTimersByTime(150);
-    expect(result.current.scrollingSource.current).toBeNull();
-    vi.useRealTimers();
-  });
-
-  it("handlePreviewScroll clears existing timer and resets forcePreviewSyncRef", () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const scrollDOM = makeScrollDOM(0, 2000, 400);
-    const editorViewRef = { current: { scrollDOM } as never };
-    const { result } = renderHook(() => useScrollSync({ loading: false, editorViewRef }));
-
-    const preview = makePreviewDiv(300, 1000, 400);
-    Object.defineProperty(result.current.previewRef, "current", { value: preview, writable: true });
-    result.current.forcePreviewSyncRef.current = true;
-
-    act(() => { result.current.handlePreviewScroll(); });
-    expect(result.current.scrollingSource.current).toBe("preview");
-    preview.scrollTop = 400;
-    act(() => { result.current.handlePreviewScroll(); });
-    vi.advanceTimersByTime(150);
-    expect(result.current.scrollingSource.current).toBeNull();
-    expect(result.current.forcePreviewSyncRef.current).toBe(false);
-    vi.useRealTimers();
+    expect(result.current.suppressNextSync).toBeTypeOf("function");
+    expect(() => result.current.suppressNextSync()).not.toThrow();
   });
 });

@@ -3,38 +3,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SaveDocumentResult, SaveStatus } from "../types";
 
-// Snapshot the editor hands to the queue. We carry the user-visible title
-// alongside content so the queue can submit them as a single atomic save.
 export type SaveSnapshot = {
   title: string;
   content: string;
 };
 
-// SaveFn is the network-bound callback the queue uses to actually persist a
-// snapshot. The queue passes the save_seq it is using for this attempt so
-// the underlying service can echo it into the PUT body.
-export type SaveFn = (snapshot: SaveSnapshot, saveSeq: number) => Promise<SaveDocumentResult>;
+export type SaveFn = (
+  snapshot: SaveSnapshot,
+  saveSeq: number,
+  baseRevision: number,
+) => Promise<SaveDocumentResult>;
 
 export type SaveSuccessPayload = {
   snapshot: SaveSnapshot;
   result: SaveDocumentResult;
-  // isLatest reports whether, at the moment the queue invoked onSaved,
-  // queuedRef.current still referenced a snapshot that differs from the
-  // one the server just accepted. When false the caller must NOT treat
-  // the just-saved snapshot as fully synced — a newer snapshot is
-  // already on its way and the editor's draft has not yet caught up.
-  // Callers should additionally compare snapshot.content against their
-  // current authoritative source (e.g. a contentRef) because the queue
-  // can only observe whatever was published to requestSave; in-flight
-  // keystrokes that have not been published are not visible here.
   isLatest: boolean;
 };
 
-// SaveStalePayload is the queue's report of an accepted=false response.
-// It is not a conflict; the queue simply observed that the server already
-// processed a save with this or a higher save_seq and fast-forwards its
-// local sequence number to match the response. The editor keeps its
-// in-progress draft and the next save resumes from the new save_seq.
 export type SaveStalePayload = {
   snapshot: SaveSnapshot;
   result: SaveDocumentResult;
@@ -42,11 +27,13 @@ export type SaveStalePayload = {
 
 export interface UseEditorSaveQueueOptions {
   initialRevision: number;
+  initialHash?: string;
   initialSavedContent: string;
   initialSavedTitle: string;
   save: SaveFn;
   onSaved?: (payload: SaveSuccessPayload) => void;
   onStale?: (payload: SaveStalePayload) => void;
+  onConflict?: (payload: SaveStalePayload) => void;
   onError?: (err: unknown, snapshot: SaveSnapshot) => void;
 }
 
@@ -56,203 +43,210 @@ export interface UseEditorSaveQueueReturn {
   lastSavedContent: string;
   lastSavedTitle: string;
   serverRevision: number;
-  // requestSave hands a snapshot to the queue. The queue:
-  //   - if no save is in-flight: issues the request immediately;
-  //   - if a save is already in-flight: replaces any previously queued
-  //     snapshot, ensuring at most one PUT is enqueued behind the active one.
+  serverHash: string;
+  conflictSnapshot: SaveSnapshot | null;
   requestSave: (snapshot: SaveSnapshot) => void;
-  // resyncRevision lets the caller seed the local save_seq baseline from
-  // the server's current content_revision (typically at page load) without
-  // emitting a save.
-  resyncRevision: (next: { revision: number; title?: string; content?: string; mtime?: number | null }) => void;
-  // setLastSavedAt is exposed so non-content save flows (tag updates, AI
-  // summary writes) can refresh the footer timestamp without going through
-  // the content save queue. They don't touch content_revision.
+  markLocalChanges: () => void;
+  retry: (snapshot?: SaveSnapshot) => void;
+  resyncRevision: (next: {
+    revision: number;
+    hash?: string;
+    title?: string;
+    content?: string;
+    mtime?: number | null;
+  }) => void;
   setLastSavedAt: (ts: number) => void;
+  getServerSnapshot: () => { revision: number; hash: string };
 }
 
-// useEditorSaveQueue serialises editor save requests behind a single-flight
-// lock so concurrent Ctrl+S, auto-save and other triggers cannot produce
-// overlapping PUT /documents/:id requests. The queue cooperates with the
-// server-side save_seq protocol: each save carries a locally-incremented
-// save_seq, and a response of accepted=false is treated as "the server
-// already saw a higher seq" — the queue fast-forwards its counter but the
-// editor draft is left untouched.
 export function useEditorSaveQueue(opts: UseEditorSaveQueueOptions): UseEditorSaveQueueReturn {
-  const { save, onSaved, onStale, onError } = opts;
+  const { save, onSaved, onStale, onConflict, onError } = opts;
 
   const inFlightRef = useRef(false);
   const queuedRef = useRef<SaveSnapshot | null>(null);
-  // readQueued forces eslint/TS to widen queuedRef.current back to its
-  // declared type. Without this indirection, control-flow analysis narrows
-  // the ref to `null` immediately after every direct assignment, defeating
-  // the post-await re-check that drives the recursive drain loop.
-  const readQueued = useCallback((): SaveSnapshot | null => queuedRef.current, []);
-  // saveSeqRef tracks the next save_seq the queue will publish. It starts
-  // at the server's reported content_revision and is incremented strictly
-  // before each PUT so two queued snapshots never share a sequence number.
-  const saveSeqRef = useRef<number>(opts.initialRevision);
-  const lastSavedContentRef = useRef<string>(opts.initialSavedContent);
-  const lastSavedTitleRef = useRef<string>(opts.initialSavedTitle);
-  // statusRef mirrors the React `status` state so the recursive drain loop
-  // can decide whether to keep draining without depending on a stale closure.
+  const failedSnapshotRef = useRef<SaveSnapshot | null>(null);
+  const baseRevisionRef = useRef(opts.initialRevision);
+  const serverHashRef = useRef(opts.initialHash ?? "");
+  const saveSeqRef = useRef(opts.initialRevision);
+  const lastSavedContentRef = useRef(opts.initialSavedContent);
+  const lastSavedTitleRef = useRef(opts.initialSavedTitle);
   const statusRef = useRef<SaveStatus>("SYNCED");
+  const editEpochRef = useRef(0);
 
   const [status, setStatusState] = useState<SaveStatus>("SYNCED");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
-  const [serverRevision, setServerRevision] = useState<number>(opts.initialRevision);
-  const [lastSavedContent, setLastSavedContent] = useState<string>(opts.initialSavedContent);
-  const [lastSavedTitle, setLastSavedTitle] = useState<string>(opts.initialSavedTitle);
+  const [serverRevision, setServerRevision] = useState(opts.initialRevision);
+  const [serverHash, setServerHash] = useState(opts.initialHash ?? "");
+  const [lastSavedContent, setLastSavedContent] = useState(opts.initialSavedContent);
+  const [lastSavedTitle, setLastSavedTitle] = useState(opts.initialSavedTitle);
+  const [conflictSnapshot, setConflictSnapshot] = useState<SaveSnapshot | null>(null);
 
   const setStatus = useCallback((next: SaveStatus) => {
     statusRef.current = next;
     setStatusState(next);
   }, []);
 
-  const onSavedRef = useRef(onSaved);
-  const onStaleRef = useRef(onStale);
-  const onErrorRef = useRef(onError);
+  const callbacksRef = useRef({ onSaved, onStale, onConflict, onError });
   useEffect(() => {
-    onSavedRef.current = onSaved;
-    onStaleRef.current = onStale;
-    onErrorRef.current = onError;
-  }, [onSaved, onStale, onError]);
+    callbacksRef.current = { onSaved, onStale, onConflict, onError };
+  }, [onSaved, onStale, onConflict, onError]);
 
-  const commitAccepted = useCallback((snapshot: SaveSnapshot, result: SaveDocumentResult) => {
-    saveSeqRef.current = result.content_revision;
+  const readQueued = useCallback((): SaveSnapshot | null => queuedRef.current, []);
+
+  const commitAccepted = useCallback((
+    snapshot: SaveSnapshot,
+    result: SaveDocumentResult,
+    requestEditEpoch: number,
+  ) => {
+    baseRevisionRef.current = result.content_revision;
+    serverHashRef.current = result.content_hash;
+    saveSeqRef.current = Math.max(saveSeqRef.current, result.content_revision);
     lastSavedContentRef.current = snapshot.content;
     lastSavedTitleRef.current = snapshot.title;
+    failedSnapshotRef.current = null;
     setServerRevision(result.content_revision);
+    setServerHash(result.content_hash);
     setLastSavedContent(snapshot.content);
     setLastSavedTitle(snapshot.title);
     setLastSavedAt(result.content_mtime || result.mtime || null);
-    // Decide isLatest BEFORE invoking onSaved so the caller can use it to
-    // gate side effects (e.g. clearing the localStorage draft). Once
-    // lastSavedContentRef has been advanced above, a "pending differs
-    // from lastSaved" check is the same test that the post-onSaved
-    // hasMore branch uses to schedule the next drainQueue iteration.
+
     const pending = readQueued();
-    const hasMore =
-      pending !== null &&
-      (pending.content !== lastSavedContentRef.current ||
-        pending.title !== lastSavedTitleRef.current);
-    onSavedRef.current?.({ snapshot, result, isLatest: !hasMore });
-    if (hasMore) {
+    const hasQueuedSnapshot = pending !== null && (
+      pending.content !== snapshot.content || pending.title !== snapshot.title
+    );
+    const editedDuringRequest = editEpochRef.current !== requestEditEpoch;
+    callbacksRef.current.onSaved?.({
+      snapshot,
+      result,
+      isLatest: !hasQueuedSnapshot && !editedDuringRequest,
+    });
+    if (hasQueuedSnapshot) {
       setStatus("QUEUED");
+    } else if (editedDuringRequest) {
+      setStatus("LOCAL_CHANGES");
     } else {
       queuedRef.current = null;
       setStatus("SYNCED");
     }
-  }, [setStatus, readQueued]);
+  }, [readQueued, setStatus]);
 
-  const commitStale = useCallback((snapshot: SaveSnapshot, result: SaveDocumentResult) => {
-    // The server already processed a save with a higher (or equal) seq.
-    // We fast-forward our local counter so the next save uses a fresh seq
-    // strictly above the server's current revision; the editor's draft
-    // and lastSaved* refs are intentionally left untouched.
-    saveSeqRef.current = result.content_revision;
+  const commitRejected = useCallback((snapshot: SaveSnapshot, result: SaveDocumentResult) => {
+    if (result.reason === "revision_conflict") {
+      queuedRef.current = snapshot;
+      setConflictSnapshot(snapshot);
+      setStatus("CONFLICT");
+      callbacksRef.current.onConflict?.({ snapshot, result });
+      return;
+    }
+
+    // Rolling compatibility with an old save_seq-only backend. New
+    // base_revision-aware servers use revision_conflict above.
+    saveSeqRef.current = Math.max(saveSeqRef.current, result.content_revision);
     setServerRevision(result.content_revision);
-    onStaleRef.current?.({ snapshot, result });
+    setServerHash(result.content_hash);
+    callbacksRef.current.onStale?.({ snapshot, result });
     const pending = readQueued();
-    const hasMore =
-      pending !== null &&
-      (pending.content !== lastSavedContentRef.current ||
-        pending.title !== lastSavedTitleRef.current);
-    if (hasMore) {
+    if (pending && (
+      pending.content !== lastSavedContentRef.current ||
+      pending.title !== lastSavedTitleRef.current
+    )) {
       setStatus("QUEUED");
     } else {
       queuedRef.current = null;
-      // After a stale response the draft is still unsynced (lastSaved* did
-      // not advance), so the footer keeps showing the prior status: SYNCED
-      // would falsely claim the draft is persisted, so we surface QUEUED
-      // when there is a pending snapshot and otherwise leave the editor in
-      // a "still has unsaved changes" SYNCED-without-draft-match state by
-      // returning to SYNCED. The page's hasUnsavedChanges flag remains
-      // true because lastSavedContentRef did not move.
-      setStatus("SYNCED");
+      setStatus("LOCAL_CHANGES");
     }
-  }, [setStatus, readQueued]);
+  }, [readQueued, setStatus]);
 
-  const commitFailure = useCallback((snapshot: SaveSnapshot, err: unknown) => {
+  const commitFailure = useCallback((snapshot: SaveSnapshot, error: unknown) => {
+    failedSnapshotRef.current = snapshot;
+    if (queuedRef.current === null) queuedRef.current = snapshot;
     setStatus("ERROR");
-    onErrorRef.current?.(err, snapshot);
+    callbacksRef.current.onError?.(error, snapshot);
   }, [setStatus]);
 
   const drainQueue = useCallback(async () => {
-    // drainQueue runs the snapshot in queuedRef under the single-flight lock
-    // and recursively schedules the next snapshot if more save requests
-    // arrived while the previous one was in flight.
-    //
-    // requestSave is the only external entry point and it only calls
-    // drainQueue when neither inFlightRef is set nor queuedRef is empty,
-    // so the defensive top-of-function bail-out is intentionally absent
-    // here — the recursive path at the end of this function also re-checks
-    // queuedRef before issuing the next iteration.
     const next = queuedRef.current;
-    /* v8 ignore next -- defensive: queuedRef is non-null at every caller. */
-    if (!next) return;
+    if (!next || inFlightRef.current) return;
+    if (statusRef.current === "ERROR" || statusRef.current === "CONFLICT") return;
+
     queuedRef.current = null;
     inFlightRef.current = true;
     setStatus("SAVING");
-
-    // Increment the local sequence number BEFORE issuing the request so
-    // two snapshots scheduled in the same tick never reuse a seq. The
-    // server will accept the larger of the two and silently fast-forward
-    // past the smaller one.
     saveSeqRef.current += 1;
-    const seq = saveSeqRef.current;
+    const saveSeq = saveSeqRef.current;
+    const baseRevision = baseRevisionRef.current;
+    const requestEditEpoch = editEpochRef.current;
+
     try {
-      const result = await save(next, seq);
+      const result = await save(next, saveSeq, baseRevision);
       if (result.accepted) {
-        commitAccepted(next, result);
+        commitAccepted(next, result, requestEditEpoch);
       } else {
-        commitStale(next, result);
+        commitRejected(next, result);
       }
-    } catch (err) {
-      commitFailure(next, err);
+    } catch (error) {
+      commitFailure(next, error);
     } finally {
       inFlightRef.current = false;
     }
 
-    // If a fresh snapshot landed while we were running and the result
-    // wasn't an error, kick off the next iteration via the mutable ref so
-    // we always observe the current status rather than a stale closure copy.
-    const pendingAfter = readQueued();
-    const blocked = statusRef.current === "ERROR";
-    if (pendingAfter && !blocked) {
+    if (readQueued() && !["ERROR", "CONFLICT"].includes(statusRef.current)) {
       void drainQueue();
     }
-  }, [save, commitAccepted, commitStale, commitFailure, setStatus, readQueued]);
+  }, [commitAccepted, commitFailure, commitRejected, readQueued, save, setStatus]);
 
   const requestSave = useCallback((snapshot: SaveSnapshot) => {
-    // Skip no-op saves so users hammering Ctrl+S on an unchanged doc don't
-    // spam the network or flicker the footer between SYNCED/SAVING.
     if (
       snapshot.content === lastSavedContentRef.current &&
       snapshot.title === lastSavedTitleRef.current &&
       !inFlightRef.current
     ) {
+      setStatus("SYNCED");
       return;
     }
     queuedRef.current = snapshot;
+    if (statusRef.current === "CONFLICT") {
+      setConflictSnapshot(snapshot);
+      return;
+    }
+    if (statusRef.current === "ERROR") return;
     if (inFlightRef.current) {
-      // While a save is in flight, status is necessarily SAVING (drainQueue
-      // sets it before awaiting and only flips to ERROR once the request
-      // resolves), so it is always safe to surface QUEUED here.
       setStatus("QUEUED");
       return;
     }
     void drainQueue();
   }, [drainQueue, setStatus]);
 
+  const markLocalChanges = useCallback(() => {
+    editEpochRef.current += 1;
+    if (statusRef.current === "ERROR" || statusRef.current === "CONFLICT") return;
+    setStatus(inFlightRef.current ? "QUEUED" : "LOCAL_CHANGES");
+  }, [setStatus]);
+
+  const retry = useCallback((snapshot?: SaveSnapshot) => {
+    if (statusRef.current === "CONFLICT") return;
+    const next = snapshot ?? queuedRef.current ?? failedSnapshotRef.current;
+    if (!next) return;
+    queuedRef.current = next;
+    failedSnapshotRef.current = null;
+    setStatus("LOCAL_CHANGES");
+    void drainQueue();
+  }, [drainQueue, setStatus]);
+
   const resyncRevision = useCallback((next: {
     revision: number;
+    hash?: string;
     title?: string;
     content?: string;
     mtime?: number | null;
   }) => {
-    saveSeqRef.current = next.revision;
+    baseRevisionRef.current = next.revision;
+    saveSeqRef.current = Math.max(saveSeqRef.current, next.revision);
     setServerRevision(next.revision);
+    if (typeof next.hash === "string") {
+      serverHashRef.current = next.hash;
+      setServerHash(next.hash);
+    }
     if (typeof next.title === "string") {
       lastSavedTitleRef.current = next.title;
       setLastSavedTitle(next.title);
@@ -261,10 +255,15 @@ export function useEditorSaveQueue(opts: UseEditorSaveQueueOptions): UseEditorSa
       lastSavedContentRef.current = next.content;
       setLastSavedContent(next.content);
     }
-    if (typeof next.mtime === "number") {
-      setLastSavedAt(next.mtime);
-    }
-  }, []);
+    if (typeof next.mtime === "number") setLastSavedAt(next.mtime);
+    queuedRef.current = null;
+    failedSnapshotRef.current = null;
+    setConflictSnapshot(null);
+    setStatus("SYNCED");
+  }, [setStatus]);
+
+  const getServerSnapshot = useCallback(
+    () => ({ revision: baseRevisionRef.current, hash: serverHashRef.current }), []);
 
   return {
     status,
@@ -272,8 +271,13 @@ export function useEditorSaveQueue(opts: UseEditorSaveQueueOptions): UseEditorSa
     lastSavedContent,
     lastSavedTitle,
     serverRevision,
+    serverHash,
+    conflictSnapshot,
     requestSave,
+    markLocalChanges,
+    retry,
     resyncRevision,
     setLastSavedAt,
+    getServerSnapshot,
   };
 }

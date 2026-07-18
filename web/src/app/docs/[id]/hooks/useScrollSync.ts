@@ -1,73 +1,132 @@
 import { useCallback, useRef } from "react";
-import type { EditorView } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
+
+export type SourceMarker = { sourceLine: number; offsetTop: number };
+
+export function interpolatePreviewOffset(markers: SourceMarker[], line: number): number | null {
+  if (markers.length === 0) return null;
+  let previous: SourceMarker | null = null;
+  let next: SourceMarker | null = null;
+  for (const marker of markers) {
+    if (marker.sourceLine <= line) previous = marker;
+    if (marker.sourceLine >= line) {
+      next = marker;
+      break;
+    }
+  }
+  if (!previous) return next?.offsetTop ?? null;
+  if (!next) return previous.offsetTop;
+  if (next.sourceLine === previous.sourceLine) return previous.offsetTop;
+  const ratio = (line - previous.sourceLine) / (next.sourceLine - previous.sourceLine);
+  return previous.offsetTop + ratio * (next.offsetTop - previous.offsetTop);
+}
+
+export function nearestSourceLine(markers: SourceMarker[], scrollTop: number): number | null {
+  if (markers.length === 0) return null;
+  let nearest = markers[0];
+  let distance = Math.abs(nearest.offsetTop - scrollTop);
+  for (const marker of markers.slice(1)) {
+    const nextDistance = Math.abs(marker.offsetTop - scrollTop);
+    if (nextDistance < distance) {
+      nearest = marker;
+      distance = nextDistance;
+    }
+  }
+  return nearest.sourceLine;
+}
+
+function readMarkers(container: HTMLElement): SourceMarker[] {
+  return Array.from(container.querySelectorAll<HTMLElement>("[data-source-line]"))
+    .map((element) => ({
+      sourceLine: Number(element.dataset.sourceLine),
+      offsetTop: element.offsetTop,
+    }))
+    .filter((marker) => Number.isInteger(marker.sourceLine) && marker.sourceLine > 0)
+    .sort((a, b) => a.sourceLine - b.sourceLine);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
 
 export function useScrollSync(opts: {
   loading: boolean;
+  enabled?: boolean;
   editorViewRef: React.RefObject<EditorView | null>;
 }) {
-  const { loading, editorViewRef } = opts;
+  const { loading, enabled = true, editorViewRef } = opts;
   const previewRef = useRef<HTMLDivElement>(null);
   const scrollingSource = useRef<"editor" | "preview" | null>(null);
   const scrollSyncTimerRef = useRef<number | null>(null);
-  const forcePreviewSyncRef = useRef(false);
+  const frameRef = useRef<number | null>(null);
+  const suppressionRef = useRef(false);
 
-  // TODO: extract percentage/threshold math into pure testable functions
-  /* v8 ignore start -- scroll sync requires real DOM viewport measurements */
+  const releaseOnNextFrame = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      scrollingSource.current = null;
+      suppressionRef.current = false;
+    });
+  }, []);
+
+  const schedule = useCallback((work: () => void) => {
+    if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      work();
+    });
+    scrollSyncTimerRef.current = frameRef.current;
+  }, []);
+
   const handleEditorScroll = useCallback(() => {
-    if (scrollingSource.current === "preview" || loading) return;
-    const view = editorViewRef.current;
-    const preview = previewRef.current;
-    if (!view || !preview) return;
-
-    const scrollInfo = view.scrollDOM;
-    const maxScroll = scrollInfo.scrollHeight - scrollInfo.clientHeight;
-    if (maxScroll <= 0) return;
-
-    const percentage = scrollInfo.scrollTop / maxScroll;
-    const targetTop = percentage * (preview.scrollHeight - preview.clientHeight);
-
-    if (Math.abs(preview.scrollTop - targetTop) > 5) {
+    if (!enabled || scrollingSource.current === "preview" || loading || suppressionRef.current) return;
+    schedule(() => {
+      const view = editorViewRef.current;
+      const preview = previewRef.current;
+      if (!view || !preview) return;
+      const editorMax = view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight;
+      const previewMax = Math.max(0, preview.scrollHeight - preview.clientHeight);
+      if (editorMax <= 0) return;
+      const topBlock = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
+      const visibleLine = view.state.doc.lineAt(topBlock.from).number;
+      const markerTarget = interpolatePreviewOffset(readMarkers(preview), visibleLine);
+      const fallback = (view.scrollDOM.scrollTop / editorMax) * previewMax;
       scrollingSource.current = "editor";
-      preview.scrollTop = targetTop;
-
-      if (scrollSyncTimerRef.current) window.clearTimeout(scrollSyncTimerRef.current);
-      scrollSyncTimerRef.current = window.setTimeout(() => {
-        scrollingSource.current = null;
-      }, 100);
-    }
-  }, [loading, editorViewRef]);
+      preview.scrollTop = clamp(markerTarget ?? fallback, 0, previewMax);
+      releaseOnNextFrame();
+    });
+  }, [editorViewRef, enabled, loading, releaseOnNextFrame, schedule]);
 
   const handlePreviewScroll = useCallback(() => {
-    if (scrollingSource.current === "editor" || loading) return;
-    const view = editorViewRef.current;
-    const preview = previewRef.current;
-    if (!view || !preview) return;
-
-    const maxScroll = preview.scrollHeight - preview.clientHeight;
-    if (maxScroll <= 0) return;
-
-    const percentage = preview.scrollTop / maxScroll;
-    const scrollInfo = view.scrollDOM;
-    const targetTop = percentage * (scrollInfo.scrollHeight - scrollInfo.clientHeight);
-
-    if (Math.abs(scrollInfo.scrollTop - targetTop) > 5) {
+    if (!enabled || scrollingSource.current === "editor" || loading || suppressionRef.current) return;
+    schedule(() => {
+      const view = editorViewRef.current;
+      const preview = previewRef.current;
+      if (!view || !preview) return;
+      const markers = readMarkers(preview);
+      const sourceLine = nearestSourceLine(markers, preview.scrollTop);
       scrollingSource.current = "preview";
-      scrollInfo.scrollTop = targetTop;
+      if (sourceLine !== null && sourceLine <= view.state.doc.lines) {
+        const position = view.state.doc.line(sourceLine).from;
+        view.dispatch({ effects: EditorView.scrollIntoView(position, { y: "start" }) });
+      } else {
+        const previewMax = preview.scrollHeight - preview.clientHeight;
+        const editorMax = view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight;
+        if (previewMax > 0) view.scrollDOM.scrollTop = (preview.scrollTop / previewMax) * editorMax;
+      }
+      releaseOnNextFrame();
+    });
+  }, [editorViewRef, enabled, loading, releaseOnNextFrame, schedule]);
 
-      if (scrollSyncTimerRef.current) window.clearTimeout(scrollSyncTimerRef.current);
-      scrollSyncTimerRef.current = window.setTimeout(() => {
-        scrollingSource.current = null;
-        forcePreviewSyncRef.current = false;
-      }, 100);
-    }
-  }, [loading, editorViewRef]);
-  /* v8 ignore stop */
+  const suppressNextSync = useCallback(() => {
+    suppressionRef.current = true;
+    return () => { suppressionRef.current = false; };
+  }, []);
 
   return {
     previewRef,
     scrollingSource,
     scrollSyncTimerRef,
-    forcePreviewSyncRef,
+    suppressNextSync,
     handleEditorScroll,
     handlePreviewScroll,
   };

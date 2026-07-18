@@ -44,8 +44,8 @@ describe("useDocumentActions", () => {
   it("saveDocument calls service with docId and params including save_seq", async () => {
     mockService.saveDocument.mockResolvedValue({ id: "d1", accepted: true, content_revision: 4 } as never);
     const { result } = renderHook(() => useDocumentActions("d1"));
-    await result.current.saveDocument("Title", "Content", 4);
-    expect(mockService.saveDocument).toHaveBeenCalledWith("d1", { title: "Title", content: "Content", save_seq: 4 });
+    await result.current.saveDocument("Title", "Content", 3, 4);
+    expect(mockService.saveDocument).toHaveBeenCalledWith("d1", { title: "Title", content: "Content", base_revision: 3, save_seq: 4 });
   });
 
   it("memoizes across renders with same docId", () => {

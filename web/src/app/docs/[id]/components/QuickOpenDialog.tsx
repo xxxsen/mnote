@@ -1,75 +1,93 @@
-import { Search, ChevronRight, X } from "lucide-react";
+import { useRef } from "react";
+import { ChevronRight, Search, X } from "lucide-react";
+import { Dialog } from "@/components/ui/dialog";
 import { formatDate } from "@/lib/utils";
 import type { Document } from "@/types";
 
-type QuickOpenDialogProps = {
+type Props = {
   show: boolean;
   query: string;
   index: number;
   loading: boolean;
   showSearchResults: boolean;
   docs: Document[];
-  onQueryChange: (q: string) => void;
-  onIndexChange: (i: number) => void;
-  onSelect: (doc: Document) => void;
+  onQueryChange: (query: string) => void;
+  onIndexChange: (index: number) => void;
+  onSelect: (document: Document) => void;
   onClose: () => void;
 };
 
-export function QuickOpenDialog(props: QuickOpenDialogProps) {
-  const { show, query, index, loading, showSearchResults, docs, onQueryChange, onIndexChange, onSelect, onClose } = props;
-  if (!show) return null;
-
+export function QuickOpenDialog(props: Props) {
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
-    <div className="fixed inset-0 z-[150] flex items-start justify-center pt-[15vh] px-4">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-popover border border-border rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="flex items-center px-4 py-3 border-b border-border gap-3">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <input
-            autoFocus
-            placeholder="Quick open note..."
-            className="bg-transparent border-none focus:ring-0 text-sm flex-1 outline-none"
-            value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") { onClose(); return; }
-              if (docs.length === 0) return;
-              if (e.key === "ArrowDown") { e.preventDefault(); onIndexChange((index + 1) % docs.length); }
-              else if (e.key === "ArrowUp") { e.preventDefault(); onIndexChange((index - 1 + docs.length) % docs.length); }
-              else if (e.key === "Enter") { e.preventDefault(); onSelect(docs[index]); }
-            }}
-          />
-          <button type="button" aria-label="Close" title="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="max-h-[50vh] overflow-y-auto p-2">
-          <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 py-2">{showSearchResults ? "Search Results" : "Recent Updates"}</div>
-          {loading && <div className="px-2 py-2 text-xs text-muted-foreground">Searching...</div>}
-          {docs.length === 0 ? (
-            <div className="px-2 py-4 text-sm text-muted-foreground italic">{showSearchResults ? "No matching notes found" : "No recent notes found"}</div>
-          ) : (
-            <div className="space-y-0.5">
-              {docs.map((doc, i) => {
-                const isActive = i === index;
-                return (
-                  <button key={doc.id} onClick={() => onSelect(doc)} onMouseEnter={() => onIndexChange(i)} className={`flex items-center w-full px-3 py-2 text-sm rounded-lg text-left transition-colors group ${isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"}`}>
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-medium truncate">{doc.title || "Untitled"}</span>
-                      <span className={`text-[10px] truncate ${isActive ? "text-accent-foreground/70" : "text-muted-foreground"}`}>{formatDate(doc.mtime)}</span>
-                    </div>
-                    <ChevronRight className={`h-3.5 w-3.5 ml-auto transition-opacity ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} />
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        <div className="p-3 bg-muted/30 border-t border-border flex justify-between items-center text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">
-          <span>Tip: Select to switch tab or open</span>
-          <div className="flex items-center gap-1"><span className="border border-border bg-background px-1 rounded shadow-sm font-bold">ESC</span><span>to close</span></div>
-        </div>
+    <Dialog
+      open={props.show}
+      title="Quick open note"
+      onClose={props.onClose}
+      initialFocusRef={inputRef}
+      className="mb-auto mt-[15dvh] max-w-lg overflow-hidden"
+      backdropClassName="items-start"
+    >
+      <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+        <Search className="h-4 w-4 text-muted-foreground" />
+        <input
+          ref={inputRef}
+          aria-label="Search notes"
+          placeholder="Quick open note..."
+          className="flex-1 border-none bg-transparent text-sm outline-none focus:ring-0"
+          value={props.query}
+          onChange={(event) => props.onQueryChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (props.docs.length === 0) return;
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              props.onIndexChange((props.index + 1) % props.docs.length);
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              props.onIndexChange((props.index - 1 + props.docs.length) % props.docs.length);
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              props.onSelect(props.docs[props.index]);
+            }
+          }}
+        />
+        <button type="button" aria-label="Close quick open" onClick={props.onClose} className="min-h-10 min-w-10 text-muted-foreground hover:text-foreground">
+          <X className="mx-auto h-4 w-4" />
+        </button>
       </div>
-    </div>
+      <div role="listbox" aria-label="Notes" className="max-h-[50dvh] overflow-y-auto p-2">
+        <div className="px-2 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          {props.showSearchResults ? "Search Results" : "Recent Updates"}
+        </div>
+        {props.loading && <div className="px-2 py-2 text-xs text-muted-foreground">Searching...</div>}
+        {props.docs.length === 0 ? (
+          <div className="px-2 py-4 text-sm italic text-muted-foreground">
+            {props.showSearchResults ? "No matching notes found" : "No recent notes found"}
+          </div>
+        ) : props.docs.map((document, index) => {
+          const active = index === props.index;
+          return (
+            <button
+              type="button"
+              role="option"
+              aria-selected={active}
+              key={document.id}
+              onClick={() => props.onSelect(document)}
+              onMouseEnter={() => props.onIndexChange(index)}
+              className={`group flex w-full items-center rounded-lg px-3 py-2 text-left text-sm ${active ? "bg-accent text-accent-foreground" : "hover:bg-accent"}`}
+            >
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate font-medium">{document.title || "Untitled"}</span>
+                <span className="truncate text-[10px] text-muted-foreground">{formatDate(document.mtime)}</span>
+              </span>
+              <ChevronRight className={`ml-auto h-3.5 w-3.5 ${active ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} />
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex items-center justify-between border-t border-border bg-muted/30 p-3 text-[10px] font-medium uppercase text-muted-foreground">
+        <span>Use ↑ ↓ and Enter</span><span>Esc to close</span>
+      </div>
+    </Dialog>
   );
 }
