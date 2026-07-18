@@ -1,14 +1,14 @@
 import { apiFetch } from "@/lib/api";
 import type { DocumentVersionSummary, Share, Tag } from "@/types";
-import type { DocDetail, SaveDocumentPayload } from "../types";
+import type { DocDetail, SaveDocumentPayload, SaveDocumentResult } from "../types";
 
 export const docEditorService = {
   getDocument(docId: string): Promise<DocDetail> {
     return apiFetch<DocDetail>(`/documents/${docId}?include=tags`);
   },
 
-  saveDocument(docId: string, payload: SaveDocumentPayload): Promise<void> {
-    return apiFetch(`/documents/${docId}`, {
+  saveDocument(docId: string, payload: SaveDocumentPayload): Promise<SaveDocumentResult> {
+    return apiFetch<SaveDocumentResult>(`/documents/${docId}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     });

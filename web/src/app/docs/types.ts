@@ -41,21 +41,3 @@ export type ImportReport = {
   failed: number;
   failed_titles: string[];
 };
-
-export type SavedView = {
-  id: string;
-  name: string;
-  search: string;
-  selectedTag: string;
-  showStarred: boolean;
-  showShared: boolean;
-};
-
-export type SavedViewDTO = {
-  id: string;
-  name: string;
-  search: string;
-  tag_id: string;
-  show_starred: number;
-  show_shared: number;
-};

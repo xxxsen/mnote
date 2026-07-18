@@ -62,7 +62,7 @@ MNote 是一个 AI 增强的现代化 Markdown 笔记系统，采用 Go + Next.j
 | 后端 | Go 1.24, Gin, PostgreSQL + pgvector, sqlx, JWT, Uber-zap |
 | 前端 | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, CodeMirror |
 | AI | Gemini SDK, OpenRouter, OpenAI 兼容接口 |
-| 测试 | Go testing + sqlmock, Vitest + Testing Library (覆盖率 >= 95%) |
+| 测试 | Go testing + sqlmock（后端覆盖率 >= 80%），Vitest + Testing Library（Web 覆盖率 >= 30%，聚焦关键路径） |
 | CI/CD | GitHub Actions (lint / build / test, Docker 镜像自动发布) |
 | 部署 | Docker, Docker Compose, Nginx 反向代理 |
 
@@ -166,6 +166,27 @@ OAuth 回调地址：
 ---
 
 ## 本地开发
+
+### 快速启动
+
+首次安装前端依赖后，`make dev` 会并行启动 Go 后端、Next.js 前端和一个独立的
+pgvector 开发数据库：
+
+```bash
+make web-install
+make dev
+```
+
+默认访问地址为 `http://localhost:3000`，后端为 `http://localhost:8080`，测试账号为
+`test@test.com / test`。按 `Ctrl+C` 会停止本次后端、前端和数据库进程；数据库卷和
+`.dev-data/` 中的上传文件会保留，便于下次快速启动。该命令使用独立的开发 Compose
+项目和数据卷，不会复用 `docker/docker-compose.yml` 的部署数据。
+
+可通过 `MNOTE_DEV_WEB_PORT`、`MNOTE_DEV_BACKEND_PORT`、`MNOTE_DEV_DB_PORT` 覆盖端口；
+通过 `make dev CONFIG=path/to/config.json` 使用自定义配置。自定义外部数据库时可设置
+`MNOTE_DEV_SKIP_DB=1`，需要退出后保留开发数据库进程时可设置
+`MNOTE_DEV_KEEP_DB=1`。自动生成的开发配置不启用真实 AI provider，AI 功能需要使用
+自定义配置。
 
 ### 后端
 

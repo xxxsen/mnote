@@ -18,7 +18,6 @@ type RouterDeps struct {
 	Tags       *TagHandler
 	Export     *ExportHandler
 	Files      *FileHandler
-	SavedViews *SavedViewHandler
 	AI         *AIHandler
 	Import     *ImportHandler
 	Templates  *TemplateHandler
@@ -94,9 +93,6 @@ func registerFeatureRoutes(g *gin.RouterGroup, deps RouterDeps) {
 	g.GET("/export/notes", deps.Export.ExportNotes)
 	g.POST("/export/confluence-html", deps.Export.ConvertMarkdownToConfluenceHTML)
 	g.POST("/files/upload", deps.Files.Upload)
-	g.GET("/saved-views", deps.SavedViews.List)
-	g.POST("/saved-views", deps.SavedViews.Create)
-	g.DELETE("/saved-views/:id", deps.SavedViews.Delete)
 	g.POST("/ai/polish", deps.AI.Polish)
 	g.POST("/ai/generate", deps.AI.Generate)
 	g.POST("/ai/summary", deps.AI.Summary)

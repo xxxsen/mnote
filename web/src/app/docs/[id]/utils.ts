@@ -71,6 +71,53 @@ export function downloadFile(content: string, filename: string, mimeType: string
   URL.revokeObjectURL(url);
 }
 
+// SavedSyncAction is the page's decision for how to react to a
+// successful save in the editor:
+//
+//   - "clear": the snapshot the server just accepted is still the
+//     authoritative state in the editor; the page should mark the
+//     draft as fully synced and remove the localStorage backup.
+//   - "preserve_draft": a newer snapshot exists somewhere (either
+//     queued in the save queue or still in flight in contentRef), so
+//     the page must keep hasUnsavedChanges=true and re-publish the
+//     latest editor body to the localStorage draft to protect against
+//     a crash/reload before the follow-up save commits.
+export type SavedSyncAction = "clear" | "preserve_draft";
+
+// decideSavedSync runs the staleness check the editor page uses to
+// react to useEditorSaveQueue's onSaved callback.
+//
+// A snapshot is "stale" — i.e. NOT the editor's current state — if any
+// of the following hold:
+//
+//   - isLatest is false: the save queue already has a newer snapshot
+//     waiting under its single-flight lock.
+//   - snapshot.content differs from contentRef.current: the user typed
+//     additional characters between requestSave being invoked and the
+//     PUT actually completing.
+//   - snapshot.title differs from the title currently derived from
+//     contentRef.current: same as content drift but for the heading.
+//
+// Stale snapshots must NOT clear the localStorage draft or
+// hasUnsavedChanges, otherwise a crash/reload between this point and
+// the follow-up save would silently lose the unsynced edits.
+export function decideSavedSync(input: {
+  snapshotContent: string;
+  snapshotTitle: string;
+  currentContent: string;
+  currentTitle: string;
+  isLatest: boolean;
+}): SavedSyncAction {
+  if (
+    input.isLatest &&
+    input.snapshotContent === input.currentContent &&
+    input.snapshotTitle === input.currentTitle
+  ) {
+    return "clear";
+  }
+  return "preserve_draft";
+}
+
 export function extractLinkedDocIDs(value: string, excludeId: string): string[] {
   const ids: string[] = [];
   const seen = new Set<string>();

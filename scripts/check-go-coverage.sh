@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-THRESHOLD=${1:-60}
+THRESHOLD=${1:-80}
 TESTDATA_DIR="testdata"
 mkdir -p "${TESTDATA_DIR}"
 COVER_PROFILE="${TESTDATA_DIR}/coverage.out"

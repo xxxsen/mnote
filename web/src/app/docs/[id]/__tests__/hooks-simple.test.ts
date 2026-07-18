@@ -69,11 +69,11 @@ describe("useDocumentActions", () => {
     expect(mockDocService.getDocument).toHaveBeenCalledWith("doc1");
   });
 
-  it("saveDocument passes title and content", async () => {
-    mockDocService.saveDocument.mockResolvedValue(undefined);
+  it("saveDocument passes title, content and save_seq", async () => {
+    mockDocService.saveDocument.mockResolvedValue({ id: "doc1", accepted: true, content_revision: 5 } as never);
     const { result } = renderHook(() => useDocumentActions("doc1"));
-    await result.current.saveDocument("T", "C");
-    expect(mockDocService.saveDocument).toHaveBeenCalledWith("doc1", { title: "T", content: "C" });
+    await result.current.saveDocument("T", "C", 5);
+    expect(mockDocService.saveDocument).toHaveBeenCalledWith("doc1", { title: "T", content: "C", save_seq: 5 });
   });
 });
 

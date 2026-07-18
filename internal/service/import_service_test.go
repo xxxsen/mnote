@@ -577,7 +577,6 @@ func TestImportService_RunImport(t *testing.T) {
 		}
 		versions := &mockVersionRepo{
 			createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
-			getLatestVersionFn:  func(context.Context, string, string) (int, error) { return 0, appErr.ErrNotFound },
 			deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
 		}
 		tags := &mockDocumentTagRepo{
@@ -690,7 +689,6 @@ func TestImportService_OverwriteNote(t *testing.T) {
 		}
 		versions := &mockVersionRepo{
 			createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
-			getLatestVersionFn:  func(context.Context, string, string) (int, error) { return 1, nil },
 			deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
 		}
 		dtags := &mockDocumentTagRepo{
@@ -735,7 +733,6 @@ func TestImportService_ImportNote_Overwrite(t *testing.T) {
 	}
 	versions := &mockVersionRepo{
 		createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
-		getLatestVersionFn:  func(context.Context, string, string) (int, error) { return 1, nil },
 		deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
 	}
 	dtags := &mockDocumentTagRepo{
@@ -953,7 +950,6 @@ func TestImportService_ImportNote_AppendExisting(t *testing.T) {
 	}
 	versions := &mockVersionRepo{
 		createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
-		getLatestVersionFn:  func(context.Context, string, string) (int, error) { return 0, appErr.ErrNotFound },
 		deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
 	}
 	dtags := &mockDocumentTagRepo{

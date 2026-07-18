@@ -1,8 +1,8 @@
 import type { Tag } from "@/types";
 import { Input } from "@/components/ui/input";
-import type { DocumentWithTags, TagSummary, SavedView } from "../types";
+import type { DocumentWithTags, TagSummary } from "../types";
 import { formatRelativeTime } from "../utils";
-import { Bookmark, CalendarDays, ChevronDown, Pin, Plus, Search, Settings, Share2, Star, X } from "lucide-react";
+import { CalendarDays, ChevronDown, Pin, Search, Settings, Share2, Star } from "lucide-react";
 
 export interface SidebarProps {
   selectedTag: string;
@@ -13,8 +13,6 @@ export interface SidebarProps {
   sharedTotal: number;
   recentDocs: DocumentWithTags[];
   tagIndex: Partial<Record<string, Tag>>;
-  savedViews: SavedView[];
-  search: string;
   sidebarTags: TagSummary[];
   sidebarLoading: boolean;
   sidebarHasMore: boolean;
@@ -27,9 +25,6 @@ export interface SidebarProps {
   onShowShared: () => void;
   onNavigate: (path: string) => void;
   onTagSearchChange: (value: string) => void;
-  onSaveCurrentView: () => void;
-  onApplySavedView: (view: SavedView) => void;
-  onRemoveSavedView: (id: string) => void;
   onToggleTagPin: (tag: TagSummary) => void;
   onAutoLoadTags: () => void;
 }
@@ -152,10 +147,10 @@ function TagsPanel({ selectedTag, sidebarTags, sidebarLoading, sidebarHasMore, t
 export function Sidebar(props: SidebarProps) {
   const {
     selectedTag, showStarred, showShared, totalDocs, starredTotal, sharedTotal,
-    recentDocs, savedViews, search,
+    recentDocs,
     sidebarTags, sidebarLoading, sidebarHasMore, tagSearch, sidebarScrollRef, tagListRef,
     onSelectTag, onShowAll, onShowStarred, onShowShared, onNavigate,
-    onTagSearchChange, onSaveCurrentView, onApplySavedView, onRemoveSavedView,
+    onTagSearchChange,
     onToggleTagPin, onAutoLoadTags,
   } = props;
 
@@ -210,45 +205,6 @@ export function Sidebar(props: SidebarProps) {
                 <span>TODOs</span>
               </div>
             </button>
-          </div>
-        </div>
-
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-bold uppercase text-muted-foreground">Saved Views</div>
-            <button onClick={onSaveCurrentView} className="inline-flex h-5 w-5 items-center justify-center text-muted-foreground hover:text-foreground" title="Save current filters">
-              <Plus className="h-3 w-3" />
-            </button>
-          </div>
-          <div className="flex flex-col gap-1">
-            {savedViews.length === 0 ? (
-              <div className="px-2 py-1.5 text-xs text-muted-foreground italic opacity-60">No saved views</div>
-            ) : (
-              savedViews.map((view) => {
-                const isActive = view.search === search && view.selectedTag === selectedTag && view.showStarred === showStarred && view.showShared === showShared;
-                return (
-                  <button
-                    key={view.id}
-                    onClick={() => onApplySavedView(view)}
-                    className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
-                  >
-                    <span className="flex items-center gap-1.5 min-w-0">
-                      <Bookmark className={`h-3 w-3 shrink-0 ${isActive ? "fill-current" : ""}`} />
-                      <span className="truncate">{view.name}</span>
-                    </span>
-                    <span
-                      role="button" tabIndex={0}
-                      className={`rounded p-1 transition-colors ${isActive ? "text-accent-foreground/80 hover:text-accent-foreground" : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"}`}
-                      onClick={(event) => { event.stopPropagation(); onRemoveSavedView(view.id); }}
-                      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); onRemoveSavedView(view.id); } }}
-                      title="Delete saved view" aria-label="Delete saved view"
-                    >
-                      <X className="h-3 w-3" />
-                    </span>
-                  </button>
-                );
-              })
-            )}
           </div>
         </div>
 

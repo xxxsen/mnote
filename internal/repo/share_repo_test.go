@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"regexp"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -154,10 +155,41 @@ func TestShareRepo_ListActiveDocuments(t *testing.T) {
 		AddRow("d1", "Doc1", "sum1", int64(1000), "tok1", int64(0), 1, 0)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
-	docs, err := r.ListActiveDocuments(context.Background(), "u1", "")
+	docs, err := r.ListActiveDocuments(context.Background(), "u1", "", 0)
 	require.NoError(t, err)
 	require.Len(t, docs, 1)
 	assert.Equal(t, "Doc1", docs[0].Title)
+}
+
+// TestShareRepo_ListActiveDocuments_ExpiryFilter guards the expiry filter:
+// the SQL must drop rows whose expires_at is positive but already in the
+// past, AND must keep "no expiry" rows (expires_at = 0). go-sqlmock does
+// not execute SQL,
+// so we cannot assert against real PG behavior; instead we pin the literal
+// predicate fragment via regexp.QuoteMeta so future edits cannot silently
+// flip `>=` to `>`, drop the `OR expires_at = 0` branch, or invert the
+// operand order. sqlmock will refuse to match the query if the predicate
+// drifts and the test will fail loudly.
+//
+// Coverage scope: SQL text only. A future iteration can replace this with
+// a testcontainers-backed integration test that exercises (expires_at = 0,
+// future, past) rows directly; the repository currently has no such
+// harness.
+func TestShareRepo_ListActiveDocuments_ExpiryFilter(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	r := NewShareRepo(db)
+	now := int64(2_000)
+	sdCols := []string{"id", "title", "summary", "mtime", "token", "expires_at", "permission", "allow_download"}
+	expectedFragment := regexp.QuoteMeta("(s.expires_at = 0 OR s.expires_at >=")
+	mock.ExpectQuery(expectedFragment).
+		WithArgs("u1", ShareStateActive, DocumentStateNormal, now).
+		WillReturnRows(sqlmock.NewRows(sdCols))
+	_, err = r.ListActiveDocuments(context.Background(), "u1", "", now)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestShareRepo_CreateComment(t *testing.T) {
@@ -415,7 +447,7 @@ func TestShareRepo_ListActiveDocuments_QueryError(t *testing.T) {
 
 	r := NewShareRepo(db)
 	mock.ExpectQuery("SELECT").WillReturnError(errDB)
-	_, err = r.ListActiveDocuments(context.Background(), "u1", "")
+	_, err = r.ListActiveDocuments(context.Background(), "u1", "", 0)
 	assert.Error(t, err)
 }
 
@@ -427,7 +459,7 @@ func TestShareRepo_ListActiveDocuments_ScanError(t *testing.T) {
 	r := NewShareRepo(db)
 	rows := sqlmock.NewRows([]string{"id"}).AddRow("d1")
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
-	_, err = r.ListActiveDocuments(context.Background(), "u1", "")
+	_, err = r.ListActiveDocuments(context.Background(), "u1", "", 0)
 	assert.Error(t, err)
 }
 
@@ -440,7 +472,7 @@ func TestShareRepo_ListActiveDocuments_WithQuery(t *testing.T) {
 	sdCols := []string{"id", "title", "summary", "mtime", "token", "expires_at", "permission", "allow_download"}
 	rows := sqlmock.NewRows(sdCols).AddRow("d1", "Doc", "sum", int64(1000), "tok", int64(0), 1, 0)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
-	docs, err := r.ListActiveDocuments(context.Background(), "u1", "Doc")
+	docs, err := r.ListActiveDocuments(context.Background(), "u1", "Doc", 0)
 	require.NoError(t, err)
 	assert.Len(t, docs, 1)
 }
@@ -654,7 +686,7 @@ func TestShareRepo_ListActiveDocuments_RowsErr(t *testing.T) {
 		AddRow("d1", "Title", "Sum", int64(1000), "tok", int64(0), 1, 0).
 		RowError(0, errDB)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
-	_, err = r.ListActiveDocuments(context.Background(), "u1", "")
+	_, err = r.ListActiveDocuments(context.Background(), "u1", "", 0)
 	assert.Error(t, err)
 }
 

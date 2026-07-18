@@ -207,12 +207,15 @@ describe("useLinkGraph", () => {
 
   it("aborts pending fetches on unmount", async () => {
     let backlinksAborted = false;
-    mockApiFetch.mockImplementationOnce(((_url: string, opts?: { signal?: AbortSignal }) => new Promise<unknown>((_resolve, reject) => {
-      opts?.signal?.addEventListener("abort", () => {
-        backlinksAborted = true;
-        reject(new DOMException("aborted", "AbortError"));
-      });
-    })));
+    mockApiFetch.mockImplementationOnce(
+      <T = unknown>(_url: string, opts?: Parameters<typeof apiFetch>[1]): Promise<T> =>
+        new Promise<T>((_resolve, reject) => {
+          opts?.signal?.addEventListener("abort", () => {
+            backlinksAborted = true;
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        }),
+    );
     const { unmount } = renderHook(() => useLinkGraph({ docId: "d1", title: "T", previewContent: "" }));
     unmount();
     await new Promise(r => setTimeout(r, 10));

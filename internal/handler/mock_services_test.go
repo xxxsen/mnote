@@ -107,6 +107,7 @@ type mockDocumentService struct {
 	searchFn                         func(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error)
 	getFn                            func(ctx context.Context, userID, docID string) (*model.Document, error)
 	updateFn                         func(ctx context.Context, userID, docID string, input service.DocumentUpdateInput) error
+	saveFn                           func(ctx context.Context, userID, docID string, input service.DocumentUpdateInput) (*model.SaveDocumentResult, error)
 	updateTagsFn                     func(ctx context.Context, userID, docID string, tagIDs []string) error
 	updateSummaryFn                  func(ctx context.Context, userID, docID, summary string) error
 	updatePinnedFn                   func(ctx context.Context, userID, docID string, pinned int) error
@@ -157,6 +158,25 @@ func (m *mockDocumentService) Update(ctx context.Context, userID, docID string, 
 		panic("mockDocumentService.Update not configured")
 	}
 	return m.updateFn(ctx, userID, docID, input)
+}
+
+func (m *mockDocumentService) Save(
+	ctx context.Context, userID, docID string, input service.DocumentUpdateInput,
+) (*model.SaveDocumentResult, error) {
+	if m.saveFn != nil {
+		return m.saveFn(ctx, userID, docID, input)
+	}
+	if m.updateFn != nil {
+		if err := m.updateFn(ctx, userID, docID, input); err != nil {
+			return nil, err
+		}
+		return &model.SaveDocumentResult{
+			ID:              docID,
+			Accepted:        true,
+			ContentRevision: input.SaveSeq,
+		}, nil
+	}
+	panic("mockDocumentService.Save not configured")
 }
 
 func (m *mockDocumentService) UpdateTags(ctx context.Context, userID, docID string, tagIDs []string) error {
@@ -419,35 +439,6 @@ func (m *mockExportService) ConvertMarkdownToConfluenceHTML(ctx context.Context,
 		panic("mockExportService.ConvertMarkdownToConfluenceHTML not configured")
 	}
 	return m.convertHTMLFn(ctx, userID, docID)
-}
-
-// --- ISavedViewService mock ---
-
-type mockSavedViewService struct {
-	listFn   func(ctx context.Context, userID string) ([]model.SavedView, error)
-	createFn func(ctx context.Context, userID string, input service.SavedViewCreateInput) (*model.SavedView, error)
-	deleteFn func(ctx context.Context, userID, id string) error
-}
-
-func (m *mockSavedViewService) List(ctx context.Context, userID string) ([]model.SavedView, error) {
-	if m.listFn == nil {
-		panic("mockSavedViewService.List not configured")
-	}
-	return m.listFn(ctx, userID)
-}
-
-func (m *mockSavedViewService) Create(ctx context.Context, userID string, input service.SavedViewCreateInput) (*model.SavedView, error) {
-	if m.createFn == nil {
-		panic("mockSavedViewService.Create not configured")
-	}
-	return m.createFn(ctx, userID, input)
-}
-
-func (m *mockSavedViewService) Delete(ctx context.Context, userID, id string) error {
-	if m.deleteFn == nil {
-		panic("mockSavedViewService.Delete not configured")
-	}
-	return m.deleteFn(ctx, userID, id)
 }
 
 // --- IAIHandlerService mock ---

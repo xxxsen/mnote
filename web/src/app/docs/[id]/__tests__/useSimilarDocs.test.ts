@@ -137,12 +137,15 @@ describe("useSimilarDocs", () => {
 
   it("aborts previous fetch when called rapidly", async () => {
     let aborted = false;
-    mockApiFetch.mockImplementationOnce(((_url: string, opts?: { signal?: AbortSignal }) => new Promise<unknown>((_resolve, reject) => {
-      opts?.signal?.addEventListener("abort", () => {
-        aborted = true;
-        reject(new DOMException("aborted", "AbortError"));
-      });
-    })));
+    mockApiFetch.mockImplementationOnce(
+      <T = unknown>(_url: string, opts?: Parameters<typeof apiFetch>[1]): Promise<T> =>
+        new Promise<T>((_resolve, reject) => {
+          opts?.signal?.addEventListener("abort", () => {
+            aborted = true;
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        }),
+    );
     mockApiFetch.mockResolvedValueOnce({ items: [{ id: "s2", title: "S2", score: 0.8 }] });
     const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "Test Doc" }));
     await act(async () => { result.current.handleToggleSimilar(); });
@@ -153,12 +156,15 @@ describe("useSimilarDocs", () => {
 
   it("aborts pending fetch on unmount", async () => {
     let aborted = false;
-    mockApiFetch.mockImplementationOnce(((_url: string, opts?: { signal?: AbortSignal }) => new Promise<unknown>((_resolve, reject) => {
-      opts?.signal?.addEventListener("abort", () => {
-        aborted = true;
-        reject(new DOMException("aborted", "AbortError"));
-      });
-    })));
+    mockApiFetch.mockImplementationOnce(
+      <T = unknown>(_url: string, opts?: Parameters<typeof apiFetch>[1]): Promise<T> =>
+        new Promise<T>((_resolve, reject) => {
+          opts?.signal?.addEventListener("abort", () => {
+            aborted = true;
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        }),
+    );
     const { result, unmount } = renderHook(() => useSimilarDocs({ docId: "d1", title: "Test Doc" }));
     await act(async () => { result.current.handleToggleSimilar(); });
     unmount();
