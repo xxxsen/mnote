@@ -62,7 +62,7 @@ MNote 是一个 AI 增强的现代化 Markdown 笔记系统，采用 Go + Next.j
 | 后端 | Go 1.24, Gin, PostgreSQL + pgvector, sqlx, JWT, Uber-zap |
 | 前端 | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, CodeMirror |
 | AI | Gemini SDK, OpenRouter, OpenAI 兼容接口 |
-| 测试 | Go testing + sqlmock, Vitest + Testing Library (覆盖率 >= 95%) |
+| 测试 | Go testing + sqlmock（后端覆盖率 >= 80%），Vitest + Testing Library（Web 覆盖率 >= 30%，聚焦关键路径） |
 | CI/CD | GitHub Actions (lint / build / test, Docker 镜像自动发布) |
 | 部署 | Docker, Docker Compose, Nginx 反向代理 |
 

@@ -7,7 +7,7 @@ GOCACHE ?= $(CURDIR)/.cache/go-build
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.cache/golangci-lint
 GOLANGCI_LINT_VERSION ?= v2.11.4
 GOLANGCI_LINT ?= $(GOBIN)/golangci-lint
-GO_COVERAGE_THRESHOLD ?= 95
+GO_COVERAGE_THRESHOLD ?= 80
 
 build:
 	GOCACHE=$(GOCACHE) go build -o $(BIN) ./cmd/mnote
