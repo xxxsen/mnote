@@ -4,7 +4,7 @@ import {
   DocPreviewModal,
   PreviewModal,
 } from "./EditorModals";
-import { FloatingPanel } from "./FloatingPanel";
+import { EditorContextDrawer } from "./EditorContextPanel";
 import { PopoverPanels } from "./PopoverPanels";
 import { QuickOpenDialog } from "./QuickOpenDialog";
 import { SimilarNotesPanel } from "./SimilarNotesPanel";
@@ -35,7 +35,6 @@ export function EditorOverlayHost({ p }: { p: EditorShellFlatContract }) {
         title={p.title}
         content={p.contentRef.current || p.ec.previewContent}
         onClose={() => p.setShowPreviewModal(false)}
-        onTocLoaded={p.floatingPanel.handleTocLoaded}
       />
       <AiModal
         open={p.ai.aiModalOpen}
@@ -98,28 +97,7 @@ export function EditorOverlayHost({ p }: { p: EditorShellFlatContract }) {
         onSelect={p.quickOpen.handleQuickOpenSelect}
         onClose={p.quickOpen.handleCloseQuickOpen}
       />
-      <FloatingPanel
-        showDetails={p.showDetails}
-        hasTocPanel={p.floatingPanel.hasTocPanel}
-        hasMentionsPanel={p.floatingPanel.hasMentionsPanel}
-        hasGraphPanel={p.floatingPanel.hasGraphPanel}
-        hasSummaryPanel={p.floatingPanel.hasSummaryPanel}
-        tocCollapsed={p.floatingPanel.tocCollapsed}
-        setTocCollapsed={p.floatingPanel.setTocCollapsed}
-        floatingPanelTab={p.floatingPanel.floatingPanelTab}
-        setFloatingPanelTab={p.floatingPanel.setFloatingPanelTab}
-        setFloatingPanelTouched={p.floatingPanel.setFloatingPanelTouched}
-        tocContent={p.floatingPanel.tocContent}
-        summary={p.summary}
-        backlinks={p.linkGraphHook.backlinks}
-        outboundLinks={p.linkGraphHook.outboundLinks}
-        linkGraph={p.linkGraphHook.linkGraph}
-        previewRef={p.scrollSync.previewRef}
-        activeTocId={p.scrollSync.activeTocId}
-        suppressNextSync={p.scrollSync.suppressNextSync}
-        handlePreviewScroll={p.scrollSync.handlePreviewScroll}
-        onNavigate={(path) => p.navigate(path)}
-      />
+      <EditorContextDrawer p={p} />
       <PopoverPanels
         activePopover={p.popover.activePopover}
         setActivePopover={p.popover.setActivePopover}

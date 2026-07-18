@@ -11,7 +11,7 @@ import { EditorHeader } from "./EditorHeader";
 import { EditorFooter } from "./EditorFooter";
 import { EditorToolbar } from "./EditorToolbar";
 import { MobileEditorToolbar } from "./MobileEditorToolbar";
-import { DetailsSidebar } from "./DetailsSidebar";
+import { EditorContextRail } from "./EditorContextPanel";
 import { InlineTagBar } from "./InlineTagBar";
 import { EditorArea } from "./EditorArea";
 import { SplitPane } from "./SplitPane";
@@ -29,8 +29,10 @@ export function EditorShell({ session, commands, ui }: EditorShellProps) {
         onSave={p.handleSave}
         onRetry={p.handleRetry}
         onResolveConflict={p.handleResolveConflict}
-        showDetails={p.showDetails}
-        setShowDetails={p.setShowDetails}
+        outlineOpen={p.contextRail.outlineOpen}
+        detailsOpen={p.contextRail.detailsOpen}
+        onShowOutline={p.contextRail.openOutline}
+        onToggleDetails={p.contextRail.toggleDetails}
         starred={p.starred}
         handleStarToggle={p.handleStarToggle}
         viewMode={p.viewMode}
@@ -87,13 +89,7 @@ function EditorMainArea({ p }: { p: EditorShellFlatContract }) {
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 pb-8">
-      <div
-        className={
-          p.showDetails
-            ? "h-full min-w-0 flex-1 min-[1440px]:mr-80"
-            : "h-full min-w-0 flex-1"
-        }
-      >
+      <div className="h-full min-w-0 flex-1">
         {isDesktop ? (
           p.viewMode === "split" ? (
             <SplitPane
@@ -113,30 +109,7 @@ function EditorMainArea({ p }: { p: EditorShellFlatContract }) {
           <EditorPane p={p} />
         )}
       </div>
-      <DetailsSidebar
-        showDetails={p.showDetails}
-        onClose={() => p.setShowDetails(false)}
-        activeTab={p.activeTab}
-        setActiveTab={p.setActiveTab}
-        summary={p.summary}
-        aiLoading={p.ai.aiLoading}
-        onGenerateSummary={() =>
-          void p.ai.handleAiSummary(p.contentRef.current)
-        }
-        onShowDeleteConfirm={() => p.setShowDeleteConfirm(true)}
-        onExportMarkdown={p.handleExportMarkdown}
-        onExportConfluenceHTML={() => void p.handleExportConfluenceHTML()}
-        documentActions={p.documentActions}
-        onRevert={p.handleRevert}
-        shareUrl={p.share.shareUrl}
-        activeShare={p.share.activeShare}
-        copied={p.share.copied}
-        onShare={p.share.handleShare}
-        onLoadShare={p.share.loadShare}
-        onRevokeShare={p.share.handleRevokeShare}
-        onCopyLink={p.share.handleCopyLink}
-        onUpdateShareConfig={p.share.updateShareConfig}
-      />
+      <EditorContextRail p={p} />
     </div>
   );
 }
@@ -255,8 +228,8 @@ function PreviewPane({ p }: { p: EditorShellFlatContract }) {
             <div className="p-6 md:p-10 lg:p-12">
               <MarkdownPreview
                 content={p.ec.previewContent}
+                outline={p.outline}
                 className="markdown-body h-auto overflow-visible bg-transparent p-0 text-slate-800"
-                onTocLoaded={p.floatingPanel.handleTocLoaded}
                 enableMentionHoverPreview
               />
             </div>

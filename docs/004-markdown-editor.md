@@ -17,8 +17,11 @@
 - `useEditorPersistence`：草稿写入、离页 flush 和本地存储故障提示。
 - `useAutosaveScheduler`：idle/max-wait 自动保存和恢复在线后的重试。
 - `EditorShell`：页面可见结构，只接收 `session`、`commands`、`ui` 三组显式契约。
-- `EditorOverlayHost`：AI、预览、快速打开、相似文档、浮动目录和格式弹层。
-- `SplitPane`：桌面分栏比例与键盘/指针交互。
+- `EditorOverlayHost`：AI、预览、快速打开、相似文档、文档上下文抽屉和格式弹层。
+- `EditorContextRail` / `EditorContextDrawer`：宽屏布局内右栏和窄屏抽屉的两种外壳，共用 Outline / Details 互斥内容结构。
+- `useEditorContextRail`：维护 Outline / Details 视图、Details tab、抽屉和折叠偏好；切换文档时重置视图与 tab。
+- `DetailsPanelContent` / `DetailsShareContent`：Summary、History、Share、导出和删除的纯内容组件，不自行创建定位外壳。
+- `SplitPane`：桌面分栏比例、像素最小宽度和键盘/指针交互。
 - `editor-contracts.ts`：页面组合层与渲染层之间的显式接口，组件 Props 不依赖 Hook 推断返回类型。
 
 AI、标签、分享、相似文档继续使用独立 Hook，不进入编辑会话状态，避免光标或正文变化引起无关功能重算。
@@ -178,31 +181,33 @@ Markdown 预览的 `h1-h6`、`p`、`li`、`pre`、`blockquote`、`table` 和 `hr
 - Editor → Preview：按顶部可见源码行在相邻 source marker 之间插值；没有 marker 才回退总高度比例。
 - Preview → Editor：选择最接近预览顶部的 marker，并用 `EditorView.scrollIntoView` 定位源码行。
 - 写入通过 `requestAnimationFrame` 合并，每帧最多一次。
-- source lock 在程序滚动后的下一帧释放。
+- source lock 在程序滚动后至少保持两个 animation frame，以覆盖 CodeMirror 的延迟测量和滚动事件；锁定期间目标窗格的程序化滚动不得反向改写用户正在操作的源窗格。连续滚动会刷新释放时机。
 - 点击目录时抑制双向同步，等待平滑滚动通过 rAF 判定到达目标后，再同步编辑器。
 
-浮动目录同时维护当前章节，不依赖滚动同步开关：
+文档上下文栏的 Outline 同时维护当前章节，不依赖滚动同步开关，也不依赖正文是否包含 `[toc]`：
 
-- 编辑区滚动时，以编辑器顶部可见源码行之前最近的 Markdown 标题作为当前章节；文首位于首个标题之前时显示首个标题。
-- 预览区滚动时，以预览顶部下方 32～96px 的激活线为准，选择已越过激活线的最后一个标题；滚动到底部时固定选择最后一个标题，避免短尾章节无法激活。
-- 标题锚点与目录生成共用同一 slug 规则，重复标题按出现顺序追加稳定序号。
-- 当前目录链接使用 `aria-current="location"` 和可见高亮；当前项离开目录挂件自身的可滚动视口时，只滚动目录挂件到最近可见位置，不改变编辑区或预览区位置。
+- `buildOutline` 从 Markdown 一次派生 `level`、可见标题文本、稳定 `id` 和 `sourceLine`；预览锚点、内联目录、右侧 Outline、源码定位和滚动同步复用该结构。
+- `[toc]` / `[TOC]` 只控制正文中是否插入内联目录。只要正文含标题，右侧 Outline 默认展示；无标题时仍保留整栏 Outline 并显示空状态。
+- Edit 模式点击 Outline 时使用 `EditorView.scrollIntoView` 定位 `sourceLine`，不移动光标；Preview 和 Split 模式定位预览标题 id。
+- Split 同步开启时预览定位后编辑器跟随；同步关闭时只移动预览器。
+- 编辑区滚动时，以编辑器顶部可见源码行之前最近的 Markdown 标题作为当前章节；预览区滚动时使用顶部下方 32～96px 的激活线，滚动到底部时选择最后一个标题。
+- 重复标题按出现顺序追加稳定序号。当前项使用 `aria-current="location"`；仅当当前项离开 Outline 自身可视区域时，才最小幅度滚动右栏。
 
 ## 10. 响应式布局
 
 页面使用动态视口高度并禁止页面级横向滚动。
 
-桌面端支持 Edit、Split、Preview 三种模式。Split 比例限制在 30%～70%，支持：
+桌面端支持 Edit、Split、Preview 三种模式。文档上下文是主工作区的 flex sibling，不使用 fixed、absolute 或补偿 margin：
 
-- 指针拖动；
-- 键盘方向键调整；
-- Home/End 跳到边界；
-- 双击恢复 50%；
-- 本地持久化并在刷新后恢复。
+- 视口不小于 `1280px` 时常驻最右侧；展开宽度为 `304px`，折叠图标栏宽度为 `52px`。
+- 默认视图为整栏 Outline，并默认展开；折叠偏好使用 `mnote:editor-context-rail:collapsed:v1` 持久化，当前视图和 Details tab 不跨文档持久化。
+- Mentions 和 Graph 当前不提供可见入口。顶部 Details 按钮把同一物理右栏切换为 Summary、History、Share，并隐藏 Outline；按钮随后变为 Show outline，点击后原位恢复 Outline。Details 切换不是折叠操作，右栏折叠由独立按钮控制。
+- 同一文档内切到 Outline 时保留 Details 组件实例、当前 tab 和已加载数据；再次打开 Details 不重复加载已保留的 History 或 Share。通过顶部 Details 从 Outline 进入时默认定位 Summary；切换文档时重置为 Outline / Summary。
+- `1024px–1279px` 使用最大宽度 `384px` 的右侧 Dialog drawer；小于 `1024px` 时同一 drawer 铺满可用宽度。窄屏顶部的 Outline 和 Details 入口打开同一个 drawer，内容仍互斥；Outline 选中章节后关闭 drawer。断点进入宽屏会关闭 drawer，退出宽屏不会自动弹出。
 
-小于桌面断点时只提供 Edit/Preview 切换，不显示被压缩的双栏。页面根据媒体查询只挂载一个 CodeMirror 实例；不能同时渲染桌面和移动实例后再用 CSS 隐藏。
+Split 的静态比例边界为 30%～70%，编辑器和预览器的像素最小宽度均为 `420px`。`SplitPane` 从主工作区实测宽度扣除 `6px` 分隔条后收紧有效比例；视口变化只 clamp 本次展示值，不覆盖已保存比例，只有用户主动拖动或按键时才保存新比例。分隔条支持指针拖动、方向键、Home/End 和双击恢复 50%。
 
-详情栏在视口宽度不小于 1440px 时使用非模态 dock；其他宽度为模态覆盖式 drawer，不挤压正文。移动工具栏保留高频操作，其他命令进入 More 对话框，触控目标满足移动操作需要。
+小于桌面断点时只提供 Edit/Preview 切换，不显示被压缩的双栏。页面根据媒体查询只挂载一个 CodeMirror 实例；不能同时渲染桌面和移动实例后再用 CSS 隐藏。移动工具栏保留高频操作，其他命令进入 More 对话框。
 
 ## 11. 菜单、弹层与可访问性
 
@@ -214,7 +219,7 @@ Markdown 预览的 `h1-h6`、`p`、`li`、`pre`、`blockquote`、`table` 和 `hr
 - 关闭后恢复触发点焦点；
 - 打开期间 body scroll lock。
 
-删除、预览、文档预览、快速打开、AI、移动 More、详情 drawer、草稿恢复和冲突对话框使用同一实现。草稿恢复和冲突对话框禁止 Escape 与背景关闭，其余对话框允许关闭。
+删除、预览、文档预览、快速打开、AI、移动 More、文档上下文 drawer、草稿恢复和冲突对话框使用同一实现。草稿恢复和冲突对话框禁止 Escape 与背景关闭，其余对话框允许关闭。
 
 Slash/Wikilink 菜单使用 listbox/option 语义，编辑器暴露 `aria-controls`、`aria-expanded` 和 `aria-activedescendant`。异步结果尚未加载或为空时，Enter 不执行选择。
 
@@ -255,8 +260,8 @@ Slash/Wikilink 菜单使用 listbox/option 语义，编辑器暴露 `aria-contro
 - 快速离页、空正文、旧草稿、损坏草稿和存储失败；
 - 同一基准的双客户端保存、三种冲突动作和二次冲突；
 - 网络错误、Retry 和恢复在线；
-- 桌面三模式、分栏键盘/指针调整、移动切换和详情 drawer；
+- 桌面三模式、420px 分栏边界、默认 Outline、Outline/Details 原位切换、常驻/折叠右栏、断点切换和移动 drawer；
 - 标题/列表互转、选区边界、撤销重做、输入法和双链菜单；
-- source-line 双向滚动、关闭同步、目录平滑滚动，以及编辑区/预览区当前章节高亮和目录自身跟随；
+- source-line 双向滚动、预览区真实滚轮不回顶、关闭同步、无 `[toc]` 的默认 Outline、三种模式定位、当前章节高亮和 Outline 自身跟随；
 - 全键盘 Dialog/Menu 流程、焦点恢复和控件可访问名称；
 - 大正文连续输入期间不丢字符，预览最终收敛。

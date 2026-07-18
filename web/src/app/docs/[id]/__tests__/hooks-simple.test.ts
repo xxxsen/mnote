@@ -26,7 +26,6 @@ import { useDocumentActions } from "../hooks/useDocumentActions";
 import { useTagActions } from "../hooks/useTagActions";
 import { usePreviewDoc } from "../hooks/usePreviewDoc";
 import { useFilePaste } from "../hooks/useFilePaste";
-import { useFloatingPanel } from "../hooks/useFloatingPanel";
 import { usePopover } from "../hooks/usePopover";
 import { useScrollSync } from "../hooks/useScrollSync";
 import { useShareLink } from "../hooks/useShareLink";
@@ -274,58 +273,6 @@ describe("useFilePaste", () => {
       await result.current.handlePaste(event);
     });
     expect(replace).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("[FILE:"));
-  });
-});
-
-describe("useFloatingPanel", () => {
-  it("initializes with default state", () => {
-    const { result } = renderHook(() => useFloatingPanel({
-      docId: "d1", previewContent: "", summary: "", backlinks: [], outboundLinks: [],
-    }));
-    expect(result.current.tocContent).toBe("");
-    expect(result.current.tocCollapsed).toBe(false);
-    expect(result.current.hasTocPanel).toBe(false);
-  });
-
-  it("handleTocLoaded sets tocContent", () => {
-    const { result } = renderHook(() => useFloatingPanel({
-      docId: "d1", previewContent: "[toc]\n# H1", summary: "", backlinks: [], outboundLinks: [],
-    }));
-    act(() => { result.current.handleTocLoaded("- [H1](#h1)"); });
-    expect(result.current.tocContent).toBe("- [H1](#h1)");
-    expect(result.current.hasTocPanel).toBe(true);
-  });
-
-  it("persists tocCollapsed to localStorage", () => {
-    const { result } = renderHook(() => useFloatingPanel({
-      docId: "d1", previewContent: "", summary: "", backlinks: [], outboundLinks: [],
-    }));
-    act(() => { result.current.setTocCollapsed(true); });
-    expect(localStorage.getItem("mnote:floating-panel-collapsed")).toBe("1");
-  });
-
-  it("computes hasMentionsPanel from backlinks", () => {
-    const { result } = renderHook(() => useFloatingPanel({
-      docId: "d1", previewContent: "", summary: "",
-      backlinks: [{ id: "b1" } as never], outboundLinks: [],
-    }));
-    expect(result.current.hasMentionsPanel).toBe(true);
-  });
-
-  it("computes hasGraphPanel from links", () => {
-    const { result } = renderHook(() => useFloatingPanel({
-      docId: "d1", previewContent: "", summary: "",
-      backlinks: [], outboundLinks: [{ id: "o1" } as never],
-    }));
-    expect(result.current.hasGraphPanel).toBe(true);
-  });
-
-  it("computes hasSummaryPanel from summary", () => {
-    const { result } = renderHook(() => useFloatingPanel({
-      docId: "d1", previewContent: "", summary: "a summary",
-      backlinks: [], outboundLinks: [],
-    }));
-    expect(result.current.hasSummaryPanel).toBe(true);
   });
 });
 

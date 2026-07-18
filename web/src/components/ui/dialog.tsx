@@ -32,6 +32,7 @@ const FOCUSABLE = [
 
 export type DialogVariant = "modal" | "command" | "sheet" | "drawer" | "fullscreen";
 export type DialogSize = "sm" | "md" | "lg" | "xl";
+export type DialogDrawerWidth = "default" | "compact";
 export type DialogDismissPolicy = "always" | "when-idle" | "explicit";
 export type DialogCloseReason =
   | "escape"
@@ -48,6 +49,7 @@ export type DialogProps = {
   onClose?: (reason: DialogCloseReason) => void;
   variant?: DialogVariant;
   size?: DialogSize;
+  drawerWidth?: DialogDrawerWidth;
   dismissPolicy?: DialogDismissPolicy;
   busy?: boolean;
   role?: "dialog" | "alertdialog";
@@ -83,7 +85,7 @@ const panelVariantClasses: Record<DialogVariant, string> = {
   modal: "max-h-[calc(100dvh-8px)] rounded-t-2xl sm:max-h-[min(90dvh,56rem)] sm:rounded-2xl",
   command: "mt-[10dvh] max-h-[min(80dvh,42rem)] rounded-2xl",
   sheet: "max-h-[calc(100dvh-8px)] rounded-t-2xl",
-  drawer: "h-full max-h-none max-w-none rounded-none sm:max-w-md sm:rounded-l-2xl",
+  drawer: "h-full max-h-none max-w-none rounded-none sm:rounded-l-2xl",
   fullscreen: "h-full max-h-none max-w-none rounded-none sm:h-[calc(100dvh-32px)] sm:rounded-2xl",
 };
 
@@ -233,8 +235,16 @@ function getPanelSizeClass(variant: DialogVariant, size: DialogSize) {
   return sizeClasses[size];
 }
 
+function getDrawerWidthClass(
+  variant: DialogVariant,
+  drawerWidth: DialogDrawerWidth,
+) {
+  if (variant !== "drawer") return undefined;
+  return drawerWidth === "compact" ? "lg:max-w-96" : "sm:max-w-md";
+}
+
 type DialogLayerProps = Required<
-  Pick<DialogProps, "open" | "title" | "variant" | "size" | "role">
+  Pick<DialogProps, "open" | "title" | "variant" | "size" | "drawerWidth" | "role">
 > & Pick<DialogProps, "description" | "children"> & {
   titleId: string;
   descriptionId: string;
@@ -250,6 +260,7 @@ function DialogLayer({
   children,
   variant,
   size,
+  drawerWidth,
   role,
   titleId,
   descriptionId,
@@ -294,6 +305,7 @@ function DialogLayer({
           panelVariantClasses[variant],
           panelDurationClasses[variant],
           getPanelSizeClass(variant, size),
+          getDrawerWidthClass(variant, drawerWidth),
           open
             ? "translate-x-0 translate-y-0 scale-100 opacity-100"
             : panelHiddenClasses[variant],
@@ -317,6 +329,7 @@ export function Dialog({
   onClose,
   variant = "modal",
   size = "md",
+  drawerWidth = "default",
   dismissPolicy = "always",
   busy = false,
   role = "dialog",
@@ -350,6 +363,7 @@ export function Dialog({
       description={description}
       variant={variant}
       size={size}
+      drawerWidth={drawerWidth}
       role={role}
       titleId={titleId}
       descriptionId={descriptionId}

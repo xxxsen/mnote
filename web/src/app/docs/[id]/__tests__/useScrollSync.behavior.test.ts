@@ -55,13 +55,14 @@ describe("useScrollSync behavior", () => {
     } as unknown as EditorView;
     const editorViewRef = { current: view };
     const hook = renderHook(
-      ({ scopeKey, content }) => useScrollSync({
-        loading: false,
-        enabled,
-        content,
-        scopeKey,
-        editorViewRef,
-      }),
+      ({ scopeKey, content }) =>
+        useScrollSync({
+          loading: false,
+          enabled,
+          content,
+          scopeKey,
+          editorViewRef,
+        }),
       {
         initialProps: {
           scopeKey: "doc-a",
@@ -74,11 +75,17 @@ describe("useScrollSync behavior", () => {
       scrollHeight: { configurable: true, value: 1000 },
       clientHeight: { configurable: true, value: 200 },
     });
-    for (const [line, top] of [[10, 100], [30, 500]] as const) {
+    for (const [line, top] of [
+      [10, 100],
+      [30, 500],
+    ] as const) {
       const marker = document.createElement("h2");
       marker.dataset.sourceLine = String(line);
       marker.id = line === 10 ? "intro" : "details";
-      Object.defineProperty(marker, "offsetTop", { configurable: true, value: top });
+      Object.defineProperty(marker, "offsetTop", {
+        configurable: true,
+        value: top,
+      });
       preview.appendChild(marker);
     }
     act(() => {
@@ -117,6 +124,26 @@ describe("useScrollSync behavior", () => {
     expect(harness.dispatch).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps preview scrolling authoritative while CodeMirror settles its delayed scroll", () => {
+    const harness = setup();
+    harness.preview.scrollTop = 480;
+
+    act(() => harness.result.current.handlePreviewScroll());
+    act(runNextFrame);
+    expect(harness.dispatch).toHaveBeenCalledTimes(1);
+    expect(harness.result.current.scrollingSource.current).toBe("preview");
+
+    act(runNextFrame);
+    expect(harness.result.current.scrollingSource.current).toBe("preview");
+
+    act(() => harness.result.current.handleEditorScroll());
+    expect(harness.preview.scrollTop).toBe(480);
+
+    act(runNextFrame);
+    expect(harness.result.current.scrollingSource.current).toBeNull();
+    expect(harness.preview.scrollTop).toBe(480);
+  });
+
   it("resets reused heading ids across documents while keeping the editor listener stable", () => {
     const harness = setup(false);
     const boundHandler = harness.result.current.handleEditorScroll;
@@ -153,5 +180,57 @@ describe("useScrollSync behavior", () => {
     act(runNextFrame);
     expect(harness.result.current.activeTocId).toBe("details");
     expect(harness.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("navigates the editor by source line without requiring a preview", () => {
+    const harness = setup(false);
+
+    let navigated = false;
+    act(() => {
+      navigated = harness.result.current.scrollEditorToSourceLine(
+        30,
+        "details",
+      );
+    });
+
+    expect(navigated).toBe(true);
+    expect(harness.dispatch).toHaveBeenCalledTimes(1);
+    expect(harness.result.current.activeTocId).toBe("details");
+    expect(
+      harness.result.current.scrollEditorToSourceLine(101, "missing"),
+    ).toBe(false);
+  });
+
+  it("navigates the preview by heading id and honors reduced motion", () => {
+    const harness = setup(false);
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: true })),
+    );
+    vi.spyOn(harness.preview, "getBoundingClientRect").mockReturnValue({
+      top: 100,
+    } as DOMRect);
+    const details = harness.preview.querySelector<HTMLElement>("#details");
+    if (!details) throw new Error("details heading missing");
+    vi.spyOn(details, "getBoundingClientRect").mockReturnValue({
+      top: 500,
+    } as DOMRect);
+    const scrollTo = vi.fn(({ top }: ScrollToOptions) => {
+      harness.preview.scrollTop = top ?? 0;
+    });
+    Object.assign(harness.preview, { scrollTo });
+
+    let navigated = false;
+    act(() => {
+      navigated = harness.result.current.scrollPreviewToHeading("details");
+    });
+
+    expect(navigated).toBe(true);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 400, behavior: "auto" });
+    expect(harness.result.current.activeTocId).toBe("details");
+    expect(harness.result.current.scrollPreviewToHeading("missing")).toBe(
+      false,
+    );
+    act(runNextFrame);
   });
 });

@@ -2,6 +2,7 @@ import type { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import type { ReactNode, ReactPortal, RefObject } from "react";
 import type { ThemeId } from "@/lib/editor-themes";
+import type { OutlineEntry } from "@/components/markdown-preview/types";
 import type {
   Document as MnoteDocument,
   DocumentVersionSummary,
@@ -9,6 +10,7 @@ import type {
   Tag,
 } from "@/types";
 import type { EmojiTab } from "./constants";
+import type { EditorContextRailController } from "./hooks/useEditorContextRail";
 import type { MarkdownCommand } from "./commands/markdown-commands";
 import type {
   AIAction,
@@ -43,6 +45,8 @@ export interface EditorScrollContract {
   activeTocId: string | null;
   suppressNextSync: () => () => void;
   handlePreviewScroll: () => void;
+  scrollEditorToSourceLine: (sourceLine: number, id: string) => boolean;
+  scrollPreviewToHeading: (id: string) => boolean;
 }
 
 export interface EditorPopoverContract {
@@ -93,22 +97,8 @@ export interface EditorLinkGraphContract {
       kind: "current" | "incoming" | "outgoing" | "both";
     }>;
     edges: Array<{ from: string; to: string }>;
-    positionByID: Record<string, { x: number; y: number }>;
+    positionByID: Partial<Record<string, { x: number; y: number }>>;
   };
-}
-
-export interface EditorFloatingPanelContract {
-  tocContent: string;
-  tocCollapsed: boolean;
-  setTocCollapsed: (value: boolean) => void;
-  floatingPanelTab: "toc" | "mentions" | "graph" | "summary";
-  setFloatingPanelTab: (tab: "toc" | "mentions" | "graph" | "summary") => void;
-  setFloatingPanelTouched: (value: boolean) => void;
-  handleTocLoaded: (toc: string) => void;
-  hasTocPanel: boolean;
-  hasMentionsPanel: boolean;
-  hasGraphPanel: boolean;
-  hasSummaryPanel: boolean;
 }
 
 export interface EditorInlineTagContract {
@@ -257,7 +247,8 @@ export interface EditorUiContract {
   navigate: (path: string) => void;
   toast: EditorToast;
   linkGraphHook: EditorLinkGraphContract;
-  floatingPanel: EditorFloatingPanelContract;
+  outline: readonly OutlineEntry[];
+  contextRail: EditorContextRailController;
   inlineTag: EditorInlineTagContract;
   preview: EditorPreviewContract;
   share: EditorShareContract;
@@ -270,10 +261,6 @@ export interface EditorUiContract {
   };
   summary: string;
   starred: number;
-  showDetails: boolean;
-  setShowDetails: (value: boolean) => void;
-  activeTab: "summary" | "history" | "share";
-  setActiveTab: (value: "summary" | "history" | "share") => void;
   currentThemeId: ThemeId;
   showDeleteConfirm: boolean;
   setShowDeleteConfirm: (value: boolean) => void;

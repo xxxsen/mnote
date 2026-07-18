@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorView } from "@codemirror/view";
-import {
-  createSlugger,
-  extractHeadings,
-} from "@/components/markdown-preview/helpers";
+import { buildOutline } from "@/components/markdown-preview/helpers";
+import type { OutlineEntry } from "@/components/markdown-preview/types";
+import { useOutlineNavigation } from "./useOutlineNavigation";
 
 export type SourceMarker = { sourceLine: number; offsetTop: number };
-export type TocHeadingMarker = { sourceLine: number; id: string };
+export type TocHeadingMarker = Pick<OutlineEntry, "sourceLine" | "id">;
 
 export function interpolatePreviewOffset(
   markers: SourceMarker[],
@@ -48,11 +47,10 @@ export function nearestSourceLine(
 }
 
 export function buildTocHeadingMarkers(content: string): TocHeadingMarker[] {
-  const slugger = createSlugger();
-  return extractHeadings(content).flatMap((heading) => {
-    const id = slugger(heading.text);
-    return heading.sourceLine ? [{ sourceLine: heading.sourceLine, id }] : [];
-  });
+  return buildOutline(content).map(({ sourceLine, id }) => ({
+    sourceLine,
+    id,
+  }));
 }
 
 export function activeHeadingForSourceLine(
@@ -75,18 +73,14 @@ export function activeHeadingForPreview(container: HTMLElement): string | null {
     ),
   ).filter((heading) => heading.id);
   if (headings.length === 0) return null;
-
   const atBottom =
     container.scrollHeight > container.clientHeight + 1 &&
     container.scrollTop + container.clientHeight >= container.scrollHeight - 2;
   if (atBottom) return headings[headings.length - 1].id;
 
-  const containerTop = container.getBoundingClientRect().top;
-  const activationOffset = Math.min(
-    96,
-    Math.max(32, container.clientHeight * 0.2),
-  );
-  const activationY = containerTop + activationOffset;
+  const activationY =
+    container.getBoundingClientRect().top +
+    Math.min(96, Math.max(32, container.clientHeight * 0.2));
   let activeIndex = 0;
   let low = 0;
   let high = headings.length - 1;
@@ -124,18 +118,31 @@ export function useScrollSync(opts: {
   loading: boolean;
   enabled?: boolean;
   content?: string;
+  outline?: readonly OutlineEntry[];
   scopeKey?: string;
   editorViewRef: React.RefObject<EditorView | null>;
 }) {
-  const { loading, enabled = true, content = "", scopeKey = "", editorViewRef } = opts;
+  const {
+    loading,
+    enabled = true,
+    content = "",
+    outline,
+    scopeKey = "",
+    editorViewRef,
+  } = opts;
   const previewRef = useRef<HTMLDivElement>(null);
   const scrollingSource = useRef<"editor" | "preview" | null>(null);
   const scrollSyncTimerRef = useRef<number | null>(null);
   const frameRef = useRef<number | null>(null);
+  const releaseFrameRef = useRef<number | null>(null);
   const suppressionRef = useRef(false);
   const headingMarkers = useMemo(
-    () => buildTocHeadingMarkers(content),
-    [content],
+    () =>
+      (outline ?? buildOutline(content)).map(({ sourceLine, id }) => ({
+        sourceLine,
+        id,
+      })),
+    [content, outline],
   );
   const headingMarkersRef = useRef(headingMarkers);
   const enabledRef = useRef(enabled);
@@ -152,13 +159,23 @@ export function useScrollSync(opts: {
     loadingRef.current = loading;
     scopeKeyRef.current = scopeKey;
   }, [enabled, headingMarkers, loading, scopeKey]);
+  useEffect(
+    () => () => {
+      if (frameRef.current !== null) {
+        window.cancelAnimationFrame(frameRef.current);
+      }
+      if (releaseFrameRef.current !== null) {
+        window.cancelAnimationFrame(releaseFrameRef.current);
+      }
+    },
+    [],
+  );
 
-  const activeTocId = activeTocObservation.scopeKey === scopeKey && headingMarkers.some(
-    (heading) => heading.id === activeTocObservation.id,
-  )
-    ? activeTocObservation.id
-    : (headingMarkers[0]?.id ?? null);
-
+  const activeTocId =
+    activeTocObservation.scopeKey === scopeKey &&
+    headingMarkers.some((heading) => heading.id === activeTocObservation.id)
+      ? activeTocObservation.id
+      : (headingMarkers[0]?.id ?? null);
   const updateActiveTocId = useCallback((id: string | null) => {
     const currentScopeKey = scopeKeyRef.current;
     setActiveTocObservation((current) =>
@@ -167,17 +184,24 @@ export function useScrollSync(opts: {
         : { scopeKey: currentScopeKey, id },
     );
   }, []);
-
-  const releaseOnNextFrame = useCallback(() => {
-    window.requestAnimationFrame(() => {
-      scrollingSource.current = null;
-      suppressionRef.current = false;
+  const releaseAfterSettledFrames = useCallback(() => {
+    if (releaseFrameRef.current !== null) {
+      window.cancelAnimationFrame(releaseFrameRef.current);
+    }
+    releaseFrameRef.current = window.requestAnimationFrame(() => {
+      // CodeMirror applies scrollIntoView during a measured frame. Keep the
+      // originating pane authoritative until its delayed scroll event fires.
+      releaseFrameRef.current = window.requestAnimationFrame(() => {
+        releaseFrameRef.current = null;
+        scrollingSource.current = null;
+        suppressionRef.current = false;
+      });
     });
   }, []);
-
   const schedule = useCallback((work: () => void) => {
-    if (frameRef.current !== null)
+    if (frameRef.current !== null) {
       window.cancelAnimationFrame(frameRef.current);
+    }
     frameRef.current = window.requestAnimationFrame(() => {
       frameRef.current = null;
       work();
@@ -190,9 +214,8 @@ export function useScrollSync(opts: {
       scrollingSource.current === "preview" ||
       loadingRef.current ||
       suppressionRef.current
-    ) {
+    )
       return;
-    }
     schedule(() => {
       const view = editorViewRef.current;
       if (!view) return;
@@ -201,7 +224,6 @@ export function useScrollSync(opts: {
       updateActiveTocId(
         activeHeadingForSourceLine(headingMarkersRef.current, visibleLine),
       );
-
       if (!enabledRef.current) return;
       const preview = previewRef.current;
       if (!preview) return;
@@ -219,33 +241,35 @@ export function useScrollSync(opts: {
       const fallback = (view.scrollDOM.scrollTop / editorMax) * previewMax;
       scrollingSource.current = "editor";
       preview.scrollTop = clamp(markerTarget ?? fallback, 0, previewMax);
-      releaseOnNextFrame();
+      releaseAfterSettledFrames();
     });
-  }, [editorViewRef, releaseOnNextFrame, schedule, updateActiveTocId]);
+  }, [editorViewRef, releaseAfterSettledFrames, schedule, updateActiveTocId]);
 
   const handlePreviewScroll = useCallback(() => {
     if (
       scrollingSource.current === "editor" ||
       loadingRef.current ||
       suppressionRef.current
-    ) {
+    )
       return;
-    }
     schedule(() => {
       const preview = previewRef.current;
       if (!preview) return;
       updateActiveTocId(activeHeadingForPreview(preview));
-
       if (!enabledRef.current) return;
       const view = editorViewRef.current;
       if (!view) return;
-      const markers = readMarkers(preview);
-      const sourceLine = nearestSourceLine(markers, preview.scrollTop);
+      const sourceLine = nearestSourceLine(
+        readMarkers(preview),
+        preview.scrollTop,
+      );
       scrollingSource.current = "preview";
       if (sourceLine !== null && sourceLine <= view.state.doc.lines) {
-        const position = view.state.doc.line(sourceLine).from;
         view.dispatch({
-          effects: EditorView.scrollIntoView(position, { y: "start" }),
+          effects: EditorView.scrollIntoView(
+            view.state.doc.line(sourceLine).from,
+            { y: "start" },
+          ),
         });
       } else {
         const previewMax = preview.scrollHeight - preview.clientHeight;
@@ -256,10 +280,19 @@ export function useScrollSync(opts: {
             (preview.scrollTop / previewMax) * editorMax;
         }
       }
-      releaseOnNextFrame();
+      releaseAfterSettledFrames();
     });
-  }, [editorViewRef, releaseOnNextFrame, schedule, updateActiveTocId]);
+  }, [editorViewRef, releaseAfterSettledFrames, schedule, updateActiveTocId]);
 
+  const navigation = useOutlineNavigation({
+    editorViewRef,
+    previewRef,
+    suppressionRef,
+    scrollingSource,
+    updateActiveTocId,
+    handlePreviewScroll,
+    releaseAfterSettledFrames,
+  });
   const suppressNextSync = useCallback(() => {
     suppressionRef.current = true;
     return () => {
@@ -274,6 +307,7 @@ export function useScrollSync(opts: {
     suppressNextSync,
     handleEditorScroll,
     handlePreviewScroll,
+    ...navigation,
     activeTocId,
   };
 }

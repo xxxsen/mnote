@@ -45,6 +45,8 @@ describe("SplitPane pointer input", () => {
       clientX: 800,
     });
 
-    expect(onRatioChange.mock.calls.map((call) => call[0])).toEqual([30, 70]);
+    const expectedMin = (420 / (1000 - 6)) * 100;
+    expect(onRatioChange.mock.calls[0][0]).toBeCloseTo(expectedMin);
+    expect(onRatioChange.mock.calls[1][0]).toBeCloseTo(100 - expectedMin);
   });
 });

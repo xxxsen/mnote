@@ -6,6 +6,7 @@ import {
   Columns,
   Edit3,
   Eye,
+  ListTree,
   Save,
   Star,
   Columns2,
@@ -23,8 +24,10 @@ type Props = {
   onSave: () => void;
   onRetry: () => void;
   onResolveConflict: () => void;
-  showDetails: boolean;
-  setShowDetails: (value: boolean) => void;
+  outlineOpen: boolean;
+  detailsOpen: boolean;
+  onShowOutline: () => void;
+  onToggleDetails: () => void;
   starred: number;
   handleStarToggle: () => void;
   viewMode: EditorViewMode;
@@ -96,13 +99,13 @@ export function EditorHeader(props: Props) {
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1">
         <Button
           variant="ghost"
           size="icon"
           aria-label={starLabel}
           onClick={props.handleStarToggle}
-          className={`h-10 w-10 ${starClass}`}
+          className={`hidden h-10 w-10 min-[420px]:inline-flex ${starClass}`}
         >
           <Star className={`h-4 w-4 ${starIconClass}`} />
         </Button>
@@ -114,7 +117,7 @@ export function EditorHeader(props: Props) {
           className="h-9 rounded-lg px-2 text-xs font-semibold sm:px-3"
         >
           <PrimaryStatusIcon status={props.syncStatus} busy={primary.busy} />
-          <span className="hidden min-[420px]:inline">{primary.label}</span>
+          <span className="hidden min-[520px]:inline">{primary.label}</span>
         </Button>
         <div
           className="hidden items-center rounded-lg border border-border p-0.5 lg:flex"
@@ -145,10 +148,22 @@ export function EditorHeader(props: Props) {
         <Button
           variant="ghost"
           size="icon"
-          aria-label={props.showDetails ? "Hide details" : "Show details"}
-          aria-expanded={props.showDetails}
-          onClick={() => props.setShowDetails(!props.showDetails)}
-          className={`h-10 w-10 ${props.showDetails ? "bg-accent" : "text-muted-foreground"}`}
+          aria-label="Open outline"
+          aria-expanded={props.outlineOpen}
+          onClick={props.onShowOutline}
+          className={`h-10 w-10 min-[1280px]:hidden ${
+            props.outlineOpen ? "bg-accent" : "text-muted-foreground"
+          }`}
+        >
+          <ListTree className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={props.detailsOpen ? "Show outline" : "Show details"}
+          aria-expanded={props.detailsOpen}
+          onClick={props.onToggleDetails}
+          className={`h-10 w-10 ${props.detailsOpen ? "bg-accent" : "text-muted-foreground"}`}
         >
           <Columns className="h-4 w-4 rotate-90" />
         </Button>

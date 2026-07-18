@@ -137,7 +137,6 @@ export function PreviewModal(props: {
   title: string;
   content: string;
   onClose: () => void;
-  onTocLoaded: (toc: string) => void;
 }) {
   return (
     <Dialog
@@ -167,7 +166,6 @@ export function PreviewModal(props: {
             <MarkdownPreview
               content={props.content}
               className="markdown-body h-auto overflow-visible bg-transparent p-0 text-slate-800"
-              onTocLoaded={props.onTocLoaded}
               enableMentionHoverPreview
             />
           </div>

@@ -16,8 +16,10 @@ function renderHeader(status: EditorSyncStatus, titleMissing = false) {
       onSave={vi.fn()}
       onRetry={vi.fn()}
       onResolveConflict={vi.fn()}
-      showDetails={false}
-      setShowDetails={vi.fn()}
+      outlineOpen
+      detailsOpen={false}
+      onShowOutline={vi.fn()}
+      onToggleDetails={vi.fn()}
       starred={0}
       handleStarToggle={vi.fn()}
       viewMode="split"
@@ -44,7 +46,10 @@ describe("EditorHeader synchronization states", () => {
 
   it("keeps a titleless local draft local until a title is added", () => {
     renderHeader("LOCAL_CHANGES", true);
-    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty(
+      "disabled",
+      true,
+    );
     expect(screen.getByText("Live title")).toBeTruthy();
     expect(screen.queryByText("General")).toBeNull();
   });

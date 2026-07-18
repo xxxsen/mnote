@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { EditorView } from "@codemirror/view";
 import { loadThemePreference, type ThemeId } from "@/lib/editor-themes";
 import { useToast } from "@/components/ui/toast";
+import { buildOutline } from "@/components/markdown-preview/helpers";
 import type { DocDetail } from "../types";
 
 import { MAX_TAGS } from "../constants";
@@ -27,7 +28,7 @@ import { useScrollSync } from "../hooks/useScrollSync";
 import { useSlashMenu } from "../hooks/useSlashMenu";
 import { useWikilinkMenu } from "../hooks/useWikilinkMenu";
 import { useInlineTag } from "../hooks/useInlineTag";
-import { useFloatingPanel } from "../hooks/useFloatingPanel";
+import { useEditorContextRail } from "../hooks/useEditorContextRail";
 import { useLinkGraph } from "../hooks/useLinkGraph";
 import { useEditorExtensions } from "../hooks/useEditorExtensions";
 import { usePopover } from "../hooks/usePopover";
@@ -56,8 +57,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const [summary, setSummary] = useState("");
   const [starred, setStarred] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [showDetails, setShowDetails] = useState(false);
-  const [activeTab, setActiveTab] = useState<"summary" | "history" | "share">("summary");
   const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(loadThemePreference);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -94,14 +93,15 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const title = ec.draftTitle;
   const sim = useSimilarDocs({ docId, title });
   const viewPrefs = useEditorViewMode();
-  const scrollSync = useScrollSync({ loading, editorViewRef, enabled: viewPrefs.scrollSyncEnabled, content: ec.previewContent, scopeKey: docId });
+  const outline = useMemo(() => buildOutline(ec.previewContent), [ec.previewContent]);
+  const contextRail = useEditorContextRail(docId);
+  const scrollSync = useScrollSync({ loading, editorViewRef, enabled: viewPrefs.scrollSyncEnabled, outline, scopeKey: docId });
   const popover = usePopover({ handleFormat: ec.handleFormat });
   const filePaste = useFilePaste({ insertTextAtCursor: ec.insertTextAtCursor, replacePlaceholder: ec.replacePlaceholder, toast });
 
   const slashMenu = useSlashMenu({ editorViewRef, handleFormat: ec.handleFormat, executeCommand: ec.executeCommand, handleInsertTable: ec.handleInsertTable, insertTextAtCursor: ec.insertTextAtCursor });
   const wikilinkMenu = useWikilinkMenu({ editorViewRef, contentRef, lastSavedContentRef, schedulePreviewUpdate: ec.schedulePreviewUpdate, setContent: ec.setContent, setPreviewContent: ec.setPreviewContent, setHasUnsavedChanges: ec.setHasUnsavedChanges });
   const linkGraphHook = useLinkGraph({ docId, title, previewContent: ec.previewContent });
-  const floatingPanel = useFloatingPanel({ docId, previewContent: ec.previewContent, summary, backlinks: linkGraphHook.backlinks, outboundLinks: linkGraphHook.outboundLinks });
   const inlineTag = useInlineTag({ allTags: tagState.allTags, selectedTagIDs: tagState.selectedTagIDs, tagActions: tagActionsHook, mergeTags: tagState.mergeTags, saveTagIDs: tagState.saveTagIDs, findExistingTagByName: tagState.findExistingTagByName, toast });
   const editorExt = useEditorExtensions({ currentThemeId, updateCursorInfo: ec.updateCursorInfo, startTransition: ec.startTransition, setSlashMenu: slashMenu.setSlashMenu, setWikilinkMenu: wikilinkMenu.setWikilinkMenu });
 
@@ -191,8 +191,8 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         handleRevert: pageActions.handleRevert, onCreateEditor, setSummary, setLastSavedAt,
       }}
       ui={{
-        navigate, toast, linkGraphHook, floatingPanel, inlineTag, preview, share, quickOpen, tagState, ai, sim, documentActions,
-        summary, starred, showDetails, setShowDetails, activeTab, setActiveTab, currentThemeId,
+        navigate, toast, linkGraphHook, outline, contextRail, inlineTag, preview, share, quickOpen, tagState, ai, sim, documentActions,
+        summary, starred, currentThemeId,
         showDeleteConfirm, setShowDeleteConfirm, showPreviewModal, setShowPreviewModal,
         viewMode: viewPrefs.viewMode, setViewMode: viewPrefs.setViewMode,
         splitRatio: viewPrefs.splitRatio, setSplitRatio: viewPrefs.setSplitRatio,

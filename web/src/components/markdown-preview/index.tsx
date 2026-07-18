@@ -13,7 +13,7 @@ import type { HastNode } from "./types";
 import {
   createSlugger,
   getHastText,
-  extractHeadings,
+  buildOutline,
   buildTocMarkdown,
   injectToc,
   convertWikilinks,
@@ -26,24 +26,24 @@ import { buildMarkdownComponents } from "./renderers";
 import { useHoverPreview } from "./hooks/use-hover-preview";
 
 // Re-export public API for backwards compatibility
-export { toSafeInlineStyle, toFontSize, convertAdmonitions, escapeUnsupportedHtml, convertWikilinks, breakLazyListContinuation } from "./helpers";
+export { buildOutline, toSafeInlineStyle, toFontSize, convertAdmonitions, escapeUnsupportedHtml, convertWikilinks, breakLazyListContinuation } from "./helpers";
+export type { OutlineEntry } from "./types";
 export { ADMONITION_STYLES, FONT_SIZE_MAP } from "./constants";
 
 const MarkdownPreview = memo(
   forwardRef<HTMLDivElement, MarkdownPreviewProps>(function MarkdownPreview(
-    { content, className, showTocAside = false, tocClassName, onScroll, onTocLoaded, enableMentionHoverPreview = false },
+    { content, className, showTocAside = false, tocClassName, onScroll, outline, onOutlineLoaded, onTocLoaded, enableMentionHoverPreview = false },
     ref
   ) {
     const { hoverPreview, openHoverPreview, closeHoverPreview } = useHoverPreview(enableMentionHoverPreview);
 
+    const resolvedOutline = useMemo(
+      () => outline ?? buildOutline(content),
+      [content, outline],
+    );
+
     const { processedContent, tocMarkdown } = useMemo(() => {
-      const headings = extractHeadings(content);
-      const slugger = createSlugger();
-      const headingsWithIds = headings.map((heading) => ({
-        ...heading,
-        id: slugger(heading.text),
-      }));
-      const toc = buildTocMarkdown(headingsWithIds);
+      const toc = buildTocMarkdown([...resolvedOutline]);
       const updated = injectToc(content, toc);
 
       const mathFixed = updated
@@ -54,34 +54,43 @@ const MarkdownPreview = memo(
       const safeContent = escapeUnsupportedHtml(convertAdmonitions(wikilinkProcessed));
       const lazyFixed = breakLazyListContinuation(safeContent);
       return { processedContent: lazyFixed, tocMarkdown: toc };
-    }, [content]);
+    }, [content, resolvedOutline]);
 
     /* v8 ignore start -- rehype plugin tested indirectly via markdown output */
     const rehypeSlugger = useMemo(() => {
       /* eslint-disable no-param-reassign -- AST transformer mutates nodes by design */
       return () => (tree: HastNode) => {
-        const slugger = createSlugger();
-        const walk = (node: HastNode) => {
-          if (node.type === "element" && node.tagName && /^h[1-6]$/.test(node.tagName)) {
-            const text = getHastText(node);
-            node.properties = node.properties || {};
-            if (!node.properties.id) {
-              node.properties.id = slugger(text);
-            }
+        const headingNodes: HastNode[] = [];
+        const collect = (node: HastNode) => {
+          if (
+            node.type === "element" &&
+            node.tagName &&
+            /^h[1-6]$/.test(node.tagName)
+          ) {
+            headingNodes.push(node);
           }
-          if (node.children) {
-            node.children.forEach(walk);
-          }
+          node.children?.forEach(collect);
         };
-        walk(tree);
+        collect(tree);
+        const useStructuredIds = headingNodes.length === resolvedOutline.length;
+        const slugger = createSlugger();
+        headingNodes.forEach((node, index) => {
+          node.properties = node.properties || {};
+          if (!node.properties.id) {
+            node.properties.id = useStructuredIds
+              ? resolvedOutline[index].id
+              : slugger(getHastText(node));
+          }
+        });
       };
       /* eslint-enable no-param-reassign */
-    }, []);
+    }, [resolvedOutline]);
     /* v8 ignore stop */
 
     useEffect(() => {
       onTocLoaded?.(tocMarkdown);
-    }, [tocMarkdown, onTocLoaded]);
+      onOutlineLoaded?.(resolvedOutline);
+    }, [onOutlineLoaded, onTocLoaded, resolvedOutline, tocMarkdown]);
 
     const markdownComponents = useMemo(
       () => buildMarkdownComponents(openHoverPreview, closeHoverPreview),

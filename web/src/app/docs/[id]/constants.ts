@@ -2,6 +2,9 @@ export const MAX_TAGS = 7;
 
 export const FLOATING_PANEL_COLLAPSED_KEY = "mnote:floating-panel-collapsed";
 
+export const EDITOR_CONTEXT_RAIL_COLLAPSED_KEY =
+  "mnote:editor-context-rail:collapsed:v1";
+
 export type EmojiTab = {
   key: string;
   label: string;

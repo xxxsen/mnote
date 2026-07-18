@@ -15,12 +15,7 @@ describe("editor interaction primitives", () => {
   it("traps modal semantics and honors a non-dismissible decision dialog", () => {
     const onClose = vi.fn();
     render(
-      <Dialog
-        open
-        title="Decision"
-        onClose={onClose}
-        dismissPolicy="explicit"
-      >
+      <Dialog open title="Decision" onClose={onClose} dismissPolicy="explicit">
         <button type="button">Choose</button>
       </Dialog>,
     );
@@ -69,8 +64,10 @@ describe("editor interaction primitives", () => {
       onSave: vi.fn(),
       onRetry: vi.fn(),
       onResolveConflict: vi.fn(),
-      showDetails: false,
-      setShowDetails: vi.fn(),
+      outlineOpen: true,
+      detailsOpen: false,
+      onShowOutline: vi.fn(),
+      onToggleDetails: vi.fn(),
       starred: 0,
       handleStarToggle: vi.fn(),
       viewMode: "split" as const,
