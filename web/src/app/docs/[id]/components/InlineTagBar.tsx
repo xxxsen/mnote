@@ -85,7 +85,7 @@ export function InlineTagBar(props: InlineTagBarProps) {
       </div>
 
       {typeof window !== "undefined" && inlineTagMode && inlineTagMenuPos && (inlineTagLoading || inlineTagDropdownItems.length > 0) && createPortal(
-        <div className="fixed z-[300] rounded-md border border-border bg-white shadow-lg p-1" style={{ left: inlineTagMenuPos.left, top: inlineTagMenuPos.top, width: inlineTagMenuPos.width }}>
+        <div className="fixed z-[220] rounded-md border border-border bg-white shadow-lg p-1" style={{ left: inlineTagMenuPos.left, top: inlineTagMenuPos.top, width: inlineTagMenuPos.width }}>
           {inlineTagLoading ? (
             <div className="px-2 py-1.5 text-[11px] text-slate-400">Searching...</div>
           ) : inlineTagDropdownItems.map((item, index) => (

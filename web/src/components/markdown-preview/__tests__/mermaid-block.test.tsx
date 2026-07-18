@@ -131,9 +131,10 @@ describe("MermaidBlock", () => {
   it("modal backdrop click closes modal", () => {
     const { baseElement, container } = render(<MermaidBlock chart="graph TD; A-->B;" />);
     fireEvent.click(container.querySelector("button[title='Open preview']")!);
-    const backdrop = baseElement.querySelector(".backdrop-blur-sm")!;
-    fireEvent.click(backdrop);
-    expect(baseElement.querySelector(".fixed")).toBeNull();
+    const overlay = baseElement.querySelector<HTMLElement>("[data-dialog-overlay]");
+    expect(overlay).toBeTruthy();
+    fireEvent.mouseDown(overlay!);
+    expect(baseElement.querySelector("[role=dialog]")).toBeNull();
   });
 
   it("modal double-click resets zoom", () => {

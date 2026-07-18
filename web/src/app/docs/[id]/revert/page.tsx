@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import type { Document, DocumentVersion, DocumentVersionSummary } from "@/types";
+import type { SaveDocumentResult } from "../types";
 import type { DiffRow } from "@/lib/diff";
 import { computeDiff } from "@/lib/diff";
 import { Button } from "@/components/ui/button";
@@ -27,14 +28,21 @@ function DiffCell({ cell }: { cell?: { value: string; type: string } }) {
   );
 }
 
-function useRevertData(id: string, versionParam: string | null, versionId: string | null, router: ReturnType<typeof useRouter>) {
+function useRevertData(id: string, versionParam: string | null, versionId: string | null, router: { push: (path: string) => void }) {
   const [doc, setDoc] = useState<Document | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<DocumentVersion | null>(null);
   const [diffRows, setDiffRows] = useState<DiffRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reloadToken, setReloadToken] = useState(0);
+  const routerRef = useRef(router);
+
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
 
   useEffect(() => {
     const loadData = async () => {
+      setLoading(true);
       try {
         const docPromise = apiFetch<{ document: Document }>(`/documents/${id}`);
         const parsedVersion = versionParam ? Number(versionParam) : NaN;
@@ -47,7 +55,7 @@ function useRevertData(id: string, versionParam: string | null, versionId: strin
           ]);
           const currentDoc = docRes.document;
           const summary = versionsRes.find(v => v.id === versionId);
-          if (!summary) { router.push(`/docs/${id}`); return; }
+          if (!summary) { routerRef.current.push(`/docs/${id}`); return; }
           const versionRes = await apiFetch<DocumentVersion>(`/documents/${id}/versions/${summary.version}`);
           setDoc(currentDoc);
           setSelectedVersion(versionRes);
@@ -55,7 +63,7 @@ function useRevertData(id: string, versionParam: string | null, versionId: strin
           return;
         }
 
-        if (!versionNumber) { router.push(`/docs/${id}`); return; }
+        if (!versionNumber) { routerRef.current.push(`/docs/${id}`); return; }
 
         const [docRes, versionRes] = await Promise.all([
           docPromise,
@@ -67,7 +75,7 @@ function useRevertData(id: string, versionParam: string | null, versionId: strin
         setDiffRows(computeDiff(currentDoc.content, versionRes.content));
       } catch (e) {
         console.error(e);
-        router.push(`/docs/${id}`);
+        routerRef.current.push(`/docs/${id}`);
       } finally {
         setLoading(false);
       }
@@ -76,13 +84,14 @@ function useRevertData(id: string, versionParam: string | null, versionId: strin
     if (id && (versionParam || versionId)) {
       void loadData();
     } else if (id) {
-      router.push(`/docs/${id}`);
+      routerRef.current.push(`/docs/${id}`);
     } else {
       setLoading(false);
     }
-  }, [id, versionId, versionParam, router]);
+  }, [id, versionId, versionParam, reloadToken]);
 
-  return { doc, selectedVersion, diffRows, loading };
+  const reload = useCallback(() => setReloadToken((value) => value + 1), []);
+  return { doc, selectedVersion, diffRows, loading, reload };
 }
 
 function DiffNavigator({ diffIndices, currentDiffIndex, onNavigate }: {
@@ -114,7 +123,7 @@ export default function RevertPage() {
   const { toast } = useToast();
   const id = params.id as string;
 
-  const { doc, selectedVersion, diffRows, loading } = useRevertData(id, searchParams.get("version"), searchParams.get("versionId"), router);
+  const { doc, selectedVersion, diffRows, loading, reload } = useRevertData(id, searchParams.get("version"), searchParams.get("versionId"), router);
   const [saving, setSaving] = useState(false);
   const [currentDiffIndex, setCurrentDiffIndex] = useState(-1);
 
@@ -154,14 +163,28 @@ export default function RevertPage() {
     if (!selectedVersion || !doc) return;
     setSaving(true);
     try {
-      await apiFetch(`/documents/${id}`, {
+      const result = await apiFetch<SaveDocumentResult>(`/documents/${id}`, {
         method: "PUT",
-        body: JSON.stringify({ title: selectedVersion.title, content: selectedVersion.content }),
+        body: JSON.stringify({
+          title: selectedVersion.title,
+          content: selectedVersion.content,
+          base_revision: doc.content_revision,
+          save_seq: doc.content_revision + 1,
+        }),
       });
+      if (!result.accepted) {
+        toast({
+          description: "The document changed while this comparison was open. The comparison has been refreshed; review it before restoring again.",
+          variant: "error",
+        });
+        reload();
+        return;
+      }
       router.push(`/docs/${id}`);
     } catch (err) {
       console.error(err);
       toast({ description: "Failed to revert document", variant: "error" });
+    } finally {
       setSaving(false);
     }
   };

@@ -55,6 +55,18 @@ describe("useAiAssistant", () => {
     expect(result.current.aiLoading).toBe(false);
   });
 
+  it("handleAiRetry reruns the current action with its original snapshot", async () => {
+    mockApiFetch
+      .mockResolvedValueOnce({ text: "first polish" })
+      .mockResolvedValueOnce({ text: "second polish" });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiPolish("original text"); });
+    await act(async () => { await result.current.handleAiRetry(); });
+    expect(mockApiFetch).toHaveBeenCalledTimes(2);
+    expect(result.current.aiResultText).toBe("second polish");
+    expect(result.current.aiResultReady).toBe(true);
+  });
+
   it("handleAiGenerateOpen opens modal in generate mode", () => {
     const { result } = renderHook(() => useAiAssistant(makeOpts()));
     act(() => { result.current.handleAiGenerateOpen(); });
@@ -69,6 +81,10 @@ describe("useAiAssistant", () => {
     act(() => { result.current.setAiPrompt("Write about AI"); });
     await act(async () => { await result.current.handleAiGenerate(); });
     expect(result.current.aiResultText).toBe("generated content");
+    expect(result.current.aiResultReady).toBe(true);
+    act(() => { result.current.setAiPrompt("Write about databases"); });
+    expect(result.current.aiResultText).toBe("");
+    expect(result.current.aiResultReady).toBe(false);
   });
 
   it("handleAiGenerate shows error on empty prompt", async () => {
@@ -172,6 +188,24 @@ describe("useAiAssistant", () => {
     await act(async () => { await result.current.handleApplyAiSummary({ onApplied, onError }); });
     expect(onApplied).toHaveBeenCalledWith("short");
     expect(result.current.aiModalOpen).toBe(false);
+  });
+
+  it("handleApplyAiSummary ignores rapid duplicate submissions", async () => {
+    mockApiFetch.mockResolvedValueOnce({ summary: "short" });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    await act(async () => { await result.current.handleAiSummary("long text"); });
+    let resolveSave!: () => void;
+    mockApiFetch.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = () => resolve({}); }));
+    const options = { onApplied: vi.fn(), onError: vi.fn() };
+    let first = Promise.resolve();
+    let second = Promise.resolve();
+    act(() => {
+      first = result.current.handleApplyAiSummary(options);
+      second = result.current.handleApplyAiSummary(options);
+    });
+    expect(mockApiFetch).toHaveBeenCalledTimes(2);
+    await act(async () => { resolveSave(); await Promise.all([first, second]); });
+    expect(options.onApplied).toHaveBeenCalledTimes(1);
   });
 
   it("handleApplyAiSummary handles error", async () => {
@@ -464,5 +498,33 @@ describe("useAiAssistant", () => {
     act(() => { result.current.setAiPrompt("test prompt"); });
     await act(async () => { await result.current.handleAiGenerate(); });
     expect(result.current.aiError).toBe("AI request failed");
+  });
+
+  it("ignores a response from an AI request closed before a new session opens", async () => {
+    let resolveRequest!: (value: { text: string }) => void;
+    mockApiFetch.mockImplementation(() => new Promise((resolve) => { resolveRequest = resolve; }));
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    let pending!: Promise<void>;
+    act(() => { pending = result.current.handleAiPolish("old content"); });
+    expect(result.current.aiLoading).toBe(true);
+    act(() => { result.current.closeAiModal(); result.current.handleAiGenerateOpen(); });
+    await act(async () => { resolveRequest({ text: "stale result" }); await pending; });
+    expect(result.current.aiModalOpen).toBe(true);
+    expect(result.current.aiAction).toBe("generate");
+    expect(result.current.aiResultText).toBe("");
+    expect(result.current.aiLoading).toBe(false);
+  });
+
+  it("aborts the active network request when the dialog closes", () => {
+    let signal: AbortSignal = new AbortController().signal;
+    mockApiFetch.mockImplementation((_url, init) => {
+      signal = init?.signal ?? signal;
+      return new Promise(() => undefined);
+    });
+    const { result } = renderHook(() => useAiAssistant(makeOpts()));
+    act(() => { void result.current.handleAiPolish("content"); });
+    expect(signal.aborted).toBe(false);
+    act(() => { result.current.closeAiModal(); });
+    expect(signal.aborted).toBe(true);
   });
 });

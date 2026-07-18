@@ -13,8 +13,8 @@ if [[ "$DEV_DATA_DIR" != /* ]]; then
 fi
 DEFAULT_CONFIG_PATH="$DEV_DATA_DIR/config.json"
 CONFIG_PATH="${MNOTE_DEV_CONFIG:-${1:-$DEFAULT_CONFIG_PATH}}"
-BACKEND_PORT="${MNOTE_DEV_BACKEND_PORT:-8080}"
-WEB_PORT="${MNOTE_DEV_WEB_PORT:-3000}"
+BACKEND_PORT="${MNOTE_DEV_BACKEND_PORT:-8850}"
+WEB_PORT="${MNOTE_DEV_WEB_PORT:-3090}"
 DB_PORT="${MNOTE_DEV_DB_PORT:-15432}"
 BACKEND_URL="${MNOTE_DEV_BACKEND_URL:-http://127.0.0.1:$BACKEND_PORT}"
 API_BASE="${MNOTE_DEV_API_BASE:-$BACKEND_URL/api/v1}"
@@ -66,6 +66,28 @@ record_pid() {
   started="$(proc_start_time "$pid")"
   printf '%s %s %s\n' "$pid" "$started" "$label" >>"$PID_FILE"
   pids+=("$pid")
+}
+
+wait_for_backend() {
+  local pid="$1"
+  local attempt
+
+  echo "[mnote] waiting for backend readiness on :$BACKEND_PORT"
+  for ((attempt = 1; attempt <= 120; attempt++)); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "[mnote] backend exited before becoming ready" >&2
+      wait "$pid" 2>/dev/null || true
+      exit 1
+    fi
+    if (exec 3<>"/dev/tcp/127.0.0.1/$BACKEND_PORT") 2>/dev/null; then
+      echo "[mnote] backend is ready on :$BACKEND_PORT"
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "[mnote] backend did not become ready on :$BACKEND_PORT" >&2
+  exit 1
 }
 
 kill_tree() {
@@ -241,7 +263,9 @@ echo "[mnote] starting backend on :$BACKEND_PORT with config=$CONFIG_PATH"
   cd "$ROOT"
   go run ./cmd/mnote run --config="$CONFIG_PATH"
 ) &
-record_pid "$!" "backend"
+backend_pid="$!"
+record_pid "$backend_pid" "backend"
+wait_for_backend "$backend_pid"
 
 echo "[mnote] starting web on :$WEB_PORT with API=$API_BASE"
 (

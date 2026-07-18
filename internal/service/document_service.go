@@ -855,22 +855,17 @@ type DocumentCreateInput struct {
 	Summary string
 }
 
-// DocumentUpdateInput is the unified save payload used by both the editor
-// save path (where SaveSeq is required) and internal callers such as the
-// import service (where SaveSeq is left at its zero value to opt out of
-// the lost-update guard).
+// DocumentUpdateInput is shared by HTTP editor saves and trusted internal
+// writes. HTTP supplies BaseRevision for optimistic locking; internal callers
+// leave it at zero and rely on the row lock plus server-side revision bump.
 type DocumentUpdateInput struct {
-	Title   string
-	Content string
-	TagIDs  []string
-	Summary *string
-	// SaveSeq is the monotonically-increasing client-side save sequence.
-	// When non-zero the service rejects writes whose SaveSeq is not
-	// strictly greater than the document's current content_revision,
-	// returning accepted=false without touching any table. When zero the
-	// caller asserts that concurrency is handled out-of-band (used by
-	// server-side imports, which never collide with the editor save
-	// queue).
+	Title        string
+	Content      string
+	TagIDs       []string
+	Summary      *string
+	BaseRevision int64
+	// SaveSeq remains for rolling compatibility with pre-base-revision callers.
+	// BaseRevision-aware HTTP requests never use it for conflict detection.
 	SaveSeq int64
 }
 
@@ -897,14 +892,10 @@ func (s *DocumentService) Update(ctx context.Context, userID, docID string, inpu
 	return err
 }
 
-// Save executes a single atomic save transaction guarded by SELECT FOR
-// UPDATE on the documents row. The accept/reject decision is purely
-// monotonic: request.SaveSeq must be strictly greater than the row's
-// current content_revision, otherwise the request is treated as a late
-// echo from an earlier save and is silently ignored (accepted=false). On
-// the accept path the row's content_revision and document_versions.version
-// are both written as request.SaveSeq, so the next save round-trips
-// against the value the client now publishes.
+// Save executes one atomic transaction under a document row lock. A positive
+// BaseRevision must equal the locked ContentRevision; mismatch returns a
+// revision conflict without writes. Accepted base-aware saves use current+1.
+// The SaveSeq-only branch exists solely for rolling compatibility.
 func (
 	s *DocumentService) Save(ctx context.Context,
 	userID,
@@ -927,7 +918,7 @@ func (
 }
 
 // saveImpl runs the body of Save inside a transaction. The work is split
-// into small helpers so each step (lock+seq check, document update, version
+// into small helpers so each step (lock+revision check, document update, version
 // snapshot, tag refresh, references) is independently readable and the
 // orchestrator stays well below the gocyclo threshold.
 func (
@@ -941,10 +932,16 @@ func (
 	if err != nil {
 		return nil, err
 	}
-	if input.SaveSeq != 0 && input.SaveSeq <= current.ContentRevision {
-		// The client lost the race. Return the post-transaction state so
-		// it can fast-forward save_seq without re-reading the document
-		// and without overwriting its in-progress draft.
+	if input.BaseRevision > 0 && input.BaseRevision != current.ContentRevision {
+		return &model.SaveDocumentResult{
+			ID: current.ID, Accepted: false,
+			Reason:          model.SaveRejectReasonRevisionConflict,
+			ContentRevision: current.ContentRevision,
+			ContentHash:     current.ContentHash, ContentMtime: current.ContentMtime, Mtime: current.Mtime,
+		}, nil
+	}
+	if input.BaseRevision == 0 && input.SaveSeq != 0 && input.SaveSeq <= current.ContentRevision {
+		// Legacy SaveSeq-only callers receive current metadata without writes.
 		return &model.SaveDocumentResult{
 			ID:              current.ID,
 			Accepted:        false,
@@ -955,12 +952,11 @@ func (
 		}, nil
 	}
 	now := timeutil.NowUnix()
-	newRevision := input.SaveSeq
-	if newRevision == 0 {
-		// Internal callers (imports) that opt out of the seq guard still
-		// need a strictly-increasing version number to satisfy the
-		// (user_id, document_id, version) unique index.
-		newRevision = current.ContentRevision + 1
+	newRevision := current.ContentRevision + 1
+	if input.BaseRevision == 0 && input.SaveSeq > 0 {
+		// Retain the pre-base-revision service contract for trusted rolling
+		// callers. HTTP editor requests always provide BaseRevision.
+		newRevision = input.SaveSeq
 	}
 	newHash := computeDocumentHash(input.Title, input.Content)
 	if err := s.persistDocument(ctx, userID, docID, input, now, newRevision, newHash); err != nil {
@@ -985,11 +981,9 @@ func (
 	}, nil
 }
 
-// lockForSave takes the row-level write lock so the save_seq comparison
-// performed by the caller is consistent with the eventual write. Returning
-// the locked row is enough — the accept/reject decision is monotonic and
-// happens outside this helper so that the rejected branch can short-circuit
-// without touching any other table.
+// lockForSave returns the row under a write lock so base-revision comparison
+// and the eventual write observe one serial state. A rejected branch exits
+// before any version or derived relation is modified.
 func (s *DocumentService) lockForSave(
 	ctx context.Context, userID, docID string,
 ) (*model.Document, error) {

@@ -1,20 +1,27 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ChevronLeft, Search, Tag as TagIcon, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  DialogStatus,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import { ChevronLeft, Trash2, Search, Tag as TagIcon } from "lucide-react";
 
 const loadingPlaceholders = ["p0", "p1", "p2", "p3", "p4"];
 
-interface TagWithUsage {
+type TagWithUsage = {
   id: string;
   name: string;
   usageCount: number;
-}
+};
 
 export default function TagsPage() {
   const router = useRouter();
@@ -28,8 +35,10 @@ export default function TagsPage() {
   const fetchingRef = useRef(false);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [search, setSearch] = useState("");
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TagWithUsage | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deletingRef = useRef(false);
   const returnTo = getSafeReturn(searchParams.get("return"));
 
   const fetchData = useCallback(async (nextOffset: number, append: boolean) => {
@@ -37,35 +46,38 @@ export default function TagsPage() {
     const controller = new AbortController();
     fetchAbortRef.current = controller;
     fetchingRef.current = true;
-    if (append) {
-      setLoadingMore(true);
-    } else {
-      setLoading(true);
-    }
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     try {
-      const params = new URLSearchParams();
-      params.set("limit", "10");
-      params.set("offset", String(nextOffset));
-      if (search.trim()) {
-        params.set("q", search.trim());
-      }
-      const items = await apiFetch<{ id: string; name: string; count: number }[]>(`/tags/summary?${params.toString()}`, { signal: controller.signal });
-      const next: TagWithUsage[] = items.map((tag) => ({
+      const params = new URLSearchParams({
+        limit: "10",
+        offset: String(nextOffset),
+      });
+      if (search.trim()) params.set("q", search.trim());
+      const items = await apiFetch<{ id: string; name: string; count: number }[]>(
+        `/tags/summary?${params.toString()}`,
+        { signal: controller.signal },
+      );
+      const next = items.map((tag) => ({
         id: tag.id,
         name: tag.name,
         usageCount: tag.count,
       }));
-      setTags((prev) => (append ? [...prev, ...next] : next));
+      setTags((previous) => (append ? [...previous, ...next] : next));
       setHasMore(items.length === 10);
       setOffset(nextOffset + items.length);
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      console.error(e);
-      toast({ description: e instanceof Error ? e : "Failed to load tags data", variant: "error" });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      toast({
+        description: error instanceof Error ? error.message : "Failed to load tags data",
+        variant: "error",
+      });
     } finally {
-      if (fetchAbortRef.current === controller) fetchAbortRef.current = null;
-      if (!controller.signal.aborted) {
+      if (fetchAbortRef.current === controller) {
+        fetchAbortRef.current = null;
         fetchingRef.current = false;
+      }
+      if (!controller.signal.aborted) {
         setLoading(false);
         setLoadingMore(false);
       }
@@ -76,151 +88,185 @@ export default function TagsPage() {
     setOffset(0);
     setHasMore(true);
     void fetchData(0, false);
-    return () => { fetchAbortRef.current?.abort(); };
+    return () => fetchAbortRef.current?.abort();
   }, [fetchData]);
 
   const handleBack = useCallback(() => {
     if (returnTo) {
       router.push(returnTo);
-      return;
-    }
-    if (typeof window !== "undefined" && window.history.length > 1) {
+    } else if (window.history.length > 1) {
       router.back();
-      return;
+    } else {
+      router.push("/docs");
     }
-    router.push("/docs");
   }, [returnTo, router]);
 
-  const confirmDelete = async (tag: TagWithUsage) => {
-    setDeletingId(tag.id);
+  const requestDelete = (tag: TagWithUsage) => {
+    setDeleteError(null);
+    setDeleteTarget(tag);
+  };
+
+  const closeDeleteDialog = () => {
+    if (deletingRef.current) return;
+    setDeleteError(null);
+    setDeleteTarget(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
+    setDeleteError(null);
     try {
-      await apiFetch(`/tags/${tag.id}`, { method: "DELETE" });
-      setTags(prev => prev.filter(t => t.id !== tag.id));
-    } catch (e) {
-      console.error(e);
-      toast({ description: e instanceof Error ? e : "Failed to delete tag", variant: "error" });
+      await apiFetch(`/tags/${deleteTarget.id}`, { method: "DELETE" });
+      setTags((previous) => previous.filter((tag) => tag.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete tag";
+      setDeleteError(message);
+      toast({ description: message, variant: "error" });
     } finally {
-      setDeletingId(null);
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
-  const filteredTags = tags;
-
   return (
-    <div className="flex flex-col h-screen bg-background text-foreground">
-      <header className="h-14 border-b border-border flex items-center px-4 gap-4 bg-background z-20">
-        <Button variant="ghost" size="icon" onClick={handleBack}>
-          <ChevronLeft className="h-5 w-5" />
+    <div className="flex h-screen flex-col bg-background text-foreground">
+      <header className="z-20 flex h-14 items-center gap-4 border-b border-border bg-background px-4">
+        <Button variant="ghost" size="icon" onClick={handleBack} aria-label="Back">
+          <ChevronLeft className="h-5 w-5" aria-hidden="true" />
         </Button>
-        <div className="font-bold font-mono text-lg">Tag Management</div>
+        <div className="font-mono text-lg font-bold">Tag Management</div>
       </header>
-
       <div
-        className="flex-1 overflow-y-auto p-4 md:p-8 max-w-4xl mx-auto w-full"
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          if (loading || loadingMore || !hasMore) return;
-          if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
+        className="mx-auto w-full max-w-4xl flex-1 overflow-y-auto p-4 md:p-8"
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          if (fetchingRef.current || loading || loadingMore || !hasMore) return;
+          if (element.scrollTop + element.clientHeight >= element.scrollHeight - 120) {
             void fetchData(offset, true);
           }
         }}
       >
-        <div className="mb-6 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search tags..." 
+        <div className="relative mb-6">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Input
+            placeholder="Search tags..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(event) => setSearch(event.target.value)}
             className="pl-9"
           />
         </div>
-
         {loading ? (
           <div className="flex flex-col gap-2">
             {loadingPlaceholders.map((key) => (
-              <div key={key} className="h-12 bg-muted/50 rounded animate-pulse" />
+              <div key={key} className="h-12 animate-pulse rounded bg-muted/50" />
             ))}
           </div>
-        ) : filteredTags.length === 0 ? (
-          <div className="text-center py-20 text-muted-foreground">
+        ) : tags.length === 0 ? (
+          <div className="py-20 text-center text-muted-foreground">
             {search ? "No tags match your search." : "No tags found."}
           </div>
         ) : (
           <div className="grid gap-2">
-            {filteredTags.map(tag => (
-              <div 
+            {tags.map((tag) => (
+              <div
                 key={tag.id}
-                className="flex items-center justify-between p-3 border border-border rounded-lg bg-card hover:border-foreground/50 transition-colors"
+                className="flex items-center justify-between rounded-lg border border-border bg-card p-3 transition-colors hover:border-foreground/50"
               >
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="h-8 w-8 rounded-full bg-secondary flex items-center justify-center shrink-0">
-                    <TagIcon className="h-4 w-4 text-secondary-foreground" />
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary">
+                    <TagIcon className="h-4 w-4 text-secondary-foreground" aria-hidden="true" />
                   </div>
-                  <div className="flex flex-col min-w-0">
-                    <span className="font-mono font-bold truncate text-sm">#{tag.name}</span>
+                  <div className="flex min-w-0 flex-col">
+                    <span className="truncate font-mono text-sm font-bold">#{tag.name}</span>
                     <span className="text-xs text-muted-foreground">
-                      Used in {tag.usageCount} note{tag.usageCount !== 1 && 's'}
+                      Used in {tag.usageCount} note{tag.usageCount === 1 ? "" : "s"}
                     </span>
                   </div>
                 </div>
-
-                <Button 
-                  variant="destructive" 
-                  size="sm" 
-                  disabled={deletingId === tag.id}
-                  onClick={() => setDeleteTarget(tag)}
-                  className="rounded-xl"
-                  title="Delete tag"
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => requestDelete(tag)}
+                  className="min-h-11 rounded-xl"
+                  aria-label={`Delete ${tag.name}`}
                 >
-                  {deletingId === tag.id ? (
-                    <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                  <span className="ml-2 hidden sm:inline">
-                    Delete
-                  </span>
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  <span className="ml-2 hidden sm:inline">Delete</span>
                 </Button>
               </div>
             ))}
           </div>
         )}
-        {loadingMore && (
+        {loadingMore ? (
           <div className="mt-4 text-center text-xs text-muted-foreground">Loading more...</div>
-        )}
+        ) : null}
       </div>
-      {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-border bg-background p-5 shadow-xl">
-            <div className="text-sm font-semibold">Delete tag</div>
-            <div className="mt-2 text-sm text-muted-foreground">
-              Delete <span className="font-mono font-semibold text-foreground">#{deleteTarget.name}</span>? It will be removed from {deleteTarget.usageCount} note{deleteTarget.usageCount === 1 ? "" : "s"}.
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  const tag = deleteTarget;
-                  setDeleteTarget(null);
-                  void confirmDelete(tag);
-                }}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteTagDialog
+        target={deleteTarget}
+        deleting={deleting}
+        error={deleteError}
+        onClose={closeDeleteDialog}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }
 
+function DeleteTagDialog({
+  target,
+  deleting,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  target: TagWithUsage | null;
+  deleting: boolean;
+  error: string | null;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog
+      open={Boolean(target)}
+      role="alertdialog"
+      title="Delete tag"
+      description="This action removes the tag from every note and cannot be undone."
+      size="sm"
+      dismissPolicy="when-idle"
+      busy={deleting}
+      onClose={onClose}
+    >
+      <DialogHeader />
+      <DialogBody className="space-y-4">
+        <p className="text-sm text-slate-700">
+          Delete <span className="font-mono font-semibold text-slate-950">#{target?.name}</span>?
+          It will be removed from {target?.usageCount ?? 0} note
+          {target?.usageCount === 1 ? "" : "s"}.
+        </p>
+        {deleting ? <DialogStatus variant="loading">Deleting tag…</DialogStatus> : null}
+        {error ? <DialogStatus variant="error">{error}</DialogStatus> : null}
+      </DialogBody>
+      <DialogFooter>
+        <Button variant="outline" className="h-11 w-full sm:w-auto" onClick={onClose} disabled={deleting}>
+          Cancel
+        </Button>
+        <Button
+          variant="destructive"
+          className="h-11 w-full sm:w-auto"
+          onClick={onConfirm}
+          isLoading={deleting}
+        >
+          Delete tag
+        </Button>
+      </DialogFooter>
+    </Dialog>
+  );
+}
+
 function getSafeReturn(value: string | null): string | null {
-  if (!value) return null;
-  if (!value.startsWith("/")) return null;
-  if (value.startsWith("//")) return null;
+  if (!value?.startsWith("/") || value.startsWith("//")) return null;
   return value;
 }

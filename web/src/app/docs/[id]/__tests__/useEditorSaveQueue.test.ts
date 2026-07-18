@@ -113,7 +113,7 @@ describe("useEditorSaveQueue", () => {
     });
 
     // Stale responses are not errors; the queue settles back to SYNCED.
-    expect(result.current.status).toBe("SYNCED");
+    expect(result.current.status).toBe("LOCAL_CHANGES");
     // Editor-side last-saved snapshot is intentionally NOT overwritten.
     expect(result.current.lastSavedContent).toBe("");
     expect(result.current.lastSavedTitle).toBe("");
@@ -209,7 +209,7 @@ describe("useEditorSaveQueue", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(result.current.status).toBe("SYNCED");
+    expect(result.current.status).toBe("LOCAL_CHANGES");
     expect(result.current.serverRevision).toBe(5);
     // Draft was not committed; lastSavedContent stays empty.
     expect(result.current.lastSavedContent).toBe("");
@@ -219,7 +219,7 @@ describe("useEditorSaveQueue", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(save).toHaveBeenLastCalledWith({ title: "T2", content: "v2" }, 6);
+    expect(save).toHaveBeenLastCalledWith({ title: "T2", content: "v2" }, 6, 1);
     expect(result.current.status).toBe("SYNCED");
     expect(result.current.serverRevision).toBe(6);
     expect(result.current.lastSavedContent).toBe("v2");
@@ -295,7 +295,7 @@ describe("useEditorSaveQueue", () => {
       await Promise.resolve();
     });
     expect(save).toHaveBeenCalledTimes(2);
-    expect(save).toHaveBeenLastCalledWith({ title: "New", content: "body" }, 3);
+    expect(save).toHaveBeenLastCalledWith({ title: "New", content: "body" }, 3, 2);
 
     await act(async () => {
       gates[1].resolve(acceptedResult(3));
@@ -484,7 +484,7 @@ describe("useEditorSaveQueue", () => {
     );
     // The queue must keep draining B without waiting for an external retry.
     expect(save).toHaveBeenCalledTimes(2);
-    expect(save).toHaveBeenLastCalledWith({ title: "T", content: "B" }, 3);
+    expect(save).toHaveBeenLastCalledWith({ title: "T", content: "B" }, 3, 2);
   });
 
   // Symmetric guard: when no newer snapshot is queued at the moment the

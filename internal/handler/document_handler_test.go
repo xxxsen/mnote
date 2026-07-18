@@ -182,7 +182,7 @@ func TestDocumentHandler_Update_Success(t *testing.T) {
 
 	seq := int64(5)
 	w := httptest.NewRecorder()
-	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "Updated", SaveSeq: &seq})
+	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "Updated", BaseRevision: &seq, SaveSeq: &seq})
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -202,16 +202,17 @@ func TestDocumentHandler_Update_Success(t *testing.T) {
 	assert.False(t, hasDoc)
 }
 
-// TestDocumentHandler_Update_RequiresSaveSeq guards the save protocol: PUT
-// must reject requests that do not supply a save_seq, since the sequence
-// guard is the only protection against lost updates.
+// TestDocumentHandler_Update_RequiresSaveSeq preserves the rolling-upgrade
+// request shape. Conflict detection uses base_revision; save_seq remains
+// required until support for pre-base-revision backends is removed.
 func TestDocumentHandler_Update_RequiresSaveSeq(t *testing.T) {
 	h := &DocumentHandler{documents: newDocMock()}
 	r := newTestRouter()
 	r.PUT("/documents/:id", withUserID("u1"), h.Update)
 
 	w := httptest.NewRecorder()
-	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "Updated"})
+	base := int64(1)
+	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "Updated", BaseRevision: &base})
 	r.ServeHTTP(w, req)
 
 	resp := parseResponseT(t, w)
@@ -219,8 +220,8 @@ func TestDocumentHandler_Update_RequiresSaveSeq(t *testing.T) {
 	assert.Contains(t, resp["message"], "save_seq")
 }
 
-// TestDocumentHandler_Update_StaleSaveSeqOmitsSnapshot guards the save
-// protocol: when the service reports accepted=false for a stale save_seq,
+// TestDocumentHandler_Update_StaleSaveSeqOmitsSnapshot guards the metadata-only
+// rejection response used by both legacy stale sequences and base conflicts:
 // the handler must echo only the metadata back (no document content
 // snapshot). The editor relies on this to keep its in-progress draft.
 func TestDocumentHandler_Update_StaleSaveSeqOmitsSnapshot(t *testing.T) {
@@ -238,7 +239,7 @@ func TestDocumentHandler_Update_StaleSaveSeqOmitsSnapshot(t *testing.T) {
 
 	seq := int64(5)
 	w := httptest.NewRecorder()
-	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "Client", SaveSeq: &seq})
+	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "Client", BaseRevision: &seq, SaveSeq: &seq})
 	r.ServeHTTP(w, req)
 	resp := parseResponseT(t, w)
 	assert.Equal(t, float64(0), resp["code"], "stale saves are not an error response: %v", resp)
@@ -678,7 +679,7 @@ func TestDocumentHandler_Update_ServiceError(t *testing.T) {
 
 	seq := int64(1)
 	w := httptest.NewRecorder()
-	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "T", SaveSeq: &seq})
+	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "T", BaseRevision: &seq, SaveSeq: &seq})
 	r.ServeHTTP(w, req)
 
 	resp := parseResponseT(t, w)
@@ -698,7 +699,7 @@ func TestDocumentHandler_Update_WithTagIDs(t *testing.T) {
 	w := httptest.NewRecorder()
 	tags := []string{"t1", "t2"}
 	seq := int64(2)
-	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "T", TagIDs: &tags, SaveSeq: &seq})
+	req := jsonRequestT(t, "PUT", "/documents/d1", documentRequest{Title: "T", TagIDs: &tags, BaseRevision: &seq, SaveSeq: &seq})
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)

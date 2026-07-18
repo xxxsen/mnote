@@ -67,7 +67,7 @@ export function PopoverPanels(props: PopoverPanelsProps) {
               </button>
             ))}
           </div>
-          <div className="grid grid-cols-8 gap-1 w-80 max-h-56 overflow-y-auto pr-1">
+          <div className="grid max-h-56 w-[min(320px,calc(100vw-16px))] grid-cols-8 gap-1 overflow-y-auto pr-1">
             {activeEmojiTab.items.map((emoji) => (
               <button type="button" key={emoji} aria-label={`Insert ${emoji}`} onClick={() => { insertTextAtCursor(emoji); setActivePopover(null); }} className="text-xl p-2 hover:bg-accent rounded-lg transition-colors text-center">
                 {emoji}

@@ -1,5 +1,5 @@
 import type React from "react";
-import type { Heading, HastNode } from "./types";
+import type { Heading, HastNode, OutlineEntry } from "./types";
 import {
   tocTokenRegex,
   allowedHtmlTags,
@@ -272,24 +272,84 @@ export const breakLazyListContinuation = (content: string): string => {
   return result.join("\n");
 };
 
+function decodeHeadingEntities(value: string): string {
+  return value
+    .replace(/&#x([0-9a-f]+);?/gi, (_, hex: string) =>
+      String.fromCodePoint(parseInt(hex, 16)),
+    )
+    .replace(/&#([0-9]+);?/g, (_, dec: string) =>
+      String.fromCodePoint(parseInt(dec, 10)),
+    )
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;|&#39;/gi, "'");
+}
+
+function visibleHeadingText(value: string): string {
+  return decodeHeadingEntities(value)
+    .replace(/(?:^|\s+)#+\s*$/, "")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\\([\\`*_\[\]{}()#+\-.!])/g, "$1")
+    .replace(/[`*_~]/g, "")
+    .trim();
+}
+
 export const extractHeadings = (content: string) => {
   const headings: Heading[] = [];
   const lines = content.split("\n");
-  let inCodeBlock = false;
+  let fenceState: FenceState = {
+    inCodeBlock: false,
+    codeFenceMarker: null,
+    codeFenceLength: 0,
+  };
 
-  for (const line of lines) {
-    const fenceMatch = line.trim().match(/^```/);
-    if (fenceMatch) {
-      inCodeBlock = !inCodeBlock;
+  for (const [index, line] of lines.entries()) {
+    const fenceMatch = line.match(/^\s{0,3}([`~]{3,})(.*)$/);
+    if (!fenceState.inCodeBlock && fenceMatch) {
+      const opened = tryOpenFence(line, fenceMatch);
+      if (opened) fenceState = opened;
       continue;
     }
-    if (inCodeBlock) continue;
-    const match = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/);
+    if (fenceState.inCodeBlock) {
+      if (fenceMatch && isClosingFence(fenceMatch, fenceState)) {
+        fenceState = {
+          inCodeBlock: false,
+          codeFenceMarker: null,
+          codeFenceLength: 0,
+        };
+      }
+      continue;
+    }
+    const match = line.match(/^\s{0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/);
     if (match) {
-      headings.push({ level: match[1].length, text: match[2].trim() });
+      headings.push({
+        level: match[1].length,
+        text: visibleHeadingText(match[2] || ""),
+        sourceLine: index + 1,
+      });
     }
   }
   return headings;
+};
+
+export const buildOutline = (content: string): OutlineEntry[] => {
+  const slugger = createSlugger();
+  return extractHeadings(content).flatMap((heading) => {
+    if (!heading.sourceLine) return [];
+    const id = slugger(heading.text);
+    return [
+      {
+        level: heading.level as OutlineEntry["level"],
+        text: heading.text || "Untitled section",
+        id,
+        sourceLine: heading.sourceLine,
+      },
+    ];
+  });
 };
 
 export const buildTocMarkdown = (headings: Heading[]) => {

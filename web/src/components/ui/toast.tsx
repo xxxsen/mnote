@@ -70,7 +70,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="fixed right-4 top-4 z-[200] flex w-[320px] max-w-[92vw] flex-col gap-2">
+      <div className="fixed right-4 top-4 z-[300] flex w-[320px] max-w-[92vw] flex-col gap-2">
         {toasts.map((item) => {
           const variantClass =
             item.variant === "error"

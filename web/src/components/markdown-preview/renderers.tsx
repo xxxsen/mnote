@@ -21,7 +21,11 @@ type OpenPreviewFn = (
 type ClosePreviewFn = () => void;
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- react-markdown injects untyped custom props (node, metastring) */
-function PreRenderer({ children, ...props }: Record<string, any>) {
+function sourceLine(node: Record<string, any> | undefined): number | undefined {
+  return node?.position?.start?.line;
+}
+
+function PreRenderer({ children, node, ...props }: Record<string, any>) {
   if (React.isValidElement(children)) {
     const childProps = children.props as Record<string, unknown>;
     const className = (childProps.className as string) || "";
@@ -47,10 +51,10 @@ function PreRenderer({ children, ...props }: Record<string, any>) {
     const isFenced = className.startsWith("language-");
 
     if (isToc || isMermaid || (isRunnableLang && isRunnable) || isFenced) {
-      return <>{children}</>;
+      return <div data-source-line={sourceLine(node)}>{children}</div>;
     }
   }
-  return <pre {...props}>{children}</pre>;
+  return <pre data-source-line={sourceLine(node)} {...props}>{children}</pre>;
 }
 
 function parseCodeLanguage(raw: string): { language: string; fileName: string } {
@@ -189,9 +193,16 @@ function ImgRenderer({ src, alt, title, ...props }: React.ImgHTMLAttributes<HTML
 }
 
 function HeadingRenderer(level: number) {
-  const Tag = `h${level}` as keyof React.JSX.IntrinsicElements;
-  return function Heading({ id, children }: React.HTMLAttributes<HTMLHeadingElement>) {
-    return <Tag id={id}>{children}</Tag>;
+  const Tag = ("h" + String(level)) as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+  return function Heading({ node, id, children, ...props }: React.HTMLAttributes<HTMLHeadingElement> & { node?: Record<string, any> }) {
+    return <Tag id={id} data-source-line={sourceLine(node)} {...props}>{children}</Tag>;
+  };
+}
+
+function BlockRenderer(tag: "p" | "li" | "blockquote" | "table" | "hr") {
+  const Tag = tag;
+  return function Block({ node, children, ...props }: Record<string, any>) {
+    return <Tag data-source-line={sourceLine(node)} {...props}>{children}</Tag>;
   };
 }
 
@@ -288,6 +299,11 @@ export function buildMarkdownComponents(
 ) {
   return {
     pre: PreRenderer,
+    p: BlockRenderer("p"),
+    li: BlockRenderer("li"),
+    blockquote: BlockRenderer("blockquote"),
+    table: BlockRenderer("table"),
+    hr: BlockRenderer("hr"),
     code: CodeRenderer,
     h1: HeadingRenderer(1),
     h2: HeadingRenderer(2),

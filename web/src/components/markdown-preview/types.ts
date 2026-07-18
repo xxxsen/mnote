@@ -6,6 +6,8 @@ export interface MarkdownPreviewProps {
   showTocAside?: boolean;
   tocClassName?: string;
   onScroll?: React.UIEventHandler<HTMLDivElement>;
+  outline?: readonly OutlineEntry[];
+  onOutlineLoaded?: (outline: readonly OutlineEntry[]) => void;
   onTocLoaded?: (toc: string) => void;
   enableMentionHoverPreview?: boolean;
 }
@@ -14,6 +16,14 @@ export type Heading = {
   level: number;
   text: string;
   id?: string;
+  sourceLine?: number;
+};
+
+export type OutlineEntry = {
+  level: 1 | 2 | 3 | 4 | 5 | 6;
+  text: string;
+  id: string;
+  sourceLine: number;
 };
 
 export type AdmonitionType = "warning" | "error" | "info" | "tip";

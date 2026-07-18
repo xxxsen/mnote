@@ -9,10 +9,8 @@ export interface Document {
   starred: number;
   ctime: number;
   mtime: number;
-  // content_hash/content_mtime track only body changes so that summary/tag
-  // edits don't bump them. content_revision doubles as the save protocol's
-  // save_seq baseline — the editor seeds its local counter from this value
-  // at page load and only re-publishes strictly larger sequences.
+  // content_hash/content_mtime track only body changes. content_revision is
+  // the optimistic-lock base loaded by the editor and advanced by accepted saves.
   content_hash: string;
   content_mtime: number;
   content_revision: number;

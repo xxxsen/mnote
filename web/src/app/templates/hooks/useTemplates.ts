@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type UIEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
@@ -9,6 +9,22 @@ import type { TemplateDraft } from "../types";
 import { emptyDraft } from "../types";
 import { VARIABLE_REGEX, TEMPLATE_META_PAGE_LIMIT, normalizeTemplatePlaceholders, resolveSystemVariableClient } from "../utils";
 import { useTemplateTags } from "./useTemplateTags";
+
+type PendingTemplateDelete = { id: string; name: string };
+
+function detectTemplateVariables(content: string) {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = VARIABLE_REGEX.exec(content || "")) !== null) {
+    const key = (match[1] || "").trim().toUpperCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(key);
+  }
+  VARIABLE_REGEX.lastIndex = 0;
+  return result;
+}
 
 export function useTemplates() {
   const router = useRouter();
@@ -24,23 +40,15 @@ export function useTemplates() {
   const [showVariableModal, setShowVariableModal] = useState(false);
   const [variableValues, setVariableValues] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<PendingTemplateDelete | null>(null);
+  const [deletingTemplate, setDeletingTemplate] = useState(false);
+  const creatingDocRef = useRef(false);
+  const deletingTemplateRef = useRef(false);
 
   const tags = useTemplateTags(selectedTemplate);
   const selected = useMemo(() => templates.find((item) => item.id === selectedID) || null, [selectedID, templates]);
 
-  const detectedVariables = useMemo(() => {
-    const text = draft.content || "";
-    const result: string[] = [];
-    const seen = new Set<string>();
-    let match: RegExpExecArray | null;
-    while ((match = VARIABLE_REGEX.exec(text)) !== null) {
-      const key = (match[1] || "").trim().toUpperCase();
-      if (!key || seen.has(key)) continue;
-      seen.add(key); result.push(key);
-    }
-    VARIABLE_REGEX.lastIndex = 0;
-    return result;
-  }, [draft.content]);
+  const detectedVariables = useMemo(() => detectTemplateVariables(draft.content), [draft.content]);
 
   const filteredTemplates = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -70,22 +78,20 @@ export function useTemplates() {
       setTemplatesTotal(page.total || 0);
       if (reset) {
         setTemplates(next);
-        setSelectedID((prev) => {
+        setSelectedID((previous) => {
           if (next.length === 0) return "";
-          if (!prev) return next[0].id;
-          if (next.find((item) => item.id === prev)) return prev;
+          if (!previous) return next[0].id;
+          if (next.find((item) => item.id === previous)) return previous;
           return next[0].id;
         });
       } else if (next.length > 0) {
-        setTemplates((prev) => {
-          const existing = new Set(prev.map((item) => item.id));
-          const merged = [...prev];
-          next.forEach((item) => { if (!existing.has(item.id)) merged.push(item); });
-          return merged;
+        setTemplates((previous) => {
+          const existing = new Set(previous.map((item) => item.id));
+          return [...previous, ...next.filter((item) => !existing.has(item.id))];
         });
       }
-    } catch (err) {
-      toast({ description: err instanceof Error ? err.message : "Failed to load templates", variant: "error" });
+    } catch (error) {
+      toast({ description: error instanceof Error ? error.message : "Failed to load templates", variant: "error" });
     } finally {
       if (reset) setLoading(false); else setLoadingMore(false);
     }
@@ -93,18 +99,23 @@ export function useTemplates() {
 
   useEffect(() => { void loadTemplates(0, true); }, [loadTemplates]);
 
-  const handleTemplateListScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
-    if (loading || loadingMore) return;
-    if (templates.length >= templatesTotal) return;
-    const el = e.currentTarget;
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 48) void loadTemplates(templates.length, false);
+  const handleTemplateListScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    if (loading || loadingMore || templates.length >= templatesTotal) return;
+    const element = event.currentTarget;
+    if (element.scrollTop + element.clientHeight >= element.scrollHeight - 48) {
+      void loadTemplates(templates.length, false);
+    }
   }, [loadTemplates, loading, loadingMore, templates.length, templatesTotal]);
 
   useEffect(() => {
     const loadSelected = async () => {
       if (!selectedID) { setSelectedTemplate(null); return; }
-      try { setSelectedTemplate(await apiFetch<Template>(`/templates/${selectedID}`)); }
-      catch (err) { toast({ description: err instanceof Error ? err.message : "Failed to load template detail", variant: "error" }); setSelectedTemplate(null); }
+      try {
+        setSelectedTemplate(await apiFetch<Template>(`/templates/${selectedID}`));
+      } catch (error) {
+        toast({ description: error instanceof Error ? error.message : "Failed to load template detail", variant: "error" });
+        setSelectedTemplate(null);
+      }
     };
     void loadSelected();
   }, [selectedID, toast]);
@@ -121,16 +132,17 @@ export function useTemplates() {
         method: "PUT",
         body: JSON.stringify({ name: draft.name, description: draft.description, content: normalizedDraftContent, default_tag_ids: tags.selectedTagIDs }),
       });
-      if (normalizedDraftContent !== draft.content) setDraft((prev) => ({ ...prev, content: normalizedDraftContent }));
-      setSelectedTemplate((prev) =>
-        prev ? { ...prev, name: draft.name, description: draft.description, content: normalizedDraftContent, default_tag_ids: [...tags.selectedTagIDs], mtime: Math.floor(Date.now() / 1000) } : prev
-      );
+      if (normalizedDraftContent !== draft.content) setDraft((previous) => ({ ...previous, content: normalizedDraftContent }));
+      setSelectedTemplate((previous) => previous ? {
+        ...previous, name: draft.name, description: draft.description, content: normalizedDraftContent,
+        default_tag_ids: [...tags.selectedTagIDs], mtime: Math.floor(Date.now() / 1000),
+      } : previous);
       toast({ description: "Template saved." });
       await loadTemplates(0, true);
       setSelectedID(selectedTemplate.id);
       return true;
-    } catch (err) {
-      toast({ description: err instanceof Error ? err.message : "Failed to save template", variant: "error" });
+    } catch (error) {
+      toast({ description: error instanceof Error ? error.message : "Failed to save template", variant: "error" });
       return false;
     }
   };
@@ -142,30 +154,42 @@ export function useTemplates() {
       });
       await loadTemplates(0, true);
       setSelectedID(item.id);
-    } catch (err) { toast({ description: err instanceof Error ? err.message : "Failed to create template", variant: "error" }); }
+    } catch (error) {
+      toast({ description: error instanceof Error ? error.message : "Failed to create template", variant: "error" });
+    }
   };
 
-  const deleteTemplate = async (templateID: string, templateName: string) => {
-    if (!window.confirm(`Delete template "${templateName}"?`)) return;
+  const requestDeleteTemplate = (id: string, name: string) => setPendingDelete({ id, name });
+  const cancelDeleteTemplate = () => { if (!deletingTemplateRef.current) setPendingDelete(null); };
+  const confirmDeleteTemplate = async () => {
+    if (!pendingDelete || deletingTemplateRef.current) return;
+    deletingTemplateRef.current = true;
+    setDeletingTemplate(true);
     try {
-      await apiFetch(`/templates/${templateID}`, { method: "DELETE" });
+      await apiFetch(`/templates/${pendingDelete.id}`, { method: "DELETE" });
       toast({ description: "Template deleted." });
+      const deletedID = pendingDelete.id;
+      setPendingDelete(null);
       await loadTemplates(0, true);
-      if (selectedID === templateID) setSelectedID("");
-    } catch (err) { toast({ description: err instanceof Error ? err.message : "Failed to delete template", variant: "error" }); }
+      if (selectedID === deletedID) setSelectedID("");
+    } catch (error) {
+      toast({ description: error instanceof Error ? error.message : "Failed to delete template", variant: "error" });
+    } finally {
+      deletingTemplateRef.current = false;
+      setDeletingTemplate(false);
+    }
   };
 
   /* v8 ignore start -- async imperative flow with save-before-use logic is difficult to unit test */
   const prepareUseTemplate = () => {
     if (!selected || !selectedTemplate) return;
     void (async () => {
-      const nc = normalizeTemplatePlaceholders(draft.content);
-      if (nc !== draft.content) setDraft((prev) => ({ ...prev, content: nc }));
-      const changed = draft.name !== (selectedTemplate.name || "") || draft.description !== (selectedTemplate.description || "") || nc !== (selectedTemplate.content || "");
-      if (changed) { if (!(await saveTemplate())) return; }
-      const fillable = detectedVariables.filter((key) => !key.startsWith("SYS:"));
+      const normalized = normalizeTemplatePlaceholders(draft.content);
+      if (normalized !== draft.content) setDraft((previous) => ({ ...previous, content: normalized }));
+      const changed = draft.name !== (selectedTemplate.name || "") || draft.description !== (selectedTemplate.description || "") || normalized !== (selectedTemplate.content || "");
+      if (changed && !(await saveTemplate())) return;
       const initial: Record<string, string> = {};
-      fillable.forEach((key) => { initial[key] = ""; });
+      detectedVariables.filter((key) => !key.startsWith("SYS:")).forEach((key) => { initial[key] = ""; });
       setVariableValues(initial);
       setShowVariableModal(true);
     })();
@@ -173,35 +197,45 @@ export function useTemplates() {
   /* v8 ignore stop */
 
   const createFromTemplate = async (variables: Record<string, string>) => {
-    if (!selected) return;
+    if (!selected || creatingDocRef.current) return;
+    creatingDocRef.current = true;
     setCreatingDoc(true);
     try {
-      const doc = await apiFetch<Document>(`/templates/${selected.id}/create`, { method: "POST", body: JSON.stringify({ variables }) });
+      const doc = await apiFetch<Document>(`/templates/${selected.id}/create`, {
+        method: "POST", body: JSON.stringify({ variables }),
+      });
+      setShowVariableModal(false);
       router.push(`/docs/${doc.id}`);
-    } catch (err) { toast({ description: err instanceof Error ? err.message : "Failed to create note from template", variant: "error" }); }
-    finally { setCreatingDoc(false); setShowVariableModal(false); }
+    } catch (error) {
+      toast({ description: error instanceof Error ? error.message : "Failed to create note from template", variant: "error" });
+    } finally {
+      creatingDocRef.current = false;
+      setCreatingDoc(false);
+    }
   };
 
-  const previewContent = useMemo(() => {
-    return normalizeTemplatePlaceholders(draft.content).replace(VARIABLE_REGEX, (_raw, key: string) => {
+  const previewContent = useMemo(() => normalizeTemplatePlaceholders(draft.content).replace(
+    VARIABLE_REGEX,
+    (_raw, key: string) => {
       const normalized = (key || "").trim().toUpperCase();
       if (!normalized) return "";
       if (normalized.startsWith("SYS:")) return resolveSystemVariableClient(normalized);
       return variableValues[normalized] || "";
-    });
-  }, [draft.content, variableValues]);
+    },
+  ), [draft.content, variableValues]);
 
   return {
     router, templates: filteredTemplates, templatesTotal, loading, loadingMore,
     selectedID, setSelectedID, selected, draft, setDraft, creatingDoc,
     showVariableModal, setShowVariableModal, variableValues, setVariableValues,
-    search, setSearch,
+    search, setSearch, pendingDelete, deletingTemplate,
     selectedTagIDs: tags.selectedTagIDs, setSelectedTagIDs: tags.setSelectedTagIDs,
     visibleSelectedTags: tags.visibleSelectedTags,
     tagQuery: tags.tagQuery, setTagQuery: tags.setTagQuery,
     showTagInput: tags.showTagInput, setShowTagInput: tags.setShowTagInput,
     isSaveDisabled, handleTemplateListScroll,
     createTemplate, saveTemplate, addTag: tags.addTag,
-    deleteTemplate, prepareUseTemplate, createFromTemplate, previewContent,
+    requestDeleteTemplate, cancelDeleteTemplate, confirmDeleteTemplate,
+    prepareUseTemplate, createFromTemplate, previewContent,
   };
 }

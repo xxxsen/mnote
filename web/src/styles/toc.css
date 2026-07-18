@@ -28,7 +28,8 @@
 }
 
 .toc-wrapper a.toc-active,
-.toc-wrapper a[aria-current="true"] {
+.toc-wrapper a[aria-current="true"],
+.toc-wrapper a[aria-current="location"] {
   color: #111827 !important;
   font-weight: 600;
   text-decoration: none;

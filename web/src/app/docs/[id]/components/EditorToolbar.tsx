@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { THEMES, type ThemeId } from "@/lib/editor-themes";
+import type { MarkdownCommand } from "../commands/markdown-commands";
 import { Button } from "@/components/ui/button";
 import {
   Bold,
@@ -32,8 +33,7 @@ import {
 type EditorToolbarProps = {
   handleUndo: () => void;
   handleRedo: () => void;
-  handleFormat: (type: "wrap" | "line", prefix: string, suffix?: string) => void;
-  handleInsertTable: () => void;
+  executeCommand: (command: MarkdownCommand) => void;
   handleAiPolish: () => void;
   handleAiGenerateOpen: () => void;
   handleAiTags: () => void;
@@ -51,8 +51,7 @@ type EditorToolbarProps = {
 export const EditorToolbar = memo(function EditorToolbar({
   handleUndo,
   handleRedo,
-  handleFormat,
-  handleInsertTable,
+  executeCommand,
   handleAiPolish,
   handleAiGenerateOpen,
   handleAiTags,
@@ -96,7 +95,7 @@ export const EditorToolbar = memo(function EditorToolbar({
   }, [updateScrollState]);
 
   return (
-    <div className="relative flex-none sticky top-0 z-10">
+    <div className="relative hidden flex-none sticky top-0 z-10 lg:block">
       {/* Left fade indicator */}
       <div
         className="absolute left-0 top-0 bottom-0 w-6 z-10 pointer-events-none transition-opacity duration-200"
@@ -114,35 +113,37 @@ export const EditorToolbar = memo(function EditorToolbar({
         }}
       />
       <div
+        role="toolbar"
+        aria-label="Markdown formatting"
         ref={toolbarRef}
         onWheel={handleWheel}
         onScroll={updateScrollState}
         className="flex items-center gap-1 px-2 py-1 border-b border-border bg-background/50 backdrop-blur-sm overflow-x-auto overflow-y-visible no-scrollbar min-h-[36px]"
       >
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleUndo} title="Undo"><Undo className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleRedo} title="Redo"><Redo className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleUndo} aria-label="Undo" title="Undo"><Undo className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleRedo} aria-label="Redo" title="Redo"><Redo className="h-3.5 w-3.5" /></Button>
         </div>
         <div className="w-px h-3 bg-border mx-1 shrink-0" />
 
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "# ")} title="Heading 1"><Heading1 className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "## ")} title="Heading 2"><Heading2 className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "heading", level: 1 })} aria-label="Heading 1" title="Heading 1"><Heading1 className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "heading", level: 2 })} aria-label="Heading 2" title="Heading 2"><Heading2 className="h-3.5 w-3.5" /></Button>
         </div>
         <div className="w-px h-3 bg-border mx-1 shrink-0" />
 
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "**", "**")} title="Bold"><Bold className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "*", "*")} title="Italic"><Italic className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "~~", "~~")} title="Strikethrough"><Strikethrough className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "<u>", "</u>")} title="Underline"><UnderlineIcon className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "inline", mark: "bold" })} aria-label="Bold" title="Bold"><Bold className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "inline", mark: "italic" })} aria-label="Italic" title="Italic"><Italic className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "inline", mark: "strike" })} aria-label="Strikethrough" title="Strikethrough"><Strikethrough className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "inline", mark: "underline" })} aria-label="Underline" title="Underline"><UnderlineIcon className="h-3.5 w-3.5" /></Button>
           <div className="relative">
             <Button
               variant="ghost"
               size="icon"
               className={`h-7 w-7 shrink-0 hover:text-foreground ${activePopover === "color" ? "text-primary bg-accent" : "text-muted-foreground"}`}
               onClick={() => setActivePopover(activePopover === "color" ? null : "color")}
-              title="Text Color"
+              aria-label="Text Color" title="Text Color"
               data-popover-trigger
               ref={colorButtonRef}
             >
@@ -155,7 +156,7 @@ export const EditorToolbar = memo(function EditorToolbar({
               size="icon"
               className={`h-7 w-7 shrink-0 hover:text-foreground ${activePopover === "size" ? "text-primary bg-accent" : "text-muted-foreground"}`}
               onClick={() => setActivePopover(activePopover === "size" ? null : "size")}
-              title="Font Size"
+              aria-label="Font Size" title="Font Size"
               data-popover-trigger
               ref={sizeButtonRef}
             >
@@ -166,25 +167,25 @@ export const EditorToolbar = memo(function EditorToolbar({
         <div className="w-px h-3 bg-border mx-1 shrink-0" />
 
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- ")} title="Bullet List"><List className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "1. ")} title="Ordered List"><ListOrdered className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "- [ ] ")} title="Todo List"><ListTodo className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("line", "> ")} title="Quote"><Quote className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "block", block: "bullet" })} aria-label="Bullet List" title="Bullet List"><List className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "block", block: "ordered" })} aria-label="Ordered List" title="Ordered List"><ListOrdered className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "block", block: "task" })} aria-label="Todo List" title="Todo List"><ListTodo className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "block", block: "quote" })} aria-label="Quote" title="Quote"><Quote className="h-3.5 w-3.5" /></Button>
         </div>
         <div className="w-px h-3 bg-border mx-1 shrink-0" />
 
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "`", "`")} title="Inline Code"><Code className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "```\n", "\n```")} title="Code Block"><FileCode className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleFormat("wrap", "[", "](url)")} title="Link"><LinkIcon className="h-3.5 w-3.5" /></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleInsertTable} title="Table"><TableIcon className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "inline", mark: "code" })} aria-label="Inline Code" title="Inline Code"><Code className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "insert", item: "codeBlock" })} aria-label="Code Block" title="Code Block"><FileCode className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "insert", item: "link" })} aria-label="Link" title="Link"><LinkIcon className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => executeCommand({ kind: "insert", item: "table" })} aria-label="Table" title="Table"><TableIcon className="h-3.5 w-3.5" /></Button>
           <div className="relative">
             <Button
               variant="ghost"
               size="icon"
               className={`h-7 w-7 shrink-0 hover:text-foreground ${activePopover === "emoji" ? "text-primary bg-accent" : "text-muted-foreground"}`}
               onClick={() => setActivePopover(activePopover === "emoji" ? null : "emoji")}
-              title="Emoji"
+              aria-label="Emoji" title="Emoji"
               data-popover-trigger
               ref={emojiButtonRef}
             >
@@ -195,13 +196,13 @@ export const EditorToolbar = memo(function EditorToolbar({
         <div className="w-px h-3 bg-border mx-1 shrink-0" />
 
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleAiPolish} title="AI Polish" disabled={aiBusy}>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleAiPolish} aria-label="AI Polish" title="AI Polish" disabled={aiBusy}>
             <Sparkles className="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleAiGenerateOpen} title="AI Generate" disabled={aiBusy}>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleAiGenerateOpen} aria-label="AI Generate" title="AI Generate" disabled={aiBusy}>
             <Wand2 className="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleAiTags} title="AI Tags" disabled={aiBusy}>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleAiTags} aria-label="AI Tags" title="AI Tags" disabled={aiBusy}>
             <Tags className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -212,7 +213,7 @@ export const EditorToolbar = memo(function EditorToolbar({
             value={currentTheme}
             onChange={(e) => onThemeChange(e.target.value as ThemeId)}
             className="h-7 rounded px-1.5 text-xs bg-transparent border border-border text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
-            title="Editor Theme"
+            aria-label="Editor Theme" title="Editor Theme"
             data-testid="theme-selector"
           >
             {THEMES.map((t) => (
@@ -223,7 +224,7 @@ export const EditorToolbar = memo(function EditorToolbar({
 
         <div className="w-px h-3 bg-border mx-1 shrink-0" />
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handlePreviewOpen} title="Preview">
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handlePreviewOpen} aria-label="Preview" title="Preview">
             <Eye className="h-3.5 w-3.5" />
           </Button>
         </div>

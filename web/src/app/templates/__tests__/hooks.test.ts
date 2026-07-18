@@ -16,7 +16,10 @@ import { useTemplates } from "../hooks/useTemplates";
 
 const mockApiFetch = vi.mocked(apiFetch);
 
-beforeEach(() => { vi.clearAllMocks(); });
+beforeEach(() => {
+  mockApiFetch.mockReset();
+  stableToast.mockReset();
+});
 
 describe("useTemplateTags", () => {
   it("starts with empty state", () => {
@@ -260,7 +263,6 @@ describe("useTemplates", () => {
   });
 
   it("deletes template with confirmation", async () => {
-    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
     mockApiFetch.mockImplementation(((url: string, opts?: RequestInit) => {
       if (url.startsWith("/templates/meta")) return Promise.resolve({ items: [metaItem("t1", "T1")], total: 1 });
       if (url.startsWith("/templates/t1") && opts?.method === "DELETE") return Promise.resolve(undefined);
@@ -271,7 +273,8 @@ describe("useTemplates", () => {
 
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    await act(async () => { void result.current.deleteTemplate("t1", "T1"); });
+    act(() => { result.current.requestDeleteTemplate("t1", "T1"); });
+    await act(async () => { await result.current.confirmDeleteTemplate(); });
     expect(mockApiFetch).toHaveBeenCalledWith("/templates/t1", { method: "DELETE" });
   });
 
@@ -418,8 +421,7 @@ describe("useTemplates", () => {
     act(() => { result.current.handleTemplateListScroll(scrollEvent as never); });
   });
 
-  it("deleteTemplate cancelled by confirm does nothing", async () => {
-    vi.stubGlobal("confirm", vi.fn().mockReturnValue(false));
+  it("template deletion can be cancelled before confirmation", async () => {
     setupApiRouter({
       "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
       "/templates/t1": fullTemplate("t1", "T1"),
@@ -428,10 +430,10 @@ describe("useTemplates", () => {
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     const callCountBefore = mockApiFetch.mock.calls.length;
-    await act(async () => { void result.current.deleteTemplate("t1", "T1"); });
+    act(() => { result.current.requestDeleteTemplate("t1", "T1"); });
+    act(() => { result.current.cancelDeleteTemplate(); });
     const deleteCalls = mockApiFetch.mock.calls.slice(callCountBefore).filter(([, opts]) => (opts as { method?: string })?.method === "DELETE");
     expect(deleteCalls).toHaveLength(0);
-    vi.unstubAllGlobals();
   });
 
   it("selected is null when no templates", async () => {
@@ -461,8 +463,7 @@ describe("useTemplates", () => {
     expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
   });
 
-  it("deleteTemplate error shows toast", async () => {
-    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+  it("template deletion error shows toast", async () => {
     setupApiRouter({
       "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
       "/templates/t1": fullTemplate("t1", "T1"),
@@ -471,9 +472,9 @@ describe("useTemplates", () => {
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     mockApiFetch.mockRejectedValueOnce(new Error("delete fail"));
-    await act(async () => { void result.current.deleteTemplate("t1", "T1"); });
+    act(() => { result.current.requestDeleteTemplate("t1", "T1"); });
+    await act(async () => { await result.current.confirmDeleteTemplate(); });
     expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
-    vi.unstubAllGlobals();
   });
 
   it("prepareUseTemplate opens variable modal", async () => {
@@ -536,8 +537,7 @@ describe("useTemplates", () => {
     expect(result.current.isSaveDisabled).toBe(true);
   });
 
-  it("deleteTemplate refreshes selectedID if matching", async () => {
-    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+  it("template deletion refreshes selectedID if matching", async () => {
     setupApiRouter({
       "/templates/meta": { items: [metaItem("t1", "T1"), metaItem("t2", "T2")], total: 2 },
       "/templates/t1": fullTemplate("t1", "T1"),
@@ -548,8 +548,8 @@ describe("useTemplates", () => {
     mockApiFetch.mockResolvedValueOnce(undefined);
     mockApiFetch.mockResolvedValueOnce({ items: [metaItem("t2", "T2")], total: 1 });
     mockApiFetch.mockResolvedValueOnce(fullTemplate("t2", "T2"));
-    await act(async () => { void result.current.deleteTemplate("t1", "T1"); });
-    vi.unstubAllGlobals();
+    act(() => { result.current.requestDeleteTemplate("t1", "T1"); });
+    await act(async () => { await result.current.confirmDeleteTemplate(); });
   });
 
   it("filteredTemplates filters by search", async () => {
@@ -696,8 +696,7 @@ describe("useTemplates", () => {
     expect(result.current.showVariableModal).toBe(false);
   });
 
-  it("deleteTemplate non-Error shows generic message", async () => {
-    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+  it("template deletion non-Error shows generic message", async () => {
     setupApiRouter({
       "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
       "/templates/t1": fullTemplate("t1", "T1"),
@@ -706,13 +705,12 @@ describe("useTemplates", () => {
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     mockApiFetch.mockRejectedValueOnce("string error");
-    await act(async () => { void result.current.deleteTemplate("t1", "T1"); });
+    act(() => { result.current.requestDeleteTemplate("t1", "T1"); });
+    await act(async () => { await result.current.confirmDeleteTemplate(); });
     expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: "Failed to delete template" }));
-    vi.unstubAllGlobals();
   });
 
-  it("deleteTemplate does not reset selectedID when deleting different template", async () => {
-    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+  it("template deletion does not reset selectedID when deleting different template", async () => {
     mockApiFetch.mockImplementation(((url: string, opts?: RequestInit) => {
       if (url.startsWith("/templates/meta")) return Promise.resolve({ items: [metaItem("t1", "T1"), metaItem("t2", "T2")], total: 2 });
       if (url.startsWith("/templates/t2") && opts?.method === "DELETE") return Promise.resolve(undefined);
@@ -723,9 +721,9 @@ describe("useTemplates", () => {
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     expect(result.current.selectedID).toBe("t1");
-    await act(async () => { void result.current.deleteTemplate("t2", "T2"); });
+    act(() => { result.current.requestDeleteTemplate("t2", "T2"); });
+    await act(async () => { await result.current.confirmDeleteTemplate(); });
     expect(result.current.selectedID).toBe("t1");
-    vi.unstubAllGlobals();
   });
 
   it("createTemplate non-Error shows generic message", async () => {

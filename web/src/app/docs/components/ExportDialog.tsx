@@ -1,41 +1,83 @@
 import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
+import {
+  Dialog,
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  DialogStatus,
+} from "@/components/ui/dialog";
+import { FileArchive } from "lucide-react";
 
 export interface ExportDialogProps {
+  open: boolean;
+  exporting: boolean;
+  error: string | null;
   onClose: () => void;
   onExport: () => void;
 }
 
-export function ExportDialog({ onClose, onExport }: ExportDialogProps) {
+export function ExportDialog({
+  open,
+  exporting,
+  error,
+  onClose,
+  onExport,
+}: ExportDialogProps) {
   return (
-    <div className="fixed inset-0 z-[180] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md rounded-2xl border border-border bg-background shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <div>
-            <div className="text-sm font-bold">Export Notes</div>
-            <div className="text-[11px] text-muted-foreground">Export all notes as JSON zip</div>
-          </div>
-          <button
-            type="button"
-            aria-label="Close"
-            title="Close"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={onClose}
+    <Dialog
+      open={open}
+      title="Export notes"
+      description="Download all notes as a ZIP archive containing JSON documents."
+      variant="modal"
+      size="md"
+      dismissPolicy="always"
+      onClose={onClose}
+    >
+      <DialogHeader />
+      <DialogBody className="space-y-4">
+        {error ? (
+          <DialogStatus variant="error">
+            <div>{error}</div>
+            <div className="mt-1 text-xs">Check the connection and try exporting again.</div>
+          </DialogStatus>
+        ) : null}
+        {exporting ? (
+          <DialogStatus variant="loading">
+            Preparing your archive. The download will start automatically.
+          </DialogStatus>
+        ) : (
+          <div
+            aria-label="Selected export format"
+            className="flex items-center gap-3 rounded-xl border border-primary bg-primary/5 p-4"
           >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="p-5 space-y-4">
-          <div className="text-sm text-muted-foreground">
-            This will export all your notes into a ZIP file containing JSON documents.
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+              <FileArchive className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold">MicroNote JSON ZIP</div>
+              <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                Includes note content, summaries, and tag references in a portable archive.
+              </div>
+            </div>
           </div>
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button onClick={() => { onClose(); onExport(); }}>Export</Button>
-          </div>
-        </div>
-      </div>
-    </div>
+        )}
+      </DialogBody>
+      <DialogFooter>
+        <Button
+          variant="outline"
+          className="h-11 w-full sm:w-auto"
+          onClick={onClose}
+        >
+          {exporting ? "Cancel export" : "Cancel"}
+        </Button>
+        <Button
+          className="h-11 w-full sm:w-auto"
+          onClick={onExport}
+          isLoading={exporting}
+        >
+          {exporting ? "Preparing export" : "Export"}
+        </Button>
+      </DialogFooter>
+    </Dialog>
   );
 }

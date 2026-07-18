@@ -2279,11 +2279,12 @@ func TestDocumentService_ResolveAccessibleShareByToken(t *testing.T) {
 	})
 }
 
-// TestDocumentService_Save_RejectsStaleSaveSeq guards the save protocol:
+// TestDocumentService_Save_RejectsStaleSaveSeq guards only the legacy
+// SaveSeq compatibility branch; base-aware requests use revision conflicts.
 // a save_seq that is <= the current content_revision must be silently
 // ignored (accepted=false) without touching any other table, and the
 // returned metadata must reflect the unchanged server state so the client
-// can fast-forward without re-reading the document.
+// can preserve the historical client behavior during a rolling upgrade.
 func TestDocumentService_Save_RejectsStaleSaveSeq(t *testing.T) {
 	updateCalled := false
 	versionCreated := false

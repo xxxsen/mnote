@@ -37,8 +37,8 @@ export default function DocsPage() {
   const tagSelectorRef = useRef<HTMLDivElement>(null);
   const initialFetchRef = useRef(false);
 
-  const filteredTags = tagSuggestions.filter(t =>
-    t.name.toLowerCase().includes(search.slice(1).toLowerCase()),
+  const filteredTags = tagSuggestions.filter((tag) =>
+    tag.name.toLowerCase().includes(search.slice(1).toLowerCase()),
   );
 
   const { tagIndex, tagIndexRef, mergeTags, fetchTagsByIDs, fetchTags } = useTagIndex();
@@ -92,11 +92,11 @@ export default function DocsPage() {
       params.set("limit", "20");
       params.set("offset", "0");
       params.set("q", query);
-      const res = await apiFetch<Tag[]>(`/tags?${params.toString()}`);
-      setTagSuggestions(res || []); // eslint-disable-line @typescript-eslint/no-unnecessary-condition
-      mergeTags(res || []); // eslint-disable-line @typescript-eslint/no-unnecessary-condition
-    } catch (e) {
-      console.error(e);
+      const result = await apiFetch<Tag[]>(`/tags?${params.toString()}`);
+      setTagSuggestions(result || []); // eslint-disable-line @typescript-eslint/no-unnecessary-condition
+      mergeTags(result || []); // eslint-disable-line @typescript-eslint/no-unnecessary-condition
+    } catch (error) {
+      console.error(error);
     }
   }, [mergeTags]);
 
@@ -143,9 +143,9 @@ export default function DocsPage() {
         body: JSON.stringify({ title: "Untitled", content: "" }),
       });
       router.push(`/docs/${doc.id}`);
-    } catch (err) {
-      console.error(err);
-      toast({ description: err instanceof Error ? err : "Failed to create document", variant: "error" });
+    } catch (error) {
+      console.error(error);
+      toast({ description: error instanceof Error ? error : "Failed to create document", variant: "error" });
     }
   };
 
@@ -157,9 +157,9 @@ export default function DocsPage() {
       const copied = await copyToClipboard(url);
       if (copied) toast({ description: "Share link copied" });
       else toast({ description: "Failed to copy link", variant: "error" });
-    } catch (err) {
-      console.error(err);
-      toast({ description: err instanceof Error ? err : "Failed to copy link", variant: "error" });
+    } catch (error) {
+      console.error(error);
+      toast({ description: error instanceof Error ? error : "Failed to copy link", variant: "error" });
     }
   }, [toast]);
 
@@ -203,18 +203,18 @@ export default function DocsPage() {
           onCopyShare={handleCopyShare}
         />
       </main>
-      {ie.importOpen && (
-        <ImportDialog
-          importStep={ie.importStep} importMode={ie.importMode} importSource={ie.importSource}
-          importPreview={ie.importPreview} importReport={ie.importReport}
-          importError={ie.importError} importFileName={ie.importFileName} importProgress={ie.importProgress}
-          onSetImportMode={ie.setImportMode} onClose={ie.closeImportModal}
-          onImportFile={ie.handleImportFile} onImportConfirm={ie.handleImportConfirm}
-        />
-      )}
-      {ie.exportOpen && (
-        <ExportDialog onClose={ie.closeExportModal} onExport={ie.handleExportNotes} />
-      )}
+      <ImportDialog
+        open={ie.importOpen}
+        importStep={ie.importStep} importMode={ie.importMode} importSource={ie.importSource}
+        importPreview={ie.importPreview} importReport={ie.importReport}
+        importError={ie.importError} importFileName={ie.importFileName} importProgress={ie.importProgress}
+        onSetImportMode={ie.setImportMode} onClose={ie.closeImportModal}
+        onImportFile={ie.handleImportFile} onImportConfirm={ie.handleImportConfirm}
+      />
+      <ExportDialog
+        open={ie.exportOpen} exporting={ie.exporting} error={ie.exportError}
+        onClose={ie.closeExportModal} onExport={ie.handleExportNotes}
+      />
     </div>
   );
 }

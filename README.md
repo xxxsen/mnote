@@ -169,15 +169,15 @@ OAuth 回调地址：
 
 ### 快速启动
 
-首次安装前端依赖后，`make dev` 会并行启动 Go 后端、Next.js 前端和一个独立的
-pgvector 开发数据库：
+首次安装前端依赖后，`make dev` 会启动一个独立的 pgvector 开发数据库和 Go 后端，
+确认后端端口就绪后再启动 Next.js 前端：
 
 ```bash
 make web-install
 make dev
 ```
 
-默认访问地址为 `http://localhost:3000`，后端为 `http://localhost:8080`，测试账号为
+默认访问地址为 `http://localhost:3090`，后端为 `http://localhost:8850`，测试账号为
 `test@test.com / test`。按 `Ctrl+C` 会停止本次后端、前端和数据库进程；数据库卷和
 `.dev-data/` 中的上传文件会保留，便于下次快速启动。该命令使用独立的开发 Compose
 项目和数据卷，不会复用 `docker/docker-compose.yml` 的部署数据。
