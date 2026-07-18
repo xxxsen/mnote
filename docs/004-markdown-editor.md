@@ -190,7 +190,7 @@ Markdown 预览的 `h1-h6`、`p`、`li`、`pre`、`blockquote`、`table` 和 `hr
 - `[toc]` / `[TOC]` 只控制正文中是否插入内联目录。只要正文含标题，右侧 Outline 默认展示；无标题时仍保留整栏 Outline 并显示空状态。
 - Edit 模式点击 Outline 时使用 `EditorView.scrollIntoView` 定位 `sourceLine`，不移动光标；Preview 和 Split 模式定位预览标题 id。
 - Split 同步开启时预览定位后编辑器跟随；同步关闭时只移动预览器。
-- 编辑区滚动时，以编辑器顶部可见源码行之前最近的 Markdown 标题作为当前章节；预览区滚动时使用顶部下方 32～96px 的激活线，滚动到底部时选择最后一个标题。
+- 编辑区滚动时，以编辑区垂直中线对应源码行之前最近的 Markdown 标题作为当前章节；该中线只影响 Outline 激活，Editor → Preview 仍按顶部可见源码行同步。预览区滚动时使用顶部下方 32～96px 的激活线，滚动到底部时选择最后一个标题。
 - 重复标题按出现顺序追加稳定序号。当前项使用 `aria-current="location"`；仅当当前项离开 Outline 自身可视区域时，才最小幅度滚动右栏。
 
 ## 10. 响应式布局
@@ -262,6 +262,6 @@ Slash/Wikilink 菜单使用 listbox/option 语义，编辑器暴露 `aria-contro
 - 网络错误、Retry 和恢复在线；
 - 桌面三模式、420px 分栏边界、默认 Outline、Outline/Details 原位切换、常驻/折叠右栏、断点切换和移动 drawer；
 - 标题/列表互转、选区边界、撤销重做、输入法和双链菜单；
-- source-line 双向滚动、预览区真实滚轮不回顶、关闭同步、无 `[toc]` 的默认 Outline、三种模式定位、当前章节高亮和 Outline 自身跟随；
+- source-line 双向滚动、编辑区中线切章、预览区真实滚轮不回顶、关闭同步、无 `[toc]` 的默认 Outline、三种模式定位、当前章节高亮和 Outline 自身跟随；
 - 全键盘 Dialog/Menu 流程、焦点恢复和控件可访问名称；
 - 大正文连续输入期间不丢字符，预览最终收敛。

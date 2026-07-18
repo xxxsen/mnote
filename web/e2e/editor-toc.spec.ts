@@ -6,6 +6,71 @@ import {
   openEditor,
 } from "./editor-helpers";
 
+test("editor midline determines the active Outline section", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const token = await loginTestUser(page);
+  const content = [
+    "# Midline note",
+    ...Array.from({ length: 10 }, (_, sectionIndex) => {
+      const section = sectionIndex + 1;
+      return [
+        `## Section ${section}`,
+        ...Array.from(
+          { length: 30 },
+          (_, lineIndex) => `Section ${section} line ${lineIndex + 1}`,
+        ),
+      ].join("\n");
+    }),
+  ].join("\n\n");
+  const document = await createDocument(page, token, content);
+
+  try {
+    await openEditor(page, document.id);
+    await page.getByRole("button", { name: "Edit view" }).click();
+    const editorScroller = page.locator(".cm-scroller");
+    const heading = page
+      .locator(".cm-line")
+      .filter({ hasText: /^## Section 7$/ });
+
+    await page.locator('[data-outline-id="section-7"]').click();
+    await expect(heading).toBeVisible();
+    await expect
+      .poll(() => editorScroller.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+
+    await editorScroller.evaluate((element) => {
+      element.scrollTop = Math.max(
+        0,
+        element.scrollTop - element.clientHeight * 0.3,
+      );
+      element.dispatchEvent(new Event("scroll"));
+    });
+    await expect
+      .poll(async () => {
+        const headingBox = await heading.boundingBox();
+        const editorBox = await editorScroller.boundingBox();
+        if (!headingBox || !editorBox) return -1;
+        return (headingBox.y - editorBox.y) / editorBox.height;
+      })
+      .toBeGreaterThan(0.15);
+    await expect
+      .poll(async () => {
+        const headingBox = await heading.boundingBox();
+        const editorBox = await editorScroller.boundingBox();
+        if (!headingBox || !editorBox) return 1;
+        return (headingBox.y - editorBox.y) / editorBox.height;
+      })
+      .toBeLessThan(0.5);
+    await expect(
+      page.locator('[data-outline-id="section-7"]'),
+    ).toHaveAttribute("aria-current", "location");
+  } finally {
+    await deleteDocument(page, token, document.id);
+  }
+});
+
 test("preview wheel scrolling does not snap back while scroll sync is enabled", async ({
   page,
 }) => {

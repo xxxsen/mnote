@@ -34,20 +34,32 @@ describe("useScrollSync behavior", () => {
     frame.callback(0);
   }
 
-  function setup(enabled = true) {
+  function setup(
+    enabled = true,
+    options: {
+      content?: string;
+      topLine?: number;
+      middleLine?: number;
+    } = {},
+  ) {
     const scrollDOM = {
       scrollTop: 200,
       scrollHeight: 1000,
       clientHeight: 200,
     };
+    const topLine = options.topLine ?? 20;
+    const middleLine = options.middleLine ?? topLine;
+    const lineBlockAtHeight = vi.fn((height: number) => ({
+      from: (height > scrollDOM.scrollTop ? middleLine : topLine) * 10,
+    }));
     const dispatch = vi.fn();
     const view = {
       scrollDOM,
-      lineBlockAtHeight: () => ({ from: 40 }),
+      lineBlockAtHeight,
       state: {
         doc: {
           lines: 100,
-          lineAt: () => ({ number: 20 }),
+          lineAt: (from: number) => ({ number: from / 10 }),
           line: (line: number) => ({ from: line * 10 }),
         },
       },
@@ -66,7 +78,9 @@ describe("useScrollSync behavior", () => {
       {
         initialProps: {
           scopeKey: "doc-a",
-          content: "# Intro\n" + "\n".repeat(13) + "## Details",
+          content:
+            options.content ??
+            "# Intro\n" + "\n".repeat(13) + "## Details",
         },
       },
     );
@@ -91,7 +105,7 @@ describe("useScrollSync behavior", () => {
     act(() => {
       hook.result.current.previewRef.current = preview;
     });
-    return { ...hook, preview, dispatch };
+    return { ...hook, preview, dispatch, lineBlockAtHeight };
   }
 
   it("coalesces editor scrolls into one frame and interpolates source markers", () => {
@@ -105,6 +119,29 @@ describe("useScrollSync behavior", () => {
     expect(frames.filter((frame) => frame.cancelled)).toHaveLength(1);
 
     act(runNextFrame);
+    expect(harness.preview.scrollTop).toBe(300);
+  });
+
+  it("uses the editor midline for Outline while preserving top-line preview sync", () => {
+    const content = [
+      "# Intro",
+      ...Array.from({ length: 13 }, () => ""),
+      "## Details",
+      ...Array.from({ length: 9 }, () => ""),
+      "## Later",
+    ].join("\n");
+    const harness = setup(true, {
+      content,
+      topLine: 20,
+      middleLine: 30,
+    });
+
+    act(() => harness.result.current.handleEditorScroll());
+    act(runNextFrame);
+
+    expect(harness.lineBlockAtHeight).toHaveBeenNthCalledWith(1, 300);
+    expect(harness.lineBlockAtHeight).toHaveBeenNthCalledWith(2, 200);
+    expect(harness.result.current.activeTocId).toBe("later");
     expect(harness.preview.scrollTop).toBe(300);
   });
 

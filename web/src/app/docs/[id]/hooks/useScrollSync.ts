@@ -219,12 +219,16 @@ export function useScrollSync(opts: {
     schedule(() => {
       const view = editorViewRef.current;
       if (!view) return;
-      const topBlock = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
-      const visibleLine = view.state.doc.lineAt(topBlock.from).number;
+      const activationBlock = view.lineBlockAtHeight(
+        view.scrollDOM.scrollTop + view.scrollDOM.clientHeight / 2,
+      );
+      const activationLine = view.state.doc.lineAt(activationBlock.from).number;
       updateActiveTocId(
-        activeHeadingForSourceLine(headingMarkersRef.current, visibleLine),
+        activeHeadingForSourceLine(headingMarkersRef.current, activationLine),
       );
       if (!enabledRef.current) return;
+      const topBlock = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
+      const topVisibleLine = view.state.doc.lineAt(topBlock.from).number;
       const preview = previewRef.current;
       if (!preview) return;
       const editorMax =
@@ -236,7 +240,7 @@ export function useScrollSync(opts: {
       if (editorMax <= 0) return;
       const markerTarget = interpolatePreviewOffset(
         readMarkers(preview),
-        visibleLine,
+        topVisibleLine,
       );
       const fallback = (view.scrollDOM.scrollTop / editorMax) * previewMax;
       scrollingSource.current = "editor";
