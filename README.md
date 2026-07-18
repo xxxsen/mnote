@@ -177,7 +177,7 @@ make web-install
 make dev
 ```
 
-默认访问地址为 `http://localhost:3000`，后端为 `http://localhost:8080`，测试账号为
+默认访问地址为 `http://localhost:3090`，后端为 `http://localhost:8850`，测试账号为
 `test@test.com / test`。按 `Ctrl+C` 会停止本次后端、前端和数据库进程；数据库卷和
 `.dev-data/` 中的上传文件会保留，便于下次快速启动。该命令使用独立的开发 Compose
 项目和数据卷，不会复用 `docker/docker-compose.yml` 的部署数据。
