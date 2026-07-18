@@ -1,31 +1,73 @@
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
-import { AlertTriangle, Eye, Home, RefreshCw, X } from "lucide-react";
+import {
+  Dialog,
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  DialogStatus,
+} from "@/components/ui/dialog";
+import { AlertTriangle, Eye, Home } from "lucide-react";
 import MarkdownPreview from "@/components/markdown-preview";
 
 export function DeleteConfirmDialog(props: {
   show: boolean;
   title: string;
   onClose: () => void;
-  onDelete: () => void;
+  onDelete: () => void | Promise<void>;
 }) {
+  const [deleting, setDeleting] = useState(false);
+  const actionRef = useRef(false);
+  const remove = async () => {
+    if (actionRef.current) return;
+    actionRef.current = true;
+    setDeleting(true);
+    try {
+      await props.onDelete();
+    } finally {
+      actionRef.current = false;
+      setDeleting(false);
+    }
+  };
   return (
-    <Dialog open={props.show} title="Delete note?" onClose={props.onClose} className="max-w-sm">
-      <div className="p-6 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-          <AlertTriangle className="h-6 w-6" />
+    <Dialog
+      open={props.show}
+      title="Delete note?"
+      description={`All versions of “${props.title || "Untitled"}” will be permanently removed.`}
+      variant="modal"
+      size="sm"
+      role="alertdialog"
+      dismissPolicy="when-idle"
+      busy={deleting}
+      onClose={props.onClose}
+    >
+      <DialogHeader />
+      <DialogBody className="space-y-4 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+          <AlertTriangle className="h-6 w-6" aria-hidden="true" />
         </div>
-        <h2 className="mb-2 text-lg font-bold">Delete Note?</h2>
-        <p className="mb-6 text-sm text-muted-foreground">
-          This action cannot be undone. All versions of{" "}
-          <span className="font-mono font-bold text-foreground">&ldquo;{props.title || "Untitled"}&rdquo;</span>{" "}
-          will be permanently removed.
-        </p>
-        <div className="flex gap-3">
-          <Button variant="outline" className="flex-1" onClick={props.onClose}>Cancel</Button>
-          <Button variant="destructive" className="flex-1" onClick={props.onDelete}>Delete</Button>
-        </div>
-      </div>
+        <DialogStatus variant="error" className="text-left">
+          This action cannot be undone. Shared links and version history for this note will stop working.
+        </DialogStatus>
+      </DialogBody>
+      <DialogFooter>
+        <Button
+          variant="outline"
+          className="h-11 w-full sm:w-auto"
+          onClick={props.onClose}
+          disabled={deleting}
+        >
+          Cancel
+        </Button>
+        <Button
+          variant="destructive"
+          className="h-11 w-full sm:w-auto"
+          onClick={() => void remove()}
+          isLoading={deleting}
+        >
+          {deleting ? "Deleting note" : "Delete note"}
+        </Button>
+      </DialogFooter>
     </Dialog>
   );
 }
@@ -37,33 +79,55 @@ export function DocPreviewModal(props: {
   onOpenFull: (id: string) => void;
 }) {
   const open = Boolean(props.previewDoc) || props.previewLoading;
+  const title = props.previewLoading ? "Loading note preview" : props.previewDoc?.title || "Document preview";
   return (
-    <Dialog open={open} title={props.previewDoc?.title || "Document preview"} onClose={props.onClose} className="flex h-[80dvh] max-w-4xl flex-col overflow-hidden">
-      <div className="flex items-center justify-between border-b border-border bg-muted/10 px-6 py-4">
+    <Dialog
+      open={open}
+      title={title}
+      description="Read the note without leaving the current editor."
+      variant="fullscreen"
+      size="xl"
+      onClose={props.onClose}
+    >
+      <DialogHeader>
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Home className="h-5 w-5" /></div>
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Home className="h-5 w-5" aria-hidden="true" />
+          </div>
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-bold">{props.previewLoading ? "Loading…" : props.previewDoc?.title || "Untitled"}</h2>
-            {!props.previewLoading && <p className="font-mono text-[10px] text-muted-foreground">PREVIEW MODE</p>}
+            <h2 className="truncate text-base font-semibold text-slate-950">{title}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Preview mode</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {!props.previewLoading && (
-            <Button variant="outline" size="sm" onClick={() => props.onOpenFull(props.previewDoc?.id || "")}>Open Full Note</Button>
-          )}
-          <Button variant="ghost" size="icon" aria-label="Close preview" onClick={props.onClose}><X className="h-4 w-4" /></Button>
-        </div>
-      </div>
-      <div className="flex-1 overflow-y-auto bg-card/30 p-6 md:p-10">
+      </DialogHeader>
+      <DialogBody className="bg-slate-50 p-6 md:p-10">
         {props.previewLoading ? (
-          <div className="flex h-full flex-col items-center justify-center gap-4 text-muted-foreground">
-            <RefreshCw className="h-8 w-8 animate-spin opacity-20" />
-            <p className="font-mono text-xs uppercase tracking-widest">Fetching content</p>
-          </div>
+          <DialogStatus variant="loading">Fetching note content…</DialogStatus>
         ) : (
-          <MarkdownPreview content={props.previewDoc?.content || ""} className="max-w-none prose-lg" enableMentionHoverPreview />
+          <MarkdownPreview
+            content={props.previewDoc?.content || ""}
+            className="mx-auto max-w-4xl prose-lg"
+            enableMentionHoverPreview
+          />
         )}
-      </div>
+      </DialogBody>
+      <DialogFooter>
+        <Button
+          variant="outline"
+          className="h-11 w-full sm:w-auto"
+          onClick={props.onClose}
+        >
+          Close
+        </Button>
+        {!props.previewLoading ? (
+          <Button
+            className="h-11 w-full sm:w-auto"
+            onClick={() => props.onOpenFull(props.previewDoc?.id || "")}
+          >
+            Open full note
+          </Button>
+        ) : null}
+      </DialogFooter>
     </Dialog>
   );
 }
@@ -76,24 +140,42 @@ export function PreviewModal(props: {
   onTocLoaded: (toc: string) => void;
 }) {
   return (
-    <Dialog open={props.show} title={props.title || "Preview"} onClose={props.onClose} className="flex h-[85dvh] max-w-5xl flex-col overflow-hidden">
-      <div className="flex items-center justify-between border-b border-border bg-muted/10 px-6 py-4">
+    <Dialog
+      open={props.show}
+      title={props.title || "Preview"}
+      description="Full rendered preview of the current Markdown note."
+      variant="fullscreen"
+      size="xl"
+      onClose={props.onClose}
+    >
+      <DialogHeader>
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary"><Eye className="h-4 w-4" /></div>
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Eye className="h-4 w-4" aria-hidden="true" />
+          </div>
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-bold">{props.title || "Untitled"}</h2>
-            <p className="font-mono text-[10px] text-muted-foreground">PREVIEW MODE</p>
+            <h2 className="truncate text-base font-semibold text-slate-950">
+              {props.title || "Untitled"}
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">Full preview</p>
           </div>
         </div>
-        <Button variant="ghost" size="icon" aria-label="Close preview" onClick={props.onClose}><X className="h-4 w-4" /></Button>
-      </div>
-      <div className="flex-1 overflow-y-auto bg-card/30 p-6 md:p-10">
-        <article className="w-full rounded-2xl border border-slate-200/50 bg-white shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)]">
-          <div className="p-6 md:p-10 lg:p-12">
-            <MarkdownPreview content={props.content} className="markdown-body h-auto overflow-visible bg-transparent p-0 text-slate-800" onTocLoaded={props.onTocLoaded} enableMentionHoverPreview />
+      </DialogHeader>
+      <DialogBody className="bg-slate-50 p-4 sm:p-6 md:p-10">
+        <article className="mx-auto w-full max-w-5xl rounded-2xl border border-slate-200/50 bg-white shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)]">
+          <div className="p-5 sm:p-6 md:p-10 lg:p-12">
+            <MarkdownPreview
+              content={props.content}
+              className="markdown-body h-auto overflow-visible bg-transparent p-0 text-slate-800"
+              onTocLoaded={props.onTocLoaded}
+              enableMentionHoverPreview
+            />
           </div>
         </article>
-      </div>
+      </DialogBody>
+      <DialogFooter>
+        <Button className="h-11 w-full sm:w-auto" onClick={props.onClose}>Close preview</Button>
+      </DialogFooter>
     </Dialog>
   );
 }

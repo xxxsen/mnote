@@ -1,8 +1,15 @@
 "use client";
 
-import { Download, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  DialogStatus,
+} from "@/components/ui/dialog";
 
 type Props = {
   open: boolean;
@@ -17,62 +24,119 @@ type Props = {
 };
 
 export function SaveConflictDialog(props: Props) {
+  const [mobileVersion, setMobileVersion] = useState<"local" | "server">("local");
+  const canResolve = props.serverContent !== null && !props.loading;
   return (
     <Dialog
       open={props.open}
-      title="Resolve save conflict"
-      description="The server contains a newer document revision."
-      closeOnBackdrop={false}
-      closeOnEscape={false}
-      className="max-w-6xl"
+      title="This document changed elsewhere"
+      description="Your draft is safe. Compare both versions and explicitly choose what should happen."
+      variant="modal"
+      size="xl"
+      dismissPolicy="explicit"
     >
-      <div className="border-b border-border p-5">
-        <h2 className="text-lg font-semibold">This document changed elsewhere</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Your draft is safe. Compare both versions and explicitly choose what should happen.
-        </p>
-      </div>
-      <div className="p-5">
+      <DialogHeader showClose={false} />
+      {canResolve ? (
+        <div className="grid shrink-0 grid-cols-2 border-b border-slate-200 p-2 md:hidden">
+          <VersionTab active={mobileVersion === "local"} onClick={() => setMobileVersion("local")}>
+            Your draft
+          </VersionTab>
+          <VersionTab active={mobileVersion === "server"} onClick={() => setMobileVersion("server")}>
+            Server version
+          </VersionTab>
+        </div>
+      ) : null}
+      <DialogBody>
         {props.loading ? (
-          <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground">
-            <RefreshCw className="h-4 w-4 animate-spin" />Loading server version…
-          </div>
+          <DialogStatus variant="loading">Loading the current server version…</DialogStatus>
         ) : props.error || props.serverContent === null ? (
-          <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
+          <DialogStatus variant="error">
             <p>{props.error || "Could not load the server version."}</p>
-            <Button className="mt-3" variant="outline" onClick={props.onRetryLoad}>
+            <Button className="mt-3 h-11" variant="outline" onClick={props.onRetryLoad}>
               Retry loading server version
             </Button>
-          </div>
+          </DialogStatus>
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
-            <ContentPanel label="Your draft" content={props.localContent} />
-            <ContentPanel label="Server version" content={props.serverContent} />
+            <ContentPanel
+              label="Your draft"
+              content={props.localContent}
+              className={mobileVersion === "local" ? "" : "hidden md:block"}
+            />
+            <ContentPanel
+              label="Server version"
+              content={props.serverContent}
+              className={mobileVersion === "server" ? "" : "hidden md:block"}
+            />
           </div>
         )}
-      </div>
-      <div className="flex flex-wrap justify-end gap-2 border-t border-border p-4">
-        <Button variant="outline" onClick={props.onDownloadMine}>
-          <Download className="mr-2 h-4 w-4" />Download my draft
+      </DialogBody>
+      <DialogFooter>
+        <Button
+          variant="outline"
+          className="h-11 w-full sm:mr-auto sm:w-auto"
+          onClick={props.onDownloadMine}
+        >
+          <Download className="mr-2 h-4 w-4" aria-hidden="true" />
+          Download my draft
         </Button>
-        {props.serverContent !== null && !props.loading && (
+        {canResolve ? (
           <>
-            <Button variant="outline" onClick={props.onUseServer}>Use server version</Button>
-            <Button onClick={props.onKeepMine}>Keep my draft</Button>
+            <Button
+              variant="outline"
+              className="h-11 w-full sm:w-auto"
+              onClick={props.onUseServer}
+            >
+              Use server version
+            </Button>
+            <Button className="h-11 w-full sm:w-auto" onClick={props.onKeepMine}>
+              Keep my draft
+            </Button>
           </>
-        )}
-      </div>
+        ) : null}
+      </DialogFooter>
     </Dialog>
   );
 }
 
-function ContentPanel({ label, content }: { label: string; content: string }) {
+function VersionTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="min-w-0 rounded-lg border border-border">
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`h-11 rounded-xl text-sm font-medium ${
+        active ? "bg-slate-900 text-white" : "text-slate-600"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ContentPanel({
+  label,
+  content,
+  className,
+}: {
+  label: string;
+  content: string;
+  className?: string;
+}) {
+  return (
+    <section className={`min-w-0 rounded-xl border border-border ${className || ""}`}>
       <h3 className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </h3>
-      <pre className="max-h-[50dvh] min-h-48 overflow-auto whitespace-pre-wrap break-words p-3 text-xs">
+      <pre className="min-h-48 overflow-x-auto whitespace-pre-wrap break-words p-3 text-xs">
         {content || "(empty document)"}
       </pre>
     </section>

@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { Dialog, DialogBody, DialogHeader } from "@/components/ui/dialog";
 import { Share2, Download, Trash2, ChevronDown, X, FileCode, Copy, Check } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import type { DocumentVersionSummary } from "@/types";
@@ -145,10 +145,12 @@ export function DetailsSidebar(props: DetailsSidebarProps) {
 
   return (
     <DetailsContainer isDocked={isDocked} onClose={onClose}>
-      <div className="flex items-center justify-between p-3 border-b border-border">
-        <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground px-1">Details</span>
-        <Button variant="ghost" size="icon" aria-label="Close details" className="h-8 w-8" onClick={onClose}><X className="h-4 w-4" /></Button>
-      </div>
+{isDocked ? (
+        <div className="flex items-center justify-between border-b border-border p-3">
+          <span className="px-1 text-xs font-bold uppercase tracking-widest text-muted-foreground">Details</span>
+          <Button variant="ghost" size="icon" aria-label="Close details" className="h-11 w-11" onClick={onClose}><X className="h-4 w-4" /></Button>
+        </div>
+      ) : null}
       <div className="flex items-center border-b border-border bg-muted/20">
         <button className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === "summary" ? "border-b-2 border-foreground" : "text-muted-foreground"}`} onClick={() => setActiveTab("summary")}>Summary</button>
         <button className={`flex-1 py-3 text-[10px] sm:text-xs font-bold uppercase tracking-wider ${activeTab === "history" ? "border-b-2 border-foreground" : "text-muted-foreground"}`} onClick={() => { setActiveTab("history"); void loadVersions(); }}>History</button>
@@ -201,7 +203,7 @@ function DetailsContainer({ isDocked, onClose, children }: {
 }) {
   if (isDocked) {
     return (
-      <div role="complementary" aria-label="Document details" className="absolute bottom-0 right-0 top-0 z-[100] flex w-80 flex-col border-l border-border bg-background">
+      <div role="complementary" aria-label="Document details" className="absolute bottom-0 right-0 top-0 z-40 flex w-80 flex-col border-l border-border bg-background">
         {children}
       </div>
     );
@@ -210,11 +212,12 @@ function DetailsContainer({ isDocked, onClose, children }: {
     <Dialog
       open
       title="Document details"
+      description="View the summary, version history, sharing settings, and export actions."
+      variant="drawer"
       onClose={onClose}
-      backdropClassName="!items-stretch !justify-end !p-0"
-      className="ml-auto !max-h-full w-[min(360px,calc(100vw-24px))] !rounded-none border-y-0 border-r-0 flex flex-col overflow-hidden"
     >
-      {children}
+      <DialogHeader />
+      <DialogBody className="flex flex-col overflow-hidden p-0">{children}</DialogBody>
     </Dialog>
   );
 }
@@ -286,7 +289,7 @@ function ShareTabContent(props: {
             <Button variant="outline" className="rounded-l-none border-l-0 px-2" onClick={() => setShowExportMenu(!showExportMenu)} aria-label="More download options" aria-expanded={showExportMenu} aria-haspopup="menu"><ChevronDown className={`h-3.5 w-3.5 transition-transform ${showExportMenu ? "rotate-180" : ""}`} /></Button>
           </div>
           {showExportMenu && (
-            <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-border bg-popover p-1 shadow-md z-[120] animate-in fade-in zoom-in-95 duration-150">
+            <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-border bg-popover p-1 shadow-md z-[220] animate-in fade-in zoom-in-95 duration-150">
               <button type="button" className="flex w-full items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold hover:bg-accent hover:text-accent-foreground" onClick={() => { setShowExportMenu(false); onExportConfluenceHTML(); }}><FileCode className="h-3.5 w-3.5" />Confluence HTML</button>
             </div>
           )}

@@ -1,7 +1,8 @@
 "use client";
 
 import React, { memo, useMemo, useEffect } from "react";
-import { Copy, Check, Maximize2, X, Bug } from "lucide-react";
+import { Copy, Check, Maximize2, Bug } from "lucide-react";
+import { Dialog, DialogBody, DialogHeader } from "@/components/ui/dialog";
 import Mermaid from "@/components/mermaid";
 import { copyToClipboard } from "./helpers";
 
@@ -237,61 +238,56 @@ const MermaidModal = memo(({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-8">
-      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-[95vw] max-w-none h-[90vh] bg-background border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/10">
-          <span className="text-[10px] font-bold text-muted-foreground/70 tracking-widest font-mono uppercase">
+    <Dialog
+      open
+      title={`${diagramType} preview`}
+      description="Use the mouse wheel to zoom, drag to pan, and double-click to reset."
+      variant="fullscreen"
+      onClose={onClose}
+    >
+      <DialogHeader>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-xs font-bold uppercase tracking-widest text-muted-foreground">
             {diagramType}
           </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              aria-label="Toggle debug"
-              className={`h-8 w-8 flex items-center justify-center rounded-full border transition-colors ${showDebug ? "border-primary text-primary bg-primary/10" : "border-border text-muted-foreground hover:text-foreground"}`}
-              onClick={() => setShowDebug((prev) => !prev)}
-              title="Toggle debug"
-            >
-              <Bug className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              aria-label="Close"
-              className="h-8 w-8 flex items-center justify-center hover:bg-muted rounded-full transition-colors"
-              onClick={onClose}
-              title="Close"
-            >
-              <X className="h-4 w-4" />
-            </button>
+          <button
+            type="button"
+            aria-label="Toggle debug"
+            aria-pressed={showDebug}
+            className={`flex h-11 w-11 items-center justify-center rounded-xl border transition-colors ${showDebug ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setShowDebug((previous) => !previous)}
+            title="Toggle debug"
+          >
+            <Bug className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+      </DialogHeader>
+      <DialogBody
+        ref={modalBodyRef}
+        className={getModalBodyClassName(zoomLevel, isDragging)}
+        onWheel={handleZoomWheel}
+        onMouseDown={handlePanStart}
+        onMouseMove={handlePanMove}
+        onMouseUp={handlePanEnd}
+        onMouseLeave={handlePanEnd}
+        onDoubleClick={() => { setZoomLevel(1); setPanOffset({ x: 0, y: 0 }); }}
+      >
+        {showDebug ? <DebugOverlay info={debugInfo} baseScale={baseScale} zoomLevel={zoomLevel} /> : null}
+        <div className="flex min-h-full w-full items-center justify-center">
+          <div
+            className="inline-block"
+            style={{
+              width: svgSize ? `${svgSize.width * baseScale * zoomLevel}px` : undefined,
+              height: svgSize ? `${svgSize.height * baseScale * zoomLevel}px` : undefined,
+              outline: showDebug ? "1px dashed rgba(59,130,246,0.6)" : undefined,
+              transform: `translate(${panOffset.x}px, ${panOffset.y}px)`,
+            }}
+          >
+            <Mermaid key={`modal-${normalized}`} chart={chart} cacheKey={`modal:${chart}`} />
           </div>
         </div>
-        <div
-          ref={modalBodyRef}
-          className={getModalBodyClassName(zoomLevel, isDragging)}
-          onWheel={handleZoomWheel}
-          onMouseDown={handlePanStart}
-          onMouseMove={handlePanMove}
-          onMouseUp={handlePanEnd}
-          onMouseLeave={handlePanEnd}
-          onDoubleClick={() => { setZoomLevel(1); setPanOffset({ x: 0, y: 0 }); }}
-        >
-          {showDebug && <DebugOverlay info={debugInfo} baseScale={baseScale} zoomLevel={zoomLevel} />}
-          <div className="min-h-full w-full flex items-center justify-center">
-            <div
-              className="inline-block"
-              style={{
-                width: svgSize ? `${svgSize.width * baseScale * zoomLevel}px` : undefined,
-                height: svgSize ? `${svgSize.height * baseScale * zoomLevel}px` : undefined,
-                outline: showDebug ? "1px dashed rgba(59,130,246,0.6)" : undefined,
-                transform: `translate(${panOffset.x}px, ${panOffset.y}px)`
-              }}
-            >
-              <Mermaid key={`modal-${normalized}`} chart={chart} cacheKey={`modal:${chart}`} />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+      </DialogBody>
+    </Dialog>
   );
 });
 

@@ -113,14 +113,6 @@ function EditorMainArea({ p }: { p: EditorShellFlatContract }) {
           <EditorPane p={p} />
         )}
       </div>
-      {p.showDetails && (
-        <button
-          type="button"
-          aria-label="Close details"
-          className="absolute inset-0 z-[90] bg-black/30 min-[1440px]:hidden"
-          onClick={() => p.setShowDetails(false)}
-        />
-      )}
       <DetailsSidebar
         showDetails={p.showDetails}
         onClose={() => p.setShowDetails(false)}

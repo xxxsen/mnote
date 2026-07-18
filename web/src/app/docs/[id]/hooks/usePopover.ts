@@ -100,7 +100,7 @@ export function usePopover(opts: {
     return createPortal(
       React.createElement("div", {
         "data-popover-panel": true,
-        className: "fixed z-[200] max-w-[calc(100vw-16px)] overflow-y-auto",
+        className: "fixed z-[220] max-w-[calc(100vw-16px)] overflow-y-auto",
         style: {
           top: popoverAnchor.top,
           left: popoverAnchor.left,

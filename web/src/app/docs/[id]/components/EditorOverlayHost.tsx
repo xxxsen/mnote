@@ -41,8 +41,10 @@ export function EditorOverlayHost({ p }: { p: EditorShellFlatContract }) {
         open={p.ai.aiModalOpen}
         aiAction={p.ai.aiAction}
         aiLoading={p.ai.aiLoading}
+        aiApplying={p.ai.aiApplying}
         aiPrompt={p.ai.aiPrompt}
         aiResultText={p.ai.aiResultText}
+        aiResultReady={p.ai.aiResultReady}
         aiExistingTags={p.ai.aiExistingTags}
         aiSuggestedTags={p.ai.aiSuggestedTags}
         aiSelectedTags={p.ai.aiSelectedTags}
@@ -54,6 +56,7 @@ export function EditorOverlayHost({ p }: { p: EditorShellFlatContract }) {
         setAiPrompt={p.ai.setAiPrompt}
         closeAiModal={p.ai.closeAiModal}
         handleAiGenerate={p.ai.handleAiGenerate}
+        handleAiRetry={p.ai.handleAiRetry}
         handleApplyAiText={p.handleApplyAiText}
         handleApplyAiTags={() =>
           void p.ai.handleApplyAiTags({

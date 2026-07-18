@@ -178,8 +178,10 @@ export interface EditorAiContract {
   aiModalOpen: boolean;
   aiAction: AIAction | null;
   aiLoading: boolean;
+  aiApplying: boolean;
   aiPrompt: string;
   aiResultText: string;
+  aiResultReady: boolean;
   aiExistingTags: Tag[];
   aiSuggestedTags: string[];
   aiSelectedTags: string[];
@@ -193,6 +195,7 @@ export interface EditorAiContract {
   handleAiPolish: (content: string) => Promise<void>;
   handleAiGenerateOpen: () => void;
   handleAiGenerate: () => Promise<void>;
+  handleAiRetry: () => Promise<void> | undefined;
   handleAiSummary: (content: string) => Promise<void>;
   handleAiTags: (content: string) => Promise<void>;
   handleApplyAiSummary: (options: {

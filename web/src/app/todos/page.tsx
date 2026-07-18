@@ -6,6 +6,7 @@ import { useTodoCalendar } from "./hooks/useTodoCalendar";
 import { WEEKDAYS, monthYearFormatter, monthKey, buildMonthCells } from "./utils";
 import { DayViewModal, CreateTodoModal, EditTodoModal } from "./components/TodoModals";
 import { CalendarCell } from "./components/CalendarCell";
+import { DeleteTodoDialog } from "./components/DeleteTodoDialog";
 
 export default function TodosPage() {
   const {
@@ -14,7 +15,8 @@ export default function TodosPage() {
     createOpen, closeCreatePanel, selectedDate, newTodoContent, setNewTodoContent,
     creating, handleCreateTodo, editOpen, closeEditPanel, editingTodoDueDate,
     editTodoContent, setEditTodoContent, updating, handleUpdateTodoContent,
-    dayViewOpen, dayViewDate, closeDayView,
+    dayViewOpen, dayViewDate, closeDayView, deleteTarget, deleting,
+    requestDeleteTodo, cancelDeleteTodo, confirmDeleteTodo,
   } = useTodoCalendar();
 
   return (
@@ -56,9 +58,10 @@ export default function TodosPage() {
           </div>
         </div>
       </main>
-      {dayViewOpen && <DayViewModal dayViewDate={dayViewDate} dayViewTodos={dayViewTodos} onClose={closeDayView} onToggleDone={handleToggleDone} onEdit={openEditPanel} />}
+      {dayViewOpen && <DayViewModal dayViewDate={dayViewDate} dayViewTodos={dayViewTodos} onClose={closeDayView} onToggleDone={handleToggleDone} onEdit={openEditPanel} onDelete={requestDeleteTodo} />}
       {createOpen && <CreateTodoModal selectedDate={selectedDate} newTodoContent={newTodoContent} setNewTodoContent={setNewTodoContent} creating={creating} onClose={closeCreatePanel} onCreate={handleCreateTodo} />}
       {editOpen && <EditTodoModal editingTodoDueDate={editingTodoDueDate} editTodoContent={editTodoContent} setEditTodoContent={setEditTodoContent} updating={updating} onClose={closeEditPanel} onSave={handleUpdateTodoContent} />}
+      <DeleteTodoDialog target={deleteTarget} deleting={deleting} onCancel={cancelDeleteTodo} onConfirm={() => void confirmDeleteTodo()} />
     </div>
   );
 }

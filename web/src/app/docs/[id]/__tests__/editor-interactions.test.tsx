@@ -19,8 +19,7 @@ describe("editor interaction primitives", () => {
         open
         title="Decision"
         onClose={onClose}
-        closeOnEscape={false}
-        closeOnBackdrop={false}
+        dismissPolicy="explicit"
       >
         <button type="button">Choose</button>
       </Dialog>,

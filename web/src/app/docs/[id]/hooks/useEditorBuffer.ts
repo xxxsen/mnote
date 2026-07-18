@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import type { EditorView } from "@codemirror/view";
 import { redo, undo } from "@codemirror/commands";
 import { applyMarkdownCommand, type MarkdownCommand } from "../commands/markdown-commands";
@@ -79,6 +79,15 @@ export function useEditorBuffer(opts: {
   const previewUpdateTimerRef = useRef<number | null>(null);
   const previewPendingTimerRef = useRef<number | null>(null);
   const dirtyRef = useRef(false);
+
+  useEffect(() => () => {
+    if (previewUpdateTimerRef.current !== null) {
+      window.clearTimeout(previewUpdateTimerRef.current);
+    }
+    if (previewPendingTimerRef.current !== null) {
+      window.clearTimeout(previewPendingTimerRef.current);
+    }
+  }, []);
 
   const setHasUnsavedChanges = useCallback((next: boolean) => {
     dirtyRef.current = next;

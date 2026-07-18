@@ -4,23 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { Tag } from "@/types";
 import type { AIAction, DiffLine } from "../types";
-
-async function resolveAiTagCreation(
-  selectedTags: string[],
-  findExistingTagByName: (name: string) => Promise<Tag | null>,
-): Promise<{ matched: Tag[]; toCreate: string[] }> {
-  const matches = await Promise.all(selectedTags.map((name) => findExistingTagByName(name)));
-  const matched: Tag[] = [];
-  const toCreate: string[] = [];
-  matches.forEach((tag, index) => {
-    if (tag) {
-      matched.push(tag);
-    } else {
-      toCreate.push(selectedTags[index]);
-    }
-  });
-  return { matched, toCreate };
-}
+import { useAiApplyActions } from "./useAiApplyActions";
 
 type UseAiAssistantOptions = {
   docId: string;
@@ -28,18 +12,6 @@ type UseAiAssistantOptions = {
   normalizeTagName: (value: string) => string;
   isValidTagName: (value: string) => boolean;
   notify: (message: string) => void;
-};
-
-type ApplyAiSummaryOptions = {
-  onApplied: (summary: string) => void;
-  onError: (message: string) => void;
-};
-
-type ApplyAiTagsOptions = {
-  findExistingTagByName: (name: string) => Promise<Tag | null>;
-  mergeTags: (items: Tag[]) => void;
-  saveTagIDs: (tagIDs: string[]) => Promise<void>;
-  onError: (message: string) => void;
 };
 
 const buildLineDiff = (before: string, after: string): DiffLine[] => {
@@ -86,19 +58,50 @@ const buildLineDiff = (before: string, after: string): DiffLine[] => {
   return result;
 };
 
+function useAiRequestCoordinator() {
+  const requestEpochRef = useRef(0);
+  const requestControllerRef = useRef<AbortController | null>(null);
+  const startRequest = useCallback(() => {
+    requestControllerRef.current?.abort();
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
+    return { controller, requestEpoch: ++requestEpochRef.current };
+  }, []);
+  const cancelRequests = useCallback(() => {
+    requestControllerRef.current?.abort();
+    requestControllerRef.current = null;
+    requestEpochRef.current += 1;
+  }, []);
+  return { requestEpochRef, startRequest, cancelRequests };
+}
+
+function normalizeSuggestedTags(
+  tags: string[],
+  existingTags: Tag[],
+  normalize: (value: string) => string,
+  isValid: (value: string) => boolean,
+) {
+  const selectedNames = new Set(existingTags.map((tag) => tag.name).filter(Boolean));
+  return tags.map(normalize).filter(isValid)
+    .filter((tag, index, values) => values.indexOf(tag) === index)
+    .filter((tag) => !selectedNames.has(tag));
+}
+
 export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagName, notify }: UseAiAssistantOptions) {
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiAction, setAiAction] = useState<AIAction | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiApplying, setAiApplying] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiOriginalText, setAiOriginalText] = useState("");
   const [aiResultText, setAiResultText] = useState("");
+  const [aiResultReady, setAiResultReady] = useState(false);
   const [aiExistingTags, setAiExistingTags] = useState<Tag[]>([]);
   const [aiSuggestedTags, setAiSuggestedTags] = useState<string[]>([]);
   const [aiSelectedTags, setAiSelectedTags] = useState<string[]>([]);
   const [aiRemovedTagIDs, setAiRemovedTagIDs] = useState<string[]>([]);
   const [aiError, setAiError] = useState<string | null>(null);
-  const requestEpochRef = useRef(0);
+  const { requestEpochRef, startRequest, cancelRequests } = useAiRequestCoordinator();
 
   const aiDiffLines = useMemo(
     () => (aiOriginalText && aiResultText ? buildLineDiff(aiOriginalText, aiResultText) : []),
@@ -117,28 +120,38 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
   const aiAvailableSlots = Math.max(0, maxTags - aiExistingCount);
 
   const resetAiState = useCallback(() => {
-    setAiError(null); setAiResultText(""); setAiExistingTags([]); setAiSuggestedTags([]); setAiSelectedTags([]); setAiRemovedTagIDs([]);
+    setAiError(null); setAiResultText(""); setAiResultReady(false); setAiExistingTags([]); setAiSuggestedTags([]); setAiSelectedTags([]); setAiRemovedTagIDs([]);
+  }, []);
+
+  const updateAiPrompt = useCallback((value: string) => {
+    setAiPrompt(value);
+    setAiError(null);
+    setAiResultText("");
+    setAiResultReady(false);
   }, []);
 
   const closeAiModal = useCallback(() => {
-    requestEpochRef.current += 1; setAiModalOpen(false); setAiAction(null); setAiLoading(false); setAiPrompt(""); setAiOriginalText(""); resetAiState();
-  }, [resetAiState]);
+    cancelRequests(); setAiModalOpen(false); setAiAction(null); setAiLoading(false); setAiApplying(false); setAiPrompt(""); setAiOriginalText(""); resetAiState();
+  }, [cancelRequests, resetAiState]);
 
   const runAiTextAction = useCallback(
     async (action: AIAction, snapshot: string, emptyMsg: string, endpoint: string, resultKey: "text" | "summary") => {
       if (!snapshot.trim()) { notify(emptyMsg); return; }
-      const requestEpoch = ++requestEpochRef.current;
+      const { controller, requestEpoch } = startRequest();
       setAiAction(action); setAiModalOpen(true); setAiLoading(true); setAiOriginalText(snapshot); resetAiState();
       try {
         const res = await apiFetch<Record<string, string>>(endpoint, {
-          method: "POST", body: JSON.stringify({ text: snapshot }),
+          method: "POST", body: JSON.stringify({ text: snapshot }), signal: controller.signal,
         });
-        if (requestEpoch === requestEpochRef.current) setAiResultText(res[resultKey] || "");
+        if (requestEpoch === requestEpochRef.current) {
+          setAiResultText(res[resultKey] || "");
+          setAiResultReady(true);
+        }
       } catch (err) {
         if (requestEpoch === requestEpochRef.current) setAiError(err instanceof Error ? err.message : "AI request failed");
-      } finally { if (requestEpoch === requestEpochRef.current) setAiLoading(false); }
+      } finally { if (requestEpoch === requestEpochRef.current) { setAiLoading(false); setAiApplying(false); } }
     },
-    [notify, resetAiState],
+    [notify, requestEpochRef, resetAiState, startRequest],
   );
 
   const handleAiPolish = useCallback(
@@ -147,22 +160,25 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
   );
 
   const handleAiGenerateOpen = useCallback(() => {
-    requestEpochRef.current += 1;
+    cancelRequests();
     setAiAction("generate"); setAiModalOpen(true); setAiPrompt(""); setAiOriginalText(""); resetAiState();
-  }, [resetAiState]);
+  }, [cancelRequests, resetAiState]);
 
   const handleAiGenerate = useCallback(async () => {
     const prompt = aiPrompt.trim();
     if (!prompt) { setAiError("Please enter a brief description."); return; }
-    const requestEpoch = ++requestEpochRef.current;
-    setAiLoading(true); setAiError(null);
+    const { controller, requestEpoch } = startRequest();
+    setAiLoading(true); setAiError(null); setAiResultText(""); setAiResultReady(false);
     try {
-      const res = await apiFetch<{ text: string }>("/ai/generate", { method: "POST", body: JSON.stringify({ prompt }) });
-      if (requestEpoch === requestEpochRef.current) setAiResultText(res.text || "");
+      const res = await apiFetch<{ text: string }>("/ai/generate", { method: "POST", body: JSON.stringify({ prompt }), signal: controller.signal });
+      if (requestEpoch === requestEpochRef.current) {
+        setAiResultText(res.text || "");
+        setAiResultReady(true);
+      }
     } catch (err) {
       if (requestEpoch === requestEpochRef.current) setAiError(err instanceof Error ? err.message : "AI request failed");
-    } finally { if (requestEpoch === requestEpochRef.current) setAiLoading(false); }
-  }, [aiPrompt]);
+    } finally { if (requestEpoch === requestEpochRef.current) { setAiLoading(false); setAiApplying(false); } }
+  }, [aiPrompt, requestEpochRef, startRequest]);
 
   const handleAiSummary = useCallback(
     (snapshot: string) => runAiTextAction("summary", snapshot, "Please add some content before summarizing.", "/ai/summary", "summary"),
@@ -175,7 +191,7 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
         notify("Please add some content before extracting tags.");
         return;
       }
-      const requestEpoch = ++requestEpochRef.current;
+      const { controller, requestEpoch } = startRequest();
       setAiAction("tags");
       setAiModalOpen(true);
       setAiLoading(true);
@@ -185,29 +201,40 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
         const res = await apiFetch<{ tags: string[]; existing_tags: Tag[] }>("/ai/tags", {
           method: "POST",
           body: JSON.stringify({ document_id: docId, text: snapshot, max_tags: maxTags }),
+          signal: controller.signal,
         });
         const existingTags = res.existing_tags;
         if (requestEpoch !== requestEpochRef.current) return;
         setAiExistingTags(existingTags);
         setAiRemovedTagIDs([]);
-        const selectedNames = new Set(existingTags.map((tag) => tag.name).filter((name): name is string => Boolean(name)));
-        const cleaned = res.tags
-          .map((tag) => normalizeTagName(tag))
-          .filter((tag) => isValidTagName(tag))
-          .filter((tag, index, arr) => arr.indexOf(tag) === index)
-          .filter((tag) => !selectedNames.has(tag));
+        const cleaned = normalizeSuggestedTags(
+          res.tags, existingTags, normalizeTagName, isValidTagName,
+        );
 
         setAiSuggestedTags(cleaned);
         const availableSlots = Math.max(0, maxTags - existingTags.length);
         setAiSelectedTags(cleaned.slice(0, availableSlots));
+        setAiResultReady(true);
       } catch (err) {
         if (requestEpoch === requestEpochRef.current) setAiError(err instanceof Error ? err.message : "AI request failed");
       } finally {
         if (requestEpoch === requestEpochRef.current) setAiLoading(false);
       }
     },
-    [docId, isValidTagName, maxTags, normalizeTagName, notify, resetAiState]
+    [docId, isValidTagName, maxTags, normalizeTagName, notify, requestEpochRef, resetAiState, startRequest]
   );
+
+  const handleAiRetry = useCallback(() => {
+    if (aiAction === "generate") return handleAiGenerate();
+    if (aiAction === "polish") {
+      return runAiTextAction("polish", aiOriginalText, "Please add some content before polishing.", "/ai/polish", "text");
+    }
+    if (aiAction === "summary") {
+      return runAiTextAction("summary", aiOriginalText, "Please add some content before summarizing.", "/ai/summary", "summary");
+    }
+    if (aiAction === "tags") return handleAiTags(aiOriginalText);
+    return undefined;
+  }, [aiAction, aiOriginalText, handleAiGenerate, handleAiTags, runAiTextAction]);
 
   const toggleAiTag = useCallback(
     (name: string) => {
@@ -237,72 +264,26 @@ export function useAiAssistant({ docId, maxTags, normalizeTagName, isValidTagNam
     [aiRemovedTagIDs]
   );
 
-  const handleApplyAiSummary = useCallback(
-    async ({ onApplied, onError }: ApplyAiSummaryOptions) => {
-      if (!aiResultText) {
-        closeAiModal();
-        return;
-      }
-      const requestEpoch = ++requestEpochRef.current; setAiLoading(true);
-      try {
-        await apiFetch(`/documents/${docId}/summary`, { method: "PUT", body: JSON.stringify({ summary: aiResultText }) });
-        onApplied(aiResultText); if (requestEpoch === requestEpochRef.current) closeAiModal();
-      } catch (err) {
-        if (requestEpoch === requestEpochRef.current) onError(err instanceof Error ? err.message : "Failed to apply summary");
-      } finally { if (requestEpoch === requestEpochRef.current) setAiLoading(false); }
-    },
-    [aiResultText, closeAiModal, docId]
-  );
-
-  const handleApplyAiTags = useCallback(
-    async ({ findExistingTagByName, mergeTags, saveTagIDs, onError }: ApplyAiTagsOptions) => {
-      if (aiSelectedTags.length === 0 && aiRemovedTagIDs.length === 0) {
-        closeAiModal();
-        return;
-      }
-
-      const keptExisting = aiExistingTags.filter((tag) => !aiRemovedTagIDs.includes(tag.id)).map((tag) => tag.id);
-      const requestEpoch = ++requestEpochRef.current; setAiLoading(true);
-      try {
-        const nextTagIDs = [...keptExisting];
-        const { matched, toCreate } = await resolveAiTagCreation(aiSelectedTags, findExistingTagByName);
-
-        matched.forEach((tag) => {
-          if (!nextTagIDs.includes(tag.id)) nextTagIDs.push(tag.id);
-        });
-
-        let created: Tag[] = [];
-        if (toCreate.length > 0) {
-          created = await apiFetch<Tag[]>("/tags/batch", {
-            method: "POST",
-            body: JSON.stringify({ names: toCreate }),
-          });
-          created.forEach((tag) => {
-            if (!nextTagIDs.includes(tag.id)) nextTagIDs.push(tag.id);
-          });
-        }
-
-        mergeTags([...matched, ...created]);
-        /* v8 ignore next 4 -- defensive guard: selection logic already enforces maxTags limit */
-        if (nextTagIDs.length > maxTags) {
-          notify(`You can only select up to ${maxTags} tags.`);
-          return;
-        }
-
-        await saveTagIDs(nextTagIDs);
-        if (requestEpoch === requestEpochRef.current) closeAiModal();
-      } catch (err) {
-        if (requestEpoch === requestEpochRef.current) onError(err instanceof Error ? err.message : "Failed to apply tags");
-      } finally { if (requestEpoch === requestEpochRef.current) setAiLoading(false); }
-    },
-    [aiExistingTags, aiRemovedTagIDs, aiSelectedTags, closeAiModal, maxTags, notify]
-  );
+  const { handleApplyAiSummary, handleApplyAiTags } = useAiApplyActions({
+    aiResultText,
+    aiExistingTags,
+    aiSelectedTags,
+    aiRemovedTagIDs,
+    docId,
+    maxTags,
+    notify,
+    closeAiModal,
+    startRequest,
+    requestEpochRef,
+    setAiLoading,
+    setAiApplying,
+  });
 
   return {
-    aiModalOpen, aiAction, aiLoading, aiPrompt, aiResultText,
+    aiModalOpen, aiAction, aiLoading, aiApplying, aiPrompt, aiResultText, aiResultReady,
     aiExistingTags, aiSuggestedTags, aiSelectedTags, aiRemovedTagIDs,
-    aiError, aiDiffLines, aiTitle, aiAvailableSlots, setAiPrompt,
-    closeAiModal, handleAiPolish, handleAiGenerateOpen, handleAiGenerate,
+    aiError, aiDiffLines, aiTitle, aiAvailableSlots, setAiPrompt: updateAiPrompt,
+    closeAiModal, handleAiPolish, handleAiGenerateOpen, handleAiGenerate, handleAiRetry,
     handleAiSummary, handleAiTags, handleApplyAiSummary, handleApplyAiTags,
     toggleAiTag, toggleExistingTag,
   };

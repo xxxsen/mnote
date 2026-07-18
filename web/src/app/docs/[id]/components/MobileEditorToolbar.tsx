@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
   Bold,
-  ChevronUp,
   Heading1,
   Italic,
   Link,
@@ -12,7 +11,12 @@ import {
   Undo,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+} from "@/components/ui/dialog";
 import { THEMES, type ThemeId } from "@/lib/editor-themes";
 import { COLORS, EMOJI_TABS, SIZES } from "../constants";
 import type { MarkdownCommand } from "../commands/markdown-commands";
@@ -68,17 +72,12 @@ export function MobileEditorToolbar(props: Props) {
       <Dialog
         open={moreOpen}
         title="More formatting"
+        description="Additional Markdown, AI, and appearance tools."
+        variant="sheet"
         onClose={closeSheet}
-        className="mt-auto max-w-none rounded-b-none"
-        backdropClassName="items-end p-0"
       >
-        <div className="flex items-center justify-between border-b border-border p-4">
-          <h2 className="font-semibold">More formatting</h2>
-          <Button variant="ghost" size="icon" aria-label="Close formatting sheet" onClick={closeSheet}>
-            <ChevronUp className="h-5 w-5" />
-          </Button>
-        </div>
-        <div className="max-h-[70dvh] space-y-5 overflow-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <DialogHeader />
+        <DialogBody className="space-y-5">
           <CommandGroup title="Block" commands={[
             ["Heading 2", { kind: "heading", level: 2 }],
             ["Heading 3", { kind: "heading", level: 3 }],
@@ -99,36 +98,18 @@ export function MobileEditorToolbar(props: Props) {
           <section>
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI</h3>
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" disabled={props.aiBusy} onClick={() => { props.onAiPolish(); closeSheet(); }}>Polish</Button>
-              <Button variant="outline" disabled={props.aiBusy} onClick={() => { props.onAiGenerate(); closeSheet(); }}>Generate</Button>
-              <Button variant="outline" disabled={props.aiBusy} onClick={() => { props.onAiTags(); closeSheet(); }}>Suggest tags</Button>
+              <Button className="min-h-11" variant="outline" disabled={props.aiBusy} onClick={() => { props.onAiPolish(); closeSheet(); }}>Polish</Button>
+              <Button className="min-h-11" variant="outline" disabled={props.aiBusy} onClick={() => { props.onAiGenerate(); closeSheet(); }}>Generate</Button>
+              <Button className="min-h-11" variant="outline" disabled={props.aiBusy} onClick={() => { props.onAiTags(); closeSheet(); }}>Suggest tags</Button>
             </div>
           </section>
           <section>
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Appearance</h3>
             <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant="outline"
-                aria-expanded={panel === "emoji"}
-                onClick={() => setPanel(panel === "emoji" ? null : "emoji")}
-              >
-                Emoji
-              </Button>
-              <Button
-                variant="outline"
-                aria-expanded={panel === "color"}
-                onClick={() => setPanel(panel === "color" ? null : "color")}
-              >
-                Text color
-              </Button>
-              <Button
-                variant="outline"
-                aria-expanded={panel === "size"}
-                onClick={() => setPanel(panel === "size" ? null : "size")}
-              >
-                Font size
-              </Button>
-              <Button variant="outline" onClick={() => { props.onPreview(); closeSheet(); }}>Full preview</Button>
+              <Button className="min-h-11" variant="outline" aria-expanded={panel === "emoji"} onClick={() => setPanel(panel === "emoji" ? null : "emoji")}>Emoji</Button>
+              <Button className="min-h-11" variant="outline" aria-expanded={panel === "color"} onClick={() => setPanel(panel === "color" ? null : "color")}>Text color</Button>
+              <Button className="min-h-11" variant="outline" aria-expanded={panel === "size"} onClick={() => setPanel(panel === "size" ? null : "size")}>Font size</Button>
+              <Button className="min-h-11" variant="outline" onClick={() => { props.onPreview(); closeSheet(); }}>Full preview</Button>
             </div>
             <label className="mt-3 block text-xs font-medium text-muted-foreground">
               Editor theme
@@ -142,7 +123,7 @@ export function MobileEditorToolbar(props: Props) {
                 ))}
               </select>
             </label>
-            {panel === "emoji" && (
+            {panel === "emoji" ? (
               <div role="group" aria-label="Emoji picker" className="mt-3 rounded-lg border border-border p-2">
                 <div className="mb-2 flex flex-wrap gap-1">
                   {EMOJI_TABS.map((tab) => (
@@ -152,7 +133,7 @@ export function MobileEditorToolbar(props: Props) {
                       aria-label={tab.label}
                       aria-pressed={tab.key === activeEmojiTab.key}
                       onClick={() => setEmojiTab(tab.key)}
-                      className="flex h-10 w-10 items-center justify-center rounded-md border border-border"
+                      className="flex h-11 w-11 items-center justify-center rounded-md border border-border"
                     >
                       {tab.icon}
                     </button>
@@ -165,15 +146,15 @@ export function MobileEditorToolbar(props: Props) {
                       key={emoji}
                       aria-label={`Insert ${emoji}`}
                       onClick={() => { props.onInsertEmoji(emoji); closeSheet(); }}
-                      className="flex h-10 w-10 items-center justify-center rounded-md text-xl hover:bg-accent"
+                      className="flex h-11 w-11 items-center justify-center rounded-md text-xl hover:bg-accent"
                     >
                       {emoji}
                     </button>
                   ))}
                 </div>
               </div>
-            )}
-            {panel === "color" && (
+            ) : null}
+            {panel === "color" ? (
               <div role="group" aria-label="Text color picker" className="mt-3 grid grid-cols-4 gap-2 rounded-lg border border-border p-2">
                 {COLORS.map((color) => (
                   <button
@@ -188,8 +169,8 @@ export function MobileEditorToolbar(props: Props) {
                   </button>
                 ))}
               </div>
-            )}
-            {panel === "size" && (
+            ) : null}
+            {panel === "size" ? (
               <div role="group" aria-label="Font size picker" className="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-border p-2">
                 {SIZES.map((size) => (
                   <button
@@ -203,9 +184,12 @@ export function MobileEditorToolbar(props: Props) {
                   </button>
                 ))}
               </div>
-            )}
+            ) : null}
           </section>
-        </div>
+        </DialogBody>
+        <DialogFooter>
+          <Button className="h-11 w-full sm:w-auto" onClick={closeSheet}>Done</Button>
+        </DialogFooter>
       </Dialog>
     </>
   );
@@ -235,7 +219,7 @@ function CommandGroup(props: {
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{props.title}</h3>
       <div className="grid grid-cols-2 gap-2">
         {props.commands.map(([label, command]) => (
-          <Button key={label} variant="outline" onClick={() => props.run(command)}>{label}</Button>
+          <Button className="min-h-11" key={label} variant="outline" onClick={() => props.run(command)}>{label}</Button>
         ))}
       </div>
     </section>

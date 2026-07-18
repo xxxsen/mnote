@@ -163,24 +163,24 @@ describe("useTodoCalendar", () => {
     expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
   });
 
-  it("Escape key closes create panel", async () => {
+  it("Escape is owned by the create dialog, not the business hook", async () => {
     mockTodoService.listByDateRange.mockResolvedValue([]);
     const { result } = renderHook(() => useTodoCalendar());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     act(() => { result.current.openCreatePanel(new Date(2025, 0, 1)); });
     expect(result.current.createOpen).toBe(true);
     act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
-    expect(result.current.createOpen).toBe(false);
+    expect(result.current.createOpen).toBe(true);
   });
 
-  it("Escape key closes day view", async () => {
+  it("Escape is owned by the day dialog, not the business hook", async () => {
     mockTodoService.listByDateRange.mockResolvedValue([]);
     const { result } = renderHook(() => useTodoCalendar());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     act(() => { result.current.openDayView("2025-01-15"); });
     expect(result.current.dayViewOpen).toBe(true);
     act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
-    expect(result.current.dayViewOpen).toBe(false);
+    expect(result.current.dayViewOpen).toBe(true);
   });
 
   it("closeEditPanel closes edit dialog", async () => {
@@ -294,14 +294,14 @@ describe("useTodoCalendar", () => {
     expect(result.current.dayViewTodos).toHaveLength(1);
   });
 
-  it("Escape key closes edit panel", async () => {
+  it("Escape is owned by the edit dialog, not the business hook", async () => {
     mockTodoService.listByDateRange.mockResolvedValue([makeTodo()]);
     const { result } = renderHook(() => useTodoCalendar());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     act(() => { result.current.openEditPanel(makeTodo()); });
     expect(result.current.editOpen).toBe(true);
     act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
-    expect(result.current.editOpen).toBe(false);
+    expect(result.current.editOpen).toBe(true);
   });
 
   it("handleCreateTodo shows error when no date selected", async () => {
@@ -348,7 +348,7 @@ describe("useTodoCalendar", () => {
     expect(mockTodoService.updateContent).not.toHaveBeenCalled();
   });
 
-  it("Escape closes edit panel when both edit and create are open", async () => {
+  it("stacked dialog Escape handling stays outside the business hook", async () => {
     mockTodoService.listByDateRange.mockResolvedValue([makeTodo()]);
     const { result } = renderHook(() => useTodoCalendar());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
@@ -356,7 +356,7 @@ describe("useTodoCalendar", () => {
     act(() => { result.current.openEditPanel(makeTodo()); });
     expect(result.current.editOpen).toBe(true);
     act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
-    expect(result.current.editOpen).toBe(false);
+    expect(result.current.editOpen).toBe(true);
   });
 
   it("non-Escape key does not close panels", async () => {
@@ -524,5 +524,31 @@ describe("useTodoCalendar", () => {
     const todosAfter = result.current.todosByDate(t1.due_date);
     const t2After = todosAfter.find((t: { id: string }) => t.id === "t2");
     expect(t2After?.content).toBe("original2");
+  });
+
+  it("deletes a todo once and removes it from the shared calendar state", async () => {
+    const todo = makeTodo();
+    mockTodoService.listByDateRange.mockResolvedValue([todo]);
+    mockTodoService.delete.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.requestDeleteTodo(todo); });
+    expect(result.current.deleteTarget).toEqual(todo);
+    await act(async () => { await result.current.confirmDeleteTodo(); });
+    expect(mockTodoService.delete).toHaveBeenCalledTimes(1);
+    expect(result.current.todosByDate(todo.due_date)).toEqual([]);
+    expect(result.current.deleteTarget).toBeNull();
+  });
+
+  it("keeps the delete confirmation open when deletion fails", async () => {
+    const todo = makeTodo();
+    mockTodoService.listByDateRange.mockResolvedValue([todo]);
+    mockTodoService.delete.mockRejectedValue(new Error("network"));
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => { result.current.requestDeleteTodo(todo); });
+    await act(async () => { await result.current.confirmDeleteTodo(); });
+    expect(result.current.deleteTarget).toEqual(todo);
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
   });
 });

@@ -46,6 +46,33 @@ describe("useImportExport", () => {
     expect(result.current.exportOpen).toBe(false);
   });
 
+  it("closeExportModal aborts an in-flight export", async () => {
+    let aborted = false;
+    vi.stubGlobal("fetch", vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      const requestSignal = init?.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) => {
+        requestSignal.addEventListener(
+          "abort",
+          () => { aborted = true; reject(new DOMException("aborted", "AbortError")); },
+          { once: true },
+        );
+      });
+    }));
+    const { result } = renderHook(() => useImportExport(makeDeps()));
+    act(() => { result.current.openExportModal(); });
+    let request = Promise.resolve();
+    act(() => {
+      request = result.current.handleExportNotes();
+    });
+    expect(result.current.exporting).toBe(true);
+    act(() => { result.current.closeExportModal(); });
+    expect(aborted).toBe(true);
+    await act(async () => { await request; });
+    expect(result.current.exportOpen).toBe(false);
+    expect(result.current.exporting).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
   it("handleImportFile uploads and previews", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true, status: 200,
