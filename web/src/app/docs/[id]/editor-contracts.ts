@@ -40,6 +40,7 @@ export interface EditorBufferContract {
 
 export interface EditorScrollContract {
   previewRef: RefObject<HTMLDivElement | null>;
+  activeTocId: string | null;
   suppressNextSync: () => () => void;
   handlePreviewScroll: () => void;
 }

@@ -53,11 +53,22 @@ describe("useScrollSync behavior", () => {
       },
       dispatch,
     } as unknown as EditorView;
-    const hook = renderHook(() => useScrollSync({
-      loading: false,
-      enabled,
-      editorViewRef: { current: view },
-    }));
+    const editorViewRef = { current: view };
+    const hook = renderHook(
+      ({ scopeKey, content }) => useScrollSync({
+        loading: false,
+        enabled,
+        content,
+        scopeKey,
+        editorViewRef,
+      }),
+      {
+        initialProps: {
+          scopeKey: "doc-a",
+          content: "# Intro\n" + "\n".repeat(13) + "## Details",
+        },
+      },
+    );
     const preview = document.createElement("div");
     Object.defineProperties(preview, {
       scrollHeight: { configurable: true, value: 1000 },
@@ -66,6 +77,7 @@ describe("useScrollSync behavior", () => {
     for (const [line, top] of [[10, 100], [30, 500]] as const) {
       const marker = document.createElement("h2");
       marker.dataset.sourceLine = String(line);
+      marker.id = line === 10 ? "intro" : "details";
       Object.defineProperty(marker, "offsetTop", { configurable: true, value: top });
       preview.appendChild(marker);
     }
@@ -105,14 +117,41 @@ describe("useScrollSync behavior", () => {
     expect(harness.dispatch).toHaveBeenCalledTimes(1);
   });
 
-  it("does not schedule either direction while synchronization is disabled", () => {
+  it("resets reused heading ids across documents while keeping the editor listener stable", () => {
+    const harness = setup(false);
+    const boundHandler = harness.result.current.handleEditorScroll;
+
+    act(() => boundHandler());
+    act(runNextFrame);
+    expect(harness.result.current.activeTocId).toBe("details");
+
+    harness.rerender({
+      scopeKey: "doc-b",
+      content: "# Intro\n" + "\n".repeat(13) + "## Details",
+    });
+    expect(harness.result.current.activeTocId).toBe("intro");
+    expect(harness.result.current.handleEditorScroll).toBe(boundHandler);
+
+    act(() => boundHandler());
+    act(runNextFrame);
+    expect(harness.result.current.activeTocId).toBe("details");
+  });
+
+  it("tracks the active section without synchronizing while synchronization is disabled", () => {
     const harness = setup(false);
 
-    act(() => {
-      harness.result.current.handleEditorScroll();
-      harness.result.current.handlePreviewScroll();
-    });
+    act(() => harness.result.current.handleEditorScroll());
+    expect(frames).toHaveLength(1);
+    act(runNextFrame);
 
-    expect(frames).toHaveLength(0);
+    expect(harness.result.current.activeTocId).toBe("details");
+    expect(harness.preview.scrollTop).toBe(0);
+    expect(harness.dispatch).not.toHaveBeenCalled();
+
+    harness.preview.scrollTop = 480;
+    act(() => harness.result.current.handlePreviewScroll());
+    act(runNextFrame);
+    expect(harness.result.current.activeTocId).toBe("details");
+    expect(harness.dispatch).not.toHaveBeenCalled();
   });
 });

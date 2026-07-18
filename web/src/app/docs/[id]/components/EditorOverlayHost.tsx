@@ -115,6 +115,7 @@ export function EditorOverlayHost({ p }: { p: EditorShellFlatContract }) {
         outboundLinks={p.linkGraphHook.outboundLinks}
         linkGraph={p.linkGraphHook.linkGraph}
         previewRef={p.scrollSync.previewRef}
+        activeTocId={p.scrollSync.activeTocId}
         suppressNextSync={p.scrollSync.suppressNextSync}
         handlePreviewScroll={p.scrollSync.handlePreviewScroll}
         onNavigate={(path) => p.navigate(path)}

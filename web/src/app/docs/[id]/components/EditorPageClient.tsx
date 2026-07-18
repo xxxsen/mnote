@@ -94,7 +94,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const title = ec.draftTitle;
   const sim = useSimilarDocs({ docId, title });
   const viewPrefs = useEditorViewMode();
-  const scrollSync = useScrollSync({ loading, editorViewRef, enabled: viewPrefs.scrollSyncEnabled });
+  const scrollSync = useScrollSync({ loading, editorViewRef, enabled: viewPrefs.scrollSyncEnabled, content: ec.previewContent, scopeKey: docId });
   const popover = usePopover({ handleFormat: ec.handleFormat });
   const filePaste = useFilePaste({ insertTextAtCursor: ec.insertTextAtCursor, replacePlaceholder: ec.replacePlaceholder, toast });
 

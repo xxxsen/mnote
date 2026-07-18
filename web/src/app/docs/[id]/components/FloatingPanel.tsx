@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -28,6 +28,7 @@ type FloatingPanelProps = {
     positionByID: Record<string, { x: number; y: number }>;
   };
   previewRef: React.RefObject<HTMLDivElement | null>;
+  activeTocId: string | null;
   suppressNextSync: () => () => void;
   handlePreviewScroll: () => void;
   onNavigate: (path: string) => void;
@@ -38,7 +39,7 @@ export function FloatingPanel(props: FloatingPanelProps) {
     showDetails, hasTocPanel, hasMentionsPanel, hasGraphPanel, hasSummaryPanel,
     tocCollapsed, setTocCollapsed, floatingPanelTab, setFloatingPanelTab, setFloatingPanelTouched,
     tocContent, summary, backlinks, outboundLinks, linkGraph,
-    previewRef, suppressNextSync, handlePreviewScroll, onNavigate,
+    previewRef, activeTocId, suppressNextSync, handlePreviewScroll, onNavigate,
   } = props;
 
   const getElementById = useCallback((id: string) => {
@@ -78,7 +79,7 @@ export function FloatingPanel(props: FloatingPanelProps) {
     <div className="fixed top-24 right-8 z-30 hidden w-72 rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md xl:block animate-in fade-in slide-in-from-right-4 duration-500">
       <FloatingPanelHeader hasTocPanel={hasTocPanel} hasMentionsPanel={hasMentionsPanel} hasGraphPanel={hasGraphPanel} hasSummaryPanel={hasSummaryPanel} floatingPanelTab={floatingPanelTab} selectTab={selectTab} tocCollapsed={tocCollapsed} setTocCollapsed={setTocCollapsed} />
       {!tocCollapsed && (
-        <FloatingPanelContent floatingPanelTab={floatingPanelTab} hasTocPanel={hasTocPanel} tocContent={tocContent} getElementById={getElementById} scrollToElement={scrollToElement} suppressNextSync={suppressNextSync} handlePreviewScroll={handlePreviewScroll} backlinks={backlinks} outboundLinks={outboundLinks} linkGraph={linkGraph} summary={summary} onNavigate={onNavigate} />
+        <FloatingPanelContent floatingPanelTab={floatingPanelTab} hasTocPanel={hasTocPanel} tocContent={tocContent} activeTocId={activeTocId} getElementById={getElementById} scrollToElement={scrollToElement} suppressNextSync={suppressNextSync} handlePreviewScroll={handlePreviewScroll} backlinks={backlinks} outboundLinks={outboundLinks} linkGraph={linkGraph} summary={summary} onNavigate={onNavigate} />
       )}
     </div>
   );
@@ -109,16 +110,17 @@ function FloatingPanelHeader(props: {
 
 function FloatingPanelContent(props: {
   floatingPanelTab: string; hasTocPanel: boolean;
+  activeTocId: string | null;
   tocContent: string; getElementById: (id: string) => HTMLElement | null; scrollToElement: (el: HTMLElement, onSettled: () => void) => void;
   suppressNextSync: () => () => void; handlePreviewScroll: () => void;
   backlinks: MnoteDocument[]; outboundLinks: MnoteDocument[];
   linkGraph: FloatingPanelProps["linkGraph"]; summary: string; onNavigate: (path: string) => void;
 }) {
-  const { floatingPanelTab, hasTocPanel, tocContent, getElementById, scrollToElement, suppressNextSync, handlePreviewScroll, backlinks, outboundLinks, linkGraph, summary, onNavigate } = props;
+  const { floatingPanelTab, hasTocPanel, tocContent, activeTocId, getElementById, scrollToElement, suppressNextSync, handlePreviewScroll, backlinks, outboundLinks, linkGraph, summary, onNavigate } = props;
   return (
     <div className="text-sm max-h-[60vh] overflow-y-auto p-4 custom-scrollbar">
       {floatingPanelTab === "toc" ? (
-        hasTocPanel ? <TocView tocContent={tocContent} getElementById={getElementById} scrollToElement={scrollToElement} suppressNextSync={suppressNextSync} handlePreviewScroll={handlePreviewScroll} /> : <div className="text-xs text-slate-400 italic">No TOC available for this note.</div>
+        hasTocPanel ? <TocView tocContent={tocContent} activeTocId={activeTocId} getElementById={getElementById} scrollToElement={scrollToElement} suppressNextSync={suppressNextSync} handlePreviewScroll={handlePreviewScroll} /> : <div className="text-xs text-slate-400 italic">No TOC available for this note.</div>
       ) : floatingPanelTab === "mentions" ? (
         <MentionsView backlinks={backlinks} onNavigate={onNavigate} />
       ) : floatingPanelTab === "graph" ? (
@@ -141,36 +143,80 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
   );
 }
 
+function getTocTargetCandidates(href: string): string[] {
+  if (!href.startsWith("#")) return [];
+  const encodedHash = href.slice(1);
+  let rawHash = encodedHash;
+  try {
+    rawHash = decodeURIComponent(encodedHash);
+  } catch {
+    // Keep the literal hash so a malformed escape cannot break TOC rendering.
+  }
+  const normalizedHash = rawHash.normalize("NFKC");
+  return Array.from(new Set([
+    rawHash,
+    normalizedHash,
+    slugify(rawHash),
+    slugify(normalizedHash),
+  ]));
+}
+
 function TocView(props: {
   tocContent: string;
+  activeTocId: string | null;
   getElementById: (id: string) => HTMLElement | null;
   scrollToElement: (el: HTMLElement, onSettled: () => void) => void;
   suppressNextSync: () => () => void;
   handlePreviewScroll: () => void;
 }) {
-  const { tocContent, getElementById, scrollToElement, suppressNextSync, handlePreviewScroll } = props;
+  const { tocContent, activeTocId, getElementById, scrollToElement, suppressNextSync, handlePreviewScroll } = props;
+  const tocRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const root = tocRef.current;
+    const scrollContainer = root?.parentElement;
+    if (!root || !scrollContainer || !activeTocId) return;
+    const activeLink = Array.from(root.querySelectorAll<HTMLAnchorElement>("a[data-toc-id]"))
+      .find((link) => link.dataset.tocId === activeTocId);
+    if (!activeLink) return;
+
+    const margin = 12;
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const linkRect = activeLink.getBoundingClientRect();
+    if (linkRect.top < containerRect.top + margin) {
+      scrollContainer.scrollTop += linkRect.top - containerRect.top - margin;
+    } else if (linkRect.bottom > containerRect.bottom - margin) {
+      scrollContainer.scrollTop += linkRect.bottom - containerRect.bottom + margin;
+    }
+  }, [activeTocId, tocContent]);
+
   return (
-    <div className="toc-wrapper">
+    <div ref={tocRef} className="toc-wrapper floating-toc">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={{
         a: (aProps) => {
           const href = aProps.href || "";
+          const targetCandidates = getTocTargetCandidates(href);
+          const isActive = activeTocId !== null && targetCandidates.includes(activeTocId);
           return (
-            <a {...aProps} className="text-slate-500 hover:text-indigo-600 transition-colors py-1 block no-underline" onClick={(event) => {
-              aProps.onClick?.(event);
-              if (!href.startsWith("#")) return;
-              event.preventDefault();
-              const rawHash = decodeURIComponent(href.slice(1));
-              const normalizedHash = rawHash.normalize("NFKC");
-              const targetCandidates = [rawHash, normalizedHash, slugify(rawHash), slugify(normalizedHash)];
-              for (const candidate of targetCandidates) {
-                const el = getElementById(candidate);
-                if (el) {
-                  const resumeSync = suppressNextSync();
-                  scrollToElement(el, () => { resumeSync(); handlePreviewScroll(); });
-                  break;
+            <a
+              {...aProps}
+              data-toc-id={targetCandidates[0]}
+              aria-current={isActive ? "location" : undefined}
+              className={`text-slate-500 hover:text-indigo-600 transition-colors py-1 block no-underline ${isActive ? "toc-active" : ""}`}
+              onClick={(event) => {
+                aProps.onClick?.(event);
+                if (targetCandidates.length === 0) return;
+                event.preventDefault();
+                for (const candidate of targetCandidates) {
+                  const el = getElementById(candidate);
+                  if (el) {
+                    const resumeSync = suppressNextSync();
+                    scrollToElement(el, () => { resumeSync(); handlePreviewScroll(); });
+                    break;
+                  }
                 }
-              }
-            }} />
+              }}
+            />
           );
         },
       }}>

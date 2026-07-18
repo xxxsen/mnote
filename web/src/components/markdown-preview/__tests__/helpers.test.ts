@@ -94,8 +94,8 @@ describe("extractHeadings", () => {
     const content = "# H1\n## H2\n### H3\n#### H4\n##### H5\n###### H6";
     const headings = extractHeadings(content);
     expect(headings).toHaveLength(6);
-    expect(headings[0]).toEqual({ level: 1, text: "H1" });
-    expect(headings[5]).toEqual({ level: 6, text: "H6" });
+    expect(headings[0]).toEqual({ level: 1, text: "H1", sourceLine: 1 });
+    expect(headings[5]).toEqual({ level: 6, text: "H6", sourceLine: 6 });
   });
 
   it("ignores headings in code blocks", () => {

@@ -277,7 +277,7 @@ export const extractHeadings = (content: string) => {
   const lines = content.split("\n");
   let inCodeBlock = false;
 
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     const fenceMatch = line.trim().match(/^```/);
     if (fenceMatch) {
       inCodeBlock = !inCodeBlock;
@@ -286,7 +286,7 @@ export const extractHeadings = (content: string) => {
     if (inCodeBlock) continue;
     const match = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/);
     if (match) {
-      headings.push({ level: match[1].length, text: match[2].trim() });
+      headings.push({ level: match[1].length, text: match[2].trim(), sourceLine: index + 1 });
     }
   }
   return headings;

@@ -1,9 +1,17 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorView } from "@codemirror/view";
+import {
+  createSlugger,
+  extractHeadings,
+} from "@/components/markdown-preview/helpers";
 
 export type SourceMarker = { sourceLine: number; offsetTop: number };
+export type TocHeadingMarker = { sourceLine: number; id: string };
 
-export function interpolatePreviewOffset(markers: SourceMarker[], line: number): number | null {
+export function interpolatePreviewOffset(
+  markers: SourceMarker[],
+  line: number,
+): number | null {
   if (markers.length === 0) return null;
   let previous: SourceMarker | null = null;
   let next: SourceMarker | null = null;
@@ -17,11 +25,15 @@ export function interpolatePreviewOffset(markers: SourceMarker[], line: number):
   if (!previous) return next?.offsetTop ?? null;
   if (!next) return previous.offsetTop;
   if (next.sourceLine === previous.sourceLine) return previous.offsetTop;
-  const ratio = (line - previous.sourceLine) / (next.sourceLine - previous.sourceLine);
+  const ratio =
+    (line - previous.sourceLine) / (next.sourceLine - previous.sourceLine);
   return previous.offsetTop + ratio * (next.offsetTop - previous.offsetTop);
 }
 
-export function nearestSourceLine(markers: SourceMarker[], scrollTop: number): number | null {
+export function nearestSourceLine(
+  markers: SourceMarker[],
+  scrollTop: number,
+): number | null {
   if (markers.length === 0) return null;
   let nearest = markers[0];
   let distance = Math.abs(nearest.offsetTop - scrollTop);
@@ -35,13 +47,72 @@ export function nearestSourceLine(markers: SourceMarker[], scrollTop: number): n
   return nearest.sourceLine;
 }
 
+export function buildTocHeadingMarkers(content: string): TocHeadingMarker[] {
+  const slugger = createSlugger();
+  return extractHeadings(content).flatMap((heading) => {
+    const id = slugger(heading.text);
+    return heading.sourceLine ? [{ sourceLine: heading.sourceLine, id }] : [];
+  });
+}
+
+export function activeHeadingForSourceLine(
+  headings: TocHeadingMarker[],
+  sourceLine: number,
+): string | null {
+  if (headings.length === 0) return null;
+  let active = headings[0].id;
+  for (const heading of headings) {
+    if (heading.sourceLine > sourceLine) break;
+    active = heading.id;
+  }
+  return active;
+}
+
+export function activeHeadingForPreview(container: HTMLElement): string | null {
+  const headings = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      "h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]",
+    ),
+  ).filter((heading) => heading.id);
+  if (headings.length === 0) return null;
+
+  const atBottom =
+    container.scrollHeight > container.clientHeight + 1 &&
+    container.scrollTop + container.clientHeight >= container.scrollHeight - 2;
+  if (atBottom) return headings[headings.length - 1].id;
+
+  const containerTop = container.getBoundingClientRect().top;
+  const activationOffset = Math.min(
+    96,
+    Math.max(32, container.clientHeight * 0.2),
+  );
+  const activationY = containerTop + activationOffset;
+  let activeIndex = 0;
+  let low = 0;
+  let high = headings.length - 1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (headings[middle].getBoundingClientRect().top <= activationY) {
+      activeIndex = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return headings[activeIndex].id;
+}
+
 function readMarkers(container: HTMLElement): SourceMarker[] {
-  return Array.from(container.querySelectorAll<HTMLElement>("[data-source-line]"))
+  return Array.from(
+    container.querySelectorAll<HTMLElement>("[data-source-line]"),
+  )
     .map((element) => ({
       sourceLine: Number(element.dataset.sourceLine),
       offsetTop: element.offsetTop,
     }))
-    .filter((marker) => Number.isInteger(marker.sourceLine) && marker.sourceLine > 0)
+    .filter(
+      (marker) => Number.isInteger(marker.sourceLine) && marker.sourceLine > 0,
+    )
     .sort((a, b) => a.sourceLine - b.sourceLine);
 }
 
@@ -52,14 +123,50 @@ function clamp(value: number, min: number, max: number): number {
 export function useScrollSync(opts: {
   loading: boolean;
   enabled?: boolean;
+  content?: string;
+  scopeKey?: string;
   editorViewRef: React.RefObject<EditorView | null>;
 }) {
-  const { loading, enabled = true, editorViewRef } = opts;
+  const { loading, enabled = true, content = "", scopeKey = "", editorViewRef } = opts;
   const previewRef = useRef<HTMLDivElement>(null);
   const scrollingSource = useRef<"editor" | "preview" | null>(null);
   const scrollSyncTimerRef = useRef<number | null>(null);
   const frameRef = useRef<number | null>(null);
   const suppressionRef = useRef(false);
+  const headingMarkers = useMemo(
+    () => buildTocHeadingMarkers(content),
+    [content],
+  );
+  const headingMarkersRef = useRef(headingMarkers);
+  const enabledRef = useRef(enabled);
+  const loadingRef = useRef(loading);
+  const scopeKeyRef = useRef(scopeKey);
+  const [activeTocObservation, setActiveTocObservation] = useState({
+    scopeKey,
+    id: null as string | null,
+  });
+
+  useEffect(() => {
+    headingMarkersRef.current = headingMarkers;
+    enabledRef.current = enabled;
+    loadingRef.current = loading;
+    scopeKeyRef.current = scopeKey;
+  }, [enabled, headingMarkers, loading, scopeKey]);
+
+  const activeTocId = activeTocObservation.scopeKey === scopeKey && headingMarkers.some(
+    (heading) => heading.id === activeTocObservation.id,
+  )
+    ? activeTocObservation.id
+    : (headingMarkers[0]?.id ?? null);
+
+  const updateActiveTocId = useCallback((id: string | null) => {
+    const currentScopeKey = scopeKeyRef.current;
+    setActiveTocObservation((current) =>
+      current.scopeKey === currentScopeKey && current.id === id
+        ? current
+        : { scopeKey: currentScopeKey, id },
+    );
+  }, []);
 
   const releaseOnNextFrame = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -69,7 +176,8 @@ export function useScrollSync(opts: {
   }, []);
 
   const schedule = useCallback((work: () => void) => {
-    if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
+    if (frameRef.current !== null)
+      window.cancelAnimationFrame(frameRef.current);
     frameRef.current = window.requestAnimationFrame(() => {
       frameRef.current = null;
       work();
@@ -78,48 +186,85 @@ export function useScrollSync(opts: {
   }, []);
 
   const handleEditorScroll = useCallback(() => {
-    if (!enabled || scrollingSource.current === "preview" || loading || suppressionRef.current) return;
+    if (
+      scrollingSource.current === "preview" ||
+      loadingRef.current ||
+      suppressionRef.current
+    ) {
+      return;
+    }
     schedule(() => {
       const view = editorViewRef.current;
-      const preview = previewRef.current;
-      if (!view || !preview) return;
-      const editorMax = view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight;
-      const previewMax = Math.max(0, preview.scrollHeight - preview.clientHeight);
-      if (editorMax <= 0) return;
+      if (!view) return;
       const topBlock = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
       const visibleLine = view.state.doc.lineAt(topBlock.from).number;
-      const markerTarget = interpolatePreviewOffset(readMarkers(preview), visibleLine);
+      updateActiveTocId(
+        activeHeadingForSourceLine(headingMarkersRef.current, visibleLine),
+      );
+
+      if (!enabledRef.current) return;
+      const preview = previewRef.current;
+      if (!preview) return;
+      const editorMax =
+        view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight;
+      const previewMax = Math.max(
+        0,
+        preview.scrollHeight - preview.clientHeight,
+      );
+      if (editorMax <= 0) return;
+      const markerTarget = interpolatePreviewOffset(
+        readMarkers(preview),
+        visibleLine,
+      );
       const fallback = (view.scrollDOM.scrollTop / editorMax) * previewMax;
       scrollingSource.current = "editor";
       preview.scrollTop = clamp(markerTarget ?? fallback, 0, previewMax);
       releaseOnNextFrame();
     });
-  }, [editorViewRef, enabled, loading, releaseOnNextFrame, schedule]);
+  }, [editorViewRef, releaseOnNextFrame, schedule, updateActiveTocId]);
 
   const handlePreviewScroll = useCallback(() => {
-    if (!enabled || scrollingSource.current === "editor" || loading || suppressionRef.current) return;
+    if (
+      scrollingSource.current === "editor" ||
+      loadingRef.current ||
+      suppressionRef.current
+    ) {
+      return;
+    }
     schedule(() => {
-      const view = editorViewRef.current;
       const preview = previewRef.current;
-      if (!view || !preview) return;
+      if (!preview) return;
+      updateActiveTocId(activeHeadingForPreview(preview));
+
+      if (!enabledRef.current) return;
+      const view = editorViewRef.current;
+      if (!view) return;
       const markers = readMarkers(preview);
       const sourceLine = nearestSourceLine(markers, preview.scrollTop);
       scrollingSource.current = "preview";
       if (sourceLine !== null && sourceLine <= view.state.doc.lines) {
         const position = view.state.doc.line(sourceLine).from;
-        view.dispatch({ effects: EditorView.scrollIntoView(position, { y: "start" }) });
+        view.dispatch({
+          effects: EditorView.scrollIntoView(position, { y: "start" }),
+        });
       } else {
         const previewMax = preview.scrollHeight - preview.clientHeight;
-        const editorMax = view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight;
-        if (previewMax > 0) view.scrollDOM.scrollTop = (preview.scrollTop / previewMax) * editorMax;
+        const editorMax =
+          view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight;
+        if (previewMax > 0) {
+          view.scrollDOM.scrollTop =
+            (preview.scrollTop / previewMax) * editorMax;
+        }
       }
       releaseOnNextFrame();
     });
-  }, [editorViewRef, enabled, loading, releaseOnNextFrame, schedule]);
+  }, [editorViewRef, releaseOnNextFrame, schedule, updateActiveTocId]);
 
   const suppressNextSync = useCallback(() => {
     suppressionRef.current = true;
-    return () => { suppressionRef.current = false; };
+    return () => {
+      suppressionRef.current = false;
+    };
   }, []);
 
   return {
@@ -129,5 +274,6 @@ export function useScrollSync(opts: {
     suppressNextSync,
     handleEditorScroll,
     handlePreviewScroll,
+    activeTocId,
   };
 }
