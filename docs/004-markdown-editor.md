@@ -187,7 +187,7 @@ Markdown 预览的 `h1-h6`、`p`、`li`、`pre`、`blockquote`、`table` 和 `hr
 文档上下文栏的 Outline 同时维护当前章节，不依赖滚动同步开关，也不依赖正文是否包含 `[toc]`：
 
 - `buildOutline` 从 Markdown 一次派生 `level`、可见标题文本、稳定 `id` 和 `sourceLine`；预览锚点、内联目录、右侧 Outline、源码定位和滚动同步复用该结构。
-- `[toc]` / `[TOC]` 只控制正文中是否插入内联目录。只要正文含标题，右侧 Outline 默认展示；无标题时仍保留整栏 Outline 并显示空状态。
+- 编辑器预览不渲染正文中的 `[toc]` / `[TOC]` 内联目录，因为右侧 Outline 已常驻提供相同导航；渲染前以等行数空白替换占位符，确保后续块节点的 `data-source-line` 仍对应原始 Markdown。只要正文含标题，右侧 Outline 默认展示；无标题时仍保留整栏 Outline 并显示空状态。
 - Edit 模式点击 Outline 时使用 `EditorView.scrollIntoView` 定位 `sourceLine`，不移动光标；Preview 和 Split 模式定位预览标题 id。
 - Split 同步开启时预览定位后编辑器跟随；同步关闭时只移动预览器。
 - 编辑区滚动时，以编辑区垂直中线对应源码行之前最近的 Markdown 标题作为当前章节；该中线只影响 Outline 激活，Editor → Preview 仍按顶部可见源码行同步。预览区滚动时使用顶部下方 32～96px 的激活线，滚动到底部时选择最后一个标题。

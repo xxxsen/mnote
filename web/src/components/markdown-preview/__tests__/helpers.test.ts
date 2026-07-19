@@ -156,6 +156,8 @@ describe("injectToc", () => {
     const result = injectToc(content, "");
     expect(result).not.toContain("[toc]");
     expect(result).not.toContain("```toc");
+    expect(result.split("\n")).toHaveLength(content.split("\n").length);
+    expect(result).toBe("# Title\n\n## Section");
   });
 
   it("handles [TOC] uppercase", () => {

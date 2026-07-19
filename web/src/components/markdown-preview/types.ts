@@ -3,6 +3,7 @@ import type React from "react";
 export interface MarkdownPreviewProps {
   content: string;
   className?: string;
+  showInlineToc?: boolean;
   showTocAside?: boolean;
   tocClassName?: string;
   onScroll?: React.UIEventHandler<HTMLDivElement>;

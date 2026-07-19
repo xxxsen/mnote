@@ -136,6 +136,47 @@ test("persists split ratio after pointer and keyboard resizing", async ({
   }
 });
 
+test("hides inline toc without shifting preview source lines", async ({
+  page,
+}) => {
+  const token = await loginTestUser(page);
+  const content = [
+    "# TOC source sync",
+    "",
+    "[TOC]",
+    "",
+    "## First section",
+    "",
+    "First body",
+    "",
+    "## Second section",
+    "",
+    "Second body",
+  ].join("\n");
+  const document = await createDocument(page, token, content);
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openEditor(page, document.id);
+
+    const preview = page.getByRole("region", { name: "Markdown preview" });
+    await expect(preview.locator(".toc-wrapper")).toHaveCount(0);
+    await expect(preview.locator("h1")).toHaveAttribute("data-source-line", "1");
+    await expect(preview.locator("h2").nth(0)).toHaveAttribute(
+      "data-source-line",
+      "5",
+    );
+    await expect(preview.locator("h2").nth(1)).toHaveAttribute(
+      "data-source-line",
+      "9",
+    );
+    await expect(
+      page.getByRole("navigation", { name: "Note outline" }),
+    ).toContainText("Second section");
+  } finally {
+    await deleteDocument(page, token, document.id);
+  }
+});
+
 test("uses Edit and Preview switching below the desktop breakpoint", async ({
   page,
 }) => {

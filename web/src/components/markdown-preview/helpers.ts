@@ -379,7 +379,11 @@ export const injectToc = (content: string, toc: string) => {
       continue;
     }
     if (!inCodeBlock && tocTokenRegex.test(trimmed)) {
-      if (toc) result.push("```toc\n" + toc + "\n```");
+      // Keep the placeholder's source line when inline TOC rendering is
+      // disabled. Scroll synchronization relies on AST line numbers matching
+      // the original Markdown, so dropping the line would shift every marker
+      // after the token.
+      result.push(toc ? "```toc\n" + toc + "\n```" : "");
       continue;
     }
     result.push(line);
