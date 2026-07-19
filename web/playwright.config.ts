@@ -16,6 +16,7 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:3090",
     headless: true,
     screenshot: "only-on-failure",
+    timezoneId: "Asia/Shanghai",
     trace: "retain-on-failure",
   },
   projects: [
