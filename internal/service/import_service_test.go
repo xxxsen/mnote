@@ -112,10 +112,10 @@ func TestImportService_Status(t *testing.T) {
 			return &model.ImportJob{ID: "j1", Status: "ready", Total: 5}, nil
 		},
 	}
-	svc := NewImportService(nil, nil, jobRepo, nil)
+	svc := NewImportService(nil, nil, jobRepo, nil, testRuntime())
 	job, err := svc.Status(context.Background(), "u1", "j1")
 	require.NoError(t, err)
-	assert.Equal(t, "ready", job.Status)
+	assert.Equal(t, model.ImportStatusReady, job.Status)
 	assert.Equal(t, 5, job.Total)
 }
 
@@ -125,7 +125,7 @@ func TestImportService_Status_Error(t *testing.T) {
 			return nil, appErr.ErrNotFound
 		},
 	}
-	svc := NewImportService(nil, nil, jobRepo, nil)
+	svc := NewImportService(nil, nil, jobRepo, nil, testRuntime())
 	_, err := svc.Status(context.Background(), "u1", "bad")
 	assert.Error(t, err)
 }
@@ -155,7 +155,7 @@ func TestImportService_Preview(t *testing.T) {
 				}, nil
 			},
 		}
-		svc := NewImportService(docSvc, nil, jobRepo, noteRepo)
+		svc := NewImportService(docSvc, nil, jobRepo, noteRepo, testRuntime())
 		preview, err := svc.Preview(context.Background(), "u1", "j1")
 		require.NoError(t, err)
 		assert.Equal(t, 2, preview.NotesCount)
@@ -187,7 +187,7 @@ func TestImportService_Preview(t *testing.T) {
 				return nil, nil
 			},
 		}
-		svc := NewImportService(docSvc, nil, jobRepo, noteRepo)
+		svc := NewImportService(docSvc, nil, jobRepo, noteRepo, testRuntime())
 		preview, err := svc.Preview(context.Background(), "u1", "j1")
 		require.NoError(t, err)
 		assert.Equal(t, 1, preview.Conflicts)
@@ -199,7 +199,7 @@ func TestImportService_Preview(t *testing.T) {
 				return &model.ImportJob{ID: "j1"}, nil
 			},
 		}
-		svc := NewImportService(nil, nil, jobRepo, nil)
+		svc := NewImportService(nil, nil, jobRepo, nil, testRuntime())
 		_, err := svc.Preview(context.Background(), "u1", "j1")
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
@@ -212,7 +212,7 @@ func TestImportService_Confirm(t *testing.T) {
 				return &model.ImportJob{ID: "j1", Status: "ready"}, nil
 			},
 		}
-		svc := NewImportService(nil, nil, jobRepo, nil)
+		svc := NewImportService(nil, nil, jobRepo, nil, testRuntime())
 		err := svc.Confirm(context.Background(), "u1", "j1", "invalid")
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
@@ -223,9 +223,9 @@ func TestImportService_Confirm(t *testing.T) {
 				return &model.ImportJob{ID: "j1", Status: "running"}, nil
 			},
 		}
-		svc := NewImportService(nil, nil, jobRepo, nil)
+		svc := NewImportService(nil, nil, jobRepo, nil, testRuntime())
 		err := svc.Confirm(context.Background(), "u1", "j1", "append")
-		assert.ErrorIs(t, err, appErr.ErrInvalid)
+		require.NoError(t, err)
 	})
 
 	t.Run("default_mode_append", func(t *testing.T) {
@@ -248,7 +248,7 @@ func TestImportService_Confirm(t *testing.T) {
 		}
 		docRepo := &mockDocumentRepo{}
 		docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
-		svc := NewImportService(docSvc, nil, jobRepo, noteRepo)
+		svc := NewImportService(docSvc, nil, jobRepo, noteRepo, testRuntime())
 		err := svc.Confirm(context.Background(), "u1", "j1", "")
 		require.NoError(t, err)
 	})
@@ -262,7 +262,7 @@ func TestImportService_Confirm(t *testing.T) {
 				return false, nil
 			},
 		}
-		svc := NewImportService(nil, nil, jobRepo, nil)
+		svc := NewImportService(nil, nil, jobRepo, nil, testRuntime())
 		err := svc.Confirm(context.Background(), "u1", "j1", "append")
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
@@ -287,7 +287,7 @@ func TestImportService_EnsureTags(t *testing.T) {
 			},
 		}
 		docTagRepo := &mockDocumentTagRepo{}
-		tagSvc := NewTagService(nil, tagRepo, docTagRepo)
+		tagSvc := NewTagService(testRuntime(), tagRepo, docTagRepo)
 		svc := &ImportService{tags: tagSvc}
 		ids, err := svc.ensureTags(context.Background(), "u1", []string{"go", "rust"})
 		require.NoError(t, err)
@@ -307,7 +307,7 @@ func TestImportService_EnsureTags(t *testing.T) {
 			},
 		}
 		docTagRepo := &mockDocumentTagRepo{}
-		tagSvc := NewTagService(nil, tagRepo, docTagRepo)
+		tagSvc := NewTagService(testRuntime(), tagRepo, docTagRepo)
 		svc := &ImportService{tags: tagSvc}
 		ids, err := svc.ensureTags(context.Background(), "u1", []string{"go", "rust"})
 		require.NoError(t, err)
@@ -320,7 +320,7 @@ func TestImportService_EnsureTags(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		tagSvc := NewTagService(nil, tagRepo, nil)
+		tagSvc := NewTagService(testRuntime(), tagRepo, nil)
 		svc := &ImportService{tags: tagSvc}
 		_, err := svc.ensureTags(context.Background(), "u1", []string{"go"})
 		assert.Error(t, err)
@@ -468,10 +468,10 @@ func TestImportService_CreateHedgeDocJob(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewImportService(nil, nil, jobRepo, noteRepo)
+		svc := NewImportService(nil, nil, jobRepo, noteRepo, testRuntime())
 		job, err := svc.CreateHedgeDocJob(context.Background(), "u1", zipPath)
 		require.NoError(t, err)
-		assert.Equal(t, "ready", job.Status)
+		assert.Equal(t, model.ImportStatusReady, job.Status)
 		assert.Equal(t, 2, job.Total)
 		assert.Contains(t, job.Tags, "go")
 		assert.Contains(t, job.Tags, "rust")
@@ -480,13 +480,13 @@ func TestImportService_CreateHedgeDocJob(t *testing.T) {
 	t.Run("nil_repos", func(t *testing.T) {
 		zipPath := createTestZipWithMD(t, map[string]string{"note.md": "hello"})
 		defer func() { _ = os.Remove(zipPath) }()
-		svc := NewImportService(nil, nil, nil, nil)
+		svc := NewImportService(nil, nil, nil, nil, testRuntime())
 		_, err := svc.CreateHedgeDocJob(context.Background(), "u1", zipPath)
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
 
 	t.Run("invalid_zip", func(t *testing.T) {
-		svc := NewImportService(nil, nil, &mockImportJobRepo{}, &mockImportJobNoteRepo{})
+		svc := NewImportService(nil, nil, &mockImportJobRepo{}, &mockImportJobNoteRepo{}, testRuntime())
 		_, err := svc.CreateHedgeDocJob(context.Background(), "u1", "/nonexistent.zip")
 		assert.Error(t, err)
 	})
@@ -501,7 +501,7 @@ func TestImportService_CreateHedgeDocJob(t *testing.T) {
 			createFn: func(context.Context, *model.ImportJob) error { return nil },
 			deleteFn: func(context.Context, string, string) error { return nil },
 		}
-		svc := NewImportService(nil, nil, jobRepo, &mockImportJobNoteRepo{})
+		svc := NewImportService(nil, nil, jobRepo, &mockImportJobNoteRepo{}, testRuntime())
 		_, err := svc.CreateHedgeDocJob(context.Background(), "u1", zipPath)
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
@@ -526,10 +526,10 @@ func TestImportService_CreateNotesJob(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewImportService(nil, nil, jobRepo, noteRepo)
+		svc := NewImportService(nil, nil, jobRepo, noteRepo, testRuntime())
 		job, err := svc.CreateNotesJob(context.Background(), "u1", zipPath)
 		require.NoError(t, err)
-		assert.Equal(t, "ready", job.Status)
+		assert.Equal(t, model.ImportStatusReady, job.Status)
 		assert.Equal(t, 2, job.Total)
 	})
 
@@ -547,7 +547,7 @@ func TestImportService_CreateNotesJob(t *testing.T) {
 			createFn: func(context.Context, *model.ImportJob) error { return nil },
 			deleteFn: func(context.Context, string, string) error { return nil },
 		}
-		svc := NewImportService(nil, nil, jobRepo, &mockImportJobNoteRepo{})
+		svc := NewImportService(nil, nil, jobRepo, &mockImportJobNoteRepo{}, testRuntime())
 		_, err = svc.CreateNotesJob(context.Background(), "u1", tmp.Name())
 		assert.ErrorIs(t, err, appErr.ErrImportInvalidJSON)
 	})
@@ -601,7 +601,7 @@ func TestImportService_RunImport(t *testing.T) {
 			},
 		}
 
-		svc := NewImportService(docSvc, nil, jobRepo, noteRepo)
+		svc := NewImportService(docSvc, nil, jobRepo, noteRepo, testRuntime())
 		job := &model.ImportJob{ID: "j1", UserID: "u1", Total: 2}
 		svc.runImport(context.Background(), job, "append")
 
@@ -632,7 +632,7 @@ func TestImportService_RunImport(t *testing.T) {
 			},
 		}
 
-		svc := NewImportService(docSvc, nil, jobRepo, noteRepo)
+		svc := NewImportService(docSvc, nil, jobRepo, noteRepo, testRuntime())
 		job := &model.ImportJob{ID: "j1", UserID: "u1", Total: 1}
 		svc.runImport(context.Background(), job, "skip")
 
@@ -752,9 +752,9 @@ func TestImportService_ImportNote_Overwrite(t *testing.T) {
 			return nil
 		},
 	}
-	tagSvc := NewTagService(nil, tagRepo, &mockDocumentTagRepo{})
+	tagSvc := NewTagService(testRuntime(), tagRepo, &mockDocumentTagRepo{})
 
-	svc := NewImportService(docSvc, tagSvc, nil, nil)
+	svc := NewImportService(docSvc, tagSvc, nil, nil, testRuntime())
 	prog := &importProgress{
 		report:  &model.ImportReport{},
 		job:     &model.ImportJob{UserID: "u1", RequireContent: false},
@@ -795,7 +795,7 @@ func TestImportService_Preview_Errors(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewImportService(nil, nil, jobRepo, nil)
+		svc := NewImportService(nil, nil, jobRepo, nil, testRuntime())
 		_, err := svc.Preview(context.Background(), "u1", "j1")
 		assert.Error(t, err)
 	})
@@ -811,7 +811,7 @@ func TestImportService_Preview_Errors(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewImportService(nil, nil, jobRepo, noteRepo)
+		svc := NewImportService(nil, nil, jobRepo, noteRepo, testRuntime())
 		_, err := svc.Preview(context.Background(), "u1", "j1")
 		assert.Error(t, err)
 	})
@@ -836,7 +836,7 @@ func TestImportService_Preview_Errors(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewImportService(docSvc, nil, jobRepo, noteRepo)
+		svc := NewImportService(docSvc, nil, jobRepo, noteRepo, testRuntime())
 		_, err := svc.Preview(context.Background(), "u1", "j1")
 		assert.Error(t, err)
 	})
@@ -861,7 +861,7 @@ func TestImportService_Preview_Errors(t *testing.T) {
 				return nil, nil
 			},
 		}
-		svc := NewImportService(docSvc, nil, jobRepo, noteRepo)
+		svc := NewImportService(docSvc, nil, jobRepo, noteRepo, testRuntime())
 		preview, err := svc.Preview(context.Background(), "u1", "j1")
 		require.NoError(t, err)
 		assert.Equal(t, 0, preview.Conflicts)
@@ -875,7 +875,7 @@ func TestImportService_Confirm_Errors(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewImportService(nil, nil, jobRepo, nil)
+		svc := NewImportService(nil, nil, jobRepo, nil, testRuntime())
 		err := svc.Confirm(context.Background(), "u1", "j1", "append")
 		assert.Error(t, err)
 	})
@@ -889,7 +889,7 @@ func TestImportService_Confirm_Errors(t *testing.T) {
 				return false, errors.New("db error")
 			},
 		}
-		svc := NewImportService(nil, nil, jobRepo, nil)
+		svc := NewImportService(nil, nil, jobRepo, nil, testRuntime())
 		err := svc.Confirm(context.Background(), "u1", "j1", "append")
 		assert.Error(t, err)
 	})
@@ -906,7 +906,7 @@ func TestImportService_RunImport_ListError(t *testing.T) {
 			return nil, errors.New("db error")
 		},
 	}
-	svc := NewImportService(nil, nil, jobRepo, noteRepo)
+	svc := NewImportService(nil, nil, jobRepo, noteRepo, testRuntime())
 	job := &model.ImportJob{ID: "j1", UserID: "u1", Total: 1}
 	svc.runImport(context.Background(), job, "append")
 }
@@ -956,7 +956,7 @@ func TestImportService_ImportNote_AppendExisting(t *testing.T) {
 		deleteByDocFn: func(context.Context, string, string) error { return nil },
 	}
 	docSvc := newDocSvc(docRepo, summaries, versions, dtags, nil)
-	tagSvc := NewTagService(nil, &mockTagRepo{
+	tagSvc := NewTagService(testRuntime(), &mockTagRepo{
 		listByNamesFn: func(context.Context, string, []string) ([]model.Tag, error) { return nil, nil },
 		createBatchFn: func(_ context.Context, tags []model.Tag) error {
 			for i := range tags {
@@ -966,7 +966,7 @@ func TestImportService_ImportNote_AppendExisting(t *testing.T) {
 		},
 	}, &mockDocumentTagRepo{})
 
-	svc := NewImportService(docSvc, tagSvc, nil, nil)
+	svc := NewImportService(docSvc, tagSvc, nil, nil, testRuntime())
 	prog := &importProgress{
 		report:  &model.ImportReport{},
 		job:     &model.ImportJob{UserID: "u1", RequireContent: false},
@@ -984,7 +984,7 @@ func TestImportService_ImportNote_LookupError(t *testing.T) {
 		},
 	}
 	docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
-	svc := NewImportService(docSvc, nil, nil, nil)
+	svc := NewImportService(docSvc, nil, nil, nil, testRuntime())
 	prog := &importProgress{
 		report:  &model.ImportReport{},
 		job:     &model.ImportJob{UserID: "u1", RequireContent: false},
@@ -1003,11 +1003,11 @@ func TestImportService_ImportNote_CreateError(t *testing.T) {
 		createFn: func(context.Context, *model.Document) error { return errors.New("fail") },
 	}
 	docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
-	tagSvc := NewTagService(nil, &mockTagRepo{
+	tagSvc := NewTagService(testRuntime(), &mockTagRepo{
 		listByNamesFn: func(context.Context, string, []string) ([]model.Tag, error) { return nil, nil },
 		createBatchFn: func(context.Context, []model.Tag) error { return nil },
 	}, &mockDocumentTagRepo{})
-	svc := NewImportService(docSvc, tagSvc, nil, nil)
+	svc := NewImportService(docSvc, tagSvc, nil, nil, testRuntime())
 	prog := &importProgress{
 		report:  &model.ImportReport{},
 		job:     &model.ImportJob{UserID: "u1"},
@@ -1025,12 +1025,12 @@ func TestImportService_ImportNote_EnsureTagsError(t *testing.T) {
 		},
 	}
 	docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
-	tagSvc := NewTagService(nil, &mockTagRepo{
+	tagSvc := NewTagService(testRuntime(), &mockTagRepo{
 		listByNamesFn: func(context.Context, string, []string) ([]model.Tag, error) {
 			return nil, errors.New("db error")
 		},
 	}, &mockDocumentTagRepo{})
-	svc := NewImportService(docSvc, tagSvc, nil, nil)
+	svc := NewImportService(docSvc, tagSvc, nil, nil, testRuntime())
 	prog := &importProgress{
 		report:  &model.ImportReport{},
 		job:     &model.ImportJob{UserID: "u1"},
@@ -1052,7 +1052,7 @@ func TestImportService_CreateNotesJob_NoteTooLarge(t *testing.T) {
 		createFn: func(context.Context, *model.ImportJob) error { return nil },
 		deleteFn: func(context.Context, string, string) error { return nil },
 	}
-	svc := NewImportService(nil, nil, jobRepo, &mockImportJobNoteRepo{})
+	svc := NewImportService(nil, nil, jobRepo, &mockImportJobNoteRepo{}, testRuntime())
 	_, err := svc.CreateNotesJob(context.Background(), "u1", zipPath)
 	assert.ErrorIs(t, err, appErr.ErrImportNoteTooLarge)
 }
@@ -1068,7 +1068,7 @@ func TestImportService_CreateImportJob_InsertBatchError(t *testing.T) {
 	noteRepo := &mockImportJobNoteRepo{
 		insertBatchFn: func(context.Context, []model.ImportJobNote) error { return errors.New("db error") },
 	}
-	svc := NewImportService(nil, nil, jobRepo, noteRepo)
+	svc := NewImportService(nil, nil, jobRepo, noteRepo, testRuntime())
 	_, err := svc.CreateHedgeDocJob(context.Background(), "u1", zipPath)
 	assert.Error(t, err)
 }
@@ -1085,7 +1085,7 @@ func TestImportService_CreateImportJob_UpdateSummaryError(t *testing.T) {
 	noteRepo := &mockImportJobNoteRepo{
 		insertBatchFn: func(context.Context, []model.ImportJobNote) error { return nil },
 	}
-	svc := NewImportService(nil, nil, jobRepo, noteRepo)
+	svc := NewImportService(nil, nil, jobRepo, noteRepo, testRuntime())
 	_, err := svc.CreateHedgeDocJob(context.Background(), "u1", zipPath)
 	assert.Error(t, err)
 }

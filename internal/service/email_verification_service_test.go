@@ -35,14 +35,14 @@ func TestEmailVerificationService_SendRegisterCode(t *testing.T) {
 			assert.Contains(t, subject, "verification")
 			return nil
 		}}
-		svc := NewEmailVerificationService(repo, sender)
+		svc := NewEmailVerificationService(repo, sender, testRuntime())
 		err := svc.SendRegisterCode(context.Background(), "a@b.com")
 		require.NoError(t, err)
 		assert.True(t, sendCalled)
 	})
 
 	t.Run("empty_email", func(t *testing.T) {
-		svc := NewEmailVerificationService(&mockEmailVerificationRepo{}, &mockEmailSender{})
+		svc := NewEmailVerificationService(&mockEmailVerificationRepo{}, &mockEmailSender{}, testRuntime())
 		err := svc.SendRegisterCode(context.Background(), "  ")
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
@@ -53,7 +53,7 @@ func TestEmailVerificationService_SendRegisterCode(t *testing.T) {
 				return &model.EmailVerificationCode{Ctime: timeutil.NowUnix()}, nil
 			},
 		}
-		svc := NewEmailVerificationService(repo, &mockEmailSender{})
+		svc := NewEmailVerificationService(repo, &mockEmailSender{}, testRuntime())
 		err := svc.SendRegisterCode(context.Background(), "a@b.com")
 		assert.ErrorIs(t, err, appErr.ErrTooMany)
 	})
@@ -67,7 +67,7 @@ func TestEmailVerificationService_SendRegisterCode(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewEmailVerificationService(repo, &mockEmailSender{})
+		svc := NewEmailVerificationService(repo, &mockEmailSender{}, testRuntime())
 		err := svc.SendRegisterCode(context.Background(), "a@b.com")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "create")
@@ -83,7 +83,7 @@ func TestEmailVerificationService_SendRegisterCode(t *testing.T) {
 		sender := &funcEmailSender{fn: func(_, _, _ string) error {
 			return errors.New("smtp error")
 		}}
-		svc := NewEmailVerificationService(repo, sender)
+		svc := NewEmailVerificationService(repo, sender, testRuntime())
 		err := svc.SendRegisterCode(context.Background(), "a@b.com")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "send verification email")
@@ -110,14 +110,14 @@ func TestEmailVerificationService_VerifyRegisterCode(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewEmailVerificationService(repo, &mockEmailSender{})
+		svc := NewEmailVerificationService(repo, &mockEmailSender{}, testRuntime())
 		err := svc.VerifyRegisterCode(context.Background(), "a@b.com", "123456")
 		require.NoError(t, err)
 		assert.True(t, markUsedCalled)
 	})
 
 	t.Run("empty_email_or_code", func(t *testing.T) {
-		svc := NewEmailVerificationService(&mockEmailVerificationRepo{}, &mockEmailSender{})
+		svc := NewEmailVerificationService(&mockEmailVerificationRepo{}, &mockEmailSender{}, testRuntime())
 		assert.ErrorIs(t, svc.VerifyRegisterCode(context.Background(), "", "123456"), appErr.ErrInvalid)
 		assert.ErrorIs(t, svc.VerifyRegisterCode(context.Background(), "a@b.com", ""), appErr.ErrInvalid)
 	})
@@ -128,7 +128,7 @@ func TestEmailVerificationService_VerifyRegisterCode(t *testing.T) {
 				return &model.EmailVerificationCode{Used: 1, ExpiresAt: timeutil.NowUnix() + 600, CodeHash: hash}, nil
 			},
 		}
-		svc := NewEmailVerificationService(repo, &mockEmailSender{})
+		svc := NewEmailVerificationService(repo, &mockEmailSender{}, testRuntime())
 		err := svc.VerifyRegisterCode(context.Background(), "a@b.com", "123456")
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
@@ -139,7 +139,7 @@ func TestEmailVerificationService_VerifyRegisterCode(t *testing.T) {
 				return &model.EmailVerificationCode{Used: 0, ExpiresAt: timeutil.NowUnix() - 1, CodeHash: hash}, nil
 			},
 		}
-		svc := NewEmailVerificationService(repo, &mockEmailSender{})
+		svc := NewEmailVerificationService(repo, &mockEmailSender{}, testRuntime())
 		err := svc.VerifyRegisterCode(context.Background(), "a@b.com", "123456")
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
@@ -150,7 +150,7 @@ func TestEmailVerificationService_VerifyRegisterCode(t *testing.T) {
 				return &model.EmailVerificationCode{Used: 0, ExpiresAt: timeutil.NowUnix() + 600, CodeHash: hash}, nil
 			},
 		}
-		svc := NewEmailVerificationService(repo, &mockEmailSender{})
+		svc := NewEmailVerificationService(repo, &mockEmailSender{}, testRuntime())
 		err := svc.VerifyRegisterCode(context.Background(), "a@b.com", "999999")
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
@@ -161,7 +161,7 @@ func TestEmailVerificationService_VerifyRegisterCode(t *testing.T) {
 				return nil, appErr.ErrNotFound
 			},
 		}
-		svc := NewEmailVerificationService(repo, &mockEmailSender{})
+		svc := NewEmailVerificationService(repo, &mockEmailSender{}, testRuntime())
 		err := svc.VerifyRegisterCode(context.Background(), "a@b.com", "123456")
 		assert.Error(t, err)
 	})
@@ -177,10 +177,10 @@ func TestEmailVerificationService_VerifyRegisterCode(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewEmailVerificationService(repo, &mockEmailSender{})
+		svc := NewEmailVerificationService(repo, &mockEmailSender{}, testRuntime())
 		err := svc.VerifyRegisterCode(context.Background(), "a@b.com", "123456")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "mark used")
+		assert.Contains(t, err.Error(), "consume verification code")
 	})
 }
 
@@ -190,7 +190,7 @@ func TestEmailVerificationService_EnsureCooldown_DBError(t *testing.T) {
 			return nil, errors.New("db error")
 		},
 	}
-	svc := NewEmailVerificationService(repo, &mockEmailSender{})
+	svc := NewEmailVerificationService(repo, &mockEmailSender{}, testRuntime())
 	err := svc.SendRegisterCode(context.Background(), "a@b.com")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "ensure cooldown")
@@ -204,7 +204,7 @@ func TestEmailVerificationService_EnsureCooldown_Passed(t *testing.T) {
 		createFn: func(context.Context, *model.EmailVerificationCode) error { return nil },
 	}
 	sender := &funcEmailSender{fn: func(_, _, _ string) error { return nil }}
-	svc := NewEmailVerificationService(repo, sender)
+	svc := NewEmailVerificationService(repo, sender, testRuntime())
 	err := svc.SendRegisterCode(context.Background(), "a@b.com")
 	require.NoError(t, err)
 }

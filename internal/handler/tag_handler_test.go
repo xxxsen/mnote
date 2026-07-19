@@ -135,7 +135,7 @@ func TestTagHandler_List_WithPagination(t *testing.T) {
 func TestTagHandler_List_LimitCapped(t *testing.T) {
 	mock := &mockTagService{
 		listPageFn: func(_ context.Context, _, _ string, limit, _ int) ([]model.Tag, error) {
-			assert.Equal(t, 20, limit)
+			assert.Equal(t, 100, limit)
 			return []model.Tag{}, nil
 		},
 	}
@@ -401,7 +401,7 @@ func TestTagHandler_Summary_WithLimitOffset(t *testing.T) {
 func TestTagHandler_Summary_LimitCapped(t *testing.T) {
 	mock := &mockTagService{
 		listSummaryFn: func(_ context.Context, _, _ string, limit, _ int) ([]model.TagSummary, error) {
-			assert.Equal(t, 20, limit)
+			assert.Equal(t, 100, limit)
 			return []model.TagSummary{}, nil
 		},
 	}

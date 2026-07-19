@@ -7,9 +7,8 @@ import (
 )
 
 type ImportCleanupJob struct {
-	jobRepo  expiryCleaner
-	noteRepo expiryCleaner
-	maxAge   time.Duration
+	jobRepo expiryCleaner
+	maxAge  time.Duration
 }
 
 func NewImportCleanupJob(
@@ -17,7 +16,8 @@ func NewImportCleanupJob(
 	noteRepo expiryCleaner,
 	maxAge time.Duration,
 ) *ImportCleanupJob {
-	return &ImportCleanupJob{jobRepo: jobRepo, noteRepo: noteRepo, maxAge: maxAge}
+	_ = noteRepo // Notes are deleted atomically by the database cascade.
+	return &ImportCleanupJob{jobRepo: jobRepo, maxAge: maxAge}
 }
 
 func (j *ImportCleanupJob) Name() string {
@@ -25,7 +25,7 @@ func (j *ImportCleanupJob) Name() string {
 }
 
 func (j *ImportCleanupJob) Run(ctx context.Context) error {
-	if j.jobRepo == nil || j.noteRepo == nil {
+	if j.jobRepo == nil {
 		return nil
 	}
 	maxAge := j.maxAge
@@ -33,13 +33,16 @@ func (j *ImportCleanupJob) Run(ctx context.Context) error {
 		maxAge = 24 * time.Hour
 	}
 	cutoff := time.Now().Add(-maxAge).Unix()
-	_, err := j.noteRepo.DeleteBefore(ctx, cutoff)
-	if err != nil {
-		return fmt.Errorf("delete expired notes: %w", err)
+	for {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("cleanup canceled: %w", err)
+		}
+		deleted, err := j.jobRepo.DeleteBefore(ctx, cutoff)
+		if err != nil {
+			return fmt.Errorf("delete expired jobs: %w", err)
+		}
+		if deleted < 500 {
+			return nil
+		}
 	}
-	_, err = j.jobRepo.DeleteBefore(ctx, cutoff)
-	if err != nil {
-		return fmt.Errorf("delete expired jobs: %w", err)
-	}
-	return nil
 }

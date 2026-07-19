@@ -1,3 +1,5 @@
+//go:build integration
+
 package service_test
 
 import (
@@ -18,7 +20,7 @@ import (
 
 func newIntegrationDocumentService(db *sql.DB) *service.DocumentService {
 	return service.NewDocumentService(
-		db,
+		service.NewRuntime(repo.NewTransactor(db)),
 		repo.NewDocumentRepo(db),
 		repo.NewDocumentSummaryRepo(db),
 		repo.NewVersionRepo(db),
@@ -27,8 +29,8 @@ func newIntegrationDocumentService(db *sql.DB) *service.DocumentService {
 		repo.NewTagRepo(db),
 		repo.NewUserRepo(db),
 		nil,
-		10,
-	)
+		10, nil)
+
 }
 
 func TestDocumentServiceOptimisticLockIntegration_SameBaseHasSingleWinner(t *testing.T) {
@@ -159,7 +161,7 @@ func TestDocumentServiceOptimisticLockIntegration_VersionFailureRollsBackDocumen
 	require.NoError(t, err)
 
 	failing := service.NewDocumentService(
-		db,
+		service.NewRuntime(repo.NewTransactor(db)),
 		repo.NewDocumentRepo(db),
 		repo.NewDocumentSummaryRepo(db),
 		failingVersionRepo{},
@@ -168,8 +170,8 @@ func TestDocumentServiceOptimisticLockIntegration_VersionFailureRollsBackDocumen
 		repo.NewTagRepo(db),
 		repo.NewUserRepo(db),
 		nil,
-		10,
-	)
+		10, nil)
+
 	_, err = failing.Save(
 		context.Background(),
 		created.UserID,

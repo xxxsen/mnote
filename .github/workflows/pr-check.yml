@@ -54,6 +54,42 @@ jobs:
       - name: Run backend tests with coverage
         run: make backend-test
 
+  backend-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: mnote_test
+          POSTGRES_USER: mnote
+          POSTGRES_PASSWORD: mnote_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mnote -d mnote_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DB_HOST: 127.0.0.1
+      TEST_DB_PORT: 5432
+      TEST_DB_USER: mnote
+      TEST_DB_PASSWORD: mnote_pass
+      TEST_DB_NAME: mnote_test
+      TEST_DB_SSLMODE: disable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run PostgreSQL integration tests
+        run: make test-integration
+
   web-lint:
     runs-on: ubuntu-latest
     steps:

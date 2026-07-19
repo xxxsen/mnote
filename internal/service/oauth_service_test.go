@@ -21,9 +21,14 @@ type mockOAuthRepo struct {
 	listByUserFn           func(ctx context.Context, userID string) ([]model.OAuthAccount, error)
 	countByUserFn          func(ctx context.Context, userID string) (int, error)
 	deleteByUserProviderFn func(ctx context.Context, userID, provider string) error
+	createOneTimeTokenFn   func(ctx context.Context, token *model.OAuthOneTimeToken) error
+	consumeOneTimeTokenFn  func(ctx context.Context, kind, digest string, now int64) (*model.OAuthOneTimeToken, error)
 }
 
 func (m *mockOAuthRepo) Create(ctx context.Context, account *model.OAuthAccount) error {
+	if m.createFn == nil {
+		return nil
+	}
 	return m.createFn(ctx, account)
 }
 
@@ -47,6 +52,26 @@ func (m *mockOAuthRepo) DeleteByUserProvider(ctx context.Context, userID, provid
 	return m.deleteByUserProviderFn(ctx, userID, provider)
 }
 
+func (m *mockOAuthRepo) CreateOneTimeToken(ctx context.Context, token *model.OAuthOneTimeToken) error {
+	if m.createOneTimeTokenFn == nil {
+		return nil
+	}
+	return m.createOneTimeTokenFn(ctx, token)
+}
+
+func (m *mockOAuthRepo) ConsumeOneTimeToken(
+	ctx context.Context, kind, digest string, now int64,
+) (*model.OAuthOneTimeToken, error) {
+	if m.consumeOneTimeTokenFn == nil {
+		return nil, appErr.ErrNotFound
+	}
+	return m.consumeOneTimeTokenFn(ctx, kind, digest, now)
+}
+
+func (m *mockOAuthRepo) DeleteExpiredOneTimeTokens(context.Context, int64, int) (int64, error) {
+	return 0, nil
+}
+
 type mockOAuthProvider struct {
 	authURLFn      func(state string) (string, error)
 	exchangeCodeFn func(ctx context.Context, code string) (*oauth.Profile, error)
@@ -59,7 +84,10 @@ func (m *mockOAuthProvider) ExchangeCode(ctx context.Context, code string) (*oau
 }
 
 func newOAuthSvc(users userRepo, oauths oauthRepo, providers map[string]oauth.Provider) *OAuthService {
-	return NewOAuthService(users, oauths, []byte("test-jwt"), time.Hour, providers)
+	if users == nil {
+		users = &mockUserRepo{}
+	}
+	return NewOAuthService(users, oauths, []byte("test-jwt"), time.Hour, providers, testRuntime())
 }
 
 func TestOAuthService_GetAuthURL(t *testing.T) {
@@ -130,7 +158,7 @@ func TestOAuthService_LoginOrCreate(t *testing.T) {
 		user, token, err := svc.LoginOrCreate(context.Background(), profile)
 		require.NoError(t, err)
 		assert.Equal(t, "u1", user.ID)
-		assert.NotEmpty(t, token)
+		assert.Empty(t, token, "JWT is issued only after consuming the exchange code")
 	})
 
 	t.Run("new_user", func(t *testing.T) {
@@ -150,7 +178,7 @@ func TestOAuthService_LoginOrCreate(t *testing.T) {
 		user, token, err := svc.LoginOrCreate(context.Background(), profile)
 		require.NoError(t, err)
 		assert.NotEmpty(t, user.ID)
-		assert.NotEmpty(t, token)
+		assert.Empty(t, token, "JWT is issued only after consuming the exchange code")
 	})
 
 	t.Run("email_conflict", func(t *testing.T) {

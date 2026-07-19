@@ -64,7 +64,7 @@ func TestTemplateService_List(t *testing.T) {
 				return []model.Template{{ID: "t1", Name: "Note"}}, nil
 			},
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		result, err := svc.List(context.Background(), "u1")
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
@@ -76,7 +76,7 @@ func TestTemplateService_List(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		_, err := svc.List(context.Background(), "u1")
 		assert.Error(t, err)
 	})
@@ -93,7 +93,7 @@ func TestTemplateService_ListMeta(t *testing.T) {
 				return []model.TemplateMeta{{ID: "t1"}}, nil
 			},
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		result, err := svc.ListMeta(context.Background(), "u1", "", 0, -1)
 		require.NoError(t, err)
 		assert.Equal(t, 5, result.Total)
@@ -108,7 +108,7 @@ func TestTemplateService_ListMeta(t *testing.T) {
 				return nil, nil
 			},
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		_, err := svc.ListMeta(context.Background(), "u1", "", 999, 0)
 		require.NoError(t, err)
 	})
@@ -119,7 +119,7 @@ func TestTemplateService_ListMeta(t *testing.T) {
 				return 0, errors.New("db error")
 			},
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		_, err := svc.ListMeta(context.Background(), "u1", "", 10, 0)
 		assert.Error(t, err)
 	})
@@ -131,7 +131,7 @@ func TestTemplateService_ListMeta(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		_, err := svc.ListMeta(context.Background(), "u1", "", 10, 0)
 		assert.Error(t, err)
 	})
@@ -153,16 +153,16 @@ func TestTemplateService_ListMeta(t *testing.T) {
 				return []model.TemplateMeta{{ID: "daily"}}, nil
 			},
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		result, err := svc.ListMeta(context.Background(), "u1", "  Daily  ", 20, 0)
 		require.NoError(t, err)
 		assert.Equal(t, 1, result.Total)
 		assert.Equal(t, "daily", result.Items[0].ID)
 	})
 
-	t.Run("reject_search_over_100_unicode_characters", func(t *testing.T) {
-		svc := NewTemplateService(&mockTemplateRepo{}, nil, nil)
-		_, err := svc.ListMeta(context.Background(), "u1", strings.Repeat("界", 101), 20, 0)
+	t.Run("reject_search_over_200_unicode_characters", func(t *testing.T) {
+		svc := NewTemplateService(&mockTemplateRepo{}, nil, nil, testRuntime())
+		_, err := svc.ListMeta(context.Background(), "u1", strings.Repeat("界", 201), 20, 0)
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
 }
@@ -174,7 +174,7 @@ func TestTemplateService_Get(t *testing.T) {
 				return &model.Template{ID: "t1", Name: "My Template"}, nil
 			},
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		tpl, err := svc.Get(context.Background(), "u1", "t1")
 		require.NoError(t, err)
 		assert.Equal(t, "My Template", tpl.Name)
@@ -186,7 +186,7 @@ func TestTemplateService_Get(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		_, err := svc.Get(context.Background(), "u1", "t1")
 		assert.Error(t, err)
 	})
@@ -201,7 +201,7 @@ func TestTemplateService_Create(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		tpl, err := svc.Create(context.Background(), "u1", CreateTemplateInput{
 			Name:    "Note",
 			Content: "# Hello",
@@ -211,13 +211,13 @@ func TestTemplateService_Create(t *testing.T) {
 	})
 
 	t.Run("empty_name", func(t *testing.T) {
-		svc := NewTemplateService(&mockTemplateRepo{}, nil, nil)
+		svc := NewTemplateService(&mockTemplateRepo{}, nil, nil, testRuntime())
 		_, err := svc.Create(context.Background(), "u1", CreateTemplateInput{Name: "", Content: "hello"})
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
 
 	t.Run("empty_content", func(t *testing.T) {
-		svc := NewTemplateService(&mockTemplateRepo{}, nil, nil)
+		svc := NewTemplateService(&mockTemplateRepo{}, nil, nil, testRuntime())
 		_, err := svc.Create(context.Background(), "u1", CreateTemplateInput{Name: "Note", Content: "  "})
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
@@ -229,7 +229,7 @@ func TestTemplateService_Create(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		_, err := svc.Create(context.Background(), "u1", CreateTemplateInput{
 			Name:    "Note",
 			Content: "{{ title }}",
@@ -241,7 +241,7 @@ func TestTemplateService_Create(t *testing.T) {
 		repo := &mockTemplateRepo{
 			createFn: func(context.Context, *model.Template) error { return errors.New("db error") },
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		_, err := svc.Create(context.Background(), "u1", CreateTemplateInput{Name: "N", Content: "C"})
 		assert.Error(t, err)
 	})
@@ -253,7 +253,12 @@ func TestTemplateService_Create(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, &mockTagRepo{
+			listByIDsFn: func(_ context.Context, userID string, _ []string) ([]model.Tag, error) {
+				return []model.Tag{{ID: "t1", UserID: userID}}, nil
+			},
+		}, testRuntime())
+
 		_, err := svc.Create(context.Background(), "u1", CreateTemplateInput{
 			Name:          "Note",
 			Content:       "hello",
@@ -272,7 +277,7 @@ func TestTemplateService_Update(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		err := svc.Update(context.Background(), "u1", "tpl1", UpdateTemplateInput{
 			Name: "Updated", Content: "content",
 		})
@@ -280,7 +285,7 @@ func TestTemplateService_Update(t *testing.T) {
 	})
 
 	t.Run("empty_name", func(t *testing.T) {
-		svc := NewTemplateService(&mockTemplateRepo{}, nil, nil)
+		svc := NewTemplateService(&mockTemplateRepo{}, nil, nil, testRuntime())
 		err := svc.Update(context.Background(), "u1", "tpl1", UpdateTemplateInput{Content: "c"})
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
@@ -289,7 +294,7 @@ func TestTemplateService_Update(t *testing.T) {
 		repo := &mockTemplateRepo{
 			updateFn: func(context.Context, *model.Template) error { return errors.New("db error") },
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		err := svc.Update(context.Background(), "u1", "tpl1", UpdateTemplateInput{Name: "N", Content: "C"})
 		assert.Error(t, err)
 	})
@@ -300,7 +305,7 @@ func TestTemplateService_Delete(t *testing.T) {
 		repo := &mockTemplateRepo{
 			deleteFn: func(context.Context, string, string) error { return nil },
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		err := svc.Delete(context.Background(), "u1", "tpl1")
 		require.NoError(t, err)
 	})
@@ -309,7 +314,7 @@ func TestTemplateService_Delete(t *testing.T) {
 		repo := &mockTemplateRepo{
 			deleteFn: func(context.Context, string, string) error { return errors.New("db error") },
 		}
-		svc := NewTemplateService(repo, nil, nil)
+		svc := NewTemplateService(repo, nil, nil, testRuntime())
 		err := svc.Delete(context.Background(), "u1", "tpl1")
 		assert.Error(t, err)
 	})
@@ -354,7 +359,7 @@ func TestTemplateService_CreateDocumentFromTemplate(t *testing.T) {
 				return []model.Tag{{ID: "t1", Name: "go"}}, nil
 			},
 		}
-		svc := NewTemplateService(tplRepo, docSvc, tagRepoMock)
+		svc := NewTemplateService(tplRepo, docSvc, tagRepoMock, testRuntime())
 		doc, err := svc.CreateDocumentFromTemplate(context.Background(), "u1", CreateDocumentFromTemplateInput{
 			TemplateID: "tpl1",
 			Title:      "Custom Title",
@@ -392,7 +397,7 @@ func TestTemplateService_CreateDocumentFromTemplate(t *testing.T) {
 		}
 		docSvc := newDocSvc(docRepo, noopSummaryRepo(), versions, dtags, nil)
 
-		svc := NewTemplateService(tplRepo, docSvc, nil)
+		svc := NewTemplateService(tplRepo, docSvc, nil, testRuntime())
 		doc, err := svc.CreateDocumentFromTemplate(context.Background(), "u1", CreateDocumentFromTemplateInput{
 			TemplateID: "tpl1",
 		})
@@ -407,14 +412,14 @@ func TestTemplateService_CreateDocumentFromTemplate(t *testing.T) {
 				return nil, appErr.ErrNotFound
 			},
 		}
-		svc := NewTemplateService(tplRepo, nil, nil)
+		svc := NewTemplateService(tplRepo, nil, nil, testRuntime())
 		_, err := svc.CreateDocumentFromTemplate(context.Background(), "u1", CreateDocumentFromTemplateInput{
 			TemplateID: "bad",
 		})
 		assert.Error(t, err)
 	})
 
-	t.Run("filter_non_existing_tags", func(t *testing.T) {
+	t.Run("reject_non_existing_tags", func(t *testing.T) {
 		tplRepo := &mockTemplateRepo{
 			getByIDFn: func(context.Context, string, string) (*model.Template, error) {
 				return &model.Template{
@@ -448,12 +453,12 @@ func TestTemplateService_CreateDocumentFromTemplate(t *testing.T) {
 				return []model.Tag{{ID: "t1"}, {ID: "t3"}}, nil
 			},
 		}
-		svc := NewTemplateService(tplRepo, docSvc, tagRepoMock)
+		svc := NewTemplateService(tplRepo, docSvc, tagRepoMock, testRuntime())
 		_, err := svc.CreateDocumentFromTemplate(context.Background(), "u1", CreateDocumentFromTemplateInput{
 			TemplateID: "tpl1",
 			Title:      "Title",
 		})
-		require.NoError(t, err)
-		assert.Equal(t, []string{"t1", "t3"}, addedTagIDs)
+		assert.ErrorIs(t, err, appErr.ErrInvalid)
+		assert.Empty(t, addedTagIDs)
 	})
 }

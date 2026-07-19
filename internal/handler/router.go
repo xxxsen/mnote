@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -8,25 +10,73 @@ import (
 	"github.com/xxxsen/mnote/internal/middleware"
 )
 
+var (
+	errMissingRouterDependency = errors.New("router dependency is required")
+	errMissingRouterJWTSecret  = errors.New("router JWT secret is required")
+	errInvalidJSONBodyLimit    = errors.New("router max JSON body size must be positive")
+)
+
 type RouterDeps struct {
-	Auth       *AuthHandler
-	OAuth      *OAuthHandler
-	Properties *PropertiesHandler
-	Documents  *DocumentHandler
-	Versions   *VersionHandler
-	Shares     *ShareHandler
-	Tags       *TagHandler
-	Export     *ExportHandler
-	Files      *FileHandler
-	AI         *AIHandler
-	Import     *ImportHandler
-	Templates  *TemplateHandler
-	Assets     *AssetHandler
-	Todos      *TodoHandler
-	JWTSecret  []byte
+	Auth            *AuthHandler
+	OAuth           *OAuthHandler
+	Properties      *PropertiesHandler
+	Documents       *DocumentHandler
+	Versions        *VersionHandler
+	Shares          *ShareHandler
+	Tags            *TagHandler
+	Export          *ExportHandler
+	Files           *FileHandler
+	AI              *AIHandler
+	Import          *ImportHandler
+	Templates       *TemplateHandler
+	Assets          *AssetHandler
+	Todos           *TodoHandler
+	JWTSecret       []byte
+	MaxJSONBodySize int64
+}
+
+func (deps RouterDeps) Validate() error {
+	required := []struct {
+		name       string
+		dependency any
+	}{
+		{name: "auth", dependency: deps.Auth},
+		{name: "oauth", dependency: deps.OAuth},
+		{name: "properties", dependency: deps.Properties},
+		{name: "documents", dependency: deps.Documents},
+		{name: "versions", dependency: deps.Versions},
+		{name: "shares", dependency: deps.Shares},
+		{name: "tags", dependency: deps.Tags},
+		{name: "export", dependency: deps.Export},
+		{name: "files", dependency: deps.Files},
+		{name: "ai", dependency: deps.AI},
+		{name: "import", dependency: deps.Import},
+		{name: "templates", dependency: deps.Templates},
+		{name: "assets", dependency: deps.Assets},
+		{name: "todos", dependency: deps.Todos},
+	}
+	for _, item := range required {
+		if item.dependency == nil {
+			return fmt.Errorf("%w: %s", errMissingRouterDependency, item.name)
+		}
+	}
+	if len(deps.JWTSecret) == 0 {
+		return errMissingRouterJWTSecret
+	}
+	if deps.MaxJSONBodySize <= 0 {
+		return errInvalidJSONBodyLimit
+	}
+	return nil
 }
 
 func RegisterRoutes(api *gin.RouterGroup, deps RouterDeps) {
+	if err := deps.Validate(); err != nil {
+		panic(err)
+	}
+	api.Use(func(c *gin.Context) {
+		c.Set(maxJSONBodySizeContextKey, deps.MaxJSONBodySize)
+		c.Next()
+	})
 	registerPublicRoutes(api, deps)
 	authGroup := api.Group("")
 	authGroup.Use(middleware.JWTAuth(deps.JWTSecret))

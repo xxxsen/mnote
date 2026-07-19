@@ -56,7 +56,7 @@ func TestTodoService_CreateTodo(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		todo, err := svc.CreateTodo(context.Background(), "u1", "buy milk", "2026-04-28", false)
 		require.NoError(t, err)
 		assert.Equal(t, "buy milk", todo.Content)
@@ -71,14 +71,14 @@ func TestTodoService_CreateTodo(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		todo, err := svc.CreateTodo(context.Background(), "u1", "done item", "", true)
 		require.NoError(t, err)
 		assert.Equal(t, 1, todo.Done)
 	})
 
 	t.Run("empty_content", func(t *testing.T) {
-		svc := NewTodoService(&mockTodoRepo{})
+		svc := NewTodoService(&mockTodoRepo{}, testRuntime())
 		_, err := svc.CreateTodo(context.Background(), "u1", "", "", false)
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
@@ -89,7 +89,7 @@ func TestTodoService_CreateTodo(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		_, err := svc.CreateTodo(context.Background(), "u1", "buy milk", "", false)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "create todo")
@@ -106,7 +106,7 @@ func TestTodoService_ToggleDone(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		err := svc.ToggleDone(context.Background(), "u1", "t1", true)
 		require.NoError(t, err)
 	})
@@ -117,7 +117,7 @@ func TestTodoService_ToggleDone(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		err := svc.ToggleDone(context.Background(), "u1", "t1", false)
 		assert.Error(t, err)
 	})
@@ -134,7 +134,7 @@ func TestTodoService_UpdateContent(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		todo, err := svc.UpdateContent(context.Background(), "u1", "t1", "new content")
 		require.NoError(t, err)
 		assert.Equal(t, "new content", todo.Content)
@@ -146,14 +146,14 @@ func TestTodoService_UpdateContent(t *testing.T) {
 				return &model.Todo{ID: "t1", Content: "same"}, nil
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		todo, err := svc.UpdateContent(context.Background(), "u1", "t1", "same")
 		require.NoError(t, err)
 		assert.Equal(t, "same", todo.Content)
 	})
 
 	t.Run("empty_content", func(t *testing.T) {
-		svc := NewTodoService(&mockTodoRepo{})
+		svc := NewTodoService(&mockTodoRepo{}, testRuntime())
 		_, err := svc.UpdateContent(context.Background(), "u1", "t1", "   ")
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
@@ -164,7 +164,7 @@ func TestTodoService_UpdateContent(t *testing.T) {
 				return nil, errors.New("not found")
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		_, err := svc.UpdateContent(context.Background(), "u1", "t1", "new")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "get todo")
@@ -179,7 +179,7 @@ func TestTodoService_UpdateContent(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		_, err := svc.UpdateContent(context.Background(), "u1", "t1", "new")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "update todo")
@@ -194,7 +194,7 @@ func TestTodoService_ListByDateRange(t *testing.T) {
 				return []model.Todo{{ID: "t1"}}, nil
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		list, err := svc.ListByDateRange(context.Background(), "u1", "2026-01-01", "2026-12-31")
 		require.NoError(t, err)
 		assert.Len(t, list, 1)
@@ -206,7 +206,7 @@ func TestTodoService_ListByDateRange(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		_, err := svc.ListByDateRange(context.Background(), "u1", "2026-01-01", "2026-12-31")
 		assert.Error(t, err)
 	})
@@ -219,7 +219,7 @@ func TestTodoService_GetByID(t *testing.T) {
 				return &model.Todo{ID: "t1", Content: "hello"}, nil
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		todo, err := svc.GetByID(context.Background(), "u1", "t1")
 		require.NoError(t, err)
 		assert.Equal(t, "t1", todo.ID)
@@ -231,7 +231,7 @@ func TestTodoService_GetByID(t *testing.T) {
 				return nil, appErr.ErrNotFound
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		_, err := svc.GetByID(context.Background(), "u1", "t1")
 		assert.ErrorIs(t, err, appErr.ErrNotFound)
 	})
@@ -246,7 +246,7 @@ func TestTodoService_DeleteTodo(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		err := svc.DeleteTodo(context.Background(), "u1", "t1")
 		require.NoError(t, err)
 	})
@@ -257,7 +257,7 @@ func TestTodoService_DeleteTodo(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewTodoService(repo)
+		svc := NewTodoService(repo, testRuntime())
 		err := svc.DeleteTodo(context.Background(), "u1", "t1")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "delete")

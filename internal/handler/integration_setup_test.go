@@ -1,3 +1,5 @@
+//go:build integration
+
 package handler_test
 
 import (
@@ -54,17 +56,23 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	templateRepo := repo.NewTemplateRepo(db)
 	assetRepo := repo.NewAssetRepo(db)
 	documentAssetRepo := repo.NewDocumentAssetRepo(db)
+	todoRepo := repo.NewTodoRepo(db)
 
 	jwtSecret := []byte("test-secret")
-	verifyService := service.NewEmailVerificationService(emailCodeRepo, noopSender{})
-	authService := service.NewAuthService(userRepo, verifyService, jwtSecret, time.Hour, true)
-	oauthService := service.NewOAuthService(userRepo, oauthRepo, jwtSecret, time.Hour, map[string]oauth.Provider{})
-	documentService := service.NewDocumentService(nil, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
-	assetService := service.NewAssetService(assetRepo, documentAssetRepo)
-	documentService.SetAssetService(assetService)
-	tagService := service.NewTagService(nil, tagRepo, docTagRepo)
+	runtime := service.NewRuntime(repo.NewTransactor(db))
+	verifyService := service.NewEmailVerificationService(emailCodeRepo, noopSender{}, runtime)
+	authService := service.NewAuthService(userRepo, verifyService, jwtSecret, time.Hour, true, runtime)
+	oauthService := service.NewOAuthService(
+		userRepo, oauthRepo, jwtSecret, time.Hour, map[string]oauth.Provider{}, runtime,
+	)
+	assetService := service.NewAssetService(assetRepo, documentAssetRepo, runtime)
+	documentService := service.NewDocumentService(
+		runtime, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo,
+		tagRepo, userRepo, nil, 10, assetService,
+	)
+	tagService := service.NewTagService(runtime, tagRepo, docTagRepo)
 	exportService := service.NewExportService(docRepo, summaryRepo, versionRepo, tagRepo, docTagRepo)
-	templateService := service.NewTemplateService(templateRepo, documentService, tagRepo)
+	templateService := service.NewTemplateService(templateRepo, documentService, tagRepo, runtime)
 
 	tmpDir, err := os.MkdirTemp("", "mnote-upload-*")
 	require.NoError(t, err)
@@ -78,19 +86,24 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	require.NoError(t, err)
 
 	deps := handler.RouterDeps{
-		Auth:       handler.NewAuthHandler(authService),
-		OAuth:      handler.NewOAuthHandler(oauthService),
-		Properties: handler.NewPropertiesHandler(handler.Properties{}, handler.BannerConfig{}),
-		Documents:  handler.NewDocumentHandler(documentService),
-		Versions:   handler.NewVersionHandler(documentService),
-		Shares:     handler.NewShareHandler(documentService),
-		Tags:       handler.NewTagHandler(tagService),
-		Export:     handler.NewExportHandler(exportService),
-		Files:      handler.NewFileHandler(store, 20*1024*1024),
-		Templates:  handler.NewTemplateHandler(templateService),
-		Assets:     handler.NewAssetHandler(assetService),
-		JWTSecret:  jwtSecret,
+		Auth:            handler.NewAuthHandler(authService),
+		OAuth:           handler.NewOAuthHandler(oauthService),
+		Properties:      handler.NewPropertiesHandler(handler.Properties{}, handler.BannerConfig{}),
+		Documents:       handler.NewDocumentHandler(documentService),
+		Versions:        handler.NewVersionHandler(documentService),
+		Shares:          handler.NewShareHandler(documentService),
+		Tags:            handler.NewTagHandler(tagService),
+		Export:          handler.NewExportHandler(exportService),
+		Files:           handler.NewFileHandler(store, 20*1024*1024),
+		AI:              handler.NewAIHandler(nil, documentService, tagService),
+		Import:          handler.NewImportHandler(nil, 20*1024*1024, service.SaveTempFile),
+		Templates:       handler.NewTemplateHandler(templateService),
+		Assets:          handler.NewAssetHandler(assetService),
+		Todos:           handler.NewTodoHandler(service.NewTodoService(todoRepo, runtime)),
+		JWTSecret:       jwtSecret,
+		MaxJSONBodySize: 2 << 20,
 	}
+	require.NoError(t, deps.Validate())
 
 	engine, err := webapi.NewEngine(
 		"/api/v1",
@@ -117,6 +130,7 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 			Purpose:   "register",
 			CodeHash:  hash,
 			Used:      0,
+			Status:    "sent",
 			Ctime:     now,
 			ExpiresAt: now + 600,
 		})

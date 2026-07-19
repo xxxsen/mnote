@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -31,15 +32,31 @@ type UploadResponse struct {
 	ContentType string `json:"content_type"`
 }
 
-func NewFileHandler(store filestore.Store, maxUploadSize int64) *FileHandler {
-	return &FileHandler{store: store, maxUploadSize: maxUploadSize}
+type assetUploadStateService interface {
+	BeginUpload(
+		ctx context.Context,
+		userID, fileKey, url, name, contentType string, size int64,
+	) error
+	CompleteUpload(ctx context.Context, userID, fileKey string) error
+	FailUpload(ctx context.Context, userID, fileKey, stableError string) error
 }
 
-func (h *FileHandler) SetAssetService(assets IAssetHandlerService) {
-	h.assets = assets
+func NewFileHandler(
+	store filestore.Store, maxUploadSize int64, assets ...IAssetHandlerService,
+) *FileHandler {
+	handler := &FileHandler{store: store, maxUploadSize: maxUploadSize}
+	if len(assets) > 0 {
+		handler.assets = assets[0]
+	}
+	return handler
 }
 
 func (h *FileHandler) Upload(c *gin.Context) {
+	if h.maxUploadSize > 0 {
+		c.Request.Body = http.MaxBytesReader(
+			c.Writer, c.Request.Body, h.maxUploadSize+(1<<20),
+		)
+	}
 	file, err := c.FormFile("file")
 	if err != nil {
 		response.Error(c, errcode.ErrInvalidFile, "file is required")
@@ -62,18 +79,114 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	}
 	defer func() { _ = reader.Close() }()
 	contentType = resolveContentType(contentType, file.Filename)
-	userID := getUserID(c)
-	key := h.store.GenerateFileRef(userID, file.Filename)
-	if err := h.store.Save(c.Request.Context(), key, reader, file.Size); err != nil {
+	h.persistUpload(
+		c, getUserID(c), file.Filename, contentType, file.Size, reader,
+	)
+}
+
+func (h *FileHandler) persistUpload(
+	c *gin.Context, userID, filename, contentType string,
+	size int64, reader filestore.ReadSeekCloser,
+) {
+	key, err := h.store.GenerateFileRef(userID, filename)
+	if err != nil {
+		logutil.GetLogger(c.Request.Context()).Error(
+			"generate upload key failed",
+			zap.String("user_id", userID),
+			zap.Error(err),
+		)
 		response.Error(c, errcode.ErrUploadFailed, "failed to upload file")
 		return
 	}
-	fileURL := resolveFileURL(key)
-	if err := h.recordAsset(c, userID, key, fileURL, file.Filename, contentType, file.Size); err != nil {
-		response.Error(c, errcode.ErrUploadFailed, "upload succeeded but failed to index asset")
+	fileURL := h.store.PublicURL(key)
+	statefulAssets, stateful := h.assets.(assetUploadStateService)
+	if stateful {
+		if err := statefulAssets.BeginUpload(
+			c.Request.Context(), userID, key, fileURL,
+			filename, contentType, size,
+		); err != nil {
+			logutil.GetLogger(c.Request.Context()).Error(
+				"create pending asset failed",
+				zap.String("user_id", userID),
+				zap.String("file_key", key),
+				zap.Error(err),
+			)
+			response.Error(c, errcode.ErrUploadFailed, "failed to upload file")
+			return
+		}
+	}
+	if err := h.store.Save(c.Request.Context(), key, reader, size); err != nil {
+		if stateful {
+			if stateErr := statefulAssets.FailUpload(
+				c.Request.Context(), userID, key, "store save failed",
+			); stateErr != nil {
+				logutil.GetLogger(c.Request.Context()).Error(
+					"mark failed asset upload failed",
+					zap.String("user_id", userID),
+					zap.String("file_key", key),
+					zap.Error(stateErr),
+				)
+			}
+		}
+		logutil.GetLogger(c.Request.Context()).Error(
+			"save uploaded file failed",
+			zap.String("user_id", userID),
+			zap.String("file_key", key),
+			zap.Error(err),
+		)
+		response.Error(c, errcode.ErrUploadFailed, "failed to upload file")
 		return
 	}
-	response.Success(c, UploadResponse{URL: fileURL, Name: file.Filename, ContentType: contentType})
+	if stateful {
+		if err := statefulAssets.CompleteUpload(
+			c.Request.Context(), userID, key,
+		); err != nil {
+			h.compensateUpload(c, userID, key, statefulAssets)
+			response.Error(c, errcode.ErrUploadFailed, "failed to upload file")
+			return
+		}
+		response.Success(c, UploadResponse{
+			URL: fileURL, Name: filename, ContentType: contentType,
+		})
+		return
+	}
+	if err := h.recordAsset(c, userID, key, fileURL, filename, contentType, size); err != nil {
+		if deleteErr := h.store.Delete(c.Request.Context(), key); deleteErr != nil {
+			logutil.GetLogger(c.Request.Context()).Error(
+				"asset index and upload compensation failed",
+				zap.String("user_id", userID),
+				zap.String("file_key", key),
+				zap.Error(deleteErr),
+			)
+		}
+		response.Error(c, errcode.ErrUploadFailed, "failed to upload file")
+		return
+	}
+	response.Success(c, UploadResponse{URL: fileURL, Name: filename, ContentType: contentType})
+}
+
+func (h *FileHandler) compensateUpload(
+	c *gin.Context, userID, key string, assets assetUploadStateService,
+) {
+	logger := logutil.GetLogger(c.Request.Context())
+	if err := assets.FailUpload(
+		c.Request.Context(), userID, key, "asset ready transition failed",
+	); err != nil {
+		logger.Error(
+			"mark compensated asset failed",
+			zap.String("user_id", userID),
+			zap.String("file_key", key),
+			zap.Error(err),
+		)
+	}
+	if err := h.store.Delete(c.Request.Context(), key); err != nil {
+		logger.Error(
+			"asset transition and upload compensation failed",
+			zap.String("user_id", userID),
+			zap.String("file_key", key),
+			zap.Error(err),
+		)
+	}
 }
 
 func resolveContentType(contentType, filename string) string {

@@ -136,53 +136,6 @@ func TestMapOAuthError(t *testing.T) {
 	assert.Equal(t, "internal", mapOAuthError(assert.AnError))
 }
 
-func TestOAuthStateStore(t *testing.T) {
-	store := newOAuthStateStore()
-	state := store.Create("github", "login", "", "/")
-	assert.NotEmpty(t, state)
-
-	item, ok := store.Consume(state)
-	assert.True(t, ok)
-	assert.Equal(t, "github", item.Provider)
-	assert.Equal(t, "login", item.Mode)
-
-	_, ok = store.Consume(state)
-	assert.False(t, ok, "should not consume twice")
-}
-
-func TestOAuthStateStore_Unknown(t *testing.T) {
-	store := newOAuthStateStore()
-	_, ok := store.Consume("nonexistent")
-	assert.False(t, ok)
-}
-
-func TestOAuthExchangeStore(t *testing.T) {
-	store := newOAuthExchangeStore()
-	code := store.Create("jwt-token", "user@example.com")
-	assert.NotEmpty(t, code)
-
-	item, ok := store.Consume(code)
-	assert.True(t, ok)
-	assert.Equal(t, "jwt-token", item.Token)
-	assert.Equal(t, "user@example.com", item.Email)
-
-	_, ok = store.Consume(code)
-	assert.False(t, ok, "should not consume twice")
-}
-
-func TestOAuthExchangeStore_Unknown(t *testing.T) {
-	store := newOAuthExchangeStore()
-	_, ok := store.Consume("nonexistent")
-	assert.False(t, ok)
-}
-
-func TestRandomState(t *testing.T) {
-	s := randomState()
-	assert.Len(t, s, 32)
-	s2 := randomState()
-	assert.NotEqual(t, s, s2)
-}
-
 func TestRemoveFile_EmptyPath(t *testing.T) {
 	assert.NoError(t, removeFile(""))
 }

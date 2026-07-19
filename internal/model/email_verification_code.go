@@ -6,6 +6,7 @@ type EmailVerificationCode struct {
 	Purpose   string `json:"purpose"`
 	CodeHash  string `json:"code_hash"`
 	Used      int    `json:"used"`
+	Status    string `json:"status"`
 	Ctime     int64  `json:"ctime"`
 	ExpiresAt int64  `json:"expires_at"`
 }

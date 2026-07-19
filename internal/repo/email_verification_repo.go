@@ -27,6 +27,7 @@ func (r *EmailVerificationRepo) Create(ctx context.Context, code *model.EmailVer
 		"purpose":    code.Purpose,
 		"code_hash":  code.CodeHash,
 		"used":       code.Used,
+		"status":     code.Status,
 		"ctime":      code.Ctime,
 		"expires_at": code.ExpiresAt,
 	})
@@ -38,10 +39,13 @@ func (
 	purpose string) (*model.EmailVerificationCode,
 	error,
 ) {
-	where := map[string]any{"email": email, "purpose": purpose, "_orderby": "ctime desc", "_limit": []uint{0, 1}}
+	where := map[string]any{
+		"email": email, "purpose": purpose, "status": "sent",
+		"_orderby": "ctime desc", "_limit": []uint{0, 1},
+	}
 	sqlStr, args, err := builder.BuildSelect("email_verification_codes", where, []string{
 		"id", "email", "purpose",
-		"code_hash", "used", "ctime", "expires_at",
+		"code_hash", "used", "status", "ctime", "expires_at",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)
@@ -59,16 +63,18 @@ func (
 		return nil, appErr.ErrNotFound
 	}
 	var code model.EmailVerificationCode
-	if err := rows.Scan(&code.ID, &code.Email, &code.Purpose, &code.CodeHash, &code.Used, &code.Ctime,
-		&code.ExpiresAt); err != nil {
+	if err := rows.Scan(
+		&code.ID, &code.Email, &code.Purpose, &code.CodeHash,
+		&code.Used, &code.Status, &code.Ctime, &code.ExpiresAt,
+	); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
 	return &code, nil
 }
 
-func (r *EmailVerificationRepo) MarkUsed(ctx context.Context, id string) error {
+func (r *EmailVerificationRepo) MarkStatus(ctx context.Context, id, status string) error {
 	where := map[string]any{"id": id}
-	update := map[string]any{"used": 1}
+	update := map[string]any{"status": status}
 	sqlStr, args, err := builder.BuildUpdate("email_verification_codes", where, update)
 	if err != nil {
 		return fmt.Errorf("build update: %w", err)
@@ -86,4 +92,33 @@ func (r *EmailVerificationRepo) MarkUsed(ctx context.Context, id string) error {
 		return appErr.ErrNotFound
 	}
 	return nil
+}
+
+func (r *EmailVerificationRepo) ConsumeIfUnused(ctx context.Context, id string, now int64) error {
+	const query = `
+		UPDATE email_verification_codes
+		SET used = 1
+		WHERE id = $1
+		  AND used = 0
+		  AND status = 'sent'
+		  AND expires_at > $2
+	`
+	result, err := conn(ctx, r.db).ExecContext(ctx, query, id, now)
+	if err != nil {
+		return fmt.Errorf("consume verification code: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("consume verification code: %w", err)
+	}
+	if affected != 1 {
+		return appErr.ErrConflict
+	}
+	return nil
+}
+
+// MarkUsed remains as a compatibility wrapper for internal callers while
+// registration uses ConsumeIfUnused with the current timestamp.
+func (r *EmailVerificationRepo) MarkUsed(ctx context.Context, id string) error {
+	return r.ConsumeIfUnused(ctx, id, 0)
 }

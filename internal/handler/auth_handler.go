@@ -34,7 +34,7 @@ type passwordUpdateRequest struct {
 
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req authRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -56,12 +56,12 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, gin.H{"user": user, "token": token})
+	response.Success(c, gin.H{"user": toUserResponse(user), "token": token})
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req authRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -79,12 +79,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, gin.H{"user": user, "token": token})
+	response.Success(c, gin.H{"user": toUserResponse(user), "token": token})
 }
 
 func (h *AuthHandler) SendRegisterCode(c *gin.Context) {
 	var req sendCodeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -110,7 +110,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 func (h *AuthHandler) UpdatePassword(c *gin.Context) {
 	var req passwordUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}

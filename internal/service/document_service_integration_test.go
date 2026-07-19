@@ -1,3 +1,5 @@
+//go:build integration
+
 package service_test
 
 import (
@@ -22,8 +24,11 @@ func TestDocumentServiceVersioningAndDelete(t *testing.T) {
 	shareRepo := repo.NewShareRepo(db)
 	tagRepo := repo.NewTagRepo(db)
 	userRepo := repo.NewUserRepo(db)
+	runtime := service.NewRuntime(repo.NewTransactor(db))
 
-	docs := service.NewDocumentService(nil, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
+	docs := service.NewDocumentService(
+		runtime, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo,
+		tagRepo, userRepo, nil, 10, nil)
 
 	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})
 	require.NoError(t, err)
@@ -56,8 +61,11 @@ func TestDocumentServiceShareState(t *testing.T) {
 	shareRepo := repo.NewShareRepo(db)
 	tagRepo := repo.NewTagRepo(db)
 	userRepo := repo.NewUserRepo(db)
+	runtime := service.NewRuntime(repo.NewTransactor(db))
 
-	docs := service.NewDocumentService(nil, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
+	docs := service.NewDocumentService(
+		runtime, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo,
+		tagRepo, userRepo, nil, 10, nil)
 
 	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})
 	require.NoError(t, err)
@@ -87,8 +95,11 @@ func TestDocumentServiceShareComments(t *testing.T) {
 	shareRepo := repo.NewShareRepo(db)
 	tagRepo := repo.NewTagRepo(db)
 	userRepo := repo.NewUserRepo(db)
+	runtime := service.NewRuntime(repo.NewTransactor(db))
 
-	docs := service.NewDocumentService(nil, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo, tagRepo, userRepo, nil, 10)
+	docs := service.NewDocumentService(
+		runtime, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo,
+		tagRepo, userRepo, nil, 10, nil)
 
 	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})
 	require.NoError(t, err)

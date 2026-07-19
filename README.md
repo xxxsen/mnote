@@ -126,15 +126,22 @@ docker compose up -d
     { "name": "openrouter", "type": "openrouter", "data": { "api_key": "..." } }
   ],
   "ai": {
+    "enabled": true,
     "provider": "gemini",
     "model": "gemini-1.5-flash",
+    "polish_enabled": true,
+    "generate_enabled": true,
+    "embed_enabled": true,
     "polish": [{ "provider": "openrouter", "model": "anthropic/claude-3.5-sonnet" }],
     "embed": [{ "provider": "gemini", "model": "text-embedding-004" }]
   }
 }
 ```
 
-各 AI 功能 (polish / generate / tagging / summary / embed) 均可独立配置供应商与模型。若未指定则使用顶层默认配置。
+`enabled` 可整体关闭 AI；任意一个 `*_enabled` 开关出现后，仅显式设为 `true`
+的功能会启用。各 AI 功能 (polish / generate / tagging / summary / embed) 均可独立
+配置供应商与模型，未指定时使用顶层默认配置。未启用的功能不会初始化 Provider，
+也不会注册对应的后台任务。
 
 ### OAuth 配置
 

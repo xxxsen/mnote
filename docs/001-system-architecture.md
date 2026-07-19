@@ -24,6 +24,11 @@ MNote 是一个由 Go 后端和 Next.js 前端组成的自托管笔记系统。�
 - `internal/pkg` 提供 JWT、业务错误、邮件、文件存储、AI 客户端等基础能力。
 - `internal/db/migrations` 存放嵌入二进制的 SQL 迁移；服务启动时在迁移锁保护下执行。
 
+文档业务对外仍由一个 `DocumentService` 组合，但实现按用途拆分为 core 查询、
+`document_write_service.go`、`document_version_service.go`、`document_share_service.go` 和
+`document_summary_service.go`。Template、Import 和 Handler 只依赖各自使用的窄接口；禁止重新
+引入运行期 setter、nil transaction fallback 或让一个 Handler 依赖全部文档能力。
+
 ### 2.3 数据与外部依赖
 
 - PostgreSQL 是唯一业务事实源。

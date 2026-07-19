@@ -1,9 +1,8 @@
 package filestore
 
 import (
+	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/xxxsen/mnote/internal/pkg/idgen"
 )
 
 var (
@@ -22,7 +23,9 @@ var (
 type Store interface {
 	Save(ctx context.Context, key string, r ReadSeekCloser, size int64) error
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
-	GenerateFileRef(userID, filename string) string
+	Delete(ctx context.Context, key string) error
+	GenerateFileRef(userID, filename string) (string, error)
+	PublicURL(key string) string
 }
 
 type ReadSeekCloser interface {
@@ -75,31 +78,25 @@ func decodeConfig(args, dst any) error {
 	if err != nil {
 		return fmt.Errorf("encode store config: %w", err)
 	}
-	if err := json.Unmarshal(data, dst); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
 		return fmt.Errorf("decode store config: %w", err)
 	}
 	return nil
 }
 
-func buildFileKey(userID, filename string) string {
+func buildFileKey(generator idgen.Generator, userID, filename string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(filename))
-	base := randomHex(8)
+	base, err := generator.Token(8)
+	if err != nil {
+		return "", fmt.Errorf("generate file key: %w", err)
+	}
 	if userID != "" {
 		base = userID + "_" + base
 	}
 	if ext == "" {
-		return base
+		return base, nil
 	}
-	return base + ext
-}
-
-func randomHex(size int) string {
-	if size <= 0 {
-		return ""
-	}
-	buf := make([]byte, size)
-	if _, err := rand.Read(buf); err != nil {
-		return ""
-	}
-	return hex.EncodeToString(buf)
+	return base + ext, nil
 }

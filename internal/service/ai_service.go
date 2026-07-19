@@ -80,7 +80,10 @@ func (s *AIService) SemanticSearch(
 	ctx context.Context, userID, query string, topK int, excludeID string,
 ) ([]string, []float32, error) {
 	query = strings.TrimSpace(query)
-	logger := logutil.GetLogger(ctx).With(zap.String("user_id", userID), zap.String("query", query))
+	logger := logutil.GetLogger(ctx).With(
+		zap.String("user_id", userID),
+		zap.Int("query_length", len([]rune(query))),
+	)
 	queryEmb, err := s.Embed(ctx, query, "RETRIEVAL_QUERY")
 	if err != nil {
 		logger.Error("failed to embed search query", zap.Error(err))

@@ -33,8 +33,8 @@ func TestEmailVerificationRepo_LatestByEmail(t *testing.T) {
 
 	r := NewEmailVerificationRepo(db)
 	rows := sqlmock.NewRows([]string{
-		"id", "email", "purpose", "code_hash", "used", "ctime", "expires_at",
-	}).AddRow("e1", "test@example.com", "register", "hash", 0, int64(1000), int64(2000))
+		"id", "email", "purpose", "code_hash", "used", "status", "ctime", "expires_at",
+	}).AddRow("e1", "test@example.com", "register", "hash", 0, "sent", int64(1000), int64(2000))
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
 	code, err := r.LatestByEmail(context.Background(), "test@example.com", "register")
@@ -50,7 +50,7 @@ func TestEmailVerificationRepo_LatestByEmail_NotFound(t *testing.T) {
 
 	r := NewEmailVerificationRepo(db)
 	rows := sqlmock.NewRows([]string{
-		"id", "email", "purpose", "code_hash", "used", "ctime", "expires_at",
+		"id", "email", "purpose", "code_hash", "used", "status", "ctime", "expires_at",
 	})
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
@@ -77,7 +77,7 @@ func TestEmailVerificationRepo_MarkUsed_NotFound(t *testing.T) {
 	r := NewEmailVerificationRepo(db)
 	mock.ExpectExec("UPDATE").WillReturnResult(sqlmock.NewResult(0, 0))
 	err = r.MarkUsed(context.Background(), "missing")
-	assert.ErrorIs(t, err, appErr.ErrNotFound)
+	assert.ErrorIs(t, err, appErr.ErrConflict)
 }
 
 func TestEmailVerificationRepo_LatestByEmail_QueryError(t *testing.T) {
@@ -133,7 +133,7 @@ func TestEmailVerificationRepo_LatestByEmail_RowsErr(t *testing.T) {
 
 	r := NewEmailVerificationRepo(db)
 	rows := sqlmock.NewRows([]string{
-		"id", "email", "purpose", "code_hash", "used", "ctime", "expires_at",
+		"id", "email", "purpose", "code_hash", "used", "status", "ctime", "expires_at",
 	}).CloseError(errDB)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 	_, err = r.LatestByEmail(context.Background(), "test@example.com", "register")

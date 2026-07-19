@@ -22,6 +22,7 @@ import (
 	"github.com/xxxsen/mnote/internal/pkg/safeconv"
 
 	"github.com/xxxsen/mnote/internal/ai"
+	mnoteapp "github.com/xxxsen/mnote/internal/app"
 	"github.com/xxxsen/mnote/internal/config"
 	"github.com/xxxsen/mnote/internal/db"
 	"github.com/xxxsen/mnote/internal/embedcache"
@@ -53,9 +54,9 @@ func main() {
 			if configPath == "" {
 				return errors.New("--config is required")
 			}
-			cfg, err := config.Load(configPath)
+			cfg, err := loadValidatedConfig(configPath)
 			if err != nil {
-				return fmt.Errorf("load config: %w", err)
+				return err
 			}
 			logger.Init(
 				cfg.LogConfig.File,
@@ -67,19 +68,26 @@ func main() {
 			)
 			logutil.GetLogger(context.Background()).Info("config loaded", zap.String("config", configPath))
 
-			conn, err := db.Open(db.Config{
-				DSN:      cfg.Database.DSN,
-				Host:     cfg.Database.Host,
-				Port:     cfg.Database.Port,
-				User:     cfg.Database.User,
-				Password: cfg.Database.Password,
-				DBName:   cfg.Database.DBName,
-				SSLMode:  cfg.Database.SSLMode,
+			startupCtx, cancelStartup := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancelStartup()
+			conn, err := db.Open(startupCtx, db.Config{
+				DSN:             cfg.Database.DSN,
+				Host:            cfg.Database.Host,
+				Port:            cfg.Database.Port,
+				User:            cfg.Database.User,
+				Password:        cfg.Database.Password,
+				DBName:          cfg.Database.DBName,
+				SSLMode:         cfg.Database.SSLMode,
+				MaxOpenConns:    cfg.Database.MaxOpenConns,
+				MaxIdleConns:    cfg.Database.MaxIdleConns,
+				ConnMaxLifetime: time.Duration(cfg.Database.ConnMaxLifetimeSeconds) * time.Second,
+				ConnMaxIdleTime: time.Duration(cfg.Database.ConnMaxIdleTimeSeconds) * time.Second,
 			})
 			if err != nil {
 				return fmt.Errorf("open db: %w", err)
 			}
-			if err := db.ApplyMigrations(conn); err != nil {
+			if err := db.ApplyMigrationsContext(startupCtx, conn); err != nil {
+				_ = conn.Close()
 				return fmt.Errorf("migrations: %w", err)
 			}
 			return runServer(cfg, conn)
@@ -87,11 +95,52 @@ func main() {
 	}
 
 	runCmd.Flags().StringVar(&configPath, "config", "", "path to config.json")
+	var validateConfigPath string
+	configCmd := &cobra.Command{Use: "config", Short: "configuration utilities"}
+	validateCmd := &cobra.Command{
+		Use:   "validate",
+		Short: "validate configuration and exit",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if validateConfigPath == "" {
+				return errors.New("--config is required")
+			}
+			_, err := loadValidatedConfig(validateConfigPath)
+			return err
+		},
+	}
+	validateCmd.Flags().StringVar(&validateConfigPath, "config", "", "path to config.json")
+	configCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(configCmd)
 
 	if err := rootCmd.Execute(); err != nil {
-		logutil.GetLogger(context.Background()).Fatal("startup error", zap.Error(err))
+		_, _ = fmt.Fprintln(os.Stderr, "startup error:", err)
+		os.Exit(1)
 	}
+}
+
+func loadValidatedConfig(path string) (*config.Config, error) {
+	cfg, err := config.Load(path)
+	if err != nil {
+		return nil, fmt.Errorf("validate config: %w", err)
+	}
+	if err := validateRuntimeConfig(cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+func validateRuntimeConfig(cfg *config.Config) error {
+	if cfg == nil {
+		return errors.New("config is required")
+	}
+	if _, err := filestore.New(filestore.Config{
+		Type: cfg.FileStore.Type,
+		Data: cfg.FileStore.Data,
+	}); err != nil {
+		return fmt.Errorf("validate file store: %w", err)
+	}
+	return nil
 }
 
 func injectTestUser(ctx context.Context, r *repo.UserRepo) error {
@@ -108,11 +157,12 @@ func injectTestUser(ctx context.Context, r *repo.UserRepo) error {
 		return fmt.Errorf("hash test password: %w", err)
 	}
 	user := &model.User{
-		ID:           "test_user",
-		Email:        email,
-		PasswordHash: hash,
-		Ctime:        time.Now().Unix(),
-		Mtime:        time.Now().Unix(),
+		ID:              "test_user",
+		Email:           email,
+		EmailNormalized: email,
+		PasswordHash:    hash,
+		Ctime:           time.Now().Unix(),
+		Mtime:           time.Now().Unix(),
 	}
 	return r.Create(ctx, user)
 }
@@ -148,10 +198,17 @@ func initOAuthProviders(cfg *config.Config) (map[string]oauth.Provider, error) {
 	return providers, nil
 }
 
-func initAIProviders(cfgs []config.AIProviderConfig) (map[string]ai.IProvider, error) {
+func initAIProviders(cfg *config.Config) (map[string]ai.IProvider, error) {
 	providers := make(map[string]ai.IProvider)
+	required := requiredAIProviders(cfg.AI)
+	if len(required) == 0 {
+		return providers, nil
+	}
 	seen := make(map[string]struct{})
-	for _, pcfg := range cfgs {
+	for _, pcfg := range cfg.AIProvider {
+		if _, needed := required[pcfg.Name]; !needed {
+			continue
+		}
 		if pcfg.Name == "" {
 			return nil, errors.New("ai provider name is required")
 		}
@@ -169,6 +226,31 @@ func initAIProviders(cfgs []config.AIProviderConfig) (map[string]ai.IProvider, e
 		providers[pcfg.Name] = p
 	}
 	return providers, nil
+}
+
+func requiredAIProviders(cfg config.AIConfig) map[string]struct{} {
+	required := make(map[string]struct{})
+	features := []struct {
+		enabled bool
+		items   []config.AIFeatureConfig
+	}{
+		{cfg.IsPolishEnabled(), cfg.Polish},
+		{cfg.IsGenerateEnabled(), cfg.Generate},
+		{cfg.IsTaggingEnabled(), cfg.Tagging},
+		{cfg.IsSummaryEnabled(), cfg.Summary},
+		{cfg.IsEmbedEnabled(), cfg.Embed},
+	}
+	for _, feature := range features {
+		if !feature.enabled {
+			continue
+		}
+		for _, item := range normalizeFeatureList(feature.items, cfg) {
+			if item.Provider != "" {
+				required[item.Provider] = struct{}{}
+			}
+		}
+	}
+	return required
 }
 
 func normalizeFeatureList(
@@ -258,25 +340,43 @@ func initAIManager(
 	gen := func(name string, list []config.AIFeatureConfig) (ai.IGenerator, error) {
 		return buildGenerator(name, list, cfg.AI, providers)
 	}
-	polishGen, err := gen("polish", cfg.AI.Polish)
-	if err != nil {
-		return nil, fmt.Errorf("init polish generator: %w", err)
+	var (
+		polishGen ai.IGenerator
+		genGen    ai.IGenerator
+		tagGen    ai.IGenerator
+		sumGen    ai.IGenerator
+		err       error
+	)
+	if cfg.AI.IsPolishEnabled() {
+		polishGen, err = gen("polish", cfg.AI.Polish)
+		if err != nil {
+			return nil, fmt.Errorf("init polish generator: %w", err)
+		}
 	}
-	genGen, err := gen("generate", cfg.AI.Generate)
-	if err != nil {
-		return nil, fmt.Errorf("init text generator: %w", err)
+	if cfg.AI.IsGenerateEnabled() {
+		genGen, err = gen("generate", cfg.AI.Generate)
+		if err != nil {
+			return nil, fmt.Errorf("init text generator: %w", err)
+		}
 	}
-	tagGen, err := gen("tagging", cfg.AI.Tagging)
-	if err != nil {
-		return nil, fmt.Errorf("init tag generator: %w", err)
+	if cfg.AI.IsTaggingEnabled() {
+		tagGen, err = gen("tagging", cfg.AI.Tagging)
+		if err != nil {
+			return nil, fmt.Errorf("init tag generator: %w", err)
+		}
 	}
-	sumGen, err := gen("summary", cfg.AI.Summary)
-	if err != nil {
-		return nil, fmt.Errorf("init summary generator: %w", err)
+	if cfg.AI.IsSummaryEnabled() {
+		sumGen, err = gen("summary", cfg.AI.Summary)
+		if err != nil {
+			return nil, fmt.Errorf("init summary generator: %w", err)
+		}
 	}
-	embGen, err := buildEmbedder("embed", cfg.AI.Embed, cfg.AI, providers)
-	if err != nil {
-		return nil, fmt.Errorf("init embedder: %w", err)
+	var embGen ai.IEmbedder
+	if cfg.AI.IsEmbedEnabled() {
+		embGen, err = buildEmbedder("embed", cfg.AI.Embed, cfg.AI, providers)
+		if err != nil {
+			return nil, fmt.Errorf("init embedder: %w", err)
+		}
 	}
 	wrapped := embedcache.WrapDBCacheToEmbedder(embGen, cacheRepo)
 	wrapped = embedcache.WrapLruCacheToEmbedder(wrapped, 20000, 2*time.Hour)
@@ -339,54 +439,24 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	r := newServerRepos(db)
 	if cfg.Properties.EnableTestMode {
 		if err := injectTestUser(context.Background(), r.user); err != nil {
-			logutil.GetLogger(context.Background()).Fatal(
-				"failed to inject test user", zap.Error(err),
-			)
+			return fmt.Errorf("inject test user: %w", err)
 		}
 		logutil.GetLogger(context.Background()).Info("test mode enabled, test user injected")
 	}
 
-	oauthProviders, err := initOAuthProviders(cfg)
+	services, err := buildServerServices(cfg, db, r)
 	if err != nil {
 		return err
 	}
-	aiProviders, err := initAIProviders(cfg.AIProvider)
+	deps, store, err := buildRouterDeps(
+		cfg, services.auth, services.oauth, services.documents, services.ai,
+		services.tags, services.assets, services.imports, r, services.runtime,
+	)
 	if err != nil {
 		return err
 	}
-	aiManager, err := initAIManager(cfg, aiProviders, r.embeddingCache)
-	if err != nil {
-		return err
-	}
-
-	verifyService := service.NewEmailVerificationService(r.emailCode, newMailSender(cfg.Mail))
-	allowRegister := cfg.Properties.EnableUserRegister && cfg.Properties.EnableEmailRegister
-	authService := service.NewAuthService(
-		r.user, verifyService, []byte(cfg.JWTSecret),
-		time.Hour*time.Duration(cfg.JWTTTLHours), allowRegister,
-	)
-	oauthService := service.NewOAuthService(
-		r.user, r.oauth, []byte(cfg.JWTSecret),
-		time.Hour*time.Duration(cfg.JWTTTLHours), oauthProviders,
-	)
-
-	aiService := service.NewAIService(db, aiManager, r.embedding)
-	documentService := service.NewDocumentService(
-		db, r.doc, r.summary, r.version, r.docTag, r.share,
-		r.tag, r.user, aiService, cfg.VersionMaxKeep,
-	)
-	assetService := service.NewAssetService(r.asset, r.documentAsset)
-	documentService.SetAssetService(assetService)
-	tagService := service.NewTagService(db, r.tag, r.docTag)
-	importService := service.NewImportService(
-		documentService, tagService, r.importJob, r.importJobNote,
-	)
-
-	deps, err := buildRouterDeps(cfg, authService, oauthService,
-		documentService, aiService, tagService, assetService,
-		importService, r)
-	if err != nil {
-		return err
+	if err := deps.Validate(); err != nil {
+		return fmt.Errorf("validate router dependencies: %w", err)
 	}
 	engine, err := webapi.NewEngine(
 		"/api/v1",
@@ -395,6 +465,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 			handler.RegisterRoutes(group, deps)
 		}),
 		webapi.WithExtraMiddlewares(
+			middleware.RequestID(),
 			middleware.CORS(cfg.CORS.AllowOrigins),
 			gzip.Gzip(gzip.DefaultCompression),
 		),
@@ -403,7 +474,76 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		return fmt.Errorf("init web engine: %w", err)
 	}
 
-	return startServer(cfg, engine, aiService, documentService, r)
+	return startServer(
+		cfg, db, engine, services.ai, services.documents,
+		[]mnoteapp.Worker{
+			service.NewImportWorker(services.imports, r.importJob, r.importJobNote),
+			service.NewAssetCleanupWorker(r.asset, store, services.runtime),
+		},
+		r,
+	)
+}
+
+type serverServices struct {
+	auth      *service.AuthService
+	oauth     *service.OAuthService
+	ai        *service.AIService
+	documents *service.DocumentService
+	tags      *service.TagService
+	assets    *service.AssetService
+	imports   *service.ImportService
+	runtime   service.Runtime
+}
+
+func buildServerServices(
+	cfg *config.Config, database *sql.DB, repos serverRepos,
+) (serverServices, error) {
+	oauthProviders, err := initOAuthProviders(cfg)
+	if err != nil {
+		return serverServices{}, err
+	}
+	aiProviders, err := initAIProviders(cfg)
+	if err != nil {
+		return serverServices{}, err
+	}
+	aiManager, err := initAIManager(cfg, aiProviders, repos.embeddingCache)
+	if err != nil {
+		return serverServices{}, err
+	}
+	runtime := service.NewRuntime(repo.NewTransactor(database))
+	runtime.Limits = service.Limits{
+		MaxDocumentBytes: int(cfg.MaxDocumentSize),
+		MaxTemplateBytes: int(cfg.MaxTemplateSize),
+		MaxJSONBodyBytes: cfg.MaxJSONBodySize,
+	}
+	verify := service.NewEmailVerificationService(
+		repos.emailCode, newMailSender(cfg.Mail), runtime,
+	)
+	auth := service.NewAuthService(
+		repos.user, verify, []byte(cfg.JWTSecret),
+		time.Hour*time.Duration(cfg.JWTTTLHours),
+		cfg.Properties.EnableUserRegister && cfg.Properties.EnableEmailRegister,
+		runtime,
+	)
+	oauthService := service.NewOAuthService(
+		repos.user, repos.oauth, []byte(cfg.JWTSecret),
+		time.Hour*time.Duration(cfg.JWTTTLHours), oauthProviders, runtime,
+	)
+	aiService := service.NewAIService(database, aiManager, repos.embedding)
+	assets := service.NewAssetService(repos.asset, repos.documentAsset, runtime)
+	documents := service.NewDocumentService(
+		runtime, repos.doc, repos.summary, repos.version, repos.docTag, repos.share,
+		repos.tag, repos.user, aiService, cfg.VersionMaxKeep, assets,
+	)
+	tags := service.NewTagService(runtime, repos.tag, repos.docTag)
+	return serverServices{
+		auth: auth, oauth: oauthService, ai: aiService,
+		documents: documents, tags: tags, assets: assets,
+		imports: service.NewImportService(
+			documents, tags, repos.importJob, repos.importJobNote, runtime,
+		),
+		runtime: runtime,
+	}, nil
 }
 
 func newMailSender(mail config.MailConfig) service.EmailSender {
@@ -421,17 +561,16 @@ func buildRouterDeps(
 	authSvc *service.AuthService, oauthSvc *service.OAuthService,
 	docSvc *service.DocumentService, aiSvc *service.AIService,
 	tagSvc *service.TagService, assetSvc *service.AssetService,
-	importSvc *service.ImportService, r serverRepos,
-) (handler.RouterDeps, error) {
+	importSvc *service.ImportService, r serverRepos, runtime service.Runtime,
+) (handler.RouterDeps, filestore.Store, error) {
 	store, err := filestore.New(filestore.Config{
 		Type: cfg.FileStore.Type,
 		Data: cfg.FileStore.Data,
 	})
 	if err != nil {
-		return handler.RouterDeps{}, fmt.Errorf("init file store: %w", err)
+		return handler.RouterDeps{}, nil, fmt.Errorf("init file store: %w", err)
 	}
-	fileHandler := handler.NewFileHandler(store, cfg.MaxUploadSize)
-	fileHandler.SetAssetService(assetSvc)
+	fileHandler := handler.NewFileHandler(store, cfg.MaxUploadSize, assetSvc)
 
 	return handler.RouterDeps{
 		Auth:  handler.NewAuthHandler(authSvc),
@@ -462,17 +601,19 @@ func buildRouterDeps(
 		AI:     handler.NewAIHandler(aiSvc, docSvc, tagSvc),
 		Import: handler.NewImportHandler(importSvc, cfg.MaxUploadSize, service.SaveTempFile),
 		Templates: handler.NewTemplateHandler(
-			service.NewTemplateService(r.template, docSvc, r.tag),
+			service.NewTemplateService(r.template, docSvc, r.tag, runtime),
 		),
-		Assets:    handler.NewAssetHandler(assetSvc),
-		Todos:     handler.NewTodoHandler(service.NewTodoService(r.todo)),
-		JWTSecret: []byte(cfg.JWTSecret),
-	}, nil
+		Assets:          handler.NewAssetHandler(assetSvc),
+		Todos:           handler.NewTodoHandler(service.NewTodoService(r.todo, runtime)),
+		JWTSecret:       []byte(cfg.JWTSecret),
+		MaxJSONBodySize: cfg.MaxJSONBodySize,
+	}, store, nil
 }
 
 func startServer(
-	cfg *config.Config, engine webapi.IWebEngine,
+	cfg *config.Config, database *sql.DB, engine webapi.IWebEngine,
 	aiSvc *service.AIService, docSvc *service.DocumentService,
+	workers []mnoteapp.Worker,
 	r serverRepos,
 ) error {
 	logutil.GetLogger(context.Background()).Info(
@@ -486,22 +627,21 @@ func startServer(
 	if err := addScheduledJobs(scheduler, cfg, aiSvc, docSvc, r); err != nil {
 		return err
 	}
-	scheduler.Start(ctx)
-	defer scheduler.Stop()
-
-	go func() {
-		if err := engine.Run(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logutil.GetLogger(context.Background()).Error("server error", zap.Error(err))
-		}
-	}()
-
-	<-ctx.Done()
-	logutil.GetLogger(context.Background()).Info("server stopping...")
-	return nil
+	instance, err := mnoteapp.New(mnoteapp.Config{
+		Address:   fmt.Sprintf("0.0.0.0:%d", cfg.Port),
+		Handler:   engine,
+		DB:        database,
+		Scheduler: scheduler,
+		Workers:   workers,
+	})
+	if err != nil {
+		return fmt.Errorf("create application: %w", err)
+	}
+	return instance.Run(ctx)
 }
 
 func addScheduledJobs(
-	s *schedule.CronScheduler, cfg *config.Config,
+	s schedule.Scheduler, cfg *config.Config,
 	aiSvc *service.AIService, docSvc *service.DocumentService,
 	r serverRepos,
 ) error {
@@ -511,10 +651,19 @@ func addScheduledJobs(
 		name string
 	}
 	jobs := []entry{
-		{job.NewAIEmbeddingJob(aiSvc, cfg.AIJob.EmbeddingDelaySeconds), "*/1 * * * *", "ai_embedding"},
-		{job.NewAISummaryJob(docSvc, cfg.AIJob.SummaryDelaySeconds), "*/1 * * * *", "ai_summary"},
-		{job.NewEmbeddingCacheCleanupJob(r.embeddingCache, 30), "0 3 * * *", "embedding_cache_cleanup"},
 		{job.NewImportCleanupJob(r.importJob, r.importJobNote, 24*time.Hour), "0 * * * *", "import_cleanup"},
+	}
+	if cfg.AI.IsEmbedEnabled() {
+		jobs = append(jobs,
+			entry{job.NewAIEmbeddingJob(aiSvc, cfg.AIJob.EmbeddingDelaySeconds), "*/1 * * * *", "ai_embedding"},
+			entry{job.NewEmbeddingCacheCleanupJob(r.embeddingCache, 30), "0 3 * * *", "embedding_cache_cleanup"},
+		)
+	}
+	if cfg.AI.IsSummaryEnabled() {
+		jobs = append(
+			jobs,
+			entry{job.NewAISummaryJob(docSvc, cfg.AIJob.SummaryDelaySeconds), "*/1 * * * *", "ai_summary"},
+		)
 	}
 	for _, e := range jobs {
 		if err := s.AddJob(e.job, e.cron); err != nil {

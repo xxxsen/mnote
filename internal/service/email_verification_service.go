@@ -2,16 +2,13 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/password"
-	"github.com/xxxsen/mnote/internal/pkg/timeutil"
 )
 
 const (
@@ -21,34 +18,46 @@ const (
 )
 
 type EmailVerificationService struct {
-	repo   emailVerificationRepo
-	sender EmailSender
+	repo    emailVerificationRepo
+	sender  EmailSender
+	runtime Runtime
 }
 
-func NewEmailVerificationService(repo emailVerificationRepo, sender EmailSender) *EmailVerificationService {
-	return &EmailVerificationService{repo: repo, sender: sender}
+func NewEmailVerificationService(
+	repo emailVerificationRepo, sender EmailSender, runtime Runtime,
+) *EmailVerificationService {
+	runtime = prepareRuntime(runtime)
+	return &EmailVerificationService{repo: repo, sender: sender, runtime: runtime}
 }
 
 func (s *EmailVerificationService) SendRegisterCode(ctx context.Context, email string) error {
-	email = strings.TrimSpace(strings.ToLower(email))
-	if email == "" {
-		return appErr.ErrInvalid
+	normalized, err := NormalizeEmail(email)
+	if err != nil {
+		return err
 	}
-	if err := s.ensureCooldown(ctx, email, verificationPurposeRegister); err != nil {
+	if err := s.ensureCooldown(ctx, normalized, verificationPurposeRegister); err != nil {
 		return fmt.Errorf("ensure cooldown: %w", err)
 	}
-	code := s.generateCode()
+	code, err := s.runtime.IDs.Digits(6)
+	if err != nil {
+		return fmt.Errorf("generate verification code: %w", err)
+	}
 	hash, err := password.Hash(code)
 	if err != nil {
 		return fmt.Errorf("hash: %w", err)
 	}
-	now := timeutil.NowUnix()
+	id, err := s.runtime.IDs.ID()
+	if err != nil {
+		return fmt.Errorf("generate verification id: %w", err)
+	}
+	now := s.runtime.Clock.Now().Unix()
 	item := &model.EmailVerificationCode{
-		ID:        newID(),
-		Email:     email,
+		ID:        id,
+		Email:     normalized,
 		Purpose:   verificationPurposeRegister,
 		CodeHash:  hash,
 		Used:      0,
+		Status:    "pending",
 		Ctime:     now,
 		ExpiresAt: now + int64(verificationExpireMinutes*60),
 	}
@@ -59,34 +68,62 @@ func (s *EmailVerificationService) SendRegisterCode(ctx context.Context, email s
 		"Your verification code is %s. It expires in %d minutes.",
 		code, verificationExpireMinutes,
 	)
-	if err := s.sender.Send(email, "Your verification code", body); err != nil {
+	if err := s.sender.Send(normalized, "Your verification code", body); err != nil {
+		if statusErr := s.repo.MarkStatus(ctx, item.ID, "failed"); statusErr != nil {
+			return fmt.Errorf(
+				"send verification email and mark failed: %w",
+				errors.Join(err, statusErr),
+			)
+		}
 		return fmt.Errorf("send verification email: %w", err)
+	}
+	if err := s.repo.MarkStatus(ctx, item.ID, "sent"); err != nil {
+		return fmt.Errorf("mark verification sent: %w", err)
 	}
 	return nil
 }
 
-func (s *EmailVerificationService) VerifyRegisterCode(ctx context.Context, email, code string) error {
-	email = strings.TrimSpace(strings.ToLower(email))
-	code = strings.TrimSpace(code)
-	if email == "" || code == "" {
-		return appErr.ErrInvalid
-	}
-	item, err := s.repo.LatestByEmail(ctx, email, verificationPurposeRegister)
+func (s *EmailVerificationService) ValidateRegisterCode(
+	ctx context.Context, email, code string,
+) (*model.EmailVerificationCode, error) {
+	normalized, err := NormalizeEmail(email)
 	if err != nil {
-		return fmt.Errorf("latest by email: %w", err)
+		return nil, err
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, appErr.ErrInvalid
+	}
+	item, err := s.repo.LatestByEmail(ctx, normalized, verificationPurposeRegister)
+	if err != nil {
+		if errors.Is(err, appErr.ErrNotFound) {
+			return nil, appErr.ErrInvalid
+		}
+		return nil, fmt.Errorf("latest by email: %w", err)
 	}
 	if item.Used != 0 {
-		return appErr.ErrInvalid
+		return nil, appErr.ErrInvalid
 	}
-	now := timeutil.NowUnix()
+	now := s.runtime.Clock.Now().Unix()
 	if item.ExpiresAt <= now {
-		return appErr.ErrInvalid
+		return nil, appErr.ErrInvalid
 	}
 	if err := password.Compare(item.CodeHash, code); err != nil {
-		return appErr.ErrInvalid
+		return nil, appErr.ErrInvalid
 	}
-	if err := s.repo.MarkUsed(ctx, item.ID); err != nil {
-		return fmt.Errorf("mark used: %w", err)
+	return item, nil
+}
+
+// VerifyRegisterCode is kept for callers that only need standalone
+// verification. Account registration uses ValidateRegisterCode and consumes
+// the code inside the user-creation transaction.
+func (s *EmailVerificationService) VerifyRegisterCode(ctx context.Context, email, code string) error {
+	item, err := s.ValidateRegisterCode(ctx, email, code)
+	if err != nil {
+		return err
+	}
+	if err := s.repo.ConsumeIfUnused(ctx, item.ID, s.runtime.Clock.Now().Unix()); err != nil {
+		return fmt.Errorf("consume verification code: %w", err)
 	}
 	return nil
 }
@@ -99,16 +136,8 @@ func (s *EmailVerificationService) ensureCooldown(ctx context.Context, email, pu
 		}
 		return fmt.Errorf("query latest by email: %w", err)
 	}
-	if item.Ctime+verificationCooldownSeconds > timeutil.NowUnix() {
+	if item.Ctime+verificationCooldownSeconds > s.runtime.Clock.Now().Unix() {
 		return appErr.ErrTooMany
 	}
 	return nil
-}
-
-func (s *EmailVerificationService) generateCode() string {
-	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
-	if err != nil {
-		return "000000"
-	}
-	return fmt.Sprintf("%06d", n.Int64())
 }

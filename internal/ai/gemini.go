@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -96,7 +97,9 @@ func decodeConfig(args, dst any) error {
 	if err != nil {
 		return fmt.Errorf("encode ai provider config: %w", err)
 	}
-	if err := json.Unmarshal(data, dst); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
 		return fmt.Errorf("decode ai provider config: %w", err)
 	}
 	return nil

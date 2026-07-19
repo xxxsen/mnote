@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -14,10 +13,10 @@ import (
 )
 
 type ShareHandler struct {
-	documents IDocumentService
+	documents IShareHandlerService
 }
 
-func NewShareHandler(documents IDocumentService) *ShareHandler {
+func NewShareHandler(documents IShareHandlerService) *ShareHandler {
 	return &ShareHandler{
 		documents: documents,
 	}
@@ -44,12 +43,12 @@ func (h *ShareHandler) Create(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, share)
+	response.Success(c, toShareResponse(share))
 }
 
 func (h *ShareHandler) UpdateConfig(c *gin.Context) {
 	var req updateShareConfigRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -79,7 +78,7 @@ func (h *ShareHandler) UpdateConfig(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, share)
+	response.Success(c, toShareResponse(share))
 }
 
 func (h *ShareHandler) Revoke(c *gin.Context) {
@@ -96,7 +95,7 @@ func (h *ShareHandler) GetActive(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, gin.H{"share": share})
+	response.Success(c, gin.H{"share": toShareResponse(share)})
 }
 
 func getSharePassword(c *gin.Context) string {
@@ -114,62 +113,46 @@ func (h *ShareHandler) PublicGet(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, detail)
+	response.Success(c, toPublicShareDetailResponse(detail))
 }
 
 func (h *ShareHandler) PublicListComments(c *gin.Context) {
-	limit := 50
-	offset := 0
-	if value := c.Query("limit"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil {
-			limit = parsed
-		}
-	}
-	if value := c.Query("offset"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil {
-			offset = parsed
-		}
-	}
-	if limit <= 0 || limit > 100 {
-		limit = 50
-	}
-	if offset < 0 {
-		offset = 0
+	page, err := parsePage(c, 50, 200)
+	if err != nil {
+		response.Error(c, errcode.ErrInvalid, "invalid pagination")
+		return
 	}
 	result, err := h.documents.ListShareCommentsByToken(
-		c.Request.Context(), c.Param("token"), getSharePassword(c), limit, offset,
+		c.Request.Context(), c.Param("token"), getSharePassword(c), page.Limit, page.Offset,
 	)
 	if err != nil {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, result)
+	response.Success(c, toShareCommentListResponse(result))
 }
 
 func (h *ShareHandler) PublicListReplies(c *gin.Context) {
-	limit, _ := strconv.Atoi(c.Query("limit"))
-	if limit <= 0 || limit > 100 {
-		limit = 10
-	}
-	offset, _ := strconv.Atoi(c.Query("offset"))
-	if offset < 0 {
-		offset = 0
+	page, err := parsePage(c, 10, 100)
+	if err != nil {
+		response.Error(c, errcode.ErrInvalid, "invalid pagination")
+		return
 	}
 
 	items, err := h.documents.ListShareCommentRepliesByToken(
 		c.Request.Context(), c.Param("token"),
-		getSharePassword(c), c.Param("comment_id"), limit, offset,
+		getSharePassword(c), c.Param("comment_id"), page.Limit, page.Offset,
 	)
 	if err != nil {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, items)
+	response.Success(c, toShareCommentResponses(items))
 }
 
 func (h *ShareHandler) CreateComment(c *gin.Context) {
 	var req createShareCommentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -192,7 +175,7 @@ func (h *ShareHandler) CreateComment(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, item)
+	response.Success(c, toShareCommentResponse(*item))
 }
 
 func (h *ShareHandler) List(c *gin.Context) {

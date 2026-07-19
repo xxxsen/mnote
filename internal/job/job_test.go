@@ -163,7 +163,7 @@ func TestImportCleanupJob_Run_Success(t *testing.T) {
 	j := NewImportCleanupJob(jobM, noteM, 2*time.Hour)
 	require.NoError(t, j.Run(context.Background()))
 	assert.Equal(t, 1, jobM.callCount)
-	assert.Equal(t, 1, noteM.callCount)
+	assert.Equal(t, 0, noteM.callCount)
 }
 
 func TestImportCleanupJob_Run_DefaultMaxAge(t *testing.T) {
@@ -172,17 +172,7 @@ func TestImportCleanupJob_Run_DefaultMaxAge(t *testing.T) {
 	j := NewImportCleanupJob(jobM, noteM, 0)
 	require.NoError(t, j.Run(context.Background()))
 	assert.Equal(t, 1, jobM.callCount)
-	assert.Equal(t, 1, noteM.callCount)
-}
-
-func TestImportCleanupJob_Run_NoteDeleteError(t *testing.T) {
-	jobM := &mockExpiryCleaner{}
-	noteM := &mockExpiryCleaner{err: errors.New("note err")}
-	j := NewImportCleanupJob(jobM, noteM, time.Hour)
-	err := j.Run(context.Background())
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "delete expired notes")
-	assert.Equal(t, 0, jobM.callCount, "should not reach job delete")
+	assert.Equal(t, 0, noteM.callCount)
 }
 
 func TestImportCleanupJob_Run_JobDeleteError(t *testing.T) {

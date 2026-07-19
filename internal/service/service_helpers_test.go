@@ -17,6 +17,32 @@ func noopLogger() *zap.Logger {
 	return zap.NewNop()
 }
 
+type testTransactor struct{}
+
+func (testTransactor) WithinTransaction(
+	ctx context.Context, fn func(context.Context) error,
+) error {
+	return fn(ctx)
+}
+
+func testRuntime() Runtime {
+	return NewRuntime(testTransactor{})
+}
+
+type fixedClock struct {
+	now time.Time
+}
+
+func (clock fixedClock) Now() time.Time {
+	return clock.now
+}
+
+func testRuntimeAt(unix int64) Runtime {
+	runtime := testRuntime()
+	runtime.Clock = fixedClock{now: time.Unix(unix, 0)}
+	return runtime
+}
+
 // --- ai_service helpers ---
 
 func TestClampDelay(t *testing.T) {
@@ -223,22 +249,6 @@ func TestUniqueStringSlice(t *testing.T) {
 func TestUniqueStringSlice_Empty(t *testing.T) {
 	assert.Empty(t, uniqueStringSlice(nil))
 	assert.Empty(t, uniqueStringSlice([]string{}))
-}
-
-// --- ids.go ---
-
-func TestNewID(t *testing.T) {
-	id := newID()
-	assert.Len(t, id, 32)
-	id2 := newID()
-	assert.NotEqual(t, id, id2)
-}
-
-func TestNewToken(t *testing.T) {
-	tok := newToken()
-	assert.Len(t, tok, 40)
-	tok2 := newToken()
-	assert.NotEqual(t, tok, tok2)
 }
 
 // --- resolveSystemVariable extra cases ---

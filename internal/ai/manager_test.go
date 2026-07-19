@@ -27,6 +27,7 @@ func TestManager_Polish_NilGenerator(t *testing.T) {
 	m := NewManager(nil, nil, nil, nil, nil, ManagerConfig{})
 	_, err := m.Polish(context.Background(), "text")
 	assert.ErrorIs(t, err, ErrNotConfigured)
+	assert.ErrorIs(t, err, ErrUnavailable)
 }
 
 func TestManager_Generate(t *testing.T) {

@@ -23,27 +23,14 @@ func NewTagRepo(db *sql.DB) *TagRepo {
 }
 
 func (r *TagRepo) Create(ctx context.Context, tag *model.Tag) error {
-	data := map[string]any{
+	return insertRecord(ctx, r.db, "tags", map[string]any{
 		"id":      tag.ID,
 		"user_id": tag.UserID,
 		"name":    tag.Name,
 		"pinned":  tag.Pinned,
 		"ctime":   tag.Ctime,
 		"mtime":   tag.Mtime,
-	}
-	sqlStr, args, err := builder.BuildInsert("tags", []map[string]any{data})
-	if err != nil {
-		return fmt.Errorf("build insert: %w", err)
-	}
-	sqlStr, args = dbutil.Finalize(sqlStr, args)
-	_, err = conn(ctx, r.db).ExecContext(ctx, sqlStr, args...)
-	if err != nil {
-		if dbutil.IsConflict(err) {
-			return appErr.ErrConflict
-		}
-		return fmt.Errorf("exec: %w", err)
-	}
-	return nil
+	})
 }
 
 func (r *TagRepo) CreateBatch(ctx context.Context, tags []model.Tag) error {
@@ -106,6 +93,9 @@ func (r *TagRepo) ListPage(ctx context.Context, userID, query string, limit, off
 	if offset < 0 {
 		offset = 0
 	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
 	if query == "" {
 		return r.listAllTags(ctx, userID, limit, offset)
 	}
@@ -121,9 +111,7 @@ func clampUint(v int) uint {
 
 func (r *TagRepo) listAllTags(ctx context.Context, userID string, limit, offset int) ([]model.Tag, error) {
 	where := map[string]any{"user_id": userID, "_orderby": "pinned desc, mtime desc"}
-	if limit > 0 {
-		where["_limit"] = []uint{clampUint(offset), clampUint(limit)}
-	}
+	where["_limit"] = []uint{clampUint(offset), clampUint(limit)}
 	sqlStr, args, err := builder.BuildSelect("tags", where, tagColumns)
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)
@@ -140,23 +128,16 @@ func (r *TagRepo) listTagsByQuery(ctx context.Context, userID, query string, lim
 		}
 		result = append(result, exact...)
 	}
-	remaining := limit
-	if remaining > 0 {
-		remaining -= len(result)
-		if remaining <= 0 {
-			return result, nil
-		}
+	remaining := limit - len(result)
+	if remaining <= 0 {
+		return result, nil
 	}
 	where := map[string]any{"user_id": userID, "_orderby": "pinned desc, mtime desc"}
 	where["_custom_search"] = builder.Custom("name LIKE ?", "%"+query+"%")
 	if len(result) > 0 {
 		where["_custom_exclude"] = builder.Custom("name != ?", query)
 	}
-	if remaining > 0 {
-		where["_limit"] = []uint{clampUint(offset), clampUint(remaining)}
-	} else if limit > 0 {
-		where["_limit"] = []uint{clampUint(offset), clampUint(limit)}
-	}
+	where["_limit"] = []uint{clampUint(offset), clampUint(remaining)}
 	sqlStr, args, err := builder.BuildSelect("tags", where, tagColumns)
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)
@@ -207,7 +188,7 @@ func (
 	offset int) ([]model.TagSummary,
 	error,
 ) {
-	if limit <= 0 {
+	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
 	if offset < 0 {

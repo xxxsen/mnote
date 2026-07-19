@@ -2,40 +2,51 @@ package service
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
-	"github.com/xxxsen/mnote/internal/repo"
 )
 
 type TagService struct {
-	db      *sql.DB
-	tags    tagRepo
-	docTags documentTagRepo
+	transactor Transactor
+	tags       tagRepo
+	docTags    documentTagRepo
+	runtime    Runtime
 }
 
-func NewTagService(db *sql.DB, tags tagRepo, docTags documentTagRepo) *TagService {
-	return &TagService{db: db, tags: tags, docTags: docTags}
+func NewTagService(
+	runtime Runtime, tags tagRepo, docTags documentTagRepo,
+) *TagService {
+	runtime = prepareRuntime(runtime)
+	return &TagService{
+		transactor: runtime.Transactor, tags: tags, docTags: docTags,
+		runtime: runtime,
+	}
 }
 
 func (s *TagService) runInTx(ctx context.Context, fn func(ctx context.Context) error) error {
-	if s.db == nil {
-		return fn(ctx)
-	}
-	if err := repo.RunInTx(ctx, s.db, fn); err != nil {
+	if err := s.transactor.WithinTransaction(ctx, fn); err != nil {
 		return fmt.Errorf("run in tx: %w", err)
 	}
 	return nil
 }
 
 func (s *TagService) Create(ctx context.Context, userID, name string) (*model.Tag, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || utf8.RuneCountInString(name) > 64 {
+		return nil, appErr.ErrInvalid
+	}
+	id, err := s.runtime.IDs.ID()
+	if err != nil {
+		return nil, fmt.Errorf("generate tag id: %w", err)
+	}
 	now := timeutil.NowUnix()
 	tag := &model.Tag{
-		ID:     newID(),
+		ID:     id,
 		UserID: userID,
 		Name:   name,
 		Ctime:  now,
@@ -58,6 +69,9 @@ func (s *TagService) CreateBatch(ctx context.Context, userID string, names []str
 	if len(names) == 0 {
 		return []model.Tag{}, nil
 	}
+	if len(names) > 100 {
+		return nil, appErr.ErrInvalid
+	}
 	now := timeutil.NowUnix()
 	unique := make([]string, 0, len(names))
 	seen := make(map[string]bool)
@@ -65,6 +79,9 @@ func (s *TagService) CreateBatch(ctx context.Context, userID string, names []str
 		trimmed := strings.TrimSpace(name)
 		if trimmed == "" {
 			continue
+		}
+		if utf8.RuneCountInString(trimmed) > 64 {
+			return nil, appErr.ErrInvalid
 		}
 		key := strings.ToLower(trimmed)
 		if seen[key] {
@@ -78,8 +95,12 @@ func (s *TagService) CreateBatch(ctx context.Context, userID string, names []str
 	}
 	newTags := make([]model.Tag, 0, len(unique))
 	for _, name := range unique {
+		id, err := s.runtime.IDs.ID()
+		if err != nil {
+			return nil, fmt.Errorf("generate tag id: %w", err)
+		}
 		newTags = append(newTags, model.Tag{
-			ID:     newID(),
+			ID:     id,
 			UserID: userID,
 			Name:   name,
 			Ctime:  now,
@@ -104,7 +125,11 @@ func (s *TagService) List(ctx context.Context, userID string) ([]model.Tag, erro
 }
 
 func (s *TagService) ListPage(ctx context.Context, userID, query string, limit, offset int) ([]model.Tag, error) {
-	v0, err := s.tags.ListPage(ctx, userID, query, limit, offset)
+	if len([]rune(query)) > 200 {
+		return nil, appErr.ErrInvalid
+	}
+	page := Page{Limit: limit, Offset: offset}.Clamp(20, 100)
+	v0, err := s.tags.ListPage(ctx, userID, query, page.Limit, page.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("list page: %w", err)
 	}
@@ -119,7 +144,11 @@ func (
 	offset int) ([]model.TagSummary,
 	error,
 ) {
-	v0, err := s.tags.ListSummary(ctx, userID, query, limit, offset)
+	if len([]rune(query)) > 200 {
+		return nil, appErr.ErrInvalid
+	}
+	page := Page{Limit: limit, Offset: offset}.Clamp(20, 100)
+	v0, err := s.tags.ListSummary(ctx, userID, query, page.Limit, page.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("list summary: %w", err)
 	}
@@ -127,6 +156,9 @@ func (
 }
 
 func (s *TagService) ListByNames(ctx context.Context, userID string, names []string) ([]model.Tag, error) {
+	if len(names) > 100 {
+		return nil, appErr.ErrInvalid
+	}
 	v0, err := s.tags.ListByNames(ctx, userID, names)
 	if err != nil {
 		return nil, fmt.Errorf("list by names: %w", err)
@@ -135,6 +167,9 @@ func (s *TagService) ListByNames(ctx context.Context, userID string, names []str
 }
 
 func (s *TagService) ListByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error) {
+	if len(ids) > 200 {
+		return nil, appErr.ErrInvalid
+	}
 	v0, err := s.tags.ListByIDs(ctx, userID, ids)
 	if err != nil {
 		return nil, fmt.Errorf("list by ids: %w", err)

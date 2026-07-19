@@ -2,18 +2,34 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/xxxsen/mnote/internal/model"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
+	"github.com/xxxsen/mnote/internal/pkg/safeconv"
 	"github.com/xxxsen/mnote/internal/pkg/timeutil"
+)
+
+var (
+	errInvalidAssetInput       = errors.New("valid asset input is required")
+	errAssetUploadStateMissing = errors.New("asset repository does not support upload state")
 )
 
 type AssetService struct {
 	assets    assetRepo
 	docAssets documentAssetRepo
+	runtime   Runtime
+}
+
+type assetUploadStateRepo interface {
+	MarkReady(ctx context.Context, userID, fileKey string, now int64) error
+	MarkFailed(
+		ctx context.Context, userID, fileKey, stableError string, now int64,
+	) error
 }
 
 type AssetListItem struct {
@@ -27,8 +43,13 @@ type AssetReference struct {
 	Mtime      int64  `json:"mtime"`
 }
 
-func NewAssetService(assets assetRepo, docAssets documentAssetRepo) *AssetService {
-	return &AssetService{assets: assets, docAssets: docAssets}
+func NewAssetService(
+	assets assetRepo, docAssets documentAssetRepo, runtime Runtime,
+) *AssetService {
+	return &AssetService{
+		assets: assets, docAssets: docAssets,
+		runtime: prepareRuntime(runtime),
+	}
 }
 
 func (
@@ -41,22 +62,83 @@ func (
 	size int64,
 ) error {
 	if userID == "" || fileKey == "" {
-		return nil
+		return errInvalidAssetInput
+	}
+	id, err := s.runtime.IDs.ID()
+	if err != nil {
+		return fmt.Errorf("generate asset id: %w", err)
 	}
 	now := timeutil.NowUnix()
 	asset := &model.Asset{
-		ID:          newID(),
+		ID:          id,
 		UserID:      userID,
 		FileKey:     fileKey,
 		URL:         url,
 		Name:        name,
 		ContentType: contentType,
 		Size:        size,
+		Status:      model.AssetStatusReady,
 		Ctime:       now,
 		Mtime:       now,
 	}
 	if err := s.assets.UpsertByFileKey(ctx, asset); err != nil {
 		return fmt.Errorf("upsert by file key: %w", err)
+	}
+	return nil
+}
+
+func (
+	s *AssetService) BeginUpload(ctx context.Context,
+	userID, fileKey, url, name, contentType string, size int64,
+) error {
+	if userID == "" || fileKey == "" || size < 0 {
+		return errInvalidAssetInput
+	}
+	if _, ok := s.assets.(assetUploadStateRepo); !ok {
+		return errAssetUploadStateMissing
+	}
+	id, err := s.runtime.IDs.ID()
+	if err != nil {
+		return fmt.Errorf("generate asset id: %w", err)
+	}
+	now := s.runtime.Clock.Now().Unix()
+	if err := s.assets.UpsertByFileKey(ctx, &model.Asset{
+		ID: id, UserID: userID, FileKey: fileKey, URL: url,
+		Name: name, ContentType: contentType, Size: size,
+		Status: model.AssetStatusPending, LockedUntil: now + 5*60,
+		Ctime: now, Mtime: now,
+	}); err != nil {
+		return fmt.Errorf("create pending asset: %w", err)
+	}
+	return nil
+}
+
+func (s *AssetService) CompleteUpload(
+	ctx context.Context, userID, fileKey string,
+) error {
+	stateRepo, ok := s.assets.(assetUploadStateRepo)
+	if !ok {
+		return errAssetUploadStateMissing
+	}
+	if err := stateRepo.MarkReady(
+		ctx, userID, fileKey, s.runtime.Clock.Now().Unix(),
+	); err != nil {
+		return fmt.Errorf("mark asset ready: %w", err)
+	}
+	return nil
+}
+
+func (s *AssetService) FailUpload(
+	ctx context.Context, userID, fileKey, stableError string,
+) error {
+	stateRepo, ok := s.assets.(assetUploadStateRepo)
+	if !ok {
+		return errAssetUploadStateMissing
+	}
+	if err := stateRepo.MarkFailed(
+		ctx, userID, fileKey, stableError, s.runtime.Clock.Now().Unix(),
+	); err != nil {
+		return fmt.Errorf("mark asset failed: %w", err)
 	}
 	return nil
 }
@@ -105,7 +187,17 @@ func (s *AssetService) SyncDocumentReferences(ctx context.Context, userID, docID
 }
 
 func (s *AssetService) List(ctx context.Context, userID, query string, limit, offset uint) ([]AssetListItem, error) {
-	items, err := s.assets.ListByUser(ctx, userID, strings.TrimSpace(query), limit, offset)
+	query = strings.TrimSpace(query)
+	if len([]rune(query)) > 200 {
+		return nil, appErr.ErrInvalid
+	}
+	page := Page{
+		Limit: safeconv.UintToInt(limit), Offset: safeconv.UintToInt(offset),
+	}.Clamp(20, 200)
+	items, err := s.assets.ListByUser(
+		ctx, userID, query,
+		safeconv.IntToUint(page.Limit), safeconv.IntToUint(page.Offset),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("list by user: %w", err)
 	}

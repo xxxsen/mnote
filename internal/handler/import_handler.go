@@ -99,7 +99,7 @@ func (h *ImportHandler) NotesConfirm(c *gin.Context) {
 		return
 	}
 	var req importConfirmRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -135,7 +135,7 @@ func (h *ImportHandler) HedgeDocConfirm(c *gin.Context) {
 		return
 	}
 	var req importConfirmRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
