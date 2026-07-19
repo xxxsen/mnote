@@ -16,6 +16,6 @@ export interface CommentItemProps {
   setReplyingTo: (user: { id: string; author: string } | null) => void;
   inlineReplyContent: string;
   setInlineReplyContent: (val: string) => void;
-  onToast: (message: string, durationMs?: number) => void;
+  notify: (message: string, variant?: "default" | "success" | "error") => void;
   guestAuthor: string;
 }

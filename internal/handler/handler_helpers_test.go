@@ -21,7 +21,7 @@ func TestIsEmailValid(t *testing.T) {
 func TestResolveContentType(t *testing.T) {
 	assert.Equal(t, "image/png", resolveContentType("application/octet-stream", "photo.png"))
 	assert.Equal(t, "text/plain", resolveContentType("text/plain", "file.txt"))
-	assert.Equal(t, "application/octet-stream", resolveContentType("application/octet-stream", "file.xyz"))
+	assert.Equal(t, "application/octet-stream", resolveContentType("application/octet-stream", "file.unknown"))
 }
 
 func TestResolveFileURL(t *testing.T) {
@@ -41,7 +41,7 @@ func TestDetectContentType_ByExtension(t *testing.T) {
 }
 
 func TestDetectContentType_UnknownExt(t *testing.T) {
-	ct := detectContentType("file.xyz", io.NopCloser(bytes.NewReader(nil)))
+	ct := detectContentType("file.unknown", io.NopCloser(bytes.NewReader(nil)))
 	assert.Equal(t, "application/octet-stream", ct)
 }
 

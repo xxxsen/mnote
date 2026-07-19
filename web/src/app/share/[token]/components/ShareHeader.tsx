@@ -13,44 +13,54 @@ export function ShareHeader({
 }) {
   const readingTime = estimateReadingTime(doc.content);
   return (
-    <header className="w-full mb-3 flex flex-col px-4 md:px-0">
-      <div className="flex items-center gap-2 text-indigo-600 font-mono text-xs mb-4 font-bold uppercase tracking-wider">
+    <header className="mb-3 flex w-full flex-col">
+      <div className="mb-4 flex items-center gap-2 font-mono text-xs font-semibold text-info">
         <span>Public Note</span>
-        <ChevronRight className="h-3 w-3" />
+        <ChevronRight className="h-3 w-3" aria-hidden="true" />
         <span className="text-muted-foreground">{doc.id.slice(0, 8)}</span>
       </div>
-      <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-8 leading-tight">{doc.title}</h1>
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 text-sm text-slate-500 border-y border-slate-200/60 py-6">
+      <h1 id="share-title" className="mb-8 break-words text-3xl font-bold leading-tight tracking-tight text-foreground md:text-5xl">
+        {doc.title || "Untitled note"}
+      </h1>
+      <div className="flex flex-col justify-between gap-6 border-y border-border py-6 text-sm text-muted-foreground md:flex-row md:items-center">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full border border-slate-200 overflow-hidden shrink-0">
-            <img src={generatePixelAvatar(detail.author)} alt="Author" className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
+          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-border">
+            <img src={generatePixelAvatar(detail.author)} alt="" className="h-full w-full object-cover" style={{ imageRendering: "pixelated" }} />
           </div>
-          <div className="flex flex-col min-w-0">
-            <span className="text-slate-900 font-bold leading-normal mb-0.5 truncate whitespace-nowrap">{detail.author}</span>
-            <span className="text-[10px] text-slate-400 font-mono uppercase tracking-tight leading-normal">Verified Creator</span>
+          <div className="flex min-w-0 flex-col">
+            <span className="mb-0.5 truncate font-semibold leading-normal text-foreground">{detail.author}</span>
+            <span className="font-mono text-xs leading-normal text-muted-foreground">Author</span>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-6 md:justify-end">
-          <div className="flex items-center gap-2 whitespace-nowrap"><Clock className="h-4 w-4 opacity-70" /><span>{formatDate(doc.mtime)}</span></div>
-          <div className="flex items-center gap-2 whitespace-nowrap"><User className="h-4 w-4 opacity-70" /><span>{readingTime} min read</span></div>
+        <div className="flex flex-wrap items-center gap-4 md:justify-end">
+          <div className="flex items-center gap-2 whitespace-nowrap"><Clock className="h-4 w-4" aria-hidden="true" /><span>{formatDate(doc.mtime)}</span></div>
+          <div className="flex items-center gap-2 whitespace-nowrap"><User className="h-4 w-4" aria-hidden="true" /><span>{readingTime} min read</span></div>
           <div
-            className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border whitespace-nowrap ${canAnnotate ? "bg-cyan-50 text-cyan-700 border-cyan-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}
+            className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs ${
+              canAnnotate
+                ? "border-info/30 bg-info/10 text-info"
+                : "border-border bg-muted text-muted-foreground"
+            }`}
             title={permissionHint} aria-label={permissionHint}
           >
-            {canAnnotate ? <PencilLine className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            {canAnnotate
+              ? <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
+              : <Eye className="h-3.5 w-3.5" aria-hidden="true" />}
             <span>{permissionLabel}</span>
           </div>
           {detail.expires_at > 0 && (
-            <div className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">Expires {formatDate(detail.expires_at)}</div>
+            <div className="rounded-full border border-warning/30 bg-warning/10 px-2 py-1 text-xs text-warning">
+              Expires {formatDate(detail.expires_at)}
+            </div>
           )}
         </div>
       </div>
       {detail.tags.length > 0 && (
-        <div className="mt-3 flex h-8 items-center gap-2">
-          <TagIcon className="h-4 w-4 opacity-70 shrink-0" />
+        <div className="mt-3 flex min-h-8 items-center gap-2">
+          <TagIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             {detail.tags.map(tag => (
-              <span key={tag.id} className="inline-flex h-6 items-center px-2.5 rounded-full text-xs leading-none font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 whitespace-nowrap">
+              <span key={tag.id} className="inline-flex h-6 items-center whitespace-nowrap rounded-full border border-border bg-muted px-2.5 text-xs font-medium leading-none text-foreground">
                 #{tag.name}
               </span>
             ))}

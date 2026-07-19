@@ -4,7 +4,6 @@ import { useCallback, useEffect } from "react";
 import type { EditorView } from "@codemirror/view";
 
 type Props = {
-  title: string;
   onSave: () => void;
   editorViewRef: React.RefObject<EditorView | null>;
   setEditorView: (view: EditorView) => void;
@@ -21,7 +20,6 @@ type Props = {
 };
 
 export function useEditorDomBindings({
-  title,
   onSave,
   editorViewRef,
   setEditorView,
@@ -36,10 +34,6 @@ export function useEditorDomBindings({
   previewTimerRef,
   scrollFrameRef,
 }: Props) {
-  useEffect(() => {
-    document.title = title ? `${title} - Micro Note` : "micro note";
-  }, [title]);
-
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key === "s") {

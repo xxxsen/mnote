@@ -10,7 +10,14 @@ import {
   DialogHeader,
   DialogStatus,
 } from "@/components/ui/dialog";
-import { CheckCircle2, Circle, Trash2 } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, Trash2 } from "lucide-react";
+
+function scrollFieldIntoView(element: HTMLElement) {
+  const scrollIntoView = Reflect.get(element, "scrollIntoView") as unknown;
+  if (typeof scrollIntoView === "function") {
+    scrollIntoView.call(element, { block: "nearest" });
+  }
+}
 
 interface DayViewModalProps {
   dayViewDate: string;
@@ -19,6 +26,7 @@ interface DayViewModalProps {
   onToggleDone: (todo: Todo) => void;
   onEdit: (todo: Todo) => void;
   onDelete: (todo: Todo) => void;
+  pendingToggleIDs: ReadonlySet<string>;
 }
 
 export function DayViewModal({
@@ -28,6 +36,7 @@ export function DayViewModal({
   onToggleDone,
   onEdit,
   onDelete,
+  pendingToggleIDs,
 }: DayViewModalProps) {
   return (
     <Dialog
@@ -49,7 +58,7 @@ export function DayViewModal({
             dayViewTodos.map((todo) => (
               <div
                 key={`day-view-${todo.id}`}
-                className={`group/todo flex items-start gap-2 rounded-xl border px-3 py-2 ${
+                className={`flex items-start gap-2 rounded-md border px-2 py-2 ${
                   todo.done === 1
                     ? "border-transparent bg-muted/40 opacity-80"
                     : "border-border bg-background"
@@ -57,41 +66,43 @@ export function DayViewModal({
               >
                 <button
                   type="button"
+                  role="checkbox"
+                  aria-checked={todo.done === 1}
                   aria-label={todo.done === 1 ? `Mark ${todo.content} incomplete` : `Mark ${todo.content} complete`}
+                  aria-busy={pendingToggleIDs.has(todo.id) || undefined}
+                  disabled={pendingToggleIDs.has(todo.id)}
                   onClick={() => onToggleDone(todo)}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-indigo-500"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
                 >
-                  {todo.done === 1 ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden="true" />
+                  {pendingToggleIDs.has(todo.id) ? (
+                    <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                  ) : todo.done === 1 ? (
+                    <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" />
                   ) : (
                     <Circle className="h-4 w-4" aria-hidden="true" />
                   )}
                 </button>
                 <button
                   type="button"
+                  aria-label={`Edit ${todo.content}`}
                   onClick={() => onEdit(todo)}
-                  className={`min-h-11 min-w-0 flex-1 py-2 text-left text-sm ${
+                  className={`min-h-11 min-w-0 flex-1 py-1.5 text-left text-sm leading-5 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     todo.done === 1
                       ? "text-muted-foreground line-through"
                       : "text-foreground"
                   }`}
-                  title={`Full content: ${todo.content}`}
+                  title={todo.content}
                 >
-                  {todo.content.length > 26 ? (
-                    <span className="block overflow-hidden whitespace-nowrap">
-                      <span className="inline-block max-w-none group-hover/todo:animate-[todo-marquee_6s_linear_infinite]">
-                        {todo.content}
-                      </span>
-                    </span>
-                  ) : (
-                    <span className="block truncate">{todo.content}</span>
-                  )}
+                  <span className="line-clamp-2">{todo.content}</span>
+                  <span className="mt-1 block text-xs font-medium no-underline">
+                    {todo.done === 1 ? "Completed" : "Open"}
+                  </span>
                 </button>
                 <button
                   type="button"
                   aria-label={`Delete ${todo.content}`}
                   onClick={() => onDelete(todo)}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-rose-600 transition-colors hover:bg-rose-50"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
                 </button>
@@ -109,6 +120,7 @@ export function DayViewModal({
 
 interface CreateTodoModalProps {
   selectedDate: string;
+  setSelectedDate: (value: string) => void;
   newTodoContent: string;
   setNewTodoContent: (value: string) => void;
   creating: boolean;
@@ -118,6 +130,7 @@ interface CreateTodoModalProps {
 
 export function CreateTodoModal({
   selectedDate,
+  setSelectedDate,
   newTodoContent,
   setNewTodoContent,
   creating,
@@ -127,7 +140,9 @@ export function CreateTodoModal({
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const actionRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const dirty = newTodoContent.trim().length > 0;
+  const initialDateRef = useRef(selectedDate);
+  const hasContent = newTodoContent.trim().length > 0;
+  const dirty = hasContent || selectedDate !== initialDateRef.current;
   const requestClose = () => {
     if (dirty) {
       setConfirmDiscard(true);
@@ -136,7 +151,7 @@ export function CreateTodoModal({
     onClose();
   };
   const submit = async () => {
-    if (actionRef.current || creating || !dirty) return;
+    if (actionRef.current || creating || !hasContent || !selectedDate) return;
     actionRef.current = true;
     try {
       await onCreate();
@@ -187,7 +202,17 @@ export function CreateTodoModal({
       ) : (
         <>
           <DialogBody>
-            <label htmlFor="new-todo-content" className="mb-2 block text-sm font-medium text-slate-700">
+            <label htmlFor="new-todo-date" className="mb-2 block text-sm font-medium text-foreground">
+              Due date
+            </label>
+            <input
+              id="new-todo-date"
+              type="date"
+              value={selectedDate}
+              onChange={(event) => setSelectedDate(event.target.value)}
+              className="mb-4 h-11 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-10"
+            />
+            <label htmlFor="new-todo-content" className="mb-2 block text-sm font-medium text-foreground">
               Todo content
             </label>
             <textarea
@@ -195,10 +220,10 @@ export function CreateTodoModal({
               id="new-todo-content"
               rows={4}
               maxLength={500}
-              className="w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               placeholder="What needs to be done?"
               value={newTodoContent}
-              onFocus={(event) => event.currentTarget.scrollIntoView({ block: "nearest" })}
+              onFocus={(event) => scrollFieldIntoView(event.currentTarget)}
               onChange={(event) => setNewTodoContent(event.target.value)}
             />
             <div className="mt-1 text-right text-xs text-muted-foreground">
@@ -218,7 +243,7 @@ export function CreateTodoModal({
               className="h-11 w-full sm:w-auto"
               onClick={() => void submit()}
               isLoading={creating}
-              disabled={!dirty}
+              disabled={!hasContent || !selectedDate}
             >
               {creating ? "Adding todo" : "Add todo"}
             </Button>
@@ -311,7 +336,7 @@ export function EditTodoModal({
       ) : (
         <>
           <DialogBody>
-            <label htmlFor="edit-todo-content" className="mb-2 block text-sm font-medium text-slate-700">
+            <label htmlFor="edit-todo-content" className="mb-2 block text-sm font-medium text-foreground">
               Todo content
             </label>
             <textarea
@@ -319,10 +344,10 @@ export function EditTodoModal({
               id="edit-todo-content"
               rows={4}
               maxLength={500}
-              className="w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               placeholder="Update todo content"
               value={editTodoContent}
-              onFocus={(event) => event.currentTarget.scrollIntoView({ block: "nearest" })}
+              onFocus={(event) => scrollFieldIntoView(event.currentTarget)}
               onChange={(event) => setEditTodoContent(event.target.value)}
             />
             <div className="mt-1 text-right text-xs text-muted-foreground">

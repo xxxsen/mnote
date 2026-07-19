@@ -149,7 +149,7 @@ func TestTemplateRepo_ListMetaByUser(t *testing.T) {
 		AddRow("tpl1", "u1", "Note1", "d1", `[]`, int64(1000), int64(2000))
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
-	items, err := r.ListMetaByUser(context.Background(), "u1", 10, 0)
+	items, err := r.ListMetaByUser(context.Background(), "u1", "", 10, 0)
 	require.NoError(t, err)
 	assert.Len(t, items, 1)
 }
@@ -163,9 +163,19 @@ func TestTemplateRepo_CountByUser(t *testing.T) {
 	rows := sqlmock.NewRows([]string{"count"}).AddRow(3)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
-	count, err := r.CountByUser(context.Background(), "u1")
+	count, err := r.CountByUser(context.Background(), "u1", "")
 	require.NoError(t, err)
 	assert.Equal(t, 3, count)
+}
+
+func TestAddTemplateNameFilter_LiteralPattern(t *testing.T) {
+	query, args := addTemplateNameFilter(
+		"SELECT * FROM templates WHERE user_id = ?",
+		[]any{"u1"},
+		`100%_done\final`,
+	)
+	assert.Contains(t, query, `name ILIKE ? ESCAPE '\'`)
+	assert.Equal(t, []any{"u1", `%100\%\_done\\final%`}, args)
 }
 
 func TestTemplateRepo_Create_ExecError(t *testing.T) {
@@ -255,7 +265,7 @@ func TestTemplateRepo_ListMetaByUser_QueryError(t *testing.T) {
 
 	r := NewTemplateRepo(db)
 	mock.ExpectQuery("SELECT").WillReturnError(errDB)
-	_, err = r.ListMetaByUser(context.Background(), "u1", 10, 0)
+	_, err = r.ListMetaByUser(context.Background(), "u1", "", 10, 0)
 	assert.Error(t, err)
 }
 
@@ -267,7 +277,7 @@ func TestTemplateRepo_ListMetaByUser_ScanError(t *testing.T) {
 	r := NewTemplateRepo(db)
 	rows := sqlmock.NewRows([]string{"id"}).AddRow("t1")
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
-	_, err = r.ListMetaByUser(context.Background(), "u1", 10, 0)
+	_, err = r.ListMetaByUser(context.Background(), "u1", "", 10, 0)
 	assert.Error(t, err)
 }
 
@@ -278,7 +288,7 @@ func TestTemplateRepo_CountByUser_Error(t *testing.T) {
 
 	r := NewTemplateRepo(db)
 	mock.ExpectQuery("SELECT").WillReturnError(errDB)
-	_, err = r.CountByUser(context.Background(), "u1")
+	_, err = r.CountByUser(context.Background(), "u1", "")
 	assert.Error(t, err)
 }
 
@@ -292,7 +302,7 @@ func TestTemplateRepo_ListMetaByUser_NoLimit(t *testing.T) {
 	rows := sqlmock.NewRows(metaCols).
 		AddRow("t1", "u1", "Note", "desc", `[]`, int64(1000), int64(2000))
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
-	items, err := r.ListMetaByUser(context.Background(), "u1", 0, 0)
+	items, err := r.ListMetaByUser(context.Background(), "u1", "", 0, 0)
 	require.NoError(t, err)
 	assert.Len(t, items, 1)
 }
@@ -348,6 +358,6 @@ func TestTemplateRepo_ListMetaByUser_RowsErr(t *testing.T) {
 		AddRow("t1", "u1", "Note", "desc", `[]`, int64(1000), int64(2000)).
 		RowError(0, errDB)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
-	_, err = r.ListMetaByUser(context.Background(), "u1", 10, 0)
+	_, err = r.ListMetaByUser(context.Background(), "u1", "", 10, 0)
 	assert.Error(t, err)
 }

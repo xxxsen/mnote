@@ -72,6 +72,8 @@ describe("editor interaction primitives", () => {
       handleStarToggle: vi.fn(),
       viewMode: "split" as const,
       setViewMode: vi.fn(),
+      scrollSyncEnabled: true,
+      onToggleScrollSync: vi.fn(),
     };
     const { rerender } = render(
       <EditorHeader {...common} syncStatus="ERROR" />,

@@ -4,6 +4,16 @@ import {
   removeAuthToken, removeAuthEmail, ApiError, apiFetch, uploadFile,
 } from "../api";
 
+function mockLocation(pathname = "/docs", search = "") {
+  const replace = vi.fn();
+  Object.defineProperty(window, "location", {
+    value: { pathname, search, replace },
+    writable: true,
+    configurable: true,
+  });
+  return replace;
+}
+
 beforeEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
@@ -120,23 +130,15 @@ describe("apiFetch", () => {
   });
 
   it("redirects to login on 401 with requireAuth", async () => {
-    const hrefSetter = vi.fn();
-    Object.defineProperty(window, "location", {
-      value: { href: "" },
-      writable: true,
-      configurable: true,
-    });
-    Object.defineProperty(window.location, "href", {
-      set: hrefSetter,
-      get: () => "",
-      configurable: true,
-    });
+    const replace = mockLocation("/templates", "?q=meeting");
 
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: false, status: 401, json: () => Promise.resolve({}),
     }));
     await expect(apiFetch("/test")).rejects.toThrow();
-    expect(hrefSetter).toHaveBeenCalledWith("/login");
+    expect(replace).toHaveBeenCalledWith(
+      "/login?return=%2Ftemplates%3Fq%3Dmeeting",
+    );
   });
 
   it("uses requireAuth=false to skip redirect on 401", async () => {
@@ -164,20 +166,10 @@ describe("apiFetch", () => {
   });
 
   it("redirects on code 10000001 with requireAuth", async () => {
-    const hrefSetter = vi.fn();
-    Object.defineProperty(window, "location", {
-      value: { href: "" },
-      writable: true,
-      configurable: true,
-    });
-    Object.defineProperty(window.location, "href", {
-      set: hrefSetter,
-      get: () => "",
-      configurable: true,
-    });
+    const replace = mockLocation();
     mockFetch({ code: 10000001, msg: "unauth" });
     await expect(apiFetch("/test")).rejects.toThrow();
-    expect(hrefSetter).toHaveBeenCalledWith("/login");
+    expect(replace).toHaveBeenCalledWith("/login?return=%2Fdocs");
   });
 });
 
@@ -222,43 +214,23 @@ describe("uploadFile", () => {
   });
 
   it("redirects on 401", async () => {
-    const hrefSetter = vi.fn();
-    Object.defineProperty(window, "location", {
-      value: { href: "" },
-      writable: true,
-      configurable: true,
-    });
-    Object.defineProperty(window.location, "href", {
-      set: hrefSetter,
-      get: () => "",
-      configurable: true,
-    });
+    const replace = mockLocation("/assets");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: false, status: 401, json: () => Promise.resolve({}),
     }));
     const file = new File(["data"], "f.txt");
     await expect(uploadFile(file)).rejects.toThrow();
-    expect(hrefSetter).toHaveBeenCalledWith("/login");
+    expect(replace).toHaveBeenCalledWith("/login?return=%2Fassets");
   });
 
   it("redirects on code 10000001", async () => {
-    const hrefSetter = vi.fn();
-    Object.defineProperty(window, "location", {
-      value: { href: "" },
-      writable: true,
-      configurable: true,
-    });
-    Object.defineProperty(window.location, "href", {
-      set: hrefSetter,
-      get: () => "",
-      configurable: true,
-    });
+    const replace = mockLocation("/assets");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true, status: 200,
       json: () => Promise.resolve({ code: 10000001, msg: "unauth" }),
     }));
     const file = new File(["data"], "f.txt");
     await expect(uploadFile(file)).rejects.toThrow();
-    expect(hrefSetter).toHaveBeenCalledWith("/login");
+    expect(replace).toHaveBeenCalledWith("/login?return=%2Fassets");
   });
 });

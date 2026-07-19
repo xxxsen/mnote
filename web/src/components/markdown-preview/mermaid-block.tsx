@@ -128,7 +128,7 @@ const EMPTY_METRICS: SvgMetrics = {
 function DebugOverlay({ info, baseScale, zoomLevel }: { info: SvgMetrics | null; baseScale: number; zoomLevel: number }) {
   const m = info ?? EMPTY_METRICS;
   return (
-    <div className="absolute right-3 top-3 z-10 rounded-lg border border-border bg-background/90 p-2 text-[10px] font-mono text-muted-foreground shadow-sm">
+    <div className="absolute right-3 top-3 z-10 rounded-lg border border-border bg-background/90 p-2 font-mono text-xs text-muted-foreground shadow-sm">
       <div>svg: {m.svgFound ? "found" : "missing"}</div>
       <div>svg size: {m.svgWidth} × {m.svgHeight}</div>
       <div>rect: {m.rectWidth} × {m.rectHeight}</div>
@@ -247,7 +247,7 @@ const MermaidModal = memo(({
     >
       <DialogHeader>
         <div className="flex items-center gap-3">
-          <span className="font-mono text-xs font-bold uppercase tracking-widest text-muted-foreground">
+          <span className="font-mono text-xs font-semibold text-muted-foreground">
             {diagramType}
           </span>
           <button
@@ -335,7 +335,7 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
         }}
       >
         <div className="flex items-center justify-between px-3 h-8 bg-black/[0.02] border-b border-black/[0.03]">
-          <span className="text-[10px] font-bold text-muted-foreground/50 tracking-wide font-mono uppercase">
+          <span className="font-mono text-xs font-semibold text-muted-foreground">
             {diagramType}
           </span>
           <div className="flex items-center gap-1">
@@ -364,7 +364,7 @@ const MermaidBlock = memo(({ chart }: { chart: string }) => {
               title="Copy"
             >
               {copied ? (
-                <Check className="h-3 w-3 text-green-500" />
+                <Check className="h-3 w-3 text-success" />
               ) : (
                 <Copy className="h-3 w-3 text-muted-foreground/50" />
               )}

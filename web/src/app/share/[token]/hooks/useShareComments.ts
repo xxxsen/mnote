@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import type { ShareComment, ShareCommentsPage } from "@/types";
 
@@ -22,7 +22,7 @@ export interface UseShareCommentsOptions {
   accessPassword: string;
   canAnnotate: boolean;
   guestAuthor: string;
-  showToast: (msg: string, dur?: number) => void;
+  notify: (message: string, variant?: "default" | "success" | "error") => void;
 }
 
 interface FetchResultContext {
@@ -49,17 +49,21 @@ function applyFetchResult(
 }
 
 export function useShareComments(opts: UseShareCommentsOptions) {
-  const { detail, token, accessPassword, canAnnotate, guestAuthor, showToast } = opts;
+  const { detail, token, accessPassword, canAnnotate, guestAuthor, notify } = opts;
   const [comments, setComments] = useState<ShareComment[]>([]);
   const [commentsTotal, setCommentsTotal] = useState(0);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [annotationContent, setAnnotationContent] = useState("");
   const [annotationSubmitting, setAnnotationSubmitting] = useState(false);
+  const [annotationError, setAnnotationError] = useState("");
   const [replyingTo, setReplyingTo] = useState<{ id: string; author: string } | null>(null);
   const [inlineReplyContent, setInlineReplyContent] = useState("");
   const [commentsHasMore, setCommentsHasMore] = useState(true);
   const [commentsAppending, setCommentsAppending] = useState(false);
   const [loadedCommentsCount, setLoadedCommentsCount] = useState(0);
+  const [commentsError, setCommentsError] = useState("");
+  const appendRef = useRef(false);
+  const submitRef = useRef(false);
 
   const fetchComments = useCallback(async (isBackground: boolean, isAppend: boolean) => {
     if (!detail) {
@@ -67,11 +71,13 @@ export function useShareComments(opts: UseShareCommentsOptions) {
       return;
     }
     if (isAppend) {
-      /* v8 ignore next */ if (commentsAppending) return;
+      if (appendRef.current) return;
+      appendRef.current = true;
       setCommentsAppending(true);
     } else if (!isBackground) {
       setCommentsLoading(true);
     }
+    setCommentsError("");
     try {
       const qs = new URLSearchParams();
       if (accessPassword.trim()) qs.set("password", accessPassword.trim());
@@ -84,12 +90,17 @@ export function useShareComments(opts: UseShareCommentsOptions) {
       applyFetchResult(items, total, isAppend, loadedCommentsCount, { setComments, setLoadedCommentsCount, setCommentsHasMore, setCommentsTotal });
     } catch (err) {
       console.error(err);
-      if (!isAppend) { setComments([]); setCommentsTotal(0); }
+      setCommentsError(isAppend
+        ? "Could not load more comments."
+        : "Could not load comments.");
     } finally {
-      if (isAppend) setCommentsAppending(false);
+      if (isAppend) {
+        appendRef.current = false;
+        setCommentsAppending(false);
+      }
       else if (!isBackground) setCommentsLoading(false);
     }
-  }, [accessPassword, detail, token, loadedCommentsCount, commentsAppending]);
+  }, [accessPassword, detail, token, loadedCommentsCount]);
 
   useEffect(() => {
     void fetchComments(false, false);
@@ -113,10 +124,16 @@ export function useShareComments(opts: UseShareCommentsOptions) {
   /* v8 ignore stop */
 
   const handleSubmitComment = useCallback(async () => {
-    if (!detail || !canAnnotate || annotationSubmitting) return;
+    if (!detail || !canAnnotate || submitRef.current) return;
     const content = annotationContent.trim();
-    if (!content) { showToast("Please enter comment content."); return; }
+    if (!content) {
+      setAnnotationError("Enter a comment before posting.");
+      notify("Enter a comment before posting.", "error");
+      return;
+    }
+    submitRef.current = true;
     setAnnotationSubmitting(true);
+    setAnnotationError("");
     try {
       const created = await apiFetch<ShareComment>(`/public/share/${token}/comments`, {
         method: "POST", requireAuth: false,
@@ -126,19 +143,21 @@ export function useShareComments(opts: UseShareCommentsOptions) {
       setCommentsTotal((prev) => prev + 1);
       setLoadedCommentsCount((prev) => prev + 1);
       setAnnotationContent("");
-      showToast("Comment added.");
-      void fetchComments(true, false);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : "Failed to add comment", 3000);
+      notify("Comment added.", "success");
+    } catch {
+      setAnnotationError("Could not add the comment. Try again.");
+      notify("Could not add the comment. Try again.", "error");
     } finally {
+      submitRef.current = false;
       setAnnotationSubmitting(false);
     }
-  }, [detail, canAnnotate, annotationSubmitting, annotationContent, token, accessPassword, guestAuthor, showToast, fetchComments]);
+  }, [detail, canAnnotate, annotationContent, token, accessPassword, guestAuthor, notify]);
 
   return {
-    comments, commentsTotal, commentsLoading,
-    annotationContent, setAnnotationContent, annotationSubmitting,
+    comments, commentsTotal, commentsLoading, commentsAppending, commentsError,
+    annotationContent, setAnnotationContent, annotationSubmitting, annotationError,
     replyingTo, setReplyingTo, inlineReplyContent, setInlineReplyContent,
     commentsHasMore, handleSubmitComment, handleLoadMoreComments,
+    retryComments: () => void fetchComments(false, false),
   };
 }

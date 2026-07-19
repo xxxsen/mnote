@@ -59,7 +59,13 @@ func (h *TemplateHandler) ListMeta(c *gin.Context) {
 		}
 		offset = parsed
 	}
-	items, err := h.templates.ListMeta(c.Request.Context(), getUserID(c), limit, offset)
+	items, err := h.templates.ListMeta(
+		c.Request.Context(),
+		getUserID(c),
+		c.Query("q"),
+		limit,
+		offset,
+	)
 	if err != nil {
 		handleError(c, err)
 		return

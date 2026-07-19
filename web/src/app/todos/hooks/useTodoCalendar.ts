@@ -2,20 +2,29 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction, UIEvent } from "react";
-import { useRouter } from "next/navigation";
-import { getAuthToken } from "@/lib/api";
+
+import { useToast } from "@/components/ui/toast";
 import { todoService } from "@/lib/todo.service";
 import type { Todo } from "@/types";
-import { useToast } from "@/components/ui/toast";
+
 import type { PendingAdjust } from "../types";
 import {
-  EXPAND_BATCH, EDGE_THRESHOLD, dateKey, monthKey,
-  startOfMonth, endOfMonth, shiftMonth, isSameMonth, buildInitialMonths,
+  EDGE_THRESHOLD,
+  EXPAND_BATCH,
+  buildInitialMonths,
+  dateKey,
+  endOfMonth,
+  isSameMonth,
+  monthKey,
+  shiftMonth,
+  startOfMonth,
 } from "../utils";
 
-function useTodoFetch(months: Date[], _todayMonth: Date, toast: ReturnType<typeof useToast>["toast"]) {
+function useTodoFetch(months: Date[]) {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [retryVersion, setRetryVersion] = useState(0);
   const fetchSeqRef = useRef(0);
   const firstMonth = months[0];
   const lastMonth = months[months.length - 1];
@@ -25,29 +34,36 @@ function useTodoFetch(months: Date[], _todayMonth: Date, toast: ReturnType<typeo
     const end = endOfMonth(lastMonth);
     const seq = ++fetchSeqRef.current;
     setLoading(true);
+    setLoadError(false);
+
     void (async () => {
       try {
         const result = await todoService.listByDateRange(dateKey(start), dateKey(end));
-        /* v8 ignore next */ if (fetchSeqRef.current !== seq) return;
+        /* v8 ignore next -- stale request guard */
+        if (fetchSeqRef.current !== seq) return;
         setTodos(result);
       } catch {
-        /* v8 ignore next */ if (fetchSeqRef.current !== seq) return;
-        toast({ title: "Load Failed", description: "Failed to load todos.", variant: "error" });
+        /* v8 ignore next -- stale request guard */
+        if (fetchSeqRef.current !== seq) return;
+        setLoadError(true);
       } finally {
-        /* v8 ignore next */ if (fetchSeqRef.current === seq) setLoading(false);
+        /* v8 ignore next -- stale request guard */
+        if (fetchSeqRef.current === seq) setLoading(false);
       }
     })();
-  }, [firstMonth, lastMonth, toast]);
+  }, [firstMonth, lastMonth, retryVersion]);
 
-  const reloadTodos = useCallback(async () => {
-    const result = await todoService.listByDateRange(
-      dateKey(startOfMonth(firstMonth)),
-      dateKey(endOfMonth(lastMonth)),
-    );
-    setTodos(result);
-  }, [firstMonth, lastMonth]);
+  const retryTodos = useCallback(() => {
+    setRetryVersion((version) => version + 1);
+  }, []);
 
-  return { todos, setTodos, loading, reloadTodos, firstMonth, lastMonth };
+  return {
+    todos,
+    setTodos,
+    loading,
+    loadError,
+    retryTodos,
+  };
 }
 
 function groupTodosByDate(todos: Todo[]) {
@@ -68,6 +84,7 @@ function useTodoDeletion(
   const [deleteTarget, setDeleteTarget] = useState<Todo | null>(null);
   const [deleting, setDeleting] = useState(false);
   const deletingRef = useRef(false);
+
   const requestDeleteTodo = useCallback((todo: Todo) => setDeleteTarget(todo), []);
   const cancelDeleteTodo = useCallback(() => {
     if (!deletingRef.current) setDeleteTarget(null);
@@ -80,26 +97,28 @@ function useTodoDeletion(
       await todoService.delete(deleteTarget.id);
       setTodos((previous) => previous.filter((todo) => todo.id !== deleteTarget.id));
       setDeleteTarget(null);
-      toast({ title: "Todo Deleted", description: "Todo removed from the calendar.", variant: "success" });
+      toast({ title: "Todo deleted", description: "Todo removed from the calendar.", variant: "success" });
     } catch {
-      toast({ title: "Delete Failed", description: "Failed to delete todo.", variant: "error" });
+      toast({ title: "Delete failed", description: "Failed to delete todo.", variant: "error" });
     } finally {
       deletingRef.current = false;
       setDeleting(false);
     }
   }, [deleteTarget, setTodos, toast]);
-  return { deleteTarget, deleting, requestDeleteTodo, cancelDeleteTodo, confirmDeleteTodo };
+
+  return {
+    deleteTarget,
+    deleting,
+    requestDeleteTodo,
+    cancelDeleteTodo,
+    confirmDeleteTodo,
+  };
 }
 
-export function useTodoCalendar() {
-  const router = useRouter();
-  const { toast } = useToast();
-  const todayMonth = startOfMonth(new Date());
-  const [months, setMonths] = useState<Date[]>(() => buildInitialMonths(todayMonth));
-  const [visibleMonth, setVisibleMonth] = useState(todayMonth);
-  const { todos, setTodos, loading, reloadTodos, firstMonth, lastMonth } = useTodoFetch(months, todayMonth, toast);
-  const deletion = useTodoDeletion(setTodos, toast);
-
+function useTodoActions(
+  setTodos: Dispatch<SetStateAction<Todo[]>>,
+  toast: ReturnType<typeof useToast>["toast"],
+) {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState("");
   const [newTodoContent, setNewTodoContent] = useState("");
@@ -111,60 +130,34 @@ export function useTodoCalendar() {
   const [updating, setUpdating] = useState(false);
   const [dayViewOpen, setDayViewOpen] = useState(false);
   const [dayViewDate, setDayViewDate] = useState("");
-
-  const calendarRef = useRef<HTMLDivElement | null>(null);
-  const initializedRef = useRef(false);
-  const pendingAdjustRef = useRef<PendingAdjust>(null);
-  const loadingMoreRef = useRef(false);
+  const [pendingToggleIDs, setPendingToggleIDs] = useState<ReadonlySet<string>>(() => new Set());
   const creatingRef = useRef(false);
   const updatingRef = useRef(false);
-
-  useEffect(() => { if (!getAuthToken()) router.replace("/login"); }, [router]);
-
-  /* v8 ignore start -- layout scroll adjustment requires real DOM viewport */
-  useLayoutEffect(() => {
-    const container = calendarRef.current;
-    if (!container) return;
-    if (!initializedRef.current) {
-      const target = container.querySelector<HTMLElement>(`[data-month-key="${monthKey(todayMonth)}"]`);
-      if (target) container.scrollTop = target.offsetTop;
-      initializedRef.current = true;
-      return;
-    }
-    const pending = pendingAdjustRef.current;
-    if (!pending) return;
-    if (pending.type === "prepend") {
-      container.scrollTop = pending.prevTop + (container.scrollHeight - pending.prevHeight);
-    }
-    pendingAdjustRef.current = null;
-    loadingMoreRef.current = false;
-  }, [months, todayMonth]);
-  /* v8 ignore stop */
-
-  const todosByDate = useMemo(() => groupTodosByDate(todos), [todos]);
-
-  const getTodosForDate = useCallback((key: string) => todosByDate.get(key) ?? [], [todosByDate]);
-  const dayViewTodos = useMemo(
-    () => dayViewDate ? getTodosForDate(dayViewDate) : [],
-    [dayViewDate, getTodosForDate],
-  );
+  const pendingToggleIDsRef = useRef(new Set<string>());
+  const deletion = useTodoDeletion(setTodos, toast);
 
   const handleToggleDone = useCallback(async (todo: Todo) => {
+    if (pendingToggleIDsRef.current.has(todo.id)) return;
+    const previousDone = todo.done;
+    const nextDone = previousDone === 1 ? 0 : 1;
+    pendingToggleIDsRef.current.add(todo.id);
+    setPendingToggleIDs(new Set(pendingToggleIDsRef.current));
+    setTodos((previous) => previous.map((item) => (
+      item.id === todo.id ? { ...item, done: nextDone } : item
+    )));
+
     try {
-      const nextDone = todo.done === 1 ? 0 : 1;
-      setTodos((previous) => previous.map((item) => (
-        item.id === todo.id ? { ...item, done: nextDone } : item
-      )));
       await todoService.toggleDone(todo.id, nextDone === 1);
-    } catch { /* v8 ignore start -- error recovery reloads todo list */
-      toast({ title: "Update Failed", description: "Failed to toggle todo state.", variant: "error" });
-      const result = await todoService.listByDateRange(
-        dateKey(startOfMonth(firstMonth)),
-        dateKey(endOfMonth(lastMonth)),
-      ).catch(() => [] as Todo[]);
-      setTodos(result);
-    } /* v8 ignore stop */
-  }, [firstMonth, lastMonth, toast, setTodos]);
+    } catch {
+      setTodos((previous) => previous.map((item) => (
+        item.id === todo.id ? { ...item, done: previousDone } : item
+      )));
+      toast({ title: "Update failed", description: "The todo state was restored.", variant: "error" });
+    } finally {
+      pendingToggleIDsRef.current.delete(todo.id);
+      setPendingToggleIDs(new Set(pendingToggleIDsRef.current));
+    }
+  }, [setTodos, toast]);
 
   const closeCreatePanel = useCallback(() => {
     setCreateOpen(false);
@@ -201,34 +194,34 @@ export function useTodoCalendar() {
     if (creatingRef.current) return;
     const content = newTodoContent.trim();
     if (!content) {
-      toast({ title: "Invalid Todo", description: "Please enter todo content.", variant: "error" });
+      toast({ title: "Invalid todo", description: "Please enter todo content.", variant: "error" });
       return;
     }
     if (!selectedDate) {
-      toast({ title: "Missing Date", description: "Please pick a date.", variant: "error" });
+      toast({ title: "Missing date", description: "Please pick a date.", variant: "error" });
       return;
     }
     creatingRef.current = true;
     setCreating(true);
     try {
-      await todoService.create(content, selectedDate, false);
-      await reloadTodos();
+      const created = await todoService.create(content, selectedDate, false);
+      setTodos((previous) => [...previous, created]);
       closeCreatePanel();
-      toast({ title: "Todo Created", description: "Todo added to calendar.", variant: "success" });
+      toast({ title: "Todo created", description: "Todo added to the calendar.", variant: "success" });
     } catch {
-      toast({ title: "Create Failed", description: "Failed to create todo.", variant: "error" });
+      toast({ title: "Create failed", description: "Failed to create todo.", variant: "error" });
     } finally {
       creatingRef.current = false;
       setCreating(false);
     }
-  }, [closeCreatePanel, reloadTodos, newTodoContent, selectedDate, toast]);
+  }, [closeCreatePanel, newTodoContent, selectedDate, setTodos, toast]);
 
   const handleUpdateTodoContent = useCallback(async () => {
     if (updatingRef.current) return;
     const nextContent = editTodoContent.trim();
     if (!editingTodoID) return;
     if (!nextContent) {
-      toast({ title: "Invalid Todo", description: "Please enter todo content.", variant: "error" });
+      toast({ title: "Invalid todo", description: "Please enter todo content.", variant: "error" });
       return;
     }
     updatingRef.current = true;
@@ -241,16 +234,133 @@ export function useTodoCalendar() {
           : item
       )));
       closeEditPanel();
-      toast({ title: "Todo Updated", description: "Todo content has been updated.", variant: "success" });
+      toast({ title: "Todo updated", description: "Todo content has been updated.", variant: "success" });
     } catch {
-      toast({ title: "Update Failed", description: "Failed to update todo content.", variant: "error" });
+      toast({ title: "Update failed", description: "Failed to update todo content.", variant: "error" });
     } finally {
       updatingRef.current = false;
       setUpdating(false);
     }
-  }, [closeEditPanel, editTodoContent, editingTodoID, toast, setTodos]);
+  }, [closeEditPanel, editTodoContent, editingTodoID, setTodos, toast]);
 
-  /* v8 ignore start -- scroll-based pagination and nearest-section detection requires real DOM viewport */
+  return {
+    handleToggleDone,
+    pendingToggleIDs,
+    openCreatePanel,
+    openDayView,
+    openEditPanel,
+    createOpen,
+    closeCreatePanel,
+    selectedDate,
+    setSelectedDate,
+    newTodoContent,
+    setNewTodoContent,
+    creating,
+    handleCreateTodo,
+    editOpen,
+    closeEditPanel,
+    editingTodoDueDate,
+    editTodoContent,
+    setEditTodoContent,
+    updating,
+    handleUpdateTodoContent,
+    dayViewOpen,
+    dayViewDate,
+    closeDayView,
+    ...deletion,
+  };
+}
+
+export function useTodoCalendar() {
+  const { toast } = useToast();
+  const [todayMonth] = useState(() => startOfMonth(new Date()));
+  const [months, setMonths] = useState<Date[]>(() => buildInitialMonths(todayMonth));
+  const [visibleMonth, setVisibleMonth] = useState(todayMonth);
+  const {
+    todos,
+    setTodos,
+    loading,
+    loadError,
+    retryTodos,
+  } = useTodoFetch(months);
+  const actions = useTodoActions(setTodos, toast);
+
+  const calendarRef = useRef<HTMLDivElement | null>(null);
+  const initializedRef = useRef(false);
+  const requestedMonthRef = useRef<Date>(todayMonth);
+  const pendingAdjustRef = useRef<PendingAdjust>(null);
+  const loadingMoreRef = useRef(false);
+
+  /* v8 ignore start -- layout scroll adjustment requires a real DOM viewport */
+  useLayoutEffect(() => {
+    const container = calendarRef.current;
+    if (!container) return;
+    if (!initializedRef.current) {
+      const requestedMonth = requestedMonthRef.current;
+      const target = container.querySelector<HTMLElement>(
+        `[data-month-key="${monthKey(requestedMonth)}"]`,
+      );
+      if (target) {
+        container.scrollTop = target.offsetTop;
+        setVisibleMonth(requestedMonth);
+      }
+      initializedRef.current = true;
+      return;
+    }
+    const pending = pendingAdjustRef.current;
+    if (!pending) return;
+    if (pending.type === "prepend") {
+      container.scrollTop = pending.prevTop + (container.scrollHeight - pending.prevHeight);
+    }
+    pendingAdjustRef.current = null;
+    loadingMoreRef.current = false;
+  }, [months]);
+  /* v8 ignore stop */
+
+  const todosByDate = useMemo(() => groupTodosByDate(todos), [todos]);
+  const getTodosForDate = useCallback(
+    (key: string) => todosByDate.get(key) ?? [],
+    [todosByDate],
+  );
+  const dayViewTodos = useMemo(
+    () => actions.dayViewDate ? getTodosForDate(actions.dayViewDate) : [],
+    [actions.dayViewDate, getTodosForDate],
+  );
+
+  const navigateToMonth = useCallback((target: Date) => {
+    const normalizedTarget = startOfMonth(target);
+    requestedMonthRef.current = normalizedTarget;
+    setVisibleMonth(normalizedTarget);
+
+    const container = calendarRef.current;
+    const targetSection = container?.querySelector<HTMLElement>(
+      `[data-month-key="${monthKey(normalizedTarget)}"]`,
+    );
+    if (container && targetSection) {
+      container.scrollTop = targetSection.offsetTop;
+      return;
+    }
+
+    initializedRef.current = false;
+    loadingMoreRef.current = false;
+    pendingAdjustRef.current = null;
+    setMonths(buildInitialMonths(normalizedTarget));
+  }, []);
+
+  const showPreviousMonth = useCallback(
+    () => navigateToMonth(shiftMonth(visibleMonth, -1)),
+    [navigateToMonth, visibleMonth],
+  );
+  const showNextMonth = useCallback(
+    () => navigateToMonth(shiftMonth(visibleMonth, 1)),
+    [navigateToMonth, visibleMonth],
+  );
+  const showToday = useCallback(
+    () => navigateToMonth(todayMonth),
+    [navigateToMonth, todayMonth],
+  );
+
+  /* v8 ignore start -- scroll pagination and nearest-section detection require a real DOM viewport */
   const handleCalendarScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     const container = event.currentTarget;
     const sections = Array.from(container.querySelectorAll<HTMLElement>("[data-month-index]"));
@@ -300,10 +410,18 @@ export function useTodoCalendar() {
   /* v8 ignore stop */
 
   return {
-    router, months, visibleMonth, loading, todosByDate: getTodosForDate, dayViewTodos, calendarRef,
-    handleCalendarScroll, handleToggleDone, openCreatePanel, openDayView, openEditPanel,
-    createOpen, closeCreatePanel, selectedDate, newTodoContent, setNewTodoContent, creating, handleCreateTodo,
-    editOpen, closeEditPanel, editingTodoDueDate, editTodoContent, setEditTodoContent, updating, handleUpdateTodoContent,
-    dayViewOpen, dayViewDate, closeDayView, ...deletion,
+    months,
+    visibleMonth,
+    loading,
+    loadError,
+    retryTodos,
+    todosByDate: getTodosForDate,
+    dayViewTodos,
+    calendarRef,
+    handleCalendarScroll,
+    showPreviousMonth,
+    showNextMonth,
+    showToday,
+    ...actions,
   };
 }

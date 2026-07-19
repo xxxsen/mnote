@@ -2,7 +2,7 @@ export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export const INITIAL_MONTH_RADIUS = 2;
 export const EXPAND_BATCH = 2;
 export const EDGE_THRESHOLD = 280;
-export const MAX_PREVIEW_TODOS = 4;
+export const MAX_PREVIEW_TODOS = 3;
 export const monthYearFormatter = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
 
 export function dateKey(date: Date): string {

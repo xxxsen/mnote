@@ -14,12 +14,12 @@ type Props = {
 };
 
 const visuals: Record<EditorSyncStatus, { label: string; dot: string }> = {
-  SYNCED: { label: "Synced", dot: "bg-green-500" },
-  LOCAL_CHANGES: { label: "Local changes", dot: "bg-amber-400" },
-  SAVING: { label: "Saving…", dot: "bg-sky-500 animate-pulse" },
-  QUEUED: { label: "Saving latest changes…", dot: "bg-amber-400 animate-pulse" },
-  ERROR: { label: "Save failed — Retry", dot: "bg-rose-500" },
-  CONFLICT: { label: "Conflict needs attention", dot: "bg-rose-500" },
+  SYNCED: { label: "Synced", dot: "bg-success" },
+  LOCAL_CHANGES: { label: "Local changes", dot: "bg-warning" },
+  SAVING: { label: "Saving…", dot: "bg-info animate-pulse motion-reduce:animate-none" },
+  QUEUED: { label: "Saving latest changes…", dot: "bg-warning animate-pulse motion-reduce:animate-none" },
+  ERROR: { label: "Save failed — Retry", dot: "bg-destructive" },
+  CONFLICT: { label: "Conflict needs attention", dot: "bg-destructive" },
 };
 
 export const EditorFooter = memo(function EditorFooter({
@@ -31,7 +31,7 @@ export const EditorFooter = memo(function EditorFooter({
   onRetry,
 }: Props) {
   const visual = titleMissing && saveStatus === "LOCAL_CHANGES"
-    ? { label: "Draft saved locally — add a title to sync", dot: "bg-amber-400" }
+    ? { label: "Draft saved locally — add a title to sync", dot: "bg-warning" }
     : visuals[saveStatus];
   const statusContent = (
     <>
@@ -40,7 +40,7 @@ export const EditorFooter = memo(function EditorFooter({
     </>
   );
   return (
-    <footer className="fixed inset-x-0 bottom-0 z-50 flex min-h-8 items-center justify-between border-t border-border bg-background/90 px-3 pb-[env(safe-area-inset-bottom)] font-mono text-[10px] text-muted-foreground backdrop-blur-sm">
+    <footer className="fixed inset-x-0 bottom-0 z-50 flex min-h-8 items-center justify-between border-t border-border bg-background/90 px-3 pb-[env(safe-area-inset-bottom)] font-mono text-xs text-muted-foreground backdrop-blur-sm">
       <div className="flex items-center gap-3">
         <span>LN {cursorPos.line} · COL {cursorPos.col}</span>
         <span className="hidden sm:inline">{wordCount} words · {charCount} chars</span>
@@ -51,7 +51,7 @@ export const EditorFooter = memo(function EditorFooter({
             type="button"
             role="alert"
             onClick={onRetry}
-            className="flex min-h-8 items-center gap-1.5 rounded px-2 text-rose-600 hover:bg-rose-50"
+            className="flex min-h-8 items-center gap-1.5 rounded px-2 text-destructive hover:bg-destructive/10"
             data-testid="editor-save-status"
             data-status={saveStatus}
           >

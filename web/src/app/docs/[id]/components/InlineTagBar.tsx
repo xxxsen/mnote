@@ -37,10 +37,10 @@ export function InlineTagBar(props: InlineTagBarProps) {
     <>
       <div className="relative z-20 flex items-center bg-background border-b border-border shrink-0 px-3 h-8 gap-1.5 overflow-x-auto overflow-y-visible no-scrollbar">
         {selectedTags.length > 0 && selectedTags.map((tag) => (
-          <span key={tag.id} className="group relative inline-flex items-center px-2.5 h-6 rounded-full border border-slate-200 bg-white text-[11px] font-medium text-slate-700 whitespace-nowrap" title={`#${tag.name}`}>
+          <span key={tag.id} className="relative inline-flex h-6 items-center whitespace-nowrap rounded-full border border-border bg-muted pl-2.5 pr-7 text-xs font-medium text-foreground" title={`#${tag.name}`}>
             {tag.name}
-            <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleTag(tag.id); }} className="hidden group-hover:flex absolute -top-1 -right-1 h-3.5 w-3.5 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-400 hover:text-slate-700" aria-label={`Remove ${tag.name}`} title="Remove tag">
-              <X className="h-2.5 w-2.5" />
+            <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleTag(tag.id); }} className="absolute right-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Remove ${tag.name}`} title="Remove tag">
+              <X className="h-3 w-3" aria-hidden="true" />
             </button>
           </span>
         ))}
@@ -68,28 +68,29 @@ export function InlineTagBar(props: InlineTagBarProps) {
                 }}
                 onBlur={() => { window.setTimeout(() => { setInlineTagMode(false); setInlineTagValue(""); }, 120); }}
                 placeholder="Tag name"
+                aria-label="Tag name"
                 maxLength={16}
-                className="h-6 w-28 rounded-full border border-slate-300 bg-white px-2 text-[11px] outline-none focus:border-slate-500"
+                className="h-6 w-28 rounded-full border border-input bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
           ) : (
-            <button type="button" onClick={() => setInlineTagMode(true)} className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 transition-colors whitespace-nowrap" title="Add tag">
-              <Tags className="h-3.5 w-3.5" />Add tag
+            <button type="button" onClick={() => setInlineTagMode(true)} className="inline-flex min-h-6 items-center gap-1 whitespace-nowrap rounded-md px-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" title="Add tag">
+              <Tags className="h-3.5 w-3.5" aria-hidden="true" />Add tag
             </button>
           )
         )}
         <div className="flex-1" />
-        <button type="button" onClick={handleOpenQuickOpen} className="hidden md:inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-700 transition-colors whitespace-nowrap" title="Quick Open (Cmd+K)">
-          <Command className="h-3 w-3" />Open
+        <button type="button" onClick={handleOpenQuickOpen} className="hidden min-h-6 items-center gap-1 whitespace-nowrap rounded-md px-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:inline-flex" title="Quick Open (Cmd+K)">
+          <Command className="h-3 w-3" aria-hidden="true" />Open
         </button>
       </div>
 
       {typeof window !== "undefined" && inlineTagMode && inlineTagMenuPos && (inlineTagLoading || inlineTagDropdownItems.length > 0) && createPortal(
-        <div className="fixed z-[220] rounded-md border border-border bg-white shadow-lg p-1" style={{ left: inlineTagMenuPos.left, top: inlineTagMenuPos.top, width: inlineTagMenuPos.width }}>
+        <div className="fixed z-[220] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg" style={{ left: inlineTagMenuPos.left, top: inlineTagMenuPos.top, width: inlineTagMenuPos.width }}>
           {inlineTagLoading ? (
-            <div className="px-2 py-1.5 text-[11px] text-slate-400">Searching...</div>
+            <div role="status" className="px-2 py-1.5 text-xs text-muted-foreground">Searching…</div>
           ) : inlineTagDropdownItems.map((item, index) => (
-            <button key={item.key} onMouseDown={(e) => { e.preventDefault(); handleInlineTagSelect(item); }} className={`w-full text-left px-2 py-1.5 text-[11px] rounded ${index === inlineTagIndex ? "bg-muted text-foreground" : "hover:bg-muted/60 text-slate-700"}`}>
+            <button type="button" key={item.key} onMouseDown={(e) => { e.preventDefault(); handleInlineTagSelect(item); }} className={`w-full rounded px-2 py-1.5 text-left text-xs ${index === inlineTagIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"}`}>
               {item.type === "create" ? `Create #${item.name || ""}` : `#${item.tag?.name || ""}`}
             </button>
           ))}

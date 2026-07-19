@@ -28,7 +28,7 @@ export function EditorContextRail({ p }: { p: EditorShellFlatContract }) {
       className="flex h-full w-[304px] shrink-0 flex-col border-l border-border bg-background"
     >
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
-        <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+        <span className="text-xs font-semibold text-muted-foreground">
           {p.contextRail.view === "details" ? "Document details" : "Outline"}
         </span>
         <Button

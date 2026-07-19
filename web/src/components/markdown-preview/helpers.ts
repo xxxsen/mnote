@@ -391,24 +391,4 @@ export const injectToc = (content: string, toc: string) => {
   return result.join("\n");
 };
 
-export const copyToClipboard = (value: string): Promise<boolean> => {
-  const fallbackCopy = () => {
-    const textarea = document.createElement("textarea");
-    textarea.value = value;
-    textarea.setAttribute("readonly", "");
-    textarea.style.position = "absolute";
-    textarea.style.left = "-9999px";
-    document.body.appendChild(textarea);
-    textarea.select();
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    const ok = document.execCommand("copy");
-    document.body.removeChild(textarea);
-    return ok;
-  };
-
-  try {
-    return navigator.clipboard.writeText(value).then(() => true).catch(() => fallbackCopy());
-  } catch {
-    return Promise.resolve(fallbackCopy());
-  }
-};
+export { copyToClipboard } from "@/lib/clipboard";

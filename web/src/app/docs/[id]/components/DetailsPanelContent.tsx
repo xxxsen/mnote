@@ -106,7 +106,7 @@ export function DetailsPanelContent(props: DetailsPanelContentProps) {
             aria-controls={`${tabsId}-${tab.id}-panel`}
             tabIndex={props.activeTab === tab.id ? 0 : -1}
             onClick={() => props.onTabChange(tab.id)}
-            className={`min-h-10 border-b-2 px-1 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+            className={`min-h-10 border-b-2 px-1 text-xs font-semibold transition-colors ${
               props.activeTab === tab.id
                 ? "border-primary bg-accent text-foreground"
                 : "border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground"
@@ -160,8 +160,8 @@ function SummaryContent(props: {
 }) {
   return (
     <div className="space-y-4">
-      <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-        AI Summary
+      <div className="text-xs font-semibold text-muted-foreground">
+        AI summary
       </div>
       {props.summary ? (
         <div className="whitespace-pre-wrap rounded-xl border border-border bg-muted/20 p-3 text-sm leading-relaxed">
@@ -177,7 +177,7 @@ function SummaryContent(props: {
         onClick={props.onGenerateSummary}
         disabled={props.aiLoading}
       >
-        Generate Summary
+        Generate summary
       </Button>
     </div>
   );

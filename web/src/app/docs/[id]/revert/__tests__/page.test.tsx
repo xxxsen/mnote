@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Document, DocumentVersion } from "@/types";
 
@@ -80,12 +80,15 @@ beforeEach(() => {
   mocks.toast.mockReset();
 });
 
+afterEach(cleanup);
+
 describe("document version restore", () => {
   it("sends the compared document revision as the restore precondition", async () => {
     arrangeSaveResult(true);
     render(<RevertPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Confirm Revert/ }));
+    const [restore] = await screen.findAllByRole("button", { name: "Restore v2" });
+    fireEvent.click(restore);
 
     await waitFor(() => {
       expect(mocks.apiFetch).toHaveBeenCalledWith("/documents/d1", {
@@ -105,13 +108,14 @@ describe("document version restore", () => {
     arrangeSaveResult(false);
     render(<RevertPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Confirm Revert/ }));
+    const [restore] = await screen.findAllByRole("button", { name: "Restore v2" });
+    fireEvent.click(restore);
 
     await waitFor(() => expect(mocks.toast).toHaveBeenCalledTimes(1));
     expect(mocks.push).not.toHaveBeenCalled();
     await waitFor(() => {
       const currentReads = mocks.apiFetch.mock.calls.filter(
-        ([endpoint, options]) => endpoint === "/documents/d1" && !options,
+        ([endpoint, options]) => endpoint === "/documents/d1" && !options?.method,
       );
       expect(currentReads).toHaveLength(2);
     });

@@ -32,7 +32,8 @@ func TestTemplateHandler_List_Success(t *testing.T) {
 
 func TestTemplateHandler_ListMeta_Default(t *testing.T) {
 	mock := &mockTemplateHandlerService{
-		listMetaFn: func(_ context.Context, _ string, limit, offset int) (*service.TemplateMetaListResult, error) {
+		listMetaFn: func(_ context.Context, _, query string, limit, offset int) (*service.TemplateMetaListResult, error) {
+			assert.Equal(t, "", query)
 			assert.Equal(t, 20, limit)
 			assert.Equal(t, 0, offset)
 			return &service.TemplateMetaListResult{Items: []model.TemplateMeta{}, Total: 0}, nil
@@ -188,7 +189,8 @@ func TestTemplateHandler_List_Error(t *testing.T) {
 
 func TestTemplateHandler_ListMeta_WithParams(t *testing.T) {
 	mock := &mockTemplateHandlerService{
-		listMetaFn: func(_ context.Context, _ string, limit, offset int) (*service.TemplateMetaListResult, error) {
+		listMetaFn: func(_ context.Context, _, query string, limit, offset int) (*service.TemplateMetaListResult, error) {
+			assert.Equal(t, "Daily_100%", query)
 			assert.Equal(t, 10, limit)
 			assert.Equal(t, 5, offset)
 			return &service.TemplateMetaListResult{Items: []model.TemplateMeta{}, Total: 0}, nil
@@ -199,7 +201,7 @@ func TestTemplateHandler_ListMeta_WithParams(t *testing.T) {
 	r.GET("/templates/meta", withUserID("u1"), h.ListMeta)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/templates/meta?limit=10&offset=5", nil)
+	req := httptest.NewRequest("GET", "/templates/meta?limit=10&offset=5&q=Daily_100%25", nil)
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -220,7 +222,7 @@ func TestTemplateHandler_ListMeta_InvalidOffset(t *testing.T) {
 
 func TestTemplateHandler_ListMeta_Error(t *testing.T) {
 	mock := &mockTemplateHandlerService{
-		listMetaFn: func(_ context.Context, _ string, _, _ int) (*service.TemplateMetaListResult, error) {
+		listMetaFn: func(_ context.Context, _, _ string, _, _ int) (*service.TemplateMetaListResult, error) {
 			return nil, errors.New("list meta error")
 		},
 	}

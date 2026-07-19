@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Menu } from "@/components/ui/menu";
 import {
   ChevronLeft,
   Columns,
@@ -12,6 +13,8 @@ import {
   Columns2,
   RefreshCw,
   ShieldAlert,
+  MoreHorizontal,
+  Check,
 } from "lucide-react";
 import type { EditorSyncStatus } from "../types";
 import type { EditorViewMode } from "../hooks/useEditorViewMode";
@@ -32,6 +35,8 @@ type Props = {
   handleStarToggle: () => void;
   viewMode: EditorViewMode;
   setViewMode: (mode: EditorViewMode) => void;
+  scrollSyncEnabled: boolean;
+  onToggleScrollSync: () => void;
 };
 
 function primaryState(props: Props) {
@@ -77,7 +82,7 @@ export function EditorHeader(props: Props) {
   const primary = primaryState(props);
   const displayTitle = props.title || "Untitled";
   const starLabel = props.starred ? "Unstar note" : "Star note";
-  const starClass = props.starred ? "text-yellow-500" : "text-muted-foreground";
+  const starClass = props.starred ? "text-warning" : "text-muted-foreground";
   const starIconClass = props.starred ? "fill-current" : "";
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-2 border-b border-border bg-background/90 px-2 backdrop-blur-md sm:px-4">
@@ -87,12 +92,12 @@ export function EditorHeader(props: Props) {
           size="icon"
           aria-label="Back to notes"
           onClick={props.onBack}
-          className="h-10 w-10 shrink-0"
+          className="h-11 w-11 shrink-0 sm:h-10 sm:w-10"
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <div
-          className="min-w-0 truncate font-mono text-sm font-semibold"
+          className="min-w-0 truncate text-sm font-semibold"
           title={displayTitle}
         >
           {displayTitle}
@@ -105,7 +110,7 @@ export function EditorHeader(props: Props) {
           size="icon"
           aria-label={starLabel}
           onClick={props.handleStarToggle}
-          className={`hidden h-10 w-10 min-[420px]:inline-flex ${starClass}`}
+          className={`hidden h-11 w-11 min-[420px]:inline-flex sm:h-10 sm:w-10 ${starClass}`}
         >
           <Star className={`h-4 w-4 ${starIconClass}`} />
         </Button>
@@ -151,7 +156,7 @@ export function EditorHeader(props: Props) {
           aria-label="Open outline"
           aria-expanded={props.outlineOpen}
           onClick={props.onShowOutline}
-          className={`h-10 w-10 min-[1280px]:hidden ${
+          className={`h-11 w-11 sm:h-10 sm:w-10 min-[1280px]:hidden ${
             props.outlineOpen ? "bg-accent" : "text-muted-foreground"
           }`}
         >
@@ -163,10 +168,31 @@ export function EditorHeader(props: Props) {
           aria-label={props.detailsOpen ? "Show outline" : "Show details"}
           aria-expanded={props.detailsOpen}
           onClick={props.onToggleDetails}
-          className={`h-10 w-10 ${props.detailsOpen ? "bg-accent" : "text-muted-foreground"}`}
+          className={`h-11 w-11 sm:h-10 sm:w-10 ${props.detailsOpen ? "bg-accent" : "text-muted-foreground"}`}
         >
           <Columns className="h-4 w-4 rotate-90" />
         </Button>
+        <div className="lg:hidden">
+          <Menu
+            label="More editor actions"
+            trigger={<MoreHorizontal className="h-4 w-4" aria-hidden="true" />}
+            entries={[
+              {
+                id: "scroll-sync",
+                label: `Scroll sync ${props.scrollSyncEnabled ? "on" : "off"}`,
+                icon: props.scrollSyncEnabled ? <Check className="h-4 w-4" /> : undefined,
+                onSelect: props.onToggleScrollSync,
+              },
+              {
+                id: "star",
+                label: starLabel,
+                icon: <Star className={`h-4 w-4 ${starIconClass}`} />,
+                onSelect: props.handleStarToggle,
+              },
+            ]}
+            triggerClassName="h-11 w-11 sm:h-10 sm:w-10"
+          />
+        </div>
       </div>
     </header>
   );

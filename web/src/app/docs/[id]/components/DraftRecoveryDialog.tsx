@@ -39,7 +39,7 @@ export function DraftRecoveryDialog({
       dismissPolicy="explicit"
     >
       <DialogHeader showClose={false} />
-      <div className="grid shrink-0 grid-cols-2 border-b border-slate-200 p-2 md:hidden">
+      <div className="grid shrink-0 grid-cols-2 border-b border-border p-2 md:hidden">
         <VersionTab active={mobileVersion === "local"} onClick={() => setMobileVersion("local")}>
           Local draft
         </VersionTab>
@@ -103,7 +103,7 @@ function VersionTab({
       aria-pressed={active}
       onClick={onClick}
       className={`h-11 rounded-xl text-sm font-medium ${
-        active ? "bg-slate-900 text-white" : "text-slate-600"
+        active ? "bg-primary text-primary-foreground" : "text-muted-foreground"
       }`}
     >
       {children}
@@ -122,7 +122,7 @@ function ContentPanel({
 }) {
   return (
     <section className={`min-w-0 rounded-xl border border-border ${className || ""}`}>
-      <h3 className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <h3 className="border-b border-border px-3 py-2 text-xs font-semibold text-muted-foreground">
         {label}
       </h3>
       <pre className="min-h-40 overflow-x-auto whitespace-pre-wrap break-words p-3 text-xs">

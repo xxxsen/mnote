@@ -2,8 +2,20 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+
+import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
-import { apiFetch, ApiError, setAuthEmail, setAuthToken } from "@/lib/api";
+import { PageState } from "@/components/ui/page-state";
+import { apiFetch, setAuthEmail, setAuthToken } from "@/lib/api";
+import { getSafeInternalReturn } from "@/lib/navigation";
+
+function OAuthLoading() {
+  return (
+    <AuthShell title="Completing sign in" description="Verifying your provider account.">
+      <PageState compact kind="loading" title="Completing sign in…" />
+    </AuthShell>
+  );
+}
 
 function OAuthCallbackContent() {
   const router = useRouter();
@@ -11,82 +23,57 @@ function OAuthCallbackContent() {
   const code = searchParams.get("code");
   const errorParam = searchParams.get("error");
   const [exchangeError, setExchangeError] = useState<string | null>(null);
-  const returnTo = getSafeReturn(searchParams.get("return")) || "/docs";
 
   useEffect(() => {
     if (!code) return;
+    const storedReturn = sessionStorage.getItem("mnote_oauth_return");
+    sessionStorage.removeItem("mnote_oauth_return");
+    const returnTo = getSafeInternalReturn(searchParams.get("return") ?? storedReturn);
     let cancelled = false;
-    const exchange = async () => {
-      try {
-        const res = await apiFetch<{ token: string; email?: string }>("/auth/oauth/exchange", {
-          method: "POST",
-          body: JSON.stringify({ code }),
-          requireAuth: false,
-        });
-        if (cancelled) return;
-        setAuthToken(res.token);
-        if (res.email) {
-          setAuthEmail(res.email);
-        }
-        router.replace(returnTo);
-      } catch (err) {
-        if (cancelled) return;
-        const message = err instanceof ApiError ? err.message : "invalid";
-        setExchangeError(message || "invalid");
-      }
-    };
-    void exchange();
+
+    void apiFetch<{ token: string; email?: string }>("/auth/oauth/exchange", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+      requireAuth: false,
+    }).then((response) => {
+      if (cancelled) return;
+      setAuthToken(response.token);
+      if (response.email) setAuthEmail(response.email);
+      router.replace(returnTo);
+    }).catch(() => {
+      if (!cancelled) setExchangeError("invalid");
+    });
+
     return () => {
       cancelled = true;
     };
-  }, [code, returnTo, router]);
+  }, [code, router, searchParams]);
 
   const error = errorParam || exchangeError || (code ? null : "invalid");
+  if (!error) return <OAuthLoading />;
 
-  if (!error) {
-    return (
-      <div className="flex min-h-screen items-center justify-center p-6 text-sm text-muted-foreground">
-        Completing sign in...
-      </div>
-    );
-  }
-
-  const message =
-    error === "conflict"
-      ? "This email already exists. Please log in with password and bind the provider in settings."
-      : "OAuth sign in failed. Please try again.";
+  const message = error === "conflict"
+    ? "This email already exists. Sign in with your password, then connect the provider in Account settings."
+    : "The provider could not complete sign in. Start again from the sign-in page.";
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-md border border-border bg-card p-6 shadow-sm space-y-4">
-        <div>
-          <div className="text-lg font-semibold">OAuth Login Error</div>
-          <div className="text-sm text-muted-foreground mt-1">{message}</div>
+    <AuthShell title="OAuth sign in failed" description={message}>
+      <div className="space-y-3">
+        <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          Your account was not changed.
         </div>
-        <div className="flex gap-2">
-          <Button onClick={() => router.push("/login")}>Back to Login</Button>
-          <Button variant="outline" onClick={() => router.push("/settings")}>Account Settings</Button>
-        </div>
+        <Button type="button" className="w-full" onClick={() => router.replace("/login")}>
+          Back to sign in
+        </Button>
       </div>
-    </div>
+    </AuthShell>
   );
 }
 
 export default function OAuthCallbackPage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center p-6 text-sm text-muted-foreground">
-        Completing sign in...
-      </div>
-    }>
+    <Suspense fallback={<OAuthLoading />}>
       <OAuthCallbackContent />
     </Suspense>
   );
-}
-
-function getSafeReturn(value: string | null): string | null {
-  if (!value) return null;
-  if (!value.startsWith("/")) return null;
-  if (value.startsWith("//")) return null;
-  return value;
 }

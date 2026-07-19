@@ -1,100 +1,193 @@
+"use client";
+
+import Link from "next/link";
+import { Copy, Loader2, Pin, Search, Star, X } from "lucide-react";
+
+import { PageState } from "@/components/ui/page-state";
 import type { Tag } from "@/types";
+
 import type { DocumentWithTags } from "../types";
 import { formatRelativeTime } from "../utils";
-import { Copy, Pin, Search, Star } from "lucide-react";
 
-function AiSearchCard({ doc, tagIndex, onNavigate }: {
+export function getDocumentExcerpt(doc: DocumentWithTags) {
+  const source = (doc.summary || doc.content || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+    .replace(/[#>*_`~|-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return source.length > 120 ? `${source.slice(0, 117).trimEnd()}…` : source;
+}
+
+function AiSearchCard({
+  doc,
+  tagIndex,
+}: {
   doc: DocumentWithTags;
   tagIndex: Partial<Record<string, Tag>>;
-  onNavigate: (path: string) => void;
 }) {
-  const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter((t): t is Tag => Boolean(t));
+  const docTags = (doc.tag_ids || [])
+    .map((id) => tagIndex[id])
+    .filter((tag): tag is Tag => Boolean(tag));
   return (
-    <div
-      onClick={() => onNavigate(`/docs/${doc.id}`)}
-      className="group relative flex flex-col border border-indigo-500/30 bg-indigo-500/5 p-4 h-48 hover:border-indigo-500 transition-colors cursor-pointer rounded-[8px] overflow-hidden"
-    >
-      <div className="absolute top-2 right-2 text-indigo-500/40 group-hover:text-indigo-500 transition-colors">
-        <Search className="h-3 w-3" />
-      </div>
-      <div className="flex-1 flex items-center justify-center px-2">
-        <h3 className="font-mono font-bold text-lg text-center line-clamp-3" title={doc.title}>{doc.title}</h3>
-      </div>
-      <div className="text-[9px] font-mono text-indigo-500/70 uppercase tracking-tighter text-center mb-2">
-        {Math.round((doc.score || 0) * 100)}% Match
-      </div>
-      <div className="mt-auto flex flex-wrap gap-1 justify-center pt-2 border-t border-indigo-500/20">
-        {docTags.map(tag => (
-          <span key={tag.id} className="text-[10px] bg-indigo-500/10 text-indigo-600 px-1.5 py-0.5 rounded-full border border-indigo-500/10">#{tag.name}</span>
-        ))}
-      </div>
-    </div>
+    <article className="relative min-h-40 overflow-hidden rounded-md border border-info/30 bg-info/5">
+      <Link
+        href={`/docs/${doc.id}`}
+        className="flex min-h-40 flex-col p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        <div className="flex items-center gap-2 text-xs font-medium text-info">
+          <Search className="h-4 w-4" aria-hidden="true" />
+          {Math.round((doc.score || 0) * 100)}% semantic match
+        </div>
+        <h3 className="mt-3 line-clamp-2 text-base font-semibold">{doc.title || "Untitled"}</h3>
+        <p className="mt-2 line-clamp-2 text-sm leading-5 text-muted-foreground">
+          {getDocumentExcerpt(doc) || "No preview available"}
+        </p>
+        {docTags.length > 0 ? (
+          <div className="mt-auto flex flex-wrap gap-1 pt-3">
+            {docTags.map((tag) => (
+              <span key={tag.id} className="rounded-full bg-info/10 px-2 py-0.5 text-xs text-info">
+                #{tag.name}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </Link>
+    </article>
   );
 }
 
-function DocumentCard({ doc, index, tagIndex, showShared, onNavigate, onPinToggle, onStarToggle, onCopyShare }: {
+type DocumentCardProps = {
   doc: DocumentWithTags;
-  index: number;
   tagIndex: Partial<Record<string, Tag>>;
   showShared: boolean;
-  onNavigate: (path: string) => void;
-  onPinToggle: (e: React.MouseEvent, doc: DocumentWithTags) => void;
-  onStarToggle: (e: React.MouseEvent, doc: DocumentWithTags) => void;
+  pendingActions: ReadonlySet<string>;
+  onPinToggle: (doc: DocumentWithTags) => void;
+  onStarToggle: (doc: DocumentWithTags) => void;
   onCopyShare: (token: string) => void;
-}) {
-  const docTags = (doc.tag_ids || []).map((id) => tagIndex[id]).filter((t): t is Tag => Boolean(t));
+};
+
+function DocumentActions({
+  doc,
+  showShared,
+  pendingActions,
+  onPinToggle,
+  onStarToggle,
+  onCopyShare,
+}: Omit<DocumentCardProps, "tagIndex">) {
+  const title = doc.title || "Untitled";
+  if (showShared) {
+    return (
+      <button
+        type="button"
+        aria-label={`Copy share link for ${title}`}
+        title="Copy share link"
+        disabled={!doc.share_token}
+        onClick={() => {
+          if (doc.share_token) onCopyShare(doc.share_token);
+        }}
+        className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-border bg-background text-muted-foreground shadow-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 lg:h-9 lg:w-9"
+      >
+        <Copy className="h-4 w-4" aria-hidden="true" />
+      </button>
+    );
+  }
+
+  const pinPending = pendingActions.has(`pin:${doc.id}`);
+  const starPending = pendingActions.has(`star:${doc.id}`);
   return (
-    <div
-      key={doc.id || `${doc.title}-${doc.mtime}-${index}`}
-      onClick={() => onNavigate(`/docs/${doc.id}`)}
-      className="group relative flex flex-col border border-border bg-card p-4 h-48 hover:border-foreground transition-colors cursor-pointer rounded-[8px] overflow-hidden"
-    >
-      <div className="absolute top-2 right-2 flex gap-1 z-20">
-        {showShared ? (
-          <button
-            onClick={(e) => { e.stopPropagation(); if (doc.share_token) onCopyShare(doc.share_token); }}
-            className="p-1.5 rounded-full transition-all text-muted-foreground opacity-100 bg-background/80 shadow-sm hover:text-foreground"
-            title="Copy share link"
-          >
-            <Copy className="h-3.5 w-3.5" />
-          </button>
-        ) : (
-          <>
-            <button
-              onClick={(e) => onStarToggle(e, doc)}
-              className={`p-1.5 rounded-full transition-all ${doc.starred ? "text-yellow-500 opacity-100 bg-background/80 shadow-sm" : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"}`}
-            >
-              <Star className={`h-3.5 w-3.5 ${doc.starred ? "fill-current" : ""}`} />
-            </button>
-            <button
-              onClick={(e) => onPinToggle(e, doc)}
-              className={`p-1.5 rounded-full transition-all ${doc.pinned ? "text-foreground opacity-100 bg-background/80 shadow-sm" : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-background/80 hover:text-foreground"}`}
-            >
-              <Pin className={`h-3.5 w-3.5 ${doc.pinned ? "fill-current" : ""}`} />
-            </button>
-          </>
-        )}
-      </div>
-      <div className="flex-1 flex items-center justify-center px-2">
-        <h3 className="font-mono font-bold text-lg text-center line-clamp-3" title={doc.title}>{doc.title}</h3>
-      </div>
-      <div className="mt-auto flex flex-col gap-1 border-t border-border/50 pt-2 pb-1 z-10">
-        <div className="text-[10px] text-muted-foreground font-mono text-center mb-1">Updated {formatRelativeTime(doc.mtime)}</div>
-        <div className="relative group/tags flex items-center justify-center min-h-[1.5rem]">
-          <div className="flex flex-wrap gap-1 max-h-[2.75rem] overflow-hidden justify-center items-center px-2 transition-all">
-            {docTags.length > 0 ? (
-              docTags.map((tag) => (
-                <span key={tag.id} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-secondary-foreground border border-border/50 whitespace-nowrap" title={tag.name}>
+    <>
+      <button
+        type="button"
+        aria-label={`${doc.starred ? "Unstar" : "Star"} ${title}`}
+        title={doc.starred ? "Unstar note" : "Star note"}
+        aria-busy={starPending || undefined}
+        disabled={starPending}
+        onClick={() => onStarToggle(doc)}
+        className={`inline-flex h-11 w-11 items-center justify-center rounded-md border border-border bg-background shadow-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:h-9 lg:w-9 ${
+          doc.starred ? "text-warning" : "text-muted-foreground"
+        }`}
+      >
+        {starPending
+          ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          : <Star className={`h-4 w-4 ${doc.starred ? "fill-current" : ""}`} aria-hidden="true" />}
+      </button>
+      <button
+        type="button"
+        aria-label={`${doc.pinned ? "Unpin" : "Pin"} ${title}`}
+        title={doc.pinned ? "Unpin note" : "Pin note"}
+        aria-busy={pinPending || undefined}
+        disabled={pinPending}
+        onClick={() => onPinToggle(doc)}
+        className={`inline-flex h-11 w-11 items-center justify-center rounded-md border border-border bg-background shadow-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:h-9 lg:w-9 ${
+          doc.pinned ? "text-primary" : "text-muted-foreground"
+        }`}
+      >
+        {pinPending
+          ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          : <Pin className={`h-4 w-4 ${doc.pinned ? "fill-current" : ""}`} aria-hidden="true" />}
+      </button>
+    </>
+  );
+}
+
+function DocumentCard({
+  doc,
+  tagIndex,
+  showShared,
+  pendingActions,
+  onPinToggle,
+  onStarToggle,
+  onCopyShare,
+}: DocumentCardProps) {
+  const docTags = (doc.tag_ids || [])
+    .map((id) => tagIndex[id])
+    .filter((tag): tag is Tag => Boolean(tag));
+  const excerpt = getDocumentExcerpt(doc);
+  const title = doc.title || "Untitled";
+
+  return (
+    <article className="group relative min-h-[156px] overflow-hidden rounded-md border border-border bg-card transition-colors hover:border-foreground/50">
+      <Link
+        href={`/docs/${doc.id}`}
+        className="flex min-h-[156px] flex-col p-4 pr-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        <h3 className="line-clamp-2 text-base font-semibold leading-6" title={title}>
+          {title}
+        </h3>
+        <p className="mt-2 line-clamp-2 text-sm leading-5 text-muted-foreground">
+          {excerpt || "No preview available"}
+        </p>
+        <div className="mt-auto pt-3">
+          <p className="text-xs text-muted-foreground">Updated {formatRelativeTime(doc.mtime)}</p>
+          {docTags.length > 0 ? (
+            <div className="mt-2 flex max-h-12 flex-wrap gap-1 overflow-hidden">
+              {docTags.map((tag) => (
+                <span
+                  key={tag.id}
+                  title={tag.name}
+                  className="max-w-32 truncate rounded-full border border-border bg-secondary px-2 py-0.5 text-xs text-secondary-foreground"
+                >
                   #{tag.name}
                 </span>
-              ))
-            ) : (
-              <span className="text-[10px] text-muted-foreground/40 italic px-1">No tags</span>
-            )}
-          </div>
+              ))}
+            </div>
+          ) : null}
         </div>
+      </Link>
+
+      <div className="absolute right-2 top-2 flex gap-1 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
+        <DocumentActions
+          doc={doc}
+          showShared={showShared}
+          pendingActions={pendingActions}
+          onPinToggle={onPinToggle}
+          onStarToggle={onStarToggle}
+          onCopyShare={onCopyShare}
+        />
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -104,61 +197,268 @@ export interface DocumentGridProps {
   aiSearching: boolean;
   loading: boolean;
   loadingMore: boolean;
+  initialError: boolean;
+  loadMoreError: boolean;
   hasMore: boolean;
+  search: string;
+  selectedTag: string;
+  showStarred: boolean;
   showShared: boolean;
   tagIndex: Partial<Record<string, Tag>>;
+  pendingActions: ReadonlySet<string>;
   loadMoreRef: React.RefObject<HTMLDivElement | null>;
-  onNavigate: (path: string) => void;
-  onPinToggle: (e: React.MouseEvent, doc: DocumentWithTags) => void;
-  onStarToggle: (e: React.MouseEvent, doc: DocumentWithTags) => void;
+  onCreate: () => void;
+  onClearSearch: () => void;
+  onClearFilter: () => void;
+  onRetryInitial: () => void;
+  onRetryLoadMore: () => void;
+  onPinToggle: (doc: DocumentWithTags) => void;
+  onStarToggle: (doc: DocumentWithTags) => void;
   onCopyShare: (token: string) => void;
 }
 
-export function DocumentGrid(props: DocumentGridProps) {
-  const {
-    docs, aiSearchDocs, aiSearching, loading, loadingMore, hasMore, showShared,
-    tagIndex, loadMoreRef, onNavigate, onPinToggle, onStarToggle, onCopyShare,
-  } = props;
-
+function FilterStatus({
+  search,
+  selectedTag,
+  showStarred,
+  showShared,
+  tagIndex,
+  onClearSearch,
+  onClearFilter,
+}: Pick<
+  DocumentGridProps,
+  "search" | "selectedTag" | "showStarred" | "showShared" | "tagIndex" | "onClearSearch" | "onClearFilter"
+>) {
+  const filter = selectedTag
+    ? `#${tagIndex[selectedTag]?.name ?? "Tag"}`
+    : showStarred
+      ? "Starred"
+      : showShared
+        ? "Shared"
+        : "";
+  if (!search && !filter) return null;
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8">
-      {aiSearchDocs.length > 0 && (
-        <div className="mb-10">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="bg-indigo-500/10 p-1 rounded-md"><Search className="h-4 w-4 text-indigo-500" /></div>
-            <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex-1">AI Semantic Discovery</h2>
-            {aiSearching && <div className="text-[10px] text-muted-foreground animate-pulse">Analyzing library...</div>}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {aiSearchDocs.map((doc) => (
-              <AiSearchCard key={`ai-${doc.id}`} doc={doc} tagIndex={tagIndex} onNavigate={onNavigate} />
-            ))}
-          </div>
-          <div className="mt-6 border-b border-border shadow-sm shadow-indigo-500/10" />
-        </div>
-      )}
+    <div className="mb-4 flex flex-wrap gap-2" aria-label="Active filters">
+      {filter ? (
+        <button
+          type="button"
+          onClick={onClearFilter}
+          className="inline-flex min-h-9 items-center gap-1 rounded-full bg-primary/10 px-3 text-xs font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {filter}
+          <X className="h-3.5 w-3.5" aria-hidden="true" />
+          <span className="sr-only">Clear filter</span>
+        </button>
+      ) : null}
+      {search ? (
+        <button
+          type="button"
+          onClick={onClearSearch}
+          className="inline-flex min-h-9 items-center gap-1 rounded-full bg-muted px-3 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Search: {search}
+          <X className="h-3.5 w-3.5" aria-hidden="true" />
+          <span className="sr-only">Clear search</span>
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
-      {loading ? (
-        <div className="flex justify-center py-20 text-muted-foreground animate-pulse">Loading...</div>
-      ) : docs.length === 0 ? (
-        <div className="text-center py-20 text-muted-foreground">
-          {showShared ? "No shared notes found." : "No micro notes found."}
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {docs.map((doc, index) => (
-              <DocumentCard
-                key={doc.id || `${doc.title}-${doc.mtime}-${index}`}
-                doc={doc} index={index} tagIndex={tagIndex} showShared={showShared}
-                onNavigate={onNavigate} onPinToggle={onPinToggle} onStarToggle={onStarToggle} onCopyShare={onCopyShare}
-              />
-            ))}
-          </div>
-          {loadingMore && <div className="flex justify-center text-xs text-muted-foreground">Loading more...</div>}
-          {hasMore && <div ref={loadMoreRef} className="h-6" />}
-        </div>
-      )}
+function SemanticResults({
+  docs,
+  searching,
+  tagIndex,
+}: {
+  docs: DocumentWithTags[];
+  searching: boolean;
+  tagIndex: Partial<Record<string, Tag>>;
+}) {
+  if (docs.length === 0) return null;
+  return (
+    <section aria-labelledby="semantic-results-heading" className="mb-8">
+      <div className="mb-4 flex items-center gap-2">
+        <Search className="h-4 w-4 text-info" aria-hidden="true" />
+        <h2 id="semantic-results-heading" className="text-sm font-semibold">Semantic results</h2>
+        {searching ? <span role="status" className="text-xs text-muted-foreground">Searching…</span> : null}
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {docs.map((doc) => <AiSearchCard key={`ai-${doc.id}`} doc={doc} tagIndex={tagIndex} />)}
+      </div>
+    </section>
+  );
+}
+
+function getEmptyTitle({
+  search,
+  showShared,
+  showStarred,
+  selectedTag,
+}: Pick<DocumentGridProps, "search" | "showShared" | "showStarred" | "selectedTag">) {
+  if (search) return `No notes match “${search}”`;
+  if (showShared) return "No shared notes";
+  if (showStarred) return "No starred notes";
+  if (selectedTag) return "No notes use this tag";
+  return "Create your first note";
+}
+
+type NotesContentProps = Omit<
+  DocumentGridProps,
+  "aiSearchDocs" | "aiSearching" | "onClearSearch" | "onClearFilter"
+> & {
+  hasFilter: boolean;
+  emptyTitle: string;
+  onClearAll: () => void;
+};
+
+function NotesContent({
+  docs,
+  loading,
+  loadingMore,
+  initialError,
+  loadMoreError,
+  hasMore,
+  showShared,
+  tagIndex,
+  pendingActions,
+  loadMoreRef,
+  onCreate,
+  onRetryInitial,
+  onRetryLoadMore,
+  onPinToggle,
+  onStarToggle,
+  onCopyShare,
+  hasFilter,
+  emptyTitle,
+  onClearAll,
+}: NotesContentProps) {
+  if (initialError) {
+    return (
+      <PageState
+        kind="error"
+        title="Could not load notes"
+        description="Your filters and search are preserved. Try loading the library again."
+        actionLabel="Retry"
+        onAction={onRetryInitial}
+      />
+    );
+  }
+  if (loading) {
+    return <PageState kind="loading" title="Loading notes" description="Preparing your library." />;
+  }
+  if (docs.length === 0) {
+    return (
+      <PageState
+        kind="empty"
+        title={emptyTitle}
+        description={hasFilter
+          ? "Adjust the active search or filter to see other notes."
+          : "Notes keep your writing, links, tags, and files together."}
+        actionLabel={hasFilter ? "Clear filters" : "New note"}
+        onAction={hasFilter ? onClearAll : onCreate}
+      />
+    );
+  }
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        {docs.map((doc) => (
+          <DocumentCard
+            key={doc.id}
+            doc={doc}
+            tagIndex={tagIndex}
+            showShared={showShared}
+            pendingActions={pendingActions}
+            onPinToggle={onPinToggle}
+            onStarToggle={onStarToggle}
+            onCopyShare={onCopyShare}
+          />
+        ))}
+      </div>
+      {loadingMore ? (
+        <p role="status" className="text-center text-sm text-muted-foreground">Loading more notes…</p>
+      ) : null}
+      {loadMoreError ? (
+        <PageState
+          compact
+          kind="error"
+          title="Could not load more notes"
+          description="The notes already shown are still available."
+          actionLabel="Retry"
+          onAction={onRetryLoadMore}
+        />
+      ) : null}
+      {hasMore && !loadMoreError ? <div ref={loadMoreRef} className="h-6" /> : null}
+    </div>
+  );
+}
+
+export function DocumentGrid({
+  docs,
+  aiSearchDocs,
+  aiSearching,
+  loading,
+  loadingMore,
+  initialError,
+  loadMoreError,
+  hasMore,
+  search,
+  selectedTag,
+  showStarred,
+  showShared,
+  tagIndex,
+  pendingActions,
+  loadMoreRef,
+  onCreate,
+  onClearSearch,
+  onClearFilter,
+  onRetryInitial,
+  onRetryLoadMore,
+  onPinToggle,
+  onStarToggle,
+  onCopyShare,
+}: DocumentGridProps) {
+  const hasFilter = Boolean(search || selectedTag || showShared || showStarred);
+  const clearAll = () => {
+    onClearSearch();
+    onClearFilter();
+  };
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+      <FilterStatus
+        search={search}
+        selectedTag={selectedTag}
+        showStarred={showStarred}
+        showShared={showShared}
+        tagIndex={tagIndex}
+        onClearSearch={onClearSearch}
+        onClearFilter={onClearFilter}
+      />
+      <SemanticResults docs={aiSearchDocs} searching={aiSearching} tagIndex={tagIndex} />
+      <NotesContent
+        docs={docs}
+        loading={loading}
+        loadingMore={loadingMore}
+        initialError={initialError}
+        loadMoreError={loadMoreError}
+        hasMore={hasMore}
+        search={search}
+        selectedTag={selectedTag}
+        showStarred={showStarred}
+        showShared={showShared}
+        tagIndex={tagIndex}
+        pendingActions={pendingActions}
+        loadMoreRef={loadMoreRef}
+        onCreate={onCreate}
+        onRetryInitial={onRetryInitial}
+        onRetryLoadMore={onRetryLoadMore}
+        onPinToggle={onPinToggle}
+        onStarToggle={onStarToggle}
+        onCopyShare={onCopyShare}
+        hasFilter={hasFilter}
+        emptyTitle={getEmptyTitle({ search, selectedTag, showStarred, showShared })}
+        onClearAll={clearAll}
+      />
     </div>
   );
 }

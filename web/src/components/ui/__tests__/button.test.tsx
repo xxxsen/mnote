@@ -19,6 +19,7 @@ describe("Button", () => {
   it("renders loading state", () => {
     const { container } = render(<Button isLoading>Loading</Button>);
     expect(container.querySelector("button")?.disabled).toBe(true);
+    expect(container.querySelector("button")?.getAttribute("aria-busy")).toBe("true");
   });
 
   it("renders disabled state", () => {
@@ -45,10 +46,11 @@ describe("Button", () => {
     expect(c1.querySelector("button")?.className).toContain("h-8");
 
     const { container: c2 } = render(<Button size="lg">Large</Button>);
-    expect(c2.querySelector("button")?.className).toContain("h-10");
+    expect(c2.querySelector("button")?.className).toContain("h-11");
 
     const { container: c3 } = render(<Button size="icon">Icon</Button>);
-    expect(c3.querySelector("button")?.className).toContain("w-9");
+    expect(c3.querySelector("button")?.className).toContain("w-11");
+    expect(c3.querySelector("button")?.className).toContain("sm:w-10");
   });
 
   it("forwards ref", () => {

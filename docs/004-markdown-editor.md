@@ -19,6 +19,8 @@
 - `EditorShell`：页面可见结构，只接收 `session`、`commands`、`ui` 三组显式契约。
 - `EditorOverlayHost`：AI、预览、快速打开、相似文档、文档上下文抽屉和格式弹层。
 - `EditorContextRail` / `EditorContextDrawer`：宽屏布局内右栏和窄屏抽屉的两种外壳，共用 Outline / Details 互斥内容结构。
+- `ReadingSurface`：Preview、全屏预览和模板/公开阅读页共享的阅读容器，只统一视觉与局部
+  overflow，不合并业务状态。
 - `useEditorContextRail`：维护 Outline / Details 视图、Details tab、抽屉和折叠偏好；切换文档时重置视图与 tab。
 - `DetailsPanelContent` / `DetailsShareContent`：Summary、History、Share、导出和删除的纯内容组件，不自行创建定位外壳。
 - `SplitPane`：桌面分栏比例、像素最小宽度和键盘/指针交互。
@@ -183,6 +185,7 @@ Markdown 预览的 `h1-h6`、`p`、`li`、`pre`、`blockquote`、`table` 和 `hr
 - 写入通过 `requestAnimationFrame` 合并，每帧最多一次。
 - source lock 在程序滚动后至少保持两个 animation frame，以覆盖 CodeMirror 的延迟测量和滚动事件；锁定期间目标窗格的程序化滚动不得反向改写用户正在操作的源窗格。连续滚动会刷新释放时机。
 - 点击目录时抑制双向同步，等待平滑滚动通过 rAF 判定到达目标后，再同步编辑器。
+- Scroll sync 开关位于预览工具区或移动 overflow menu，不以悬浮 pill 覆盖正文边缘。
 
 文档上下文栏的 Outline 同时维护当前章节，不依赖滚动同步开关，也不依赖正文是否包含 `[toc]`：
 
@@ -208,6 +211,10 @@ Markdown 预览的 `h1-h6`、`p`、`li`、`pre`、`blockquote`、`table` 和 `hr
 Split 的静态比例边界为 30%～70%，编辑器和预览器的像素最小宽度均为 `420px`。`SplitPane` 从主工作区实测宽度扣除 `6px` 分隔条后收紧有效比例；视口变化只 clamp 本次展示值，不覆盖已保存比例，只有用户主动拖动或按键时才保存新比例。分隔条支持指针拖动、方向键、Home/End 和双击恢复 50%。
 
 小于桌面断点时只提供 Edit/Preview 切换，不显示被压缩的双栏。页面根据媒体查询只挂载一个 CodeMirror 实例；不能同时渲染桌面和移动实例后再用 CSS 隐藏。移动工具栏保留高频操作，其他命令进入 More 对话框。
+
+页面使用 `h-dvh` 并保护移动安全区。Preview 由 `ReadingSurface` 限制表格、代码块和长 URL
+的横向滚动，body 本身不得横向滚动。Edit/Preview 使用统一 SegmentedControl，所有图标动作
+都有可访问名称。
 
 ## 11. 菜单、弹层与可访问性
 
@@ -250,6 +257,8 @@ Slash/Wikilink 菜单使用 listbox/option 语义，编辑器暴露 `aria-contro
 - dirty、离页保护和保存按钮不依赖预览防抖。
 - 所有正文修改进入统一发布入口和 CodeMirror transaction。
 - 正文保存、版本、链接、资产关系和异步处理状态保持事务一致。
+- 编辑器加载阶段使用稳定 `Editor · Micro Note`，正文加载后使用
+  `<Document title> · Micro Note`；不得存在第二处 Effect 以其他分隔符覆盖标题。
 - 正式代码和文档不依赖临时设计文档。
 
 ## 15. 验证原则

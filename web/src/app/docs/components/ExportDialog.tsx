@@ -54,7 +54,7 @@ export function ExportDialog({
               <FileArchive className="h-5 w-5" aria-hidden="true" />
             </div>
             <div>
-              <div className="text-sm font-semibold">MicroNote JSON ZIP</div>
+              <div className="text-sm font-semibold">Micro Note JSON ZIP</div>
               <div className="mt-1 text-xs leading-5 text-muted-foreground">
                 Includes note content, summaries, and tag references in a portable archive.
               </div>

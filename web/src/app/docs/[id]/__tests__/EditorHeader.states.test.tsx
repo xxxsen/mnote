@@ -24,6 +24,8 @@ function renderHeader(status: EditorSyncStatus, titleMissing = false) {
       handleStarToggle={vi.fn()}
       viewMode="split"
       setViewMode={vi.fn()}
+      scrollSyncEnabled
+      onToggleScrollSync={vi.fn()}
     />,
   );
 }

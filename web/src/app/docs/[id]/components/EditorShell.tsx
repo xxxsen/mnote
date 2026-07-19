@@ -1,4 +1,7 @@
 import MarkdownPreview from "@/components/markdown-preview";
+import { ReadingSurface } from "@/components/reading-surface";
+import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import type {
   EditorShellFlatContract,
   EditorShellProps,
@@ -20,7 +23,10 @@ import { EditorOverlayHost } from "./EditorOverlayHost";
 export function EditorShell({ session, commands, ui }: EditorShellProps) {
   const p: EditorShellFlatContract = { ...session, ...commands, ...ui };
   return (
-    <div className="relative flex h-dvh flex-col overflow-hidden bg-background">
+    <main
+      aria-label="Document editor"
+      className="relative flex h-dvh flex-col overflow-hidden bg-background"
+    >
       <EditorHeader
         onBack={() => p.navigate("/docs")}
         title={p.title}
@@ -37,12 +43,14 @@ export function EditorShell({ session, commands, ui }: EditorShellProps) {
         handleStarToggle={p.handleStarToggle}
         viewMode={p.viewMode}
         setViewMode={p.setViewMode}
+        scrollSyncEnabled={p.scrollSyncEnabled}
+        onToggleScrollSync={() => p.setScrollSyncEnabled(!p.scrollSyncEnabled)}
       />
       <MobileModeSwitch mode={p.viewMode} onChange={p.setViewMode} />
       {p.localBackupUnavailable && (
         <div
           role="alert"
-          className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs font-medium text-rose-700"
+          className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-xs font-medium text-destructive"
         >
           Local backup unavailable. Keep this tab open until saving succeeds.
         </div>
@@ -57,7 +65,7 @@ export function EditorShell({ session, commands, ui }: EditorShellProps) {
         onRetry={p.handleRetry}
       />
       <EditorOverlayHost p={p} />
-    </div>
+    </main>
   );
 }
 
@@ -67,18 +75,17 @@ function MobileModeSwitch(props: {
 }) {
   const mobileMode = props.mode === "preview" ? "preview" : "edit";
   return (
-    <div className="grid grid-cols-2 border-b border-border p-1 lg:hidden">
-      {(["edit", "preview"] as const).map((mode) => (
-        <button
-          type="button"
-          key={mode}
-          aria-pressed={mobileMode === mode}
-          onClick={() => props.onChange(mode)}
-          className={`min-h-10 rounded-md text-sm font-medium ${mobileMode === mode ? "bg-accent text-foreground" : "text-muted-foreground"}`}
-        >
-          {mode === "edit" ? "Edit" : "Preview"}
-        </button>
-      ))}
+    <div className="border-b border-border p-1 lg:hidden">
+      <SegmentedControl
+        label="Editor view"
+        value={mobileMode}
+        options={[
+          { value: "edit", label: "Edit" },
+          { value: "preview", label: "Preview" },
+        ]}
+        onChange={props.onChange}
+        className="w-full [&>button]:min-h-11 [&>button]:flex-1 sm:[&>button]:min-h-10"
+      />
     </div>
   );
 }
@@ -203,39 +210,36 @@ function PreviewPane({ p }: { p: EditorShellFlatContract }) {
   return (
     <section
       aria-label="Markdown preview"
-      className="relative h-full min-w-0 overflow-auto bg-[#f8fafc] selection:bg-indigo-100"
+      className="relative h-full min-w-0 overflow-auto bg-muted/30 selection:bg-info/20"
       ref={previewRef}
       onScroll={handlePreviewScroll}
     >
-      <div className="sticky top-2 z-10 flex h-0 justify-end px-2">
-        <button
+      <div className="sticky top-0 z-10 hidden min-h-10 items-center justify-end border-b border-border bg-background/95 px-3 backdrop-blur-sm lg:flex">
+        <Button
           type="button"
+          size="sm"
+          variant="ghost"
           aria-pressed={p.scrollSyncEnabled}
           onClick={() => p.setScrollSyncEnabled(!p.scrollSyncEnabled)}
-          className="h-8 rounded-full border border-border bg-background/90 px-3 text-[10px] font-medium shadow-sm"
         >
           Scroll sync {p.scrollSyncEnabled ? "on" : "off"}
-        </button>
+        </Button>
       </div>
       {p.ec.previewPending && (
-        <div className="sticky top-0 z-10 bg-sky-50 px-3 py-1.5 text-center text-xs text-sky-700">
+        <div role="status" className="sticky top-0 z-10 bg-info/10 px-3 py-1.5 text-center text-xs text-info lg:top-10">
           Updating preview…
         </div>
       )}
       <div className="min-h-full p-4 md:p-8 lg:p-12">
-        <div className="mx-auto max-w-4xl">
-          <article className="relative w-full overflow-visible rounded-2xl border border-slate-200/50 bg-white shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)]">
-            <div className="p-6 md:p-10 lg:p-12">
-              <MarkdownPreview
-                content={p.ec.previewContent}
-                outline={p.outline}
-                showInlineToc={false}
-                className="markdown-body h-auto overflow-visible bg-transparent p-0 text-slate-800"
-                enableMentionHoverPreview
-              />
-            </div>
-          </article>
-        </div>
+        <ReadingSurface className="p-6 md:p-10 lg:p-12">
+          <MarkdownPreview
+            content={p.ec.previewContent}
+            outline={p.outline}
+            showInlineToc={false}
+            className="markdown-body h-auto overflow-visible bg-transparent p-0 text-foreground"
+            enableMentionHoverPreview
+          />
+        </ReadingSurface>
       </div>
     </section>
   );

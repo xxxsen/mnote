@@ -94,7 +94,7 @@ type IImportHandlerService interface {
 
 type ITemplateHandlerService interface { //nolint:interfacebloat // mirrors service.TemplateService public API
 	List(ctx context.Context, userID string) ([]model.Template, error)
-	ListMeta(ctx context.Context, userID string, limit, offset int) (*service.TemplateMetaListResult, error)
+	ListMeta(ctx context.Context, userID, query string, limit, offset int) (*service.TemplateMetaListResult, error)
 	Get(ctx context.Context, userID, templateID string) (*model.Template, error)
 	Create(ctx context.Context, userID string, input service.CreateTemplateInput) (*model.Template, error)
 	Update(ctx context.Context, userID, templateID string, input service.UpdateTemplateInput) error

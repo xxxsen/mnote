@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { act, cleanup, fireEvent, renderHook, screen } from "@testing-library/react";
 import React from "react";
+
 import { ToastProvider, useToast } from "../toast";
 import { ApiError } from "@/lib/api";
 
@@ -8,57 +9,73 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
   <ToastProvider>{children}</ToastProvider>
 );
 
-beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }); });
-afterEach(() => { vi.useRealTimers(); });
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("ToastProvider + useToast", () => {
   it("throws if used outside provider", () => {
-    expect(() => {
-      renderHook(() => useToast());
-    }).toThrow("useToast must be used within ToastProvider");
+    expect(() => renderHook(() => useToast())).toThrow(
+      "useToast must be used within ToastProvider",
+    );
   });
 
-  it("provides toast function within provider", () => {
+  it("announces polite and error notifications without exposing API codes", () => {
     const { result } = renderHook(() => useToast(), { wrapper });
-    expect(typeof result.current.toast).toBe("function");
+    act(() => {
+      result.current.toast({ description: "Saved", variant: "success" });
+      vi.advanceTimersByTime(1100);
+      result.current.toast({ description: new ApiError("Not found", 404), variant: "error" });
+    });
+
+    expect(screen.getByRole("status").textContent).toContain("Saved");
+    expect(screen.getByRole("alert").textContent).toContain("Not found");
+    expect(screen.getByRole("alert").textContent).not.toContain("404");
   });
 
-  it("toast with string description", () => {
+  it("deduplicates within one second and caps the visible stack at three", () => {
     const { result } = renderHook(() => useToast(), { wrapper });
-    act(() => { result.current.toast({ description: "Hello World" }); });
+    act(() => {
+      result.current.toast({ description: "Same" });
+      result.current.toast({ description: "Same" });
+      result.current.toast({ description: "Two" });
+      result.current.toast({ description: "Three" });
+      result.current.toast({ description: "Four" });
+    });
+
+    expect(screen.getAllByRole("status")).toHaveLength(3);
+    expect(screen.queryByText("Same")).toBeNull();
+    expect(screen.getByText("Four")).toBeTruthy();
   });
 
-  it("toast with Error description", () => {
+  it("auto-removes and pauses while hovered", () => {
     const { result } = renderHook(() => useToast(), { wrapper });
-    act(() => { result.current.toast({ description: new Error("Something went wrong") }); });
+    act(() => result.current.toast({ description: "Temporary", duration: 1000 }));
+    const item = screen.getByRole("status");
+
+    act(() => {
+      vi.advanceTimersByTime(400);
+      fireEvent.mouseEnter(item);
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.getByText("Temporary")).toBeTruthy();
+
+    act(() => {
+      fireEvent.mouseLeave(item);
+      vi.advanceTimersByTime(700);
+    });
+    expect(screen.queryByText("Temporary")).toBeNull();
   });
 
-  it("toast auto-removes after duration", async () => {
+  it("close button removes a notification", () => {
     const { result } = renderHook(() => useToast(), { wrapper });
-    act(() => { result.current.toast({ description: "Temporary", duration: 100 }); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
-  });
-
-  it("toast with variant and title", () => {
-    const { result } = renderHook(() => useToast(), { wrapper });
-    act(() => { result.current.toast({ title: "Error", description: "Failed", variant: "error" }); });
-  });
-
-  it("toast with success variant", () => {
-    const { result } = renderHook(() => useToast(), { wrapper });
-    act(() => { result.current.toast({ description: "Done!", variant: "success" }); });
-  });
-
-  it("toast with ApiError description", () => {
-    const { result } = renderHook(() => useToast(), { wrapper });
-    const apiErr = new ApiError("Not found", 404);
-    act(() => { result.current.toast({ description: apiErr }); });
-  });
-
-  it("close button removes toast", () => {
-    const { result } = renderHook(() => useToast(), { wrapper });
-    act(() => { result.current.toast({ description: "Removable" }); });
-    const closeBtn = document.querySelector("button");
-    if (closeBtn) act(() => { closeBtn.click(); });
+    act(() => result.current.toast({ description: new Error("Removable") }));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+    expect(screen.queryByText("Removable")).toBeNull();
   });
 });

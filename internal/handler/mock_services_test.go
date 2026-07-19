@@ -527,7 +527,7 @@ func (m *mockImportHandlerService) Status(ctx context.Context, userID, jobID str
 
 type mockTemplateHandlerService struct {
 	listFn      func(ctx context.Context, userID string) ([]model.Template, error)
-	listMetaFn  func(ctx context.Context, userID string, limit, offset int) (*service.TemplateMetaListResult, error)
+	listMetaFn  func(ctx context.Context, userID, query string, limit, offset int) (*service.TemplateMetaListResult, error)
 	getFn       func(ctx context.Context, userID, id string) (*model.Template, error)
 	createFn    func(ctx context.Context, userID string, input service.CreateTemplateInput) (*model.Template, error)
 	updateFn    func(ctx context.Context, userID, id string, input service.UpdateTemplateInput) error
@@ -543,12 +543,12 @@ func (m *mockTemplateHandlerService) List(ctx context.Context, userID string) ([
 }
 
 func (m *mockTemplateHandlerService) ListMeta(
-	ctx context.Context, userID string, limit, offset int,
+	ctx context.Context, userID, query string, limit, offset int,
 ) (*service.TemplateMetaListResult, error) {
 	if m.listMetaFn == nil {
 		panic("mockTemplateHandlerService.ListMeta not configured")
 	}
-	return m.listMetaFn(ctx, userID, limit, offset)
+	return m.listMetaFn(ctx, userID, query, limit, offset)
 }
 
 func (m *mockTemplateHandlerService) Get(ctx context.Context, userID, id string) (*model.Template, error) {

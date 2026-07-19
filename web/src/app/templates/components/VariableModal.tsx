@@ -10,6 +10,9 @@ import {
   DialogStatus,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import MarkdownPreview from "@/components/markdown-preview";
+import { ReadingSurface } from "@/components/reading-surface";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 
 interface VariableModalProps {
   variableValues: Record<string, string>;
@@ -92,34 +95,24 @@ export function VariableModal({
         </>
       ) : (
         <>
-          <div className="grid shrink-0 grid-cols-2 border-b border-slate-200 p-2 md:hidden">
-            <button
-              type="button"
-              aria-pressed={activePanel === "variables"}
-              onClick={() => setActivePanel("variables")}
-              className={`h-11 rounded-xl text-sm font-medium ${
-                activePanel === "variables" ? "bg-slate-900 text-white" : "text-slate-600"
-              }`}
-            >
-              Variables
-            </button>
-            <button
-              type="button"
-              aria-pressed={activePanel === "preview"}
-              onClick={() => setActivePanel("preview")}
-              className={`h-11 rounded-xl text-sm font-medium ${
-                activePanel === "preview" ? "bg-slate-900 text-white" : "text-slate-600"
-              }`}
-            >
-              Preview
-            </button>
+          <div className="shrink-0 border-b border-border p-2 md:hidden">
+            <SegmentedControl
+              label="Template preview panel"
+              value={activePanel}
+              options={[
+                { value: "variables", label: "Variables" },
+                { value: "preview", label: "Preview" },
+              ]}
+              onChange={setActivePanel}
+              className="grid w-full grid-cols-2"
+            />
           </div>
           <DialogBody className="grid gap-5 md:grid-cols-[320px_minmax(0,1fr)]">
             <section
               aria-label="Template variables"
               className={activePanel === "variables" ? "space-y-4" : "hidden space-y-4 md:block"}
             >
-              <h3 className="text-sm font-semibold text-slate-900">Variables</h3>
+              <h3 className="text-sm font-semibold text-foreground">Variables</h3>
               {Object.keys(variableValues).length === 0 ? (
                 <DialogStatus variant="info">This template has no custom variables.</DialogStatus>
               ) : (
@@ -147,13 +140,13 @@ export function VariableModal({
             <section
               aria-label="Generated note preview"
               className={activePanel === "preview"
-                ? "min-h-0 rounded-xl border border-border bg-slate-50 p-4"
-                : "hidden min-h-0 rounded-xl border border-border bg-slate-50 p-4 md:block"}
+                ? "min-h-0"
+                : "hidden min-h-0 md:block"}
             >
-              <h3 className="mb-3 text-sm font-semibold text-slate-900">Preview</h3>
-              <pre className="whitespace-pre-wrap break-words font-mono text-sm leading-6 text-slate-800">
-                {previewContent}
-              </pre>
+              <h3 className="mb-3 text-sm font-semibold">Preview</h3>
+              <ReadingSurface className="max-w-none p-4">
+                <MarkdownPreview content={previewContent} />
+              </ReadingSurface>
             </section>
           </DialogBody>
           <DialogFooter>

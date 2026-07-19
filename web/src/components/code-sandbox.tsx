@@ -20,10 +20,10 @@ type OutputLine = { type: "stdout" | "stderr" | "system"; content: string };
 function TerminalOutput({ output, error, isRunning }: { output: OutputLine[]; error: string | null; isRunning: boolean }) {
   if (output.length === 0 && !error) return null;
   return (
-    <div className="border-t border-border/40 bg-black/5 p-4 font-mono text-[11px] text-left">
-      <div className="flex items-center gap-2 mb-3 text-muted-foreground/40 uppercase tracking-[0.2em] font-bold">
-        <Terminal className="h-3 w-3" />
-        Terminal Output
+    <div className="border-t border-border/40 bg-black/5 p-4 text-left font-mono text-xs">
+      <div className="mb-3 flex items-center gap-2 font-semibold text-muted-foreground">
+        <Terminal className="h-3 w-3" aria-hidden="true" />
+        Terminal output
       </div>
       <div className="space-y-1.5 max-h-60 overflow-y-auto custom-scrollbar">
         {error ? (
@@ -145,7 +145,7 @@ export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
           <div className="flex items-center justify-center w-5 h-5 rounded bg-blue-500/10 border border-blue-500/20">
             <Hash className="h-3 w-3 text-blue-500" />
           </div>
-          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-mono text-left">
+          <span className="text-left font-mono text-xs font-semibold text-muted-foreground">
             {displayTitle}
           </span>
         </div>
@@ -158,7 +158,7 @@ export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
             title="Copy Code"
           >
             {copied ? (
-              <Check className="h-3.5 w-3.5 text-green-500" />
+              <Check className="h-3.5 w-3.5 text-success" />
             ) : (
               <Copy className="h-3.5 w-3.5 text-muted-foreground/60" />
             )}
@@ -208,7 +208,7 @@ export const CodeSandbox = ({ code, language, fileName }: CodeSandboxProps) => {
       </div>
 
       {isGo && goEnvReady === false && (
-        <div className="px-4 py-3 bg-amber-500/5 border-t border-amber-500/20 text-[11px] text-amber-600/80 flex items-center gap-2">
+        <div className="flex items-center gap-2 border-t border-warning/20 bg-warning/5 px-4 py-3 text-xs text-warning">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           <span>Missing <b>yaegi.wasm</b> in <code>web/public/</code>. Please ensure Docker build or local file exists.</span>
         </div>

@@ -146,11 +146,11 @@ const MarkdownPreview = memo(
           typeof document !== "undefined" &&
           createPortal(
             <div
-              className="fixed z-[220] w-80 max-w-[calc(100vw-24px)] rounded-xl border border-slate-200 bg-white/95 p-3 shadow-2xl backdrop-blur-md pointer-events-none"
+              className="pointer-events-none fixed z-[220] w-80 max-w-[calc(100vw-24px)] rounded-xl border border-border bg-popover/95 p-3 text-popover-foreground shadow-lg backdrop-blur-md"
               style={{ left: hoverPreview.x, top: hoverPreview.y }}
             >
-              <div className="text-[11px] font-semibold text-slate-900 truncate">{hoverPreview.title || "Untitled"}</div>
-              <div className="mt-1 text-[11px] leading-relaxed text-slate-600">
+              <div className="truncate text-xs font-semibold text-foreground">{hoverPreview.title || "Untitled"}</div>
+              <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 {hoverPreview.loading ? "Loading preview..." : hoverPreview.content}
               </div>
             </div>,

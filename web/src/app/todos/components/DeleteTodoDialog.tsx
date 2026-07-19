@@ -35,8 +35,8 @@ export function DeleteTodoDialog({
     >
       <DialogHeader />
       <DialogBody className="space-y-4">
-        <p className="text-sm text-slate-700">
-          Delete <span className="font-semibold text-slate-950">{target?.content}</span>?
+        <p className="text-sm text-muted-foreground">
+          Delete <span className="font-semibold text-foreground">{target?.content}</span>?
         </p>
         {deleting ? (
           <DialogStatus variant="loading">Deleting todo…</DialogStatus>

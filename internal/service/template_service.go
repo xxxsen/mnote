@@ -58,10 +58,15 @@ func (s *TemplateService) List(ctx context.Context, userID string) ([]model.Temp
 func (
 	s *TemplateService) ListMeta(ctx context.Context,
 	userID string,
+	query string,
 	limit,
 	offset int) (*TemplateMetaListResult,
 	error,
 ) {
+	query = strings.TrimSpace(query)
+	if len([]rune(query)) > 100 {
+		return nil, appErr.ErrInvalid
+	}
 	if limit <= 0 {
 		limit = 20
 	}
@@ -71,11 +76,11 @@ func (
 	if offset < 0 {
 		offset = 0
 	}
-	total, err := s.templates.CountByUser(ctx, userID)
+	total, err := s.templates.CountByUser(ctx, userID, query)
 	if err != nil {
 		return nil, fmt.Errorf("count by user: %w", err)
 	}
-	items, err := s.templates.ListMetaByUser(ctx, userID, limit, offset)
+	items, err := s.templates.ListMetaByUser(ctx, userID, query, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list meta by user: %w", err)
 	}

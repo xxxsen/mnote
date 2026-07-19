@@ -1,67 +1,218 @@
 "use client";
 
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+
+import { AppPage } from "@/components/app-page";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, CalendarDays } from "lucide-react";
-import { useTodoCalendar } from "./hooks/useTodoCalendar";
-import { WEEKDAYS, monthYearFormatter, monthKey, buildMonthCells } from "./utils";
-import { DayViewModal, CreateTodoModal, EditTodoModal } from "./components/TodoModals";
+import { IconButton } from "@/components/ui/icon-button";
+import { PageState } from "@/components/ui/page-state";
+
 import { CalendarCell } from "./components/CalendarCell";
 import { DeleteTodoDialog } from "./components/DeleteTodoDialog";
+import { MobileSchedule } from "./components/MobileSchedule";
+import { CreateTodoModal, DayViewModal, EditTodoModal } from "./components/TodoModals";
+import { useTodoCalendar } from "./hooks/useTodoCalendar";
+import { WEEKDAYS, buildMonthCells, monthKey, monthYearFormatter } from "./utils";
 
 export default function TodosPage() {
   const {
-    router, months, visibleMonth, loading, todosByDate, dayViewTodos, calendarRef,
-    handleCalendarScroll, handleToggleDone, openCreatePanel, openDayView, openEditPanel,
-    createOpen, closeCreatePanel, selectedDate, newTodoContent, setNewTodoContent,
-    creating, handleCreateTodo, editOpen, closeEditPanel, editingTodoDueDate,
-    editTodoContent, setEditTodoContent, updating, handleUpdateTodoContent,
-    dayViewOpen, dayViewDate, closeDayView, deleteTarget, deleting,
-    requestDeleteTodo, cancelDeleteTodo, confirmDeleteTodo,
+    months,
+    visibleMonth,
+    loading,
+    loadError,
+    retryTodos,
+    todosByDate,
+    dayViewTodos,
+    calendarRef,
+    handleCalendarScroll,
+    handleToggleDone,
+    pendingToggleIDs,
+    openCreatePanel,
+    openDayView,
+    openEditPanel,
+    showPreviousMonth,
+    showNextMonth,
+    showToday,
+    createOpen,
+    closeCreatePanel,
+    selectedDate,
+    setSelectedDate,
+    newTodoContent,
+    setNewTodoContent,
+    creating,
+    handleCreateTodo,
+    editOpen,
+    closeEditPanel,
+    editingTodoDueDate,
+    editTodoContent,
+    setEditTodoContent,
+    updating,
+    handleUpdateTodoContent,
+    dayViewOpen,
+    dayViewDate,
+    closeDayView,
+    deleteTarget,
+    deleting,
+    requestDeleteTodo,
+    cancelDeleteTodo,
+    confirmDeleteTodo,
   } = useTodoCalendar();
 
+  const monthControls = (
+    <>
+      <IconButton label="Previous month" variant="outline" onClick={showPreviousMonth}>
+        <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+      </IconButton>
+      <Button type="button" variant="outline" className="px-3" onClick={showToday}>
+        Today
+      </Button>
+      <IconButton label="Next month" variant="outline" onClick={showNextMonth}>
+        <ChevronRight className="h-4 w-4" aria-hidden="true" />
+      </IconButton>
+    </>
+  );
+
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
-      <style jsx global>{`
-        @keyframes todo-marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-55%); } }
-      `}</style>
-      <header className="sticky top-0 z-50 h-14 border-b border-border bg-card/95 backdrop-blur flex items-center px-4 gap-4 justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/docs")}><ArrowLeft className="h-5 w-5" /></Button>
-          <h1 className="font-mono font-bold text-lg flex items-center gap-2"><CalendarDays className="h-5 w-5 text-indigo-500" />Tasks & Calendar</h1>
-        </div>
-        <div className="text-xs text-muted-foreground hidden sm:block">{monthYearFormatter.format(visibleMonth)}</div>
-      </header>
-      <main className="flex-1 min-h-0 p-4 md:p-6 lg:p-8 bg-muted/20">
-        <div className="max-w-6xl mx-auto h-full border border-border rounded-xl overflow-hidden bg-card shadow-sm flex flex-col">
-          {loading && <div className="border-b border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">Loading todos...</div>}
-          <div ref={calendarRef} onScroll={handleCalendarScroll} className="flex-1 overflow-y-auto overscroll-contain">
-            {months.map((month, monthIndex) => {
-              const cells = buildMonthCells(month);
-              return (
-                <section key={monthKey(month)} data-month-index={monthIndex} data-month-key={monthKey(month)} className="border-b border-border/50 last:border-b-0">
-                  <div className="px-3 py-2 border-b border-border/40 bg-muted/10 text-xs font-semibold tracking-wide text-muted-foreground">{monthYearFormatter.format(month)}</div>
-                  <div className="grid grid-cols-7 border-b border-border/40 bg-muted/40">
-                    {WEEKDAYS.map((day) => (
-                      <div key={`${monthKey(month)}-${day}`} className="py-1.5 text-center text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{day}</div>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-7 auto-rows-[188px]">
-                    {cells.map((day, dayIndex) => (
-                      <CalendarCell key={`${monthKey(month)}-cell-${dayIndex}`} day={day} dayIndex={dayIndex} month={month}
-                        todosByDate={todosByDate} onCreatePanel={openCreatePanel} onDayView={openDayView}
-                        onToggleDone={handleToggleDone} onEditPanel={openEditPanel} />
-                    ))}
-                  </div>
-                </section>
-              );
-            })}
+    <AppPage
+      title="Tasks"
+      description={monthYearFormatter.format(visibleMonth)}
+      width="wide"
+      secondaryActions={monthControls}
+      primaryAction={(
+        <Button
+          type="button"
+          aria-label="New task"
+          className="gap-2 px-3 sm:px-4"
+          onClick={() => openCreatePanel(new Date())}
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          <span className="hidden sm:inline">New task</span>
+          <span className="sm:hidden">New</span>
+        </Button>
+      )}
+      className="py-4 md:py-6"
+    >
+      {loadError ? (
+        <PageState
+          kind="error"
+          title="Could not load tasks"
+          description="Check your connection and try loading the calendar again."
+          actionLabel="Retry"
+          onAction={retryTodos}
+        />
+      ) : loading ? (
+        <PageState
+          kind="loading"
+          title="Loading tasks"
+          description="Preparing your calendar and schedule."
+        />
+      ) : (
+        <>
+          <div className="overflow-hidden rounded-md border border-border bg-card md:hidden">
+            <MobileSchedule
+              month={visibleMonth}
+              todosByDate={todosByDate}
+              pendingToggleIDs={pendingToggleIDs}
+              onCreatePanel={openCreatePanel}
+              onDayView={openDayView}
+              onToggleDone={handleToggleDone}
+              onEditPanel={openEditPanel}
+            />
           </div>
-        </div>
-      </main>
-      {dayViewOpen && <DayViewModal dayViewDate={dayViewDate} dayViewTodos={dayViewTodos} onClose={closeDayView} onToggleDone={handleToggleDone} onEdit={openEditPanel} onDelete={requestDeleteTodo} />}
-      {createOpen && <CreateTodoModal selectedDate={selectedDate} newTodoContent={newTodoContent} setNewTodoContent={setNewTodoContent} creating={creating} onClose={closeCreatePanel} onCreate={handleCreateTodo} />}
-      {editOpen && <EditTodoModal editingTodoDueDate={editingTodoDueDate} editTodoContent={editTodoContent} setEditTodoContent={setEditTodoContent} updating={updating} onClose={closeEditPanel} onSave={handleUpdateTodoContent} />}
-      <DeleteTodoDialog target={deleteTarget} deleting={deleting} onCancel={cancelDeleteTodo} onConfirm={() => void confirmDeleteTodo()} />
-    </div>
+
+          <div className="hidden h-[calc(100dvh-10.5rem)] min-h-[32rem] flex-col overflow-hidden rounded-md border border-border bg-card md:flex">
+            <div
+              ref={calendarRef}
+              onScroll={handleCalendarScroll}
+              className="flex-1 overflow-y-auto overscroll-contain"
+            >
+              {months.map((month, monthIndex) => {
+                const cells = buildMonthCells(month);
+                return (
+                  <section
+                    key={monthKey(month)}
+                    data-month-index={monthIndex}
+                    data-month-key={monthKey(month)}
+                    aria-labelledby={`month-${monthKey(month)}`}
+                    className="border-b border-border last:border-b-0"
+                  >
+                    <h2
+                      id={`month-${monthKey(month)}`}
+                      className="sticky top-0 z-10 border-b border-border bg-card/95 px-3 py-2 text-sm font-semibold backdrop-blur"
+                    >
+                      {monthYearFormatter.format(month)}
+                    </h2>
+                    <div className="grid grid-cols-7 border-b border-border bg-muted/50">
+                      {WEEKDAYS.map((day) => (
+                        <div
+                          key={`${monthKey(month)}-${day}`}
+                          className="py-2 text-center text-xs font-semibold text-muted-foreground"
+                        >
+                          {day}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 auto-rows-[188px]">
+                      {cells.map((day, dayIndex) => (
+                        <CalendarCell
+                          key={`${monthKey(month)}-cell-${dayIndex}`}
+                          day={day}
+                          dayIndex={dayIndex}
+                          todosByDate={todosByDate}
+                          pendingToggleIDs={pendingToggleIDs}
+                          onCreatePanel={openCreatePanel}
+                          onDayView={openDayView}
+                          onToggleDone={handleToggleDone}
+                          onEditPanel={openEditPanel}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      {dayViewOpen ? (
+        <DayViewModal
+          dayViewDate={dayViewDate}
+          dayViewTodos={dayViewTodos}
+          pendingToggleIDs={pendingToggleIDs}
+          onClose={closeDayView}
+          onToggleDone={handleToggleDone}
+          onEdit={openEditPanel}
+          onDelete={requestDeleteTodo}
+        />
+      ) : null}
+      {createOpen ? (
+        <CreateTodoModal
+          selectedDate={selectedDate}
+          setSelectedDate={setSelectedDate}
+          newTodoContent={newTodoContent}
+          setNewTodoContent={setNewTodoContent}
+          creating={creating}
+          onClose={closeCreatePanel}
+          onCreate={handleCreateTodo}
+        />
+      ) : null}
+      {editOpen ? (
+        <EditTodoModal
+          editingTodoDueDate={editingTodoDueDate}
+          editTodoContent={editTodoContent}
+          setEditTodoContent={setEditTodoContent}
+          updating={updating}
+          onClose={closeEditPanel}
+          onSave={handleUpdateTodoContent}
+        />
+      ) : null}
+      <DeleteTodoDialog
+        target={deleteTarget}
+        deleting={deleting}
+        onCancel={cancelDeleteTodo}
+        onConfirm={() => void confirmDeleteTodo()}
+      />
+    </AppPage>
   );
 }

@@ -1,202 +1,414 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUp, Link2, Download, Menu, Send } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ArrowUp, Download, Link2, List, Send } from "lucide-react";
+
+import { AuthShell } from "@/components/auth-shell";
+import { ReadingSurface } from "@/components/reading-surface";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { Input } from "@/components/ui/input";
+import { PageState } from "@/components/ui/page-state";
 import type { ShareComment } from "@/types";
-import { useSharePage } from "./hooks/useSharePage";
-import SharedContent from "./components/SharedContent";
+
 import CommentItem from "./components/CommentItem";
 import { ShareHeader } from "./components/ShareHeader";
 import { FloatingToc, MobileToc } from "./components/ShareTocPanels";
+import SharedContent from "./components/SharedContent";
+import { useSharePage } from "./hooks/useSharePage";
 
 export default function SharePage() {
-  const {
-    token, detail, doc, loading, error, previewRef, canAnnotate,
-    permissionLabel, permissionHint, tocContent, showFloatingToc,
-    tocCollapsed, setTocCollapsed, showMobileToc, setShowMobileToc,
-    handleTocLoaded, scrollProgress, showScrollTop, toast, showToast,
-    sharePasswordInput, setSharePasswordInput, accessPassword, setAccessPassword,
-    passwordRequired, passwordError, setLoading,
-    comments, commentsTotal, commentsLoading, annotationContent, setAnnotationContent,
-    annotationSubmitting, replyingTo, setReplyingTo, inlineReplyContent, setInlineReplyContent,
-    commentsHasMore, handleSubmitComment, handleLoadMoreComments, guestAuthor,
-    handleCopyLink, handleExport, slugify, getElementById, scrollToElement,
-  } = useSharePage();
+  const share = useSharePage();
 
-  if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
-  if (passwordRequired) {
+  if (share.loading) {
     return (
-      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center px-4 py-16">
-        <div className="w-full max-w-sm bg-white border border-slate-200/70 rounded-2xl shadow-xl p-6 space-y-4">
-          <h1 className="text-lg font-bold text-slate-900">Protected Share</h1>
-          <p className="text-sm text-slate-500">This note is password protected.</p>
-          <input type="password" value={sharePasswordInput} onChange={(e) => setSharePasswordInput(e.target.value)}
-            className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm" placeholder="Enter password" />
-          {passwordError && <div className="text-xs text-red-500">{passwordError}</div>}
-          <Button className="w-full" onClick={() => {
-            const pwd = sharePasswordInput.trim();
-            if (!pwd) { return; }
-            setLoading(true);
-            setAccessPassword(pwd);
-          }}>Continue</Button>
-        </div>
-      </div>
+      <AuthShell title="Shared note" description="Loading the published note.">
+        <PageState compact kind="loading" title="Loading shared note" />
+      </AuthShell>
     );
   }
-  if (error || !doc || !detail) {
-    return (
-      <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center px-4 py-16">
-        <div className="w-full max-w-md bg-white border border-slate-200/70 rounded-2xl shadow-xl p-8 text-center">
-          <div className="mx-auto w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center text-xl font-bold">M</div>
-          <div className="mt-4 text-xs font-mono text-slate-500 uppercase tracking-widest">Micro Note</div>
-          <h1 className="mt-3 text-xl font-bold text-slate-900">Share link unavailable</h1>
-          <p className="mt-2 text-sm text-slate-500">This note may have been deleted, moved, or the link has expired.</p>
-          <div className="mt-6 flex items-center justify-center gap-3">
-            <Link href="/"><Button className="rounded-full px-5">Go Home</Button></Link>
-            <Link href="/login"><Button variant="outline" className="rounded-full px-5">Sign In</Button></Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (share.passwordRequired) return <PasswordState share={share} />;
+  if (share.error || !share.doc || !share.detail) return <UnavailableState onRetry={share.retryShare} />;
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center selection:bg-indigo-100">
-      <div className="fixed top-0 left-0 w-full h-1 z-50 bg-transparent">
-        <div className="h-full bg-indigo-500 transition-all duration-150 ease-out" style={{ width: `${scrollProgress}%` }} />
+    <div className="min-h-dvh bg-muted/30 selection:bg-info/20">
+      <div
+        role="progressbar"
+        aria-label="Reading progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(share.scrollProgress)}
+        className="fixed left-0 top-0 z-50 h-1 w-full bg-transparent"
+      >
+        <div
+          className="h-full bg-primary transition-[width] duration-150 motion-reduce:transition-none"
+          style={{ width: `${share.scrollProgress}%` }}
+        />
       </div>
 
       <FloatingActionButtons
-        showScrollTop={showScrollTop} onShowMobileToc={() => setShowMobileToc(true)}
-        onCopyLink={handleCopyLink} onExport={handleExport}
-        downloadDisabled={detail.allow_download === 0}
+        hasToc={Boolean(share.tocContent)}
+        showScrollTop={share.showScrollTop}
+        onShowMobileToc={() => share.setShowMobileToc(true)}
+        onCopyLink={() => void share.handleCopyLink()}
+        onExport={share.handleExport}
+        downloadDisabled={share.detail.allow_download === 0}
       />
 
-      <div className="w-full max-w-4xl px-4 md:px-0 py-12 md:py-20 flex flex-col items-center">
-        <ShareHeader doc={doc} detail={detail} canAnnotate={canAnnotate} permissionLabel={permissionLabel} permissionHint={permissionHint} />
+      <main
+        aria-labelledby="share-title"
+        className="mx-auto w-full max-w-[1280px] px-4 py-12 md:px-8 md:py-20"
+      >
+        <div className="mx-auto w-full max-w-4xl xl:ml-0">
+          <ShareHeader
+            doc={share.doc}
+            detail={share.detail}
+            canAnnotate={share.canAnnotate}
+            permissionLabel={share.permissionLabel}
+            permissionHint={share.permissionHint}
+          />
 
-        {doc.summary && (
-          <div className="w-full mb-8 rounded-2xl border border-slate-200/70 bg-white/70 p-6 shadow-[0_6px_20px_-12px_rgba(15,23,42,0.25)]">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">AI Summary</div>
-            <p className="mt-3 text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">{doc.summary}</p>
-          </div>
-        )}
+          {share.doc.summary ? (
+            <ReadingSurface as="section" className="mb-8 p-6 shadow-none">
+              <h2 className="text-sm font-semibold">Summary</h2>
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+                {share.doc.summary}
+              </p>
+            </ReadingSurface>
+          ) : null}
 
-        <SharedContent previewRef={previewRef} content={doc.content} handleTocLoaded={handleTocLoaded} />
+          <SharedContent
+            previewRef={share.previewRef}
+            content={share.doc.content}
+            handleTocLoaded={share.handleTocLoaded}
+          />
 
-        <CommentsSection
-          commentsTotal={commentsTotal} canAnnotate={canAnnotate} annotationContent={annotationContent}
-          setAnnotationContent={setAnnotationContent} annotationSubmitting={annotationSubmitting}
-          onSubmitComment={handleSubmitComment} commentsLoading={commentsLoading} comments={comments}
-          token={token} accessPassword={accessPassword} replyingTo={replyingTo} setReplyingTo={setReplyingTo}
-          inlineReplyContent={inlineReplyContent} setInlineReplyContent={setInlineReplyContent}
-          showToast={showToast} guestAuthor={guestAuthor} commentsHasMore={commentsHasMore}
-          onLoadMore={handleLoadMoreComments}
-        />
+          <CommentsSection
+            commentsTotal={share.commentsTotal}
+            canAnnotate={share.canAnnotate}
+            annotationContent={share.annotationContent}
+            setAnnotationContent={share.setAnnotationContent}
+            annotationSubmitting={share.annotationSubmitting}
+            annotationError={share.annotationError}
+            onSubmitComment={share.handleSubmitComment}
+            commentsLoading={share.commentsLoading}
+            commentsAppending={share.commentsAppending}
+            commentsError={share.commentsError}
+            comments={share.comments}
+            token={share.token}
+            accessPassword={share.accessPassword}
+            replyingTo={share.replyingTo}
+            setReplyingTo={share.setReplyingTo}
+            inlineReplyContent={share.inlineReplyContent}
+            setInlineReplyContent={share.setInlineReplyContent}
+            notify={share.notify}
+            guestAuthor={share.guestAuthor}
+            commentsHasMore={share.commentsHasMore}
+            onLoadMore={share.handleLoadMoreComments}
+            onRetry={share.retryComments}
+          />
 
-        <footer className="w-full mt-16 pt-12 border-t border-slate-200 flex flex-col items-center gap-6 px-4">
-          <Link href="/" className="flex items-center gap-3 grayscale opacity-60 hover:grayscale-0 hover:opacity-100 transition-all cursor-pointer">
-            <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white font-bold text-xl shadow-lg">M</div>
-            <div className="flex flex-col">
-              <span className="font-bold text-slate-900 leading-none">Micro Note</span>
-              <span className="text-[10px] text-slate-500 font-mono tracking-wider">PERSONAL KNOWLEDGE BASE</span>
-            </div>
-          </Link>
-          <p className="text-slate-400 text-xs font-medium tracking-wide uppercase">Published with Micro Note &bull; {new Date().getFullYear()}</p>
-          <Link href="/"><Button variant="outline" className="rounded-full px-6 border-slate-200 hover:bg-slate-50 transition-colors">Create your own note</Button></Link>
-        </footer>
-      </div>
-
-      {toast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <div className="bg-slate-900 text-white px-4 py-2 rounded-full text-sm font-medium shadow-2xl flex items-center gap-2">
-            <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />{toast}
-          </div>
+          <ShareFooter />
         </div>
-      )}
+      </main>
 
-      {showFloatingToc && tocContent && (
-        <FloatingToc tocContent={tocContent} tocCollapsed={tocCollapsed} setTocCollapsed={setTocCollapsed}
-          slugify={slugify} getElementById={getElementById} scrollToElement={scrollToElement} />
-      )}
-      {showMobileToc && (
-        <MobileToc tocContent={tocContent} onClose={() => setShowMobileToc(false)}
-          getElementById={getElementById} slugify={slugify} scrollToElement={scrollToElement} />
-      )}
+      {share.showFloatingToc && share.tocContent ? (
+        <FloatingToc
+          tocContent={share.tocContent}
+          tocCollapsed={share.tocCollapsed}
+          setTocCollapsed={share.setTocCollapsed}
+          slugify={share.slugify}
+          getElementById={share.getElementById}
+          scrollToElement={share.scrollToElement}
+        />
+      ) : null}
+      {share.showMobileToc ? (
+        <MobileToc
+          tocContent={share.tocContent}
+          onClose={() => share.setShowMobileToc(false)}
+          getElementById={share.getElementById}
+          slugify={share.slugify}
+          scrollToElement={share.scrollToElement}
+        />
+      ) : null}
     </div>
   );
 }
 
-function FloatingActionButtons({ showScrollTop, onShowMobileToc, onCopyLink, onExport, downloadDisabled }: {
-  showScrollTop: boolean; onShowMobileToc: () => void; onCopyLink: () => void; onExport: () => void; downloadDisabled: boolean;
-}) {
+type ShareState = ReturnType<typeof useSharePage>;
+
+function PasswordState({ share }: { share: ShareState }) {
   return (
-    <div className="fixed bottom-8 right-8 flex flex-col gap-3 z-40">
-      {showScrollTop && (
-        <Button size="icon" variant="outline" className="rounded-full shadow-lg bg-background/80 backdrop-blur-sm border-border hover:bg-background"
-          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><ArrowUp className="h-4 w-4" /></Button>
-      )}
-      <Button size="icon" variant="outline" className="rounded-full shadow-lg bg-background/80 backdrop-blur-sm border-border hover:bg-background xl:hidden"
-        onClick={onShowMobileToc} title="Table of Contents"><Menu className="h-4 w-4" /></Button>
-      <Button size="icon" variant="outline" className="rounded-full shadow-lg bg-background/80 backdrop-blur-sm border-border hover:bg-background"
-        onClick={onCopyLink} title="Copy Link"><Link2 className="h-4 w-4" /></Button>
-      <Button size="icon" variant="outline" className="rounded-full shadow-lg bg-background/80 backdrop-blur-sm border-border hover:bg-background"
-        onClick={onExport} title={downloadDisabled ? "Download disabled by owner" : "Export Markdown"} disabled={downloadDisabled}><Download className="h-4 w-4" /></Button>
-    </div>
+    <AuthShell
+      title="Protected share"
+      description="Enter the password provided by the note owner."
+    >
+      <form
+        className="space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          share.submitPassword();
+        }}
+      >
+        <div>
+          <label className="mb-1.5 block text-sm font-medium" htmlFor="share-password">
+            Share password
+          </label>
+          <Input
+            id="share-password"
+            type="password"
+            autoComplete="current-password"
+            value={share.sharePasswordInput}
+            onChange={(event) => share.setSharePasswordInput(event.target.value)}
+            aria-invalid={Boolean(share.passwordError)}
+            aria-describedby={share.passwordError ? "share-password-error" : undefined}
+            autoFocus
+            required
+          />
+        </div>
+        {share.passwordError ? (
+          <p
+            id="share-password-error"
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {share.passwordError}
+          </p>
+        ) : null}
+        <Button type="submit" className="w-full">Continue</Button>
+      </form>
+    </AuthShell>
   );
 }
 
-function CommentsSection({ commentsTotal, canAnnotate, annotationContent, setAnnotationContent, annotationSubmitting, onSubmitComment,
-  commentsLoading, comments, token, accessPassword, replyingTo, setReplyingTo, inlineReplyContent, setInlineReplyContent,
-  showToast, guestAuthor, commentsHasMore, onLoadMore,
+function UnavailableState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <AuthShell
+      title="Share link unavailable"
+      description="The note may have been deleted, moved, or the link may have expired."
+    >
+      <div className="space-y-4">
+        <PageState
+          compact
+          kind="error"
+          title="Could not open this note"
+          description="Check the link or try the request again."
+          actionLabel="Retry"
+          onAction={onRetry}
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <Link href="/" className={buttonVariants()}>Go home</Link>
+          <Link href="/login" className={buttonVariants({ variant: "outline" })}>Sign in</Link>
+        </div>
+      </div>
+    </AuthShell>
+  );
+}
+
+function FloatingActionButtons({
+  hasToc,
+  showScrollTop,
+  onShowMobileToc,
+  onCopyLink,
+  onExport,
+  downloadDisabled,
 }: {
-  commentsTotal: number; canAnnotate: boolean; annotationContent: string; setAnnotationContent: (v: string) => void;
-  annotationSubmitting: boolean; onSubmitComment: () => Promise<void>; commentsLoading: boolean;
-  comments: ShareComment[]; token: string; accessPassword: string;
-  replyingTo: { id: string; author: string } | null; setReplyingTo: (v: { id: string; author: string } | null) => void;
-  inlineReplyContent: string; setInlineReplyContent: (v: string) => void;
-  showToast: (msg: string, dur?: number) => void; guestAuthor: string; commentsHasMore: boolean; onLoadMore: () => void;
+  hasToc: boolean;
+  showScrollTop: boolean;
+  onShowMobileToc: () => void;
+  onCopyLink: () => void;
+  onExport: () => void;
+  downloadDisabled: boolean;
 }) {
   return (
-    <div className="w-full mt-12 bg-white rounded-2xl shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-200/50 p-6 md:p-12 lg:p-16">
-      <h2 className="text-2xl font-bold text-slate-800 mb-8">Comments ({commentsTotal})</h2>
-      {canAnnotate && (
-        <div className="mb-10 bg-slate-50 rounded-xl p-4 border border-slate-200">
-          <textarea value={annotationContent} onChange={(e) => setAnnotationContent(e.target.value.slice(0, 2000))}
-            placeholder="Leave a comment..." className="w-full bg-white rounded-md border border-slate-300 px-4 py-3 text-sm min-h-[120px] resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500/50" />
-          <div className="mt-3 flex items-center justify-between">
-            <div className="text-xs text-slate-400">{annotationContent.length}/2000</div>
-            <Button onClick={() => void onSubmitComment()} disabled={annotationSubmitting || !annotationContent.trim()} className="h-10 px-6">
-              <Send className="mr-2 h-4 w-4" />{annotationSubmitting ? "Posting..." : "Comment"}
+    <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2 md:bottom-8 md:right-8">
+      {downloadDisabled ? (
+        <span id="download-disabled-note" className="rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground shadow-sm">
+          Downloads disabled by owner
+        </span>
+      ) : null}
+      <div className="flex flex-col gap-2">
+        {showScrollTop ? (
+          <IconButton
+            type="button"
+            label="Back to top"
+            variant="outline"
+            className="bg-background/95 shadow-md"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          >
+            <ArrowUp className="h-4 w-4" aria-hidden="true" />
+          </IconButton>
+        ) : null}
+        {hasToc ? (
+          <IconButton
+            type="button"
+            label="Open table of contents"
+            variant="outline"
+            className="bg-background/95 shadow-md xl:hidden"
+            onClick={onShowMobileToc}
+          >
+            <List className="h-4 w-4" aria-hidden="true" />
+          </IconButton>
+        ) : null}
+        <IconButton
+          type="button"
+          label="Copy share link"
+          variant="outline"
+          className="bg-background/95 shadow-md"
+          onClick={onCopyLink}
+        >
+          <Link2 className="h-4 w-4" aria-hidden="true" />
+        </IconButton>
+        <IconButton
+          type="button"
+          label={downloadDisabled ? "Export unavailable" : "Export Markdown"}
+          variant="outline"
+          className="bg-background/95 shadow-md"
+          aria-describedby={downloadDisabled ? "download-disabled-note" : undefined}
+          onClick={onExport}
+          disabled={downloadDisabled}
+        >
+          <Download className="h-4 w-4" aria-hidden="true" />
+        </IconButton>
+      </div>
+    </div>
+  );
+}
+
+type CommentsSectionProps = {
+  commentsTotal: number;
+  canAnnotate: boolean;
+  annotationContent: string;
+  setAnnotationContent: (value: string) => void;
+  annotationSubmitting: boolean;
+  annotationError: string;
+  onSubmitComment: () => Promise<void>;
+  commentsLoading: boolean;
+  commentsAppending: boolean;
+  commentsError: string;
+  comments: ShareComment[];
+  token: string;
+  accessPassword: string;
+  replyingTo: { id: string; author: string } | null;
+  setReplyingTo: (value: { id: string; author: string } | null) => void;
+  inlineReplyContent: string;
+  setInlineReplyContent: (value: string) => void;
+  notify: (message: string, variant?: "default" | "success" | "error") => void;
+  guestAuthor: string;
+  commentsHasMore: boolean;
+  onLoadMore: () => void;
+  onRetry: () => void;
+};
+
+function CommentsSection(props: CommentsSectionProps) {
+  return (
+    <ReadingSurface as="section" className="mt-12 p-6 shadow-none md:p-10">
+      <h2 className="text-xl font-semibold">Comments ({props.commentsTotal})</h2>
+      {props.canAnnotate ? (
+        <form
+          className="mt-6 rounded-xl border border-border bg-muted/40 p-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void props.onSubmitComment();
+          }}
+        >
+          <label className="mb-2 block text-sm font-medium" htmlFor="share-comment">
+            Add a comment
+          </label>
+          <textarea
+            id="share-comment"
+            value={props.annotationContent}
+            onChange={(event) => props.setAnnotationContent(event.target.value.slice(0, 2000))}
+            className="min-h-28 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-describedby={`share-comment-count${props.annotationError ? " share-comment-error" : ""}`}
+            aria-invalid={Boolean(props.annotationError)}
+            maxLength={2000}
+          />
+          {props.annotationError ? (
+            <p id="share-comment-error" role="alert" className="mt-2 text-sm text-destructive">
+              {props.annotationError}
+            </p>
+          ) : null}
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span id="share-comment-count" className="text-xs text-muted-foreground">
+              {props.annotationContent.length}/2000 characters
+            </span>
+            <Button
+              type="submit"
+              isLoading={props.annotationSubmitting}
+              disabled={!props.annotationContent.trim()}
+            >
+              <Send className="mr-2 h-4 w-4" aria-hidden="true" />
+              Post comment
             </Button>
           </div>
-        </div>
-      )}
-      <div className="space-y-6">
-        {commentsLoading ? (
-          <div className="text-center py-8 text-slate-500 text-sm">Loading comments...</div>
-        ) : comments.length === 0 ? (
-          <div className="text-center py-12 text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-            No comments yet. {canAnnotate && "Be the first to share your thoughts!"}
+        </form>
+      ) : null}
+
+      <div className="mt-8 space-y-4">
+        {props.commentsLoading && props.comments.length === 0 ? (
+          <PageState compact kind="loading" title="Loading comments" />
+        ) : null}
+        {!props.commentsLoading && props.comments.length === 0 && !props.commentsError ? (
+          <PageState
+            compact
+            kind="empty"
+            title="No comments yet"
+            description={props.canAnnotate ? "Be the first to add one." : undefined}
+          />
+        ) : null}
+        {props.comments.map((comment) => (
+          <CommentItem
+            key={comment.id}
+            comment={comment}
+            token={props.token}
+            accessPassword={props.accessPassword}
+            canAnnotate={props.canAnnotate}
+            replyingToId={props.replyingTo?.id || null}
+            setReplyingTo={props.setReplyingTo}
+            inlineReplyContent={props.inlineReplyContent}
+            setInlineReplyContent={props.setInlineReplyContent}
+            notify={props.notify}
+            guestAuthor={props.guestAuthor}
+          />
+        ))}
+        {props.commentsError ? (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <span>{props.commentsError}</span>
+            <Button type="button" size="sm" variant="outline" onClick={props.onRetry}>
+              Retry
+            </Button>
           </div>
-        ) : (
-          comments.map((comment) => (
-            <CommentItem key={comment.id} comment={comment} token={token} accessPassword={accessPassword}
-              canAnnotate={canAnnotate} replyingToId={replyingTo?.id || null} setReplyingTo={setReplyingTo}
-              inlineReplyContent={inlineReplyContent} setInlineReplyContent={setInlineReplyContent}
-              onToast={showToast} guestAuthor={guestAuthor} />
-          ))
-        )}
-        {!commentsLoading && commentsHasMore && comments.length > 0 && (
-          <div className="text-center pt-4">
-            <Button variant="ghost" onClick={onLoadMore} className="text-slate-500 hover:text-slate-700">Load more comments</Button>
+        ) : null}
+        {props.commentsHasMore && props.comments.length > 0 ? (
+          <div className="text-center">
+            <Button
+              type="button"
+              variant="outline"
+              isLoading={props.commentsAppending}
+              onClick={props.onLoadMore}
+            >
+              Load more comments
+            </Button>
           </div>
-        )}
-        {commentsLoading && comments.length > 0 && (
-          <div className="text-center py-4 text-slate-500 text-sm">Loading more...</div>
-        )}
+        ) : null}
       </div>
-    </div>
+    </ReadingSurface>
+  );
+}
+
+function ShareFooter() {
+  return (
+    <footer className="mt-16 flex w-full flex-col items-center gap-5 border-t border-border px-4 pt-10 text-center">
+      <Link href="/" className="font-semibold text-foreground hover:underline">
+        Micro Note
+      </Link>
+      <p className="text-xs text-muted-foreground">
+        Published with Micro Note · {new Date().getFullYear()}
+      </p>
+      <Link href="/" className={buttonVariants({ variant: "outline" })}>
+        Create your own note
+      </Link>
+    </footer>
   );
 }

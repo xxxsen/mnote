@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
 
+const sharedMocks = vi.hoisted(() => ({
+  copyToClipboard: vi.fn(),
+  toast: vi.fn(),
+}));
+
 vi.mock("@/lib/api", () => ({
   apiFetch: vi.fn(),
   ApiError: class ApiError extends Error { code: number; constructor(m: string, c: number) { super(m); this.code = c; } },
@@ -8,6 +13,12 @@ vi.mock("@/lib/api", () => ({
 }));
 vi.mock("next/navigation", () => ({
   useParams: vi.fn().mockReturnValue({ token: "abc123" }),
+}));
+vi.mock("@/components/ui/toast", () => ({
+  useToast: () => ({ toast: sharedMocks.toast }),
+}));
+vi.mock("@/lib/clipboard", () => ({
+  copyToClipboard: sharedMocks.copyToClipboard,
 }));
 
 import { apiFetch, ApiError } from "@/lib/api";
@@ -24,6 +35,8 @@ const makeDetail = (overrides = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockApiFetch.mockReset();
+  sharedMocks.copyToClipboard.mockResolvedValue(true);
   localStorage.clear();
 });
 
@@ -72,42 +85,15 @@ describe("useSharePage", () => {
     expect(result.current.permissionLabel).toBe("Read");
   });
 
-  it("showToast sets and clears toast", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+  it("delegates public notifications to the global toast provider", async () => {
     mockApiFetch.mockResolvedValue(makeDetail());
     const { result } = renderHook(() => useSharePage());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    act(() => { result.current.showToast("Hello!", 100); });
-    expect(result.current.toast).toBe("Hello!");
-    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
-    expect(result.current.toast).toBeNull();
-    vi.useRealTimers();
-  });
-
-  it("showToast clears prior timer when called rapidly", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    mockApiFetch.mockResolvedValue(makeDetail());
-    const { result } = renderHook(() => useSharePage());
-    await waitFor(() => { expect(result.current.loading).toBe(false); });
-    act(() => { result.current.showToast("First", 500); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-    act(() => { result.current.showToast("Second", 500); });
-    expect(result.current.toast).toBe("Second");
-    await act(async () => { await vi.advanceTimersByTimeAsync(450); });
-    expect(result.current.toast).toBe("Second");
-    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-    expect(result.current.toast).toBeNull();
-    vi.useRealTimers();
-  });
-
-  it("cleans up toast timer on unmount", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    mockApiFetch.mockResolvedValue(makeDetail());
-    const { result, unmount } = renderHook(() => useSharePage());
-    await waitFor(() => { expect(result.current.loading).toBe(false); });
-    act(() => { result.current.showToast("Bye", 1000); });
-    unmount();
-    vi.useRealTimers();
+    act(() => { result.current.notify("Saved", "success"); });
+    expect(sharedMocks.toast).toHaveBeenCalledWith({
+      description: "Saved",
+      variant: "success",
+    });
   });
 
   it("slugify converts headings to slugs", async () => {
@@ -136,7 +122,7 @@ describe("useSharePage", () => {
     mockApiFetch.mockResolvedValue(makeDetail());
     const { result } = renderHook(() => useSharePage());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    expect(document.title).toBe("Hello");
+    expect(document.title).toBe("Hello · Micro Note");
   });
 
   it("sharePasswordInput state works", async () => {
@@ -149,10 +135,10 @@ describe("useSharePage", () => {
 
   it("handleCopyLink copies to clipboard", async () => {
     mockApiFetch.mockResolvedValue(makeDetail());
-    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
     const { result } = renderHook(() => useSharePage());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    act(() => { result.current.handleCopyLink(); });
+    await act(async () => { await result.current.handleCopyLink(); });
+    expect(sharedMocks.copyToClipboard).toHaveBeenCalledWith(window.location.href);
   });
 
   it("handleExport no-op when doc is null", async () => {
@@ -191,7 +177,7 @@ describe("useSharePage", () => {
     await waitFor(() => { expect(result.current.passwordRequired).toBe(true); });
     mockApiFetch.mockResolvedValue(makeDetail());
     act(() => { result.current.setSharePasswordInput("secret"); });
-    act(() => { result.current.setAccessPassword("secret"); });
+    act(() => { result.current.submitPassword(); });
     await waitFor(() => { expect(result.current.doc).toBeTruthy(); });
   });
 
@@ -207,24 +193,25 @@ describe("useSharePage", () => {
 
   it("handleCopyLink sets toast on success", async () => {
     mockApiFetch.mockResolvedValue(makeDetail());
-    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
-    vi.useFakeTimers({ shouldAdvanceTime: true });
     const { result } = renderHook(() => useSharePage());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    await act(async () => { result.current.handleCopyLink(); await vi.advanceTimersByTimeAsync(100); });
-    expect(result.current.toast).toBe("Link copied to clipboard!");
-    vi.useRealTimers();
+    await act(async () => { await result.current.handleCopyLink(); });
+    expect(sharedMocks.toast).toHaveBeenCalledWith({
+      description: "Link copied to clipboard.",
+      variant: "success",
+    });
   });
 
   it("handleCopyLink shows error toast on clipboard failure", async () => {
     mockApiFetch.mockResolvedValue(makeDetail());
-    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) } });
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    sharedMocks.copyToClipboard.mockResolvedValue(false);
     const { result } = renderHook(() => useSharePage());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    await act(async () => { result.current.handleCopyLink(); await vi.advanceTimersByTimeAsync(100); });
-    expect(result.current.toast).toBe("Failed to copy link");
-    vi.useRealTimers();
+    await act(async () => { await result.current.handleCopyLink(); });
+    expect(sharedMocks.toast).toHaveBeenCalledWith({
+      description: "Could not copy the link.",
+      variant: "error",
+    });
   });
 
   it("scrollToElement scrolls element into view when no container", async () => {
@@ -255,7 +242,7 @@ describe("useSharePage", () => {
     mockApiFetch.mockResolvedValue(makeDetail({ document: { id: "d1", title: "", content: "# My Title\nBody", ctime: 0, mtime: 0 } }));
     const { result } = renderHook(() => useSharePage());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    expect(document.title).toBe("My Title");
+    expect(document.title).toBe("My Title · Micro Note");
   });
 
   it("extractDocTitle truncates long first line", async () => {
@@ -263,14 +250,14 @@ describe("useSharePage", () => {
     mockApiFetch.mockResolvedValue(makeDetail({ document: { id: "d1", title: "", content: longLine, ctime: 0, mtime: 0 } }));
     const { result } = renderHook(() => useSharePage());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    expect(document.title).toHaveLength(53);
+    expect(document.title).toBe(`${"A".repeat(50)}... · Micro Note`);
   });
 
   it("extractDocTitle detects setext heading", async () => {
     mockApiFetch.mockResolvedValue(makeDetail({ document: { id: "d1", title: "", content: "My Title\n========\nBody", ctime: 0, mtime: 0 } }));
     const { result } = renderHook(() => useSharePage());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    expect(document.title).toBe("My Title");
+    expect(document.title).toBe("My Title · Micro Note");
   });
 
   it("scrollToHash finds element by hash", async () => {
@@ -313,21 +300,21 @@ describe("useSharePage", () => {
     mockApiFetch.mockResolvedValue(makeDetail({ document: { id: "d1", title: "Fallback", content: "", ctime: 0, mtime: 0 } }));
     const { result } = renderHook(() => useSharePage());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    expect(document.title).toBe("Fallback");
+    expect(document.title).toBe("Fallback · Micro Note");
   });
 
-  it("extractDocTitle falls back to MNOTE when both empty", async () => {
+  it("extractDocTitle falls back to a stable shared-note title when both are empty", async () => {
     mockApiFetch.mockResolvedValue(makeDetail({ document: { id: "d1", title: "", content: "", ctime: 0, mtime: 0 } }));
     const { result } = renderHook(() => useSharePage());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    expect(document.title).toBe("MNOTE");
+    expect(document.title).toBe("Shared note · Micro Note");
   });
 
   it("extractDocTitle handles blank lines before heading", async () => {
     mockApiFetch.mockResolvedValue(makeDetail({ document: { id: "d1", title: "", content: "\n\n# Title", ctime: 0, mtime: 0 } }));
     const { result } = renderHook(() => useSharePage());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    expect(document.title).toBe("Title");
+    expect(document.title).toBe("Title · Micro Note");
   });
 
   it("slugify handles special characters", async () => {
@@ -366,7 +353,8 @@ describe("useSharePage", () => {
     const { result } = renderHook(() => useSharePage());
     await waitFor(() => { expect(result.current.passwordRequired).toBe(true); });
     mockApiFetch.mockRejectedValue(new AE("Password required", 10000002));
-    act(() => { result.current.setAccessPassword("wrong"); });
+    act(() => { result.current.setSharePasswordInput("wrong"); });
+    act(() => { result.current.submitPassword(); });
     await waitFor(() => { expect(result.current.passwordError).toBe("Invalid password."); });
   });
 
@@ -384,7 +372,8 @@ describe("useSharePage", () => {
     const { result } = renderHook(() => useSharePage());
     await waitFor(() => { expect(result.current.passwordRequired).toBe(true); });
     mockApiFetch.mockResolvedValue(makeDetail());
-    act(() => { result.current.setAccessPassword("correct"); });
+    act(() => { result.current.setSharePasswordInput("correct"); });
+    act(() => { result.current.submitPassword(); });
     await waitFor(() => { expect(result.current.detail).toBeTruthy(); });
     expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("password=correct"), expect.anything());
   });

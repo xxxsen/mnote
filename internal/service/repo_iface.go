@@ -57,8 +57,8 @@ type templateRepo interface { //nolint:interfacebloat // mirrors repo.TemplateRe
 	Delete(ctx context.Context, userID, templateID string) error
 	GetByID(ctx context.Context, userID, templateID string) (*model.Template, error)
 	ListByUser(ctx context.Context, userID string) ([]model.Template, error)
-	ListMetaByUser(ctx context.Context, userID string, limit, offset int) ([]model.TemplateMeta, error)
-	CountByUser(ctx context.Context, userID string) (int, error)
+	ListMetaByUser(ctx context.Context, userID, query string, limit, offset int) ([]model.TemplateMeta, error)
+	CountByUser(ctx context.Context, userID, query string) (int, error)
 }
 
 type assetRepo interface {

@@ -201,6 +201,16 @@ const metaItem = (id: string, name = "Template") => ({
   id, name, description: "", default_tag_ids: [],
 });
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function setupApiRouter(responses: Record<string, unknown>) {
   mockApiFetch.mockImplementation(((url: string) => {
     for (const [pattern, value] of Object.entries(responses)) {
@@ -234,17 +244,27 @@ describe("useTemplates", () => {
     expect(result.current.templates).toHaveLength(20);
   });
 
-  it("search filters templates client-side", async () => {
-    setupApiRouter({
-      "/templates/meta": { items: [metaItem("t1", "Alpha"), metaItem("t2", "Beta")], total: 2 },
-      "/templates/t1": fullTemplate("t1", "Alpha"),
-      "/tags/ids": [],
-    });
+  it("searches templates through the paginated server endpoint", async () => {
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.includes("/templates/meta") && url.includes("q=Alpha")) {
+        return Promise.resolve({ items: [metaItem("t1", "Alpha")], total: 1 });
+      }
+      if (url.startsWith("/templates/meta")) {
+        return Promise.resolve({ items: [metaItem("t1", "Alpha"), metaItem("t2", "Beta")], total: 2 });
+      }
+      if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "Alpha"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }));
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     act(() => { result.current.setSearch("Alpha"); });
-    expect(result.current.templates).toHaveLength(1);
+    await waitFor(() => { expect(result.current.templates).toHaveLength(1); });
     expect(result.current.templates[0].name).toBe("Alpha");
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      expect.stringContaining("q=Alpha"),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("creates new template", async () => {
@@ -447,7 +467,8 @@ describe("useTemplates", () => {
     mockApiFetch.mockRejectedValue(new Error("network"));
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+    expect(result.current.listError).toBe("network");
+    expect(stableToast).not.toHaveBeenCalled();
   });
 
   it("createTemplate error shows toast", async () => {
@@ -552,17 +573,23 @@ describe("useTemplates", () => {
     await act(async () => { await result.current.confirmDeleteTemplate(); });
   });
 
-  it("filteredTemplates filters by search", async () => {
-    setupApiRouter({
-      "/templates/meta": { items: [metaItem("t1", "Alpha"), metaItem("t2", "Beta")], total: 2 },
-      "/templates/t1": fullTemplate("t1", "Alpha"),
-      "/tags/ids": [],
-    });
+  it("clearing search restores the default server page immediately", async () => {
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.includes("q=alpha")) return Promise.resolve({ items: [metaItem("t1", "Alpha")], total: 1 });
+      if (url.startsWith("/templates/meta")) {
+        return Promise.resolve({ items: [metaItem("t1", "Alpha"), metaItem("t2", "Beta")], total: 2 });
+      }
+      if (url.startsWith("/templates/t1")) return Promise.resolve(fullTemplate("t1", "Alpha"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }));
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     act(() => { result.current.setSearch("alpha"); });
-    expect(result.current.templates).toHaveLength(1);
+    await waitFor(() => { expect(result.current.templates).toHaveLength(1); });
     expect(result.current.templates[0].name).toBe("Alpha");
+    act(() => { result.current.setSearch(""); });
+    await waitFor(() => { expect(result.current.templates).toHaveLength(2); });
   });
 
   it("handleTemplateListScroll no-op when all loaded", async () => {
@@ -653,7 +680,7 @@ describe("useTemplates", () => {
     mockApiFetch.mockRejectedValue(new Error("load fail"));
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+    expect(result.current.listError).toBe("load fail");
   });
 
   it("previewContent resolves SYS: variables", async () => {
@@ -742,7 +769,7 @@ describe("useTemplates", () => {
     mockApiFetch.mockRejectedValue("network error");
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: "Failed to load templates" }));
+    expect(result.current.listError).toBe("Failed to load templates");
   });
 
   it("saveTemplate non-Error shows generic message", async () => {
@@ -758,5 +785,146 @@ describe("useTemplates", () => {
     act(() => { result.current.setDraft({ name: "X", description: "", content: "# X" }); });
     await act(async () => { const ok = await result.current.saveTemplate(); expect(ok).toBe(false); });
     expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ description: "Failed to save template" }));
+  });
+
+  it("guards a dirty selection with cancel and discard branches", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1"), metaItem("t2", "T2")], total: 2 },
+      "/templates/t1": fullTemplate("t1", "T1"),
+      "/templates/t2": fullTemplate("t2", "T2"),
+      "/tags/ids": [],
+    });
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.draft.name).toBe("T1"); });
+    act(() => { result.current.setDraft((previous) => ({ ...previous, name: "Dirty" })); });
+
+    act(() => { result.current.requestSelectTemplate("t2"); });
+    expect(result.current.pendingChange).toBe(true);
+    expect(result.current.requestedSelection).toBe("t2");
+    expect(result.current.selectedID).toBe("t1");
+
+    act(() => { result.current.cancelPendingChange(); });
+    expect(result.current.pendingChange).toBe(false);
+    expect(result.current.selectedID).toBe("t1");
+
+    act(() => { result.current.requestSelectTemplate("t2"); });
+    act(() => { result.current.discardAndContinue(); });
+    await waitFor(() => { expect(result.current.selectedID).toBe("t2"); });
+    await waitFor(() => { expect(result.current.draft.name).toBe("T2"); });
+  });
+
+  it("runs the detail callback when the already-selected template is opened", async () => {
+    setupApiRouter({
+      "/templates/meta": { items: [metaItem("t1", "T1")], total: 1 },
+      "/templates/t1": fullTemplate("t1", "T1"),
+      "/tags/ids": [],
+    });
+    const onSelected = vi.fn();
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.selectedID).toBe("t1"); });
+
+    act(() => { result.current.requestSelectTemplate("t1", onSelected); });
+
+    expect(onSelected).toHaveBeenCalledOnce();
+    expect(result.current.selectedID).toBe("t1");
+  });
+
+  it("only switches after Save and continue succeeds", async () => {
+    let failSave = true;
+    mockApiFetch.mockImplementation(((url: string, options?: RequestInit) => {
+      if (url.startsWith("/templates/meta")) {
+        return Promise.resolve({ items: [metaItem("t1", "T1"), metaItem("t2", "T2")], total: 2 });
+      }
+      if (url === "/templates/t1" && options?.method === "PUT") {
+        return failSave ? Promise.reject(new Error("save failed")) : Promise.resolve(undefined);
+      }
+      if (url === "/templates/t1") return Promise.resolve(fullTemplate("t1", "T1"));
+      if (url === "/templates/t2") return Promise.resolve(fullTemplate("t2", "T2"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }));
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.draft.name).toBe("T1"); });
+    act(() => { result.current.setDraft((previous) => ({ ...previous, name: "Dirty" })); });
+    act(() => { result.current.requestSelectTemplate("t2"); });
+
+    await act(async () => { await result.current.saveAndContinue(); });
+    expect(result.current.selectedID).toBe("t1");
+    expect(result.current.pendingChange).toBe(true);
+    expect(result.current.draft.name).toBe("Dirty");
+
+    failSave = false;
+    await act(async () => { await result.current.saveAndContinue(); });
+    await waitFor(() => { expect(result.current.selectedID).toBe("t2"); });
+  });
+
+  it("ignores a stale detail response after a newer selection", async () => {
+    const slowFirst = deferred<ReturnType<typeof fullTemplate>>();
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.startsWith("/templates/meta")) {
+        return Promise.resolve({ items: [metaItem("t1", "T1"), metaItem("t2", "T2")], total: 2 });
+      }
+      if (url === "/templates/t1") return slowFirst.promise;
+      if (url === "/templates/t2") return Promise.resolve(fullTemplate("t2", "T2"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }));
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.selectedID).toBe("t1"); });
+    act(() => { result.current.requestSelectTemplate("t2"); });
+    await waitFor(() => { expect(result.current.draft.name).toBe("T2"); });
+    act(() => { slowFirst.resolve(fullTemplate("t1", "T1")); });
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.selectedID).toBe("t2");
+    expect(result.current.draft.name).toBe("T2");
+  });
+
+  it("locks duplicate saves to one update request", async () => {
+    const save = deferred<undefined>();
+    let updates = 0;
+    mockApiFetch.mockImplementation(((url: string, options?: RequestInit) => {
+      if (url.startsWith("/templates/meta")) {
+        return Promise.resolve({ items: [metaItem("t1", "T1")], total: 1 });
+      }
+      if (url === "/templates/t1" && options?.method === "PUT") {
+        updates += 1;
+        return save.promise;
+      }
+      if (url === "/templates/t1") return Promise.resolve(fullTemplate("t1", "T1"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }));
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.draft.name).toBe("T1"); });
+    act(() => { result.current.setDraft((previous) => ({ ...previous, name: "Changed" })); });
+
+    let first!: Promise<boolean>;
+    let second!: Promise<boolean>;
+    act(() => {
+      first = result.current.saveTemplate();
+      second = result.current.saveTemplate();
+    });
+    expect(updates).toBe(1);
+    await expect(second).resolves.toBe(false);
+    act(() => { save.resolve(undefined); });
+    await act(async () => { await first; });
+  });
+
+  it("finds a template outside the first page with debounced server search", async () => {
+    const firstPage = Array.from({ length: 20 }, (_, index) => metaItem(`t${index + 1}`, `Template ${index + 1}`));
+    mockApiFetch.mockImplementation(((url: string) => {
+      if (url.includes("q=Needle")) {
+        return Promise.resolve({ items: [metaItem("t25", "Needle template")], total: 1 });
+      }
+      if (url.startsWith("/templates/meta")) return Promise.resolve({ items: firstPage, total: 25 });
+      if (url === "/templates/t1") return Promise.resolve(fullTemplate("t1", "Template 1"));
+      if (url === "/tags/ids") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    }));
+    const { result } = renderHook(() => useTemplates());
+    await waitFor(() => { expect(result.current.templates).toHaveLength(20); });
+    act(() => { result.current.setSearch("Needle"); });
+    await waitFor(() => { expect(result.current.templates[0]?.id).toBe("t25"); });
+    expect(result.current.templatesTotal).toBe(1);
   });
 });

@@ -7,11 +7,12 @@ import { apiFetch } from "@/lib/api";
 import { useDocsData } from "../hooks/useDocsData";
 
 const mockApiFetch = vi.mocked(apiFetch);
+const stableToast = vi.fn();
 
 const makeDeps = (overrides = {}) => ({
   search: "", selectedTag: "", showStarred: false, showShared: false,
   mergeTags: vi.fn(), fetchTagsByIDs: vi.fn().mockResolvedValue(undefined),
-  tagIndexRef: { current: {} },
+  tagIndexRef: { current: {} }, toast: stableToast,
   ...overrides,
 });
 
@@ -87,7 +88,7 @@ describe("useDocsData", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     mockApiFetch.mockResolvedValue(undefined);
     await act(async () => {
-      await result.current.handlePinToggle({ stopPropagation: vi.fn() } as never, { id: "d1", pinned: 0 } as never);
+      await result.current.handlePinToggle({ id: "d1", pinned: 0 } as never);
     });
     expect(mockApiFetch).toHaveBeenCalledWith("/documents/d1/pin", expect.objectContaining({ method: "PUT" }));
   });
@@ -98,7 +99,7 @@ describe("useDocsData", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     mockApiFetch.mockResolvedValue(undefined);
     await act(async () => {
-      await result.current.handleStarToggle({ stopPropagation: vi.fn() } as never, { id: "d1", starred: 0 } as never);
+      await result.current.handleStarToggle({ id: "d1", starred: 0 } as never);
     });
     expect(mockApiFetch).toHaveBeenCalledWith("/documents/d1/star", expect.objectContaining({ method: "PUT" }));
   });
@@ -159,7 +160,7 @@ describe("useDocsData", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     mockApiFetch.mockRejectedValue(new Error("fail"));
     await act(async () => {
-      await result.current.handlePinToggle({ stopPropagation: vi.fn() } as never, { id: "d1", pinned: 0 } as never);
+      await result.current.handlePinToggle({ id: "d1", pinned: 0 } as never);
     });
   });
 
@@ -169,7 +170,7 @@ describe("useDocsData", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     mockApiFetch.mockRejectedValue(new Error("fail"));
     await act(async () => {
-      await result.current.handleStarToggle({ stopPropagation: vi.fn() } as never, { id: "d1", starred: 0 } as never);
+      await result.current.handleStarToggle({ id: "d1", starred: 0 } as never);
     });
   });
 
@@ -242,7 +243,7 @@ describe("useDocsData", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     mockApiFetch.mockResolvedValue(undefined);
     await act(async () => {
-      await result.current.handlePinToggle({ stopPropagation: vi.fn() } as never, { id: "d1", pinned: 1 } as never);
+      await result.current.handlePinToggle({ id: "d1", pinned: 1 } as never);
     });
     expect(mockApiFetch).toHaveBeenCalledWith("/documents/d1/pin", expect.objectContaining({ body: JSON.stringify({ pinned: false }) }));
   });
@@ -253,7 +254,7 @@ describe("useDocsData", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
     mockApiFetch.mockResolvedValue(undefined);
     await act(async () => {
-      await result.current.handleStarToggle({ stopPropagation: vi.fn() } as never, { id: "d1", starred: 1 } as never);
+      await result.current.handleStarToggle({ id: "d1", starred: 1 } as never);
     });
     expect(mockApiFetch).toHaveBeenCalledWith("/documents/d1/star", expect.objectContaining({ body: JSON.stringify({ starred: false }) }));
   });
@@ -308,10 +309,7 @@ describe("useDocsData", () => {
     mockApiFetch.mockRejectedValue(new Error("pin fail"));
     const targetDoc = twoDocs[0];
     await act(async () => {
-      await result.current.handlePinToggle(
-        { stopPropagation: vi.fn() } as never,
-        targetDoc as never,
-      );
+      await result.current.handlePinToggle(targetDoc as never);
     });
     const d1After = result.current.docs.find(d => d.id === "d1");
     expect(d1After?.pinned).toBe(0);
@@ -332,10 +330,7 @@ describe("useDocsData", () => {
     mockApiFetch.mockRejectedValue(new Error("star fail"));
     const targetDoc = twoDocs[0];
     await act(async () => {
-      await result.current.handleStarToggle(
-        { stopPropagation: vi.fn() } as never,
-        targetDoc as never,
-      );
+      await result.current.handleStarToggle(targetDoc as never);
     });
     const d1After = result.current.docs.find(d => d.id === "d1");
     expect(d1After?.starred).toBe(0);
@@ -354,10 +349,7 @@ describe("useDocsData", () => {
 
     mockApiFetch.mockResolvedValue(undefined);
     await act(async () => {
-      await result.current.handlePinToggle(
-        { stopPropagation: vi.fn() } as never,
-        twoDocs[0] as never,
-      );
+      await result.current.handlePinToggle(twoDocs[0] as never);
     });
     const d1 = result.current.docs.find(d => d.id === "d1");
     expect(d1?.pinned).toBe(1);
@@ -376,10 +368,7 @@ describe("useDocsData", () => {
 
     mockApiFetch.mockResolvedValue(undefined);
     await act(async () => {
-      await result.current.handleStarToggle(
-        { stopPropagation: vi.fn() } as never,
-        twoDocs[0] as never,
-      );
+      await result.current.handleStarToggle(twoDocs[0] as never);
     });
     const d1 = result.current.docs.find(d => d.id === "d1");
     expect(d1?.starred).toBe(1);

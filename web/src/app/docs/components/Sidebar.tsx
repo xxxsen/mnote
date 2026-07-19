@@ -1,8 +1,24 @@
-import type { Tag } from "@/types";
+"use client";
+
+import Link from "next/link";
+import {
+  Archive,
+  CalendarDays,
+  ChevronDown,
+  FileText,
+  LayoutTemplate,
+  Pin,
+  Search,
+  Settings,
+  Share2,
+  Star,
+  Tags,
+} from "lucide-react";
+
 import { Input } from "@/components/ui/input";
+
 import type { DocumentWithTags, TagSummary } from "../types";
 import { formatRelativeTime } from "../utils";
-import { CalendarDays, ChevronDown, Pin, Search, Settings, Share2, Star } from "lucide-react";
 
 export interface SidebarProps {
   selectedTag: string;
@@ -12,7 +28,6 @@ export interface SidebarProps {
   starredTotal: number;
   sharedTotal: number;
   recentDocs: DocumentWithTags[];
-  tagIndex: Partial<Record<string, Tag>>;
   sidebarTags: TagSummary[];
   sidebarLoading: boolean;
   sidebarHasMore: boolean;
@@ -23,207 +38,236 @@ export interface SidebarProps {
   onShowAll: () => void;
   onShowStarred: () => void;
   onShowShared: () => void;
-  onNavigate: (path: string) => void;
   onTagSearchChange: (value: string) => void;
   onToggleTagPin: (tag: TagSummary) => void;
   onAutoLoadTags: () => void;
 }
 
-function RecentDocsPanel({ recentDocs, onNavigate }: {
-  recentDocs: DocumentWithTags[];
-  onNavigate: (path: string) => void;
-}) {
+function Count({ value }: { value: number }) {
   return (
-    <div className="mb-6">
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-xs font-bold uppercase text-muted-foreground">RECENT UPDATES</div>
-      </div>
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
-        .group:hover .marquee-text { animation: marquee 5s linear infinite; }
-      `}} />
-      <div className="flex flex-col gap-1">
-        {recentDocs.length === 0 ? (
-          <div className="px-2 py-1.5 text-sm text-muted-foreground italic opacity-50">No recent notes</div>
-        ) : (
-          recentDocs.map((doc) => (
-            <button
-              key={doc.id}
-              onClick={() => onNavigate(`/docs/${doc.id}`)}
-              className="group relative flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-all text-left overflow-hidden"
-            >
-              <div className="relative flex-1 overflow-hidden mr-2">
-                <div className="truncate marquee-text w-fit">{doc.title || "Untitled"}</div>
-                <div className="absolute left-0 top-full mt-1 z-50 hidden group-hover:block bg-popover text-popover-foreground text-[10px] px-2 py-1 rounded border shadow-md whitespace-nowrap pointer-events-none">
-                  {doc.title || "Untitled"}
-                </div>
-              </div>
-              <span className="shrink-0 text-[10px] bg-muted-foreground/10 px-1.5 py-0.5 rounded-lg opacity-70 group-hover:opacity-100 transition-opacity">
-                {formatRelativeTime(doc.mtime)}
-              </span>
-            </button>
-          ))
-        )}
-      </div>
-    </div>
+    <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-xs text-muted-foreground">
+      {value}
+    </span>
   );
 }
 
-function TagsPanel({ selectedTag, sidebarTags, sidebarLoading, sidebarHasMore, tagSearch, sidebarScrollRef, tagListRef, onSelectTag, onTagSearchChange, onToggleTagPin, onAutoLoadTags, onManageTags }: {
-  selectedTag: string;
-  sidebarTags: TagSummary[];
-  sidebarLoading: boolean;
-  sidebarHasMore: boolean;
-  tagSearch: string;
-  sidebarScrollRef: React.RefObject<HTMLDivElement | null>;
-  tagListRef: React.RefObject<HTMLDivElement | null>;
-  onSelectTag: (id: string) => void;
-  onTagSearchChange: (value: string) => void;
-  onToggleTagPin: (tag: TagSummary) => void;
-  onAutoLoadTags: () => void;
-  onManageTags: () => void;
+function FilterButton({
+  current,
+  label,
+  count,
+  icon,
+  onClick,
+}: {
+  current: boolean;
+  label: string;
+  count: number;
+  icon: React.ReactNode;
+  onClick: () => void;
 }) {
   return (
-    <>
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-xs font-bold uppercase text-muted-foreground">Tags</div>
-        <button onClick={onManageTags} className="text-muted-foreground hover:text-foreground transition-colors" title="Manage Tags">
-          <Settings className="h-3 w-3" />
-        </button>
+    <button
+      type="button"
+      aria-current={current ? "page" : undefined}
+      onClick={onClick}
+      className={`flex min-h-10 w-full items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors ${
+        current
+          ? "bg-accent text-accent-foreground"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+      }`}
+    >
+      <span aria-hidden="true">{icon}</span>
+      <span>{label}</span>
+      <Count value={count} />
+    </button>
+  );
+}
+
+function StaticNavigation() {
+  const entries = [
+    { href: "/todos", label: "Tasks", icon: CalendarDays },
+    { href: "/templates", label: "Templates", icon: LayoutTemplate },
+    { href: "/assets", label: "Assets", icon: Archive },
+    { href: "/tags", label: "Tags", icon: Tags },
+    { href: "/settings", label: "Settings", icon: Settings },
+  ];
+  return entries.map(({ href, label, icon: Icon }) => (
+    <Link
+      key={href}
+      href={href}
+      className="flex min-h-10 items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Icon className="h-4 w-4" aria-hidden="true" />
+      <span>{label}</span>
+    </Link>
+  ));
+}
+
+function RecentDocsPanel({ recentDocs }: { recentDocs: DocumentWithTags[] }) {
+  return (
+    <section aria-labelledby="recent-notes-heading" className="mb-5">
+      <h2 id="recent-notes-heading" className="mb-2 text-xs font-semibold text-muted-foreground">
+        Recent
+      </h2>
+      <div className="space-y-1">
+        {recentDocs.length === 0 ? (
+          <p className="px-2 py-1.5 text-xs text-muted-foreground">No recent notes</p>
+        ) : recentDocs.map((doc) => (
+          <Link
+            key={doc.id}
+            href={`/docs/${doc.id}`}
+            title={doc.title || "Untitled"}
+            className="flex min-h-9 items-center gap-2 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="min-w-0 flex-1 truncate">{doc.title || "Untitled"}</span>
+            <span className="shrink-0 text-xs">{formatRelativeTime(doc.mtime)}</span>
+          </Link>
+        ))}
       </div>
-      <div className="mb-2">
-        <div className="relative">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-          <Input
-            placeholder="Filter tags..."
-            value={tagSearch}
-            onChange={(e) => onTagSearchChange(e.target.value)}
-            className="h-7 text-xs pl-7 bg-background/50 border-border focus-visible:ring-0 focus-visible:outline-none focus-visible:ring-offset-0"
-          />
-        </div>
+    </section>
+  );
+}
+
+type TagsPanelProps = Pick<
+  SidebarProps,
+  | "selectedTag"
+  | "sidebarTags"
+  | "sidebarLoading"
+  | "sidebarHasMore"
+  | "tagSearch"
+  | "sidebarScrollRef"
+  | "tagListRef"
+  | "onSelectTag"
+  | "onTagSearchChange"
+  | "onToggleTagPin"
+  | "onAutoLoadTags"
+>;
+
+function TagsPanel({
+  selectedTag,
+  sidebarTags,
+  sidebarLoading,
+  sidebarHasMore,
+  tagSearch,
+  sidebarScrollRef,
+  tagListRef,
+  onSelectTag,
+  onTagSearchChange,
+  onToggleTagPin,
+  onAutoLoadTags,
+}: TagsPanelProps) {
+  return (
+    <section aria-labelledby="sidebar-tags-heading" className="flex min-h-0 flex-1 flex-col">
+      <div className="mb-2 flex items-center justify-between">
+        <h2 id="sidebar-tags-heading" className="text-xs font-semibold text-muted-foreground">
+          Tags
+        </h2>
+        <Link
+          href="/tags?return=%2Fdocs"
+          aria-label="Manage tags"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Settings className="h-4 w-4" aria-hidden="true" />
+        </Link>
       </div>
-      <div ref={sidebarScrollRef} onScroll={onAutoLoadTags} onWheel={onAutoLoadTags} className="flex-1 overflow-y-auto no-scrollbar">
-        <div ref={tagListRef} className="flex flex-col gap-1">
-          {sidebarTags.map((tag) => (
-            <button
-              key={tag.id}
-              onClick={() => onSelectTag(tag.id)}
-              className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${selectedTag === tag.id ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
-            >
-              <span className="truncate">#{tag.name}</span>
-              <div className="ml-2 flex items-center gap-1">
-                <span
-                  role="button" tabIndex={0}
-                  onClick={(e) => { e.stopPropagation(); onToggleTagPin(tag); }}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onToggleTagPin(tag); } }}
-                  title={tag.pinned ? "Unpin tag" : "Pin tag"}
-                  aria-label={tag.pinned ? "Unpin tag" : "Pin tag"}
-                  className={`rounded p-1 transition-colors ${tag.pinned ? "text-primary opacity-100" : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"}`}
+      <div className="relative mb-2">
+        <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+        <Input
+          aria-label="Filter sidebar tags"
+          placeholder="Filter tags"
+          value={tagSearch}
+          onChange={(event) => onTagSearchChange(event.target.value)}
+          className="h-9 bg-background pl-7 text-xs"
+        />
+      </div>
+      <div
+        ref={sidebarScrollRef}
+        onScroll={onAutoLoadTags}
+        onWheel={onAutoLoadTags}
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
+        <div ref={tagListRef} className="space-y-1">
+          {sidebarTags.map((tag) => {
+            const current = selectedTag === tag.id;
+            return (
+              <div
+                key={tag.id}
+                className={`flex min-h-10 items-center rounded-md ${
+                  current ? "bg-accent text-accent-foreground" : "text-muted-foreground"
+                }`}
+              >
+                <button
+                  type="button"
+                  aria-current={current ? "page" : undefined}
+                  onClick={() => onSelectTag(tag.id)}
+                  className="min-w-0 flex-1 truncate self-stretch rounded-l-md px-3 text-left text-sm font-medium hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <Pin className={`h-3 w-3 ${tag.pinned ? "fill-current" : ""}`} />
-                </span>
-                <span className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${selectedTag === tag.id ? "bg-background/20 text-accent-foreground" : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"}`}>
-                  {tag.count}
-                </span>
+                  #{tag.name}
+                </button>
+                <span className="shrink-0 text-xs">{tag.count}</span>
+                <button
+                  type="button"
+                  onClick={() => onToggleTagPin(tag)}
+                  title={tag.pinned ? "Unpin tag" : "Pin tag"}
+                  aria-label={`${tag.pinned ? "Unpin" : "Pin"} ${tag.name}`}
+                  className={`mx-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    tag.pinned ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  <Pin className={`h-3.5 w-3.5 ${tag.pinned ? "fill-current" : ""}`} aria-hidden="true" />
+                </button>
               </div>
-            </button>
-          ))}
-          {sidebarLoading && <div className="px-2 py-2 text-xs text-muted-foreground">Loading tags...</div>}
-          {!sidebarLoading && sidebarHasMore && (
-            <div className="flex items-center gap-1 px-2 py-2 text-[10px] uppercase tracking-widest text-muted-foreground">
-              <ChevronDown className="h-3 w-3 animate-bounce" />
+            );
+          })}
+          {sidebarLoading ? (
+            <p role="status" className="px-2 py-2 text-xs text-muted-foreground">Loading tags…</p>
+          ) : null}
+          {!sidebarLoading && sidebarHasMore ? (
+            <p className="flex items-center gap-1 px-2 py-2 text-xs text-muted-foreground">
+              <ChevronDown className="h-3 w-3 motion-safe:animate-bounce" aria-hidden="true" />
               Scroll to load more
-            </div>
-          )}
-          {!sidebarLoading && !sidebarHasMore && sidebarTags.length === 0 && (
-            <div className="px-2 py-2 text-xs text-muted-foreground italic">No tags found</div>
-          )}
+            </p>
+          ) : null}
+          {!sidebarLoading && !sidebarHasMore && sidebarTags.length === 0 ? (
+            <p className="px-2 py-2 text-xs text-muted-foreground">No tags found</p>
+          ) : null}
         </div>
       </div>
-    </>
+    </section>
   );
 }
 
 export function Sidebar(props: SidebarProps) {
-  const {
-    selectedTag, showStarred, showShared, totalDocs, starredTotal, sharedTotal,
-    recentDocs,
-    sidebarTags, sidebarLoading, sidebarHasMore, tagSearch, sidebarScrollRef, tagListRef,
-    onSelectTag, onShowAll, onShowStarred, onShowShared, onNavigate,
-    onTagSearchChange,
-    onToggleTagPin, onAutoLoadTags,
-  } = props;
-
+  const allCurrent = !props.selectedTag && !props.showStarred && !props.showShared;
   return (
-    <aside className="w-full md:w-64 border-r border-border p-4 flex-col gap-4 hidden md:flex">
-      <div className="font-mono font-bold text-xl tracking-tighter mb-4">Micro Note</div>
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-bold uppercase text-muted-foreground">General</div>
-          </div>
-          <div className="flex flex-col gap-1">
-            <button
-              onClick={onShowAll}
-              className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${selectedTag === "" && !showStarred && !showShared ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
-            >
-              <span>All Notes</span>
-              <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${selectedTag === "" && !showStarred && !showShared ? "bg-background/20 text-accent-foreground" : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"}`}>
-                {totalDocs}
-              </span>
-            </button>
-            <button
-              onClick={onShowStarred}
-              className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${showStarred ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
-            >
-              <div className="flex items-center">
-                <Star className={`mr-2 h-4 w-4 ${showStarred ? "fill-current" : ""}`} />
-                <span>Starred</span>
-              </div>
-              <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${showStarred ? "bg-background/20 text-accent-foreground" : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"}`}>
-                {starredTotal}
-              </span>
-            </button>
-            <button
-              onClick={onShowShared}
-              className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all ${showShared ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
-            >
-              <div className="flex items-center">
-                <Share2 className={`mr-2 h-4 w-4 ${showShared ? "fill-current" : ""}`} />
-                <span>Shared</span>
-              </div>
-              <span className={`ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] transition-colors ${showShared ? "bg-background/20 text-accent-foreground" : "bg-muted text-muted-foreground group-hover:bg-background group-hover:text-foreground"}`}>
-                {sharedTotal}
-              </span>
-            </button>
-            <button
-              onClick={() => onNavigate("/todos")}
-              className="group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm font-medium transition-all text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <div className="flex items-center">
-                <CalendarDays className="mr-2 h-4 w-4" />
-                <span>TODOs</span>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        <RecentDocsPanel recentDocs={recentDocs} onNavigate={onNavigate} />
-
-        <TagsPanel
-          selectedTag={selectedTag}
-          sidebarTags={sidebarTags}
-          sidebarLoading={sidebarLoading}
-          sidebarHasMore={sidebarHasMore}
-          tagSearch={tagSearch}
-          sidebarScrollRef={sidebarScrollRef}
-          tagListRef={tagListRef}
-          onSelectTag={onSelectTag}
-          onTagSearchChange={onTagSearchChange}
-          onToggleTagPin={onToggleTagPin}
-          onAutoLoadTags={onAutoLoadTags}
-          onManageTags={() => onNavigate(`/tags?return=${encodeURIComponent("/docs")}`)}
+    <aside className="hidden h-dvh w-64 shrink-0 flex-col gap-4 border-r border-border bg-background p-4 lg:flex">
+      <div className="text-xl font-semibold">Micro Note</div>
+      <nav aria-label="Notes and application" className="space-y-1">
+        <FilterButton
+          current={allCurrent}
+          label="All Notes"
+          count={props.totalDocs}
+          icon={<FileText className="h-4 w-4" />}
+          onClick={props.onShowAll}
         />
+        <FilterButton
+          current={props.showStarred}
+          label="Starred"
+          count={props.starredTotal}
+          icon={<Star className={`h-4 w-4 ${props.showStarred ? "fill-current" : ""}`} />}
+          onClick={props.onShowStarred}
+        />
+        <FilterButton
+          current={props.showShared}
+          label="Shared"
+          count={props.sharedTotal}
+          icon={<Share2 className="h-4 w-4" />}
+          onClick={props.onShowShared}
+        />
+        <StaticNavigation />
+      </nav>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <RecentDocsPanel recentDocs={props.recentDocs} />
+        <TagsPanel {...props} />
       </div>
     </aside>
   );

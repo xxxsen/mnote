@@ -369,11 +369,12 @@ describe("useTodoCalendar", () => {
     expect(result.current.createOpen).toBe(true);
   });
 
-  it("useTodoFetch shows error toast on fetch failure", async () => {
+  it("exposes a retryable inline error when fetching fails", async () => {
     mockTodoService.listByDateRange.mockRejectedValue(new Error("network"));
     const { result } = renderHook(() => useTodoCalendar());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
-    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+    expect(result.current.loadError).toBe(true);
+    expect(stableToast).not.toHaveBeenCalled();
   });
 
   it("handleCalendarScroll skips prepend/append when loadingMoreRef is true", async () => {
@@ -463,7 +464,7 @@ describe("useTodoCalendar", () => {
     act(() => { result.current.openEditPanel({ id: "t1", content: "old", done: 0, due_date: "2026-01-01" } as never); });
     act(() => { result.current.setEditTodoContent("new content"); });
     await act(async () => { await result.current.handleUpdateTodoContent(); });
-    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Update Failed" }));
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Update failed" }));
   });
 
   it("handleCreateTodo error shows toast", async () => {
@@ -474,7 +475,7 @@ describe("useTodoCalendar", () => {
     act(() => { result.current.openCreatePanel(new Date(2026, 0, 15)); });
     act(() => { result.current.setNewTodoContent("todo content"); });
     await act(async () => { await result.current.handleCreateTodo(); });
-    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Create Failed" }));
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Create failed" }));
   });
 
   it("handleCreateTodo with empty content shows error", async () => {
@@ -484,7 +485,7 @@ describe("useTodoCalendar", () => {
     act(() => { result.current.openCreatePanel(new Date(2026, 0, 15)); });
     act(() => { result.current.setNewTodoContent("   "); });
     await act(async () => { await result.current.handleCreateTodo(); });
-    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Invalid Todo" }));
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Invalid todo" }));
   });
 
   it("handleUpdateTodoContent with empty content shows error", async () => {
@@ -494,7 +495,7 @@ describe("useTodoCalendar", () => {
     act(() => { result.current.openEditPanel({ id: "t1", content: "old", done: 0, due_date: "2026-01-01" } as never); });
     act(() => { result.current.setEditTodoContent("   "); });
     await act(async () => { await result.current.handleUpdateTodoContent(); });
-    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Invalid Todo" }));
+    expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Invalid todo" }));
   });
 
   it("handleToggleDone with multiple todos only updates the target", async () => {
@@ -550,5 +551,92 @@ describe("useTodoCalendar", () => {
     await act(async () => { await result.current.confirmDeleteTodo(); });
     expect(result.current.deleteTarget).toEqual(todo);
     expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+  });
+
+  it("retries the date range after an inline load error", async () => {
+    mockTodoService.listByDateRange
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce([makeTodo()]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loadError).toBe(true); });
+
+    act(() => { result.current.retryTodos(); });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+      expect(result.current.loadError).toBe(false);
+    });
+    expect(result.current.todosByDate("2025-01-15")).toHaveLength(1);
+    expect(mockTodoService.listByDateRange).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the editable date selected in the create dialog", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    mockTodoService.create.mockResolvedValue(makeTodo({ due_date: "2025-02-20" }));
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    act(() => {
+      result.current.openCreatePanel(new Date(2025, 0, 15));
+      result.current.setSelectedDate("2025-02-20");
+      result.current.setNewTodoContent("Moved task");
+    });
+
+    await act(async () => { await result.current.handleCreateTodo(); });
+
+    expect(mockTodoService.create).toHaveBeenCalledWith("Moved task", "2025-02-20", false);
+  });
+
+  it("rolls back only the failed optimistic toggle without refetching", async () => {
+    const target = makeTodo({ id: "target", done: 0 });
+    const peer = makeTodo({ id: "peer", done: 1 });
+    mockTodoService.listByDateRange.mockResolvedValue([target, peer]);
+    mockTodoService.toggleDone.mockRejectedValue(new Error("network"));
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+
+    await act(async () => { await result.current.handleToggleDone(target); });
+
+    const todos = result.current.todosByDate(target.due_date);
+    expect(todos.find((todo) => todo.id === "target")?.done).toBe(0);
+    expect(todos.find((todo) => todo.id === "peer")?.done).toBe(1);
+    expect(mockTodoService.listByDateRange).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks duplicate toggles for the same todo while allowing a pending state", async () => {
+    let resolveToggle: (() => void) | undefined;
+    mockTodoService.listByDateRange.mockResolvedValue([makeTodo()]);
+    mockTodoService.toggleDone.mockReturnValue(new Promise<void>((resolve) => {
+      resolveToggle = resolve;
+    }));
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+
+    let first: Promise<void> | undefined;
+    act(() => {
+      first = result.current.handleToggleDone(makeTodo());
+      void result.current.handleToggleDone(makeTodo());
+    });
+
+    expect(mockTodoService.toggleDone).toHaveBeenCalledTimes(1);
+    expect(result.current.pendingToggleIDs.has("t1")).toBe(true);
+    await act(async () => {
+      resolveToggle?.();
+      await first;
+    });
+    expect(result.current.pendingToggleIDs.has("t1")).toBe(false);
+  });
+
+  it("supports previous, next, and today month controls", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    const initialMonth = result.current.visibleMonth.getMonth();
+
+    act(() => { result.current.showPreviousMonth(); });
+    expect(result.current.visibleMonth.getMonth()).toBe((initialMonth + 11) % 12);
+    act(() => { result.current.showNextMonth(); });
+    expect(result.current.visibleMonth.getMonth()).toBe(initialMonth);
+    act(() => { result.current.showToday(); });
+    expect(result.current.visibleMonth.getMonth()).toBe(new Date().getMonth());
   });
 });
