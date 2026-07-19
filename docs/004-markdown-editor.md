@@ -258,7 +258,9 @@ Slash/Wikilink 菜单使用 listbox/option 语义，编辑器暴露 `aria-contro
 - 所有正文修改进入统一发布入口和 CodeMirror transaction。
 - 正文保存、版本、链接、资产关系和异步处理状态保持事务一致。
 - 编辑器加载阶段使用稳定 `Editor · Micro Note`，正文加载后使用
-  `<Document title> · Micro Note`；不得存在第二处 Effect 以其他分隔符覆盖标题。
+  `<Document title> · Micro Note`。App Router 可能在客户端正文加载后继续提交父级
+  metadata，因此编辑页存活期间必须监听 head 变化并恢复当前文档标题，卸载时立即解除
+  监听；不得增加第二处 Effect 以其他分隔符覆盖标题。
 - 正式代码和文档不依赖临时设计文档。
 
 ## 15. 验证原则

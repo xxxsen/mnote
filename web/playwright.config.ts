@@ -1,4 +1,10 @@
 import { defineConfig } from "@playwright/test";
+import path from "node:path";
+
+// Keep screenshot rendering independent from host-only fonts (for example,
+// Windows fonts exposed inside WSL). Child web-server and browser processes
+// inherit this unless a caller intentionally supplies another font config.
+process.env.FONTCONFIG_FILE ??= path.join(__dirname, "e2e/fontconfig/fonts.conf");
 
 export default defineConfig({
   testDir: "./e2e",

@@ -1,4 +1,4 @@
-.PHONY: build test test-coverage install-golangci-lint lint-go backend-build backend-test backend-check build-image build-web-image build-yaegi-wasm run-web run dev run-dev-docker web-install web-lint web-test web-build
+.PHONY: build test test-coverage install-golangci-lint lint-go backend-build backend-test backend-check build-image build-web-image build-yaegi-wasm run-web run dev run-dev-docker web-install web-lint web-test web-build web-e2e web-e2e-update-snapshots
 
 BIN ?= mnote
 GO_TEST_PKGS ?= ./cmd/... ./internal/...
@@ -62,3 +62,9 @@ web-test:
 
 web-build:
 	cd web && npm run build
+
+web-e2e:
+	cd web && TMPDIR=/tmp npx playwright test
+
+web-e2e-update-snapshots:
+	cd web && TMPDIR=/tmp npx playwright test --update-snapshots
