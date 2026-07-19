@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/didi/gendry/builder"
@@ -151,4 +152,84 @@ func (r *OAuthRepo) DeleteByUserProvider(ctx context.Context, userID, provider s
 		return appErr.ErrNotFound
 	}
 	return nil
+}
+
+func (r *OAuthRepo) CreateOneTimeToken(ctx context.Context, token *model.OAuthOneTimeToken) error {
+	return insertRow(ctx, conn(ctx, r.db), "oauth_one_time_tokens", map[string]any{
+		"kind":             token.Kind,
+		"digest":           token.Digest,
+		"purpose":          token.Purpose,
+		"provider":         token.Provider,
+		"user_id":          nullableString(token.UserID),
+		"email_normalized": nullableString(token.EmailNormalized),
+		"return_to":        token.ReturnTo,
+		"expires_at":       token.ExpiresAt,
+		"consumed_at":      nullableUnix(token.ConsumedAt),
+		"ctime":            token.Ctime,
+	})
+}
+
+func (r *OAuthRepo) ConsumeOneTimeToken(
+	ctx context.Context, kind, digest string, now int64,
+) (*model.OAuthOneTimeToken, error) {
+	const query = `
+		UPDATE oauth_one_time_tokens
+		SET consumed_at = $1
+		WHERE kind = $2
+		  AND digest = $3
+		  AND consumed_at IS NULL
+		  AND expires_at > $1
+		RETURNING kind, digest, purpose, provider,
+		          COALESCE(user_id, ''), COALESCE(email_normalized, ''),
+		          return_to, expires_at, consumed_at, ctime
+	`
+	var token model.OAuthOneTimeToken
+	err := conn(ctx, r.db).QueryRowContext(ctx, query, now, kind, digest).Scan(
+		&token.Kind, &token.Digest, &token.Purpose, &token.Provider,
+		&token.UserID, &token.EmailNormalized, &token.ReturnTo,
+		&token.ExpiresAt, &token.ConsumedAt, &token.Ctime,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, appErr.ErrNotFound
+		}
+		return nil, fmt.Errorf("consume oauth token: %w", err)
+	}
+	return &token, nil
+}
+
+func (r *OAuthRepo) DeleteExpiredOneTimeTokens(ctx context.Context, cutoff int64, limit int) (int64, error) {
+	const query = `
+		DELETE FROM oauth_one_time_tokens
+		WHERE (kind, digest) IN (
+			SELECT kind, digest
+			FROM oauth_one_time_tokens
+			WHERE expires_at < $1
+			ORDER BY expires_at
+			LIMIT $2
+		)
+	`
+	result, err := conn(ctx, r.db).ExecContext(ctx, query, cutoff, limit)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired oauth tokens: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("delete expired oauth tokens: %w", err)
+	}
+	return count, nil
+}
+
+func nullableString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func nullableUnix(value int64) any {
+	if value == 0 {
+		return nil
+	}
+	return value
 }

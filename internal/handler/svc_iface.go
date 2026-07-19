@@ -15,60 +15,121 @@ type IAuthService interface {
 	UpdatePassword(ctx context.Context, userID, currentPassword, newPassword string) error
 }
 
-type IOAuthService interface { //nolint:interfacebloat // mirrors service.OAuthService public API
+type oauthFlowService interface {
 	GetAuthURL(provider, state string) (string, error)
+	CreateState(ctx context.Context, provider, purpose, userID, returnTo string) (string, error)
+	ConsumeState(ctx context.Context, state string) (*service.OAuthState, error)
 	ExchangeCode(ctx context.Context, provider, code string) (*oauth.Profile, error)
-	Bind(ctx context.Context, userID string, profile *oauth.Profile) error
+}
+
+type oauthLoginService interface {
 	LoginOrCreate(ctx context.Context, profile *oauth.Profile) (*model.User, string, error)
+	CreateExchange(ctx context.Context, user *model.User) (string, error)
+	ConsumeExchange(ctx context.Context, code string) (*service.OAuthExchange, error)
+}
+
+type oauthBindingService interface {
+	Bind(ctx context.Context, userID string, profile *oauth.Profile) error
 	ListBindings(ctx context.Context, userID string) ([]model.OAuthAccount, error)
 	Unbind(ctx context.Context, userID, provider string) error
 }
 
-type IDocumentService interface { //nolint:interfacebloat // mirrors service.DocumentService public API
-	Create(ctx context.Context, userID string, input service.DocumentCreateInput) (*model.Document, error)
+type IOAuthService interface {
+	oauthFlowService
+	oauthLoginService
+	oauthBindingService
+}
+
+type documentLookupService interface {
 	Search(ctx context.Context, userID, query, tagID string,
 		starred *int, limit, offset uint, orderBy string) ([]model.Document, error)
 	Get(ctx context.Context, userID, docID string) (*model.Document, error)
-	Update(ctx context.Context, userID, docID string, input service.DocumentUpdateInput) error
+	Summary(ctx context.Context, userID string, limit uint) (*service.DocumentSummary, error)
+	GetBacklinks(ctx context.Context, userID, docID string) ([]model.Document, error)
+}
+
+type documentTagQueryService interface {
+	ListTagIDs(ctx context.Context, userID, docID string) ([]string, error)
+	ListTagIDsByDocIDs(ctx context.Context, userID string, docIDs []string) (map[string][]string, error)
+	ListTagsByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error)
+}
+
+type documentContentWriteService interface {
+	Create(ctx context.Context, userID string, input service.DocumentCreateInput) (*model.Document, error)
 	Save(ctx context.Context, userID, docID string,
 		input service.DocumentUpdateInput) (*model.SaveDocumentResult, error)
 	UpdateTags(ctx context.Context, userID, docID string, tagIDs []string) error
 	UpdateSummary(ctx context.Context, userID, docID, summary string) error
+}
+
+type documentMetadataWriteService interface {
 	UpdatePinned(ctx context.Context, userID, docID string, pinned int) error
 	UpdateStarred(ctx context.Context, userID, docID string, starred int) error
 	Delete(ctx context.Context, userID, docID string) error
-	Summary(ctx context.Context, userID string, limit uint) (*service.DocumentSummary, error)
-	GetBacklinks(ctx context.Context, userID, docID string) ([]model.Document, error)
-	ListTagIDs(ctx context.Context, userID, docID string) ([]string, error)
-	ListTagIDsByDocIDs(ctx context.Context, userID string, docIDs []string) (map[string][]string, error)
-	ListTagsByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error)
+}
+
+type IDocumentService interface {
+	documentLookupService
+	documentTagQueryService
+	documentContentWriteService
+	documentMetadataWriteService
+}
+
+type IVersionHandlerService interface {
 	ListVersions(ctx context.Context, userID, docID string) ([]model.DocumentVersionSummary, error)
 	GetVersion(ctx context.Context, userID, docID string, version int) (*model.DocumentVersion, error)
+}
+
+type shareConfigService interface {
 	CreateShare(ctx context.Context, userID, docID string) (*model.Share, error)
 	UpdateShareConfig(ctx context.Context, userID, docID string, input service.ShareConfigInput) (*model.Share, error)
 	RevokeShare(ctx context.Context, userID, docID string) error
 	GetActiveShare(ctx context.Context, userID, docID string) (*model.Share, error)
+}
+
+type publicShareService interface {
 	GetShareByToken(ctx context.Context, token, password string) (*service.PublicShareDetail, error)
 	ListShareCommentsByToken(ctx context.Context, token, password string,
 		limit, offset int) (*service.ShareCommentListResult, error)
 	ListShareCommentRepliesByToken(ctx context.Context, token, password, rootID string,
 		limit, offset int) ([]model.ShareComment, error)
 	CreateShareCommentByToken(ctx context.Context, input service.CreateShareCommentInput) (*model.ShareComment, error)
+}
+
+type IShareHandlerService interface {
+	shareConfigService
+	publicShareService
 	ListSharedDocuments(ctx context.Context, userID, query string) ([]service.SharedDocumentSummary, error)
+}
+
+type ISemanticSearchHandlerService interface {
 	SemanticSearch(ctx context.Context, userID, query, tagID string,
 		starred *int, limit, offset uint, orderBy, excludeID string,
 	) ([]model.Document, []float32, error)
+	ListTagIDs(ctx context.Context, userID, docID string) ([]string, error)
 }
 
-type ITagService interface { //nolint:interfacebloat // mirrors service.TagService public API
+type tagWriteService interface {
 	Create(ctx context.Context, userID, name string) (*model.Tag, error)
 	CreateBatch(ctx context.Context, userID string, names []string) ([]model.Tag, error)
+	Delete(ctx context.Context, userID, tagID string) error
+	UpdatePinned(ctx context.Context, userID, tagID string, pinned int) error
+}
+
+type tagQueryService interface {
 	List(ctx context.Context, userID string) ([]model.Tag, error)
 	ListPage(ctx context.Context, userID, query string, limit, offset int) ([]model.Tag, error)
 	ListByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error)
 	ListSummary(ctx context.Context, userID, query string, limit, offset int) ([]model.TagSummary, error)
-	Delete(ctx context.Context, userID, tagID string) error
-	UpdatePinned(ctx context.Context, userID, tagID string, pinned int) error
+}
+
+type ITagService interface {
+	tagWriteService
+	tagQueryService
+}
+
+type IAITagLookupService interface {
+	ListByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error)
 }
 
 type IExportService interface {
@@ -92,15 +153,23 @@ type IImportHandlerService interface {
 	Status(ctx context.Context, userID, jobID string) (*model.ImportJob, error)
 }
 
-type ITemplateHandlerService interface { //nolint:interfacebloat // mirrors service.TemplateService public API
+type templateQueryService interface {
 	List(ctx context.Context, userID string) ([]model.Template, error)
 	ListMeta(ctx context.Context, userID, query string, limit, offset int) (*service.TemplateMetaListResult, error)
 	Get(ctx context.Context, userID, templateID string) (*model.Template, error)
+}
+
+type templateWriteService interface {
 	Create(ctx context.Context, userID string, input service.CreateTemplateInput) (*model.Template, error)
 	Update(ctx context.Context, userID, templateID string, input service.UpdateTemplateInput) error
 	Delete(ctx context.Context, userID, templateID string) error
 	CreateDocumentFromTemplate(ctx context.Context, userID string,
 		input service.CreateDocumentFromTemplateInput) (*model.Document, error)
+}
+
+type ITemplateHandlerService interface {
+	templateQueryService
+	templateWriteService
 }
 
 type IAssetHandlerService interface {

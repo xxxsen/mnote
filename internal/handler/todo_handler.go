@@ -29,7 +29,7 @@ type createTodoRequest struct {
 func (h *TodoHandler) Create(c *gin.Context) {
 	userID := getUserID(c)
 	var req createTodoRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request body")
 		return
 	}
@@ -58,7 +58,7 @@ func (h *TodoHandler) Create(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, todo)
+	response.Success(c, toTodoResponse(*todo))
 }
 
 func (h *TodoHandler) List(c *gin.Context) {
@@ -82,7 +82,7 @@ func (h *TodoHandler) List(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, todos)
+	response.Success(c, toTodoResponses(todos))
 }
 
 type toggleDoneRequest struct {
@@ -97,7 +97,7 @@ func (h *TodoHandler) ToggleDone(c *gin.Context) {
 	userID := getUserID(c)
 	todoID := c.Param("id")
 	var req toggleDoneRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request body")
 		return
 	}
@@ -112,7 +112,7 @@ func (h *TodoHandler) Update(c *gin.Context) {
 	userID := getUserID(c)
 	todoID := c.Param("id")
 	var req updateTodoRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request body")
 		return
 	}
@@ -129,7 +129,7 @@ func (h *TodoHandler) Update(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, todo)
+	response.Success(c, toTodoResponse(*todo))
 }
 
 func (h *TodoHandler) Delete(c *gin.Context) {

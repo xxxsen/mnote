@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"strconv"
-
 	"github.com/gin-gonic/gin"
 
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
@@ -37,40 +35,27 @@ func (h *TemplateHandler) List(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, items)
+	response.Success(c, toTemplateResponses(items))
 }
 
 func (h *TemplateHandler) ListMeta(c *gin.Context) {
-	limit := 20
-	if raw := c.Query("limit"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil {
-			response.Error(c, errcode.ErrInvalid, "invalid limit")
-			return
-		}
-		limit = parsed
-	}
-	offset := 0
-	if raw := c.Query("offset"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil {
-			response.Error(c, errcode.ErrInvalid, "invalid offset")
-			return
-		}
-		offset = parsed
+	page, err := parsePage(c, 20, 200)
+	if err != nil {
+		response.Error(c, errcode.ErrInvalid, "invalid pagination")
+		return
 	}
 	items, err := h.templates.ListMeta(
 		c.Request.Context(),
 		getUserID(c),
 		c.Query("q"),
-		limit,
-		offset,
+		page.Limit,
+		page.Offset,
 	)
 	if err != nil {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, items)
+	response.Success(c, toTemplateMetaListResponse(items))
 }
 
 func (h *TemplateHandler) Get(c *gin.Context) {
@@ -79,12 +64,12 @@ func (h *TemplateHandler) Get(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, item)
+	response.Success(c, toTemplateResponse(*item))
 }
 
 func (h *TemplateHandler) Create(c *gin.Context) {
 	var req templateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -98,12 +83,12 @@ func (h *TemplateHandler) Create(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, item)
+	response.Success(c, toTemplateResponse(*item))
 }
 
 func (h *TemplateHandler) Update(c *gin.Context) {
 	var req templateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -129,7 +114,7 @@ func (h *TemplateHandler) Delete(c *gin.Context) {
 
 func (h *TemplateHandler) CreateDocument(c *gin.Context) {
 	var req createDocumentFromTemplateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -143,5 +128,5 @@ func (h *TemplateHandler) CreateDocument(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, doc)
+	response.Success(c, toDocumentResponse(*doc))
 }

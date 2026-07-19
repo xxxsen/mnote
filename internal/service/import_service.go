@@ -26,10 +26,22 @@ type ImportPreview struct {
 }
 
 type ImportService struct {
-	documents *DocumentService
-	tags      *TagService
+	documents importDocumentService
+	tags      importTagService
 	jobRepo   importJobRepo
 	noteRepo  importJobNoteRepo
+	runtime   Runtime
+}
+
+type importDocumentService interface {
+	GetByTitle(ctx context.Context, userID, title string) (*model.Document, error)
+	Create(ctx context.Context, userID string, input DocumentCreateInput) (*model.Document, error)
+	Update(ctx context.Context, userID, docID string, input DocumentUpdateInput) error
+}
+
+type importTagService interface {
+	ListByNames(ctx context.Context, userID string, names []string) ([]model.Tag, error)
+	CreateBatch(ctx context.Context, userID string, names []string) ([]model.Tag, error)
 }
 
 const (
@@ -37,17 +49,27 @@ const (
 	maxNoteBytes   = 128 * 1024
 )
 
+var errUnknownImportStatus = errors.New("unknown import job status")
+
+type importJobConfirmer interface {
+	Confirm(
+		ctx context.Context, userID, jobID string, mode model.ImportMode, now int64,
+	) (bool, error)
+}
+
 func NewImportService(
-	documents *DocumentService,
-	tags *TagService,
+	documents importDocumentService,
+	tags importTagService,
 	jobRepo importJobRepo,
 	noteRepo importJobNoteRepo,
+	runtime Runtime,
 ) *ImportService {
 	return &ImportService{
 		documents: documents,
 		tags:      tags,
 		jobRepo:   jobRepo,
 		noteRepo:  noteRepo,
+		runtime:   prepareRuntime(runtime),
 	}
 }
 
@@ -86,10 +108,14 @@ func (s *ImportService) CreateHedgeDocJob(ctx context.Context, userID, filePath 
 			title = "Untitled"
 		}
 		title = uniqueTitle(title, nameCounts)
+		noteID, err := s.runtime.IDs.ID()
+		if err != nil {
+			return nil, fmt.Errorf("generate import note id: %w", err)
+		}
 		return &parsedNote{
 			note: model.ImportNote{Title: title, Content: cleaned, Tags: tags, Source: file.Name},
 			row: model.ImportJobNote{
-				ID: newID(), JobID: jobID, UserID: userID, Position: position,
+				ID: noteID, JobID: jobID, UserID: userID, Position: position,
 				Title: title, Content: cleaned, Tags: tags, Source: file.Name, Ctime: now,
 			},
 		}, nil
@@ -120,10 +146,14 @@ func (s *ImportService) CreateNotesJob(ctx context.Context, userID, filePath str
 		}
 		cleanTags := normalizeTags(payload.TagList)
 		summary := strings.TrimSpace(payload.Summary)
+		noteID, err := s.runtime.IDs.ID()
+		if err != nil {
+			return nil, fmt.Errorf("generate import note id: %w", err)
+		}
 		return &parsedNote{
 			note: model.ImportNote{Title: title, Content: content, Summary: summary, Tags: cleanTags, Source: file.Name},
 			row: model.ImportJobNote{
-				ID: newID(), JobID: jobID, UserID: userID, Position: position,
+				ID: noteID, JobID: jobID, UserID: userID, Position: position,
 				Title: title, Content: content, Summary: summary, Tags: cleanTags, Source: file.Name, Ctime: now,
 			},
 		}, nil
@@ -159,22 +189,18 @@ func (s *ImportService) createImportJob(
 	if s.jobRepo == nil || s.noteRepo == nil {
 		return nil, appErr.ErrInvalid
 	}
-	now := timeutil.NowUnix()
-	job := &model.ImportJob{
-		ID: newID(), UserID: userID, Source: source, Status: "parsing",
-		RequireContent: requireContent, Tags: []string{}, Ctime: now, Mtime: now,
+	jobID, err := s.runtime.IDs.ID()
+	if err != nil {
+		return nil, fmt.Errorf("generate import job id: %w", err)
 	}
-	if err := s.jobRepo.Create(ctx, job); err != nil {
-		return nil, fmt.Errorf("create job: %w", err)
+	now := s.runtime.Clock.Now().Unix()
+	job := &model.ImportJob{
+		ID: jobID, UserID: userID, Source: source, Status: model.ImportStatusParsing,
+		RequireContent: requireContent, Tags: []string{}, Ctime: now, Mtime: now,
 	}
 	noteRows, uniqueTags, err := s.parseZipFiles(reader, job, userID, now, filter, parse)
 	if err != nil {
-		_ = s.jobRepo.Delete(ctx, userID, job.ID)
 		return nil, err
-	}
-	if err := s.noteRepo.InsertBatch(ctx, noteRows); err != nil {
-		_ = s.jobRepo.Delete(ctx, userID, job.ID)
-		return nil, fmt.Errorf("insert notes: %w", err)
 	}
 	allTags := make([]string, 0, len(uniqueTags))
 	for tag := range uniqueTags {
@@ -182,10 +208,21 @@ func (s *ImportService) createImportJob(
 	}
 	job.Tags = allTags
 	job.Total = len(noteRows)
-	job.Status = "ready"
-	job.Mtime = timeutil.NowUnix()
-	if err := s.jobRepo.UpdateSummary(ctx, job); err != nil {
-		return nil, fmt.Errorf("update summary: %w", err)
+	job.Mtime = s.runtime.Clock.Now().Unix()
+	if err := s.runtime.Transactor.WithinTransaction(ctx, func(txCtx context.Context) error {
+		if err := s.jobRepo.Create(txCtx, job); err != nil {
+			return fmt.Errorf("create job: %w", err)
+		}
+		if err := s.noteRepo.InsertBatch(txCtx, noteRows); err != nil {
+			return fmt.Errorf("insert notes: %w", err)
+		}
+		job.Status = model.ImportStatusReady
+		if err := s.jobRepo.UpdateSummary(txCtx, job); err != nil {
+			return fmt.Errorf("update summary: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("stage import job transaction: %w", err)
 	}
 	return job, nil
 }
@@ -273,26 +310,69 @@ func (s *ImportService) Confirm(ctx context.Context, userID, jobID, mode string)
 	if err != nil {
 		return fmt.Errorf("get: %w", err)
 	}
-	mode = strings.ToLower(strings.TrimSpace(mode))
-	if mode == "" {
-		mode = "append"
-	}
-	if mode != "append" && mode != "skip" && mode != "overwrite" {
+	importMode, err := parseImportMode(mode)
+	if err != nil {
 		return appErr.ErrInvalid
 	}
-	if job.Status == "running" {
-		return appErr.ErrInvalid
+	if !job.Status.Valid() {
+		return fmt.Errorf(
+			"%w: status=%q job=%s", errUnknownImportStatus, job.Status, job.ID,
+		)
 	}
-	updated, err := s.jobRepo.UpdateStatusIf(ctx, userID, jobID, job.Status, "running", timeutil.NowUnix())
+	switch job.Status {
+	case model.ImportStatusRunning, model.ImportStatusDone:
+		return nil
+	case model.ImportStatusParsing, model.ImportStatusFailed:
+		return appErr.ErrConflict
+	case model.ImportStatusReady:
+	}
+	now := s.runtime.Clock.Now().Unix()
+	if confirmer, ok := s.jobRepo.(importJobConfirmer); ok {
+		return s.confirmPersisted(ctx, confirmer, userID, jobID, importMode, now)
+	}
+	updated, err := s.jobRepo.UpdateStatusIf(
+		ctx, userID, jobID, string(job.Status), string(model.ImportStatusRunning), now,
+	)
 	if err != nil {
 		return fmt.Errorf("update status if: %w", err)
 	}
 	if !updated {
 		return appErr.ErrInvalid
 	}
-	bgCtx := context.WithoutCancel(ctx)
-	go s.runImport(bgCtx, job, mode)
 	return nil
+}
+
+func parseImportMode(value string) (model.ImportMode, error) {
+	mode := model.ImportMode(strings.ToLower(strings.TrimSpace(value)))
+	if mode == "" {
+		mode = model.ImportModeAppend
+	}
+	if !mode.Valid() {
+		return "", appErr.ErrInvalid
+	}
+	return mode, nil
+}
+
+func (s *ImportService) confirmPersisted(
+	ctx context.Context, confirmer importJobConfirmer,
+	userID, jobID string, mode model.ImportMode, now int64,
+) error {
+	updated, err := confirmer.Confirm(ctx, userID, jobID, mode, now)
+	if err != nil {
+		return fmt.Errorf("confirm import: %w", err)
+	}
+	if updated {
+		return nil
+	}
+	current, err := s.jobRepo.Get(ctx, userID, jobID)
+	if err != nil {
+		return fmt.Errorf("reload import job: %w", err)
+	}
+	if current.Status == model.ImportStatusRunning ||
+		current.Status == model.ImportStatusDone {
+		return nil
+	}
+	return appErr.ErrConflict
 }
 
 func (s *ImportService) Status(ctx context.Context, userID, jobID string) (*model.ImportJob, error) {
@@ -338,7 +418,7 @@ func (s *ImportService) lookupByTitle(
 	if errors.Is(err, appErr.ErrNotFound) {
 		return "", false, nil
 	}
-	return "", false, err
+	return "", false, fmt.Errorf("get document by title: %w", err)
 }
 
 func (s *ImportService) runImport(ctx context.Context, job *model.ImportJob, mode string) {

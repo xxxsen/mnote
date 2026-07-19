@@ -9,7 +9,9 @@ import (
 
 	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/pkg/response"
+	"github.com/xxxsen/mnote/internal/pkg/safeconv"
 	"github.com/xxxsen/mnote/internal/service"
 )
 
@@ -40,26 +42,14 @@ type summaryUpdateRequest struct {
 	Summary *string `json:"summary"`
 }
 type documentListItem struct {
-	ID              string      `json:"id"`
-	UserID          string      `json:"user_id"`
-	Title           string      `json:"title"`
-	Content         string      `json:"content"`
-	Summary         string      `json:"summary"`
-	State           int         `json:"state"`
-	Pinned          int         `json:"pinned"`
-	Starred         int         `json:"starred"`
-	Ctime           int64       `json:"ctime"`
-	Mtime           int64       `json:"mtime"`
-	ContentHash     string      `json:"content_hash"`
-	ContentMtime    int64       `json:"content_mtime"`
-	ContentRevision int64       `json:"content_revision"`
-	TagIDs          []string    `json:"tag_ids"`
-	Tags            []model.Tag `json:"tags,omitempty"`
+	documentResponse
+	TagIDs []string      `json:"tag_ids"`
+	Tags   []tagResponse `json:"tags,omitempty"`
 }
 
 func (h *DocumentHandler) Create(c *gin.Context) {
 	var req documentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -85,7 +75,7 @@ func (h *DocumentHandler) Create(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, doc)
+	response.Success(c, toDocumentResponse(*doc))
 }
 
 type listParams struct {
@@ -98,26 +88,24 @@ type listParams struct {
 	includeTags bool
 }
 
-func parseListParams(c *gin.Context) listParams {
+func parseListParams(c *gin.Context) (listParams, error) {
 	p := listParams{
 		query: c.Query("q"),
 		tagID: c.Query("tag_id"),
 	}
-	if value := c.Query("starred"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil {
-			p.starred = &parsed
+	if value, exists := c.GetQuery("starred"); exists {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || (parsed != 0 && parsed != 1) {
+			return listParams{}, appErr.ErrInvalid
 		}
+		p.starred = &parsed
 	}
-	if value := c.Query("limit"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
-			p.limit = uint(parsed)
-		}
+	page, err := parsePage(c, 50, 200)
+	if err != nil {
+		return listParams{}, err
 	}
-	if value := c.Query("offset"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil && parsed >= 0 {
-			p.offset = uint(parsed)
-		}
-	}
+	p.limit = safeconv.IntToUint(page.Limit)
+	p.offset = safeconv.IntToUint(page.Offset)
 	if c.Query("order") == "mtime" {
 		p.orderBy = "mtime desc"
 	}
@@ -129,7 +117,7 @@ func parseListParams(c *gin.Context) listParams {
 			}
 		}
 	}
-	return p
+	return p, nil
 }
 
 func buildListItems(
@@ -143,26 +131,14 @@ func buildListItems(
 			tagIDs = []string{}
 		}
 		item := documentListItem{
-			ID:              doc.ID,
-			UserID:          doc.UserID,
-			Title:           doc.Title,
-			Content:         doc.Content,
-			Summary:         doc.Summary,
-			State:           doc.State,
-			Pinned:          doc.Pinned,
-			Starred:         doc.Starred,
-			Ctime:           doc.Ctime,
-			Mtime:           doc.Mtime,
-			ContentHash:     doc.ContentHash,
-			ContentMtime:    doc.ContentMtime,
-			ContentRevision: doc.ContentRevision,
-			TagIDs:          tagIDs,
+			documentResponse: toDocumentResponse(doc),
+			TagIDs:           tagIDs,
 		}
 		if includeTags {
-			tags := make([]model.Tag, 0, len(tagIDs))
+			tags := make([]tagResponse, 0, len(tagIDs))
 			for _, id := range tagIDs {
 				if tag, ok := tagIndex[id]; ok {
-					tags = append(tags, tag)
+					tags = append(tags, toTagResponse(tag))
 				}
 			}
 			item.Tags = tags
@@ -174,7 +150,11 @@ func buildListItems(
 
 func (h *DocumentHandler) List(c *gin.Context) {
 	userID := getUserID(c)
-	p := parseListParams(c)
+	p, err := parseListParams(c)
+	if err != nil {
+		response.Error(c, errcode.ErrInvalid, "invalid pagination")
+		return
+	}
 	docs, err := h.documents.Search(
 		c.Request.Context(), userID, p.query, p.tagID,
 		p.starred, p.limit, p.offset, p.orderBy,
@@ -263,15 +243,19 @@ func (h *DocumentHandler) Get(c *gin.Context) {
 			handleError(c, err)
 			return
 		}
-		response.Success(c, gin.H{"document": doc, "tag_ids": tagIDs, "tags": tags})
+		response.Success(c, gin.H{
+			"document": toDocumentResponse(*doc),
+			"tag_ids":  tagIDs,
+			"tags":     toTagResponses(tags),
+		})
 		return
 	}
-	response.Success(c, gin.H{"document": doc, "tag_ids": tagIDs})
+	response.Success(c, gin.H{"document": toDocumentResponse(*doc), "tag_ids": tagIDs})
 }
 
 func (h *DocumentHandler) Update(c *gin.Context) {
 	var req documentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -321,7 +305,7 @@ func (h *DocumentHandler) Update(c *gin.Context) {
 
 func (h *DocumentHandler) UpdateTags(c *gin.Context) {
 	var req tagUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -338,7 +322,7 @@ func (h *DocumentHandler) UpdateTags(c *gin.Context) {
 
 func (h *DocumentHandler) UpdateSummary(c *gin.Context) {
 	var req summaryUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -359,7 +343,7 @@ type pinRequest struct {
 
 func (h *DocumentHandler) Pin(c *gin.Context) {
 	var req pinRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -380,7 +364,7 @@ type starRequest struct {
 
 func (h *DocumentHandler) Star(c *gin.Context) {
 	var req starRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -404,19 +388,20 @@ func (h *DocumentHandler) Delete(c *gin.Context) {
 }
 
 func (h *DocumentHandler) Summary(c *gin.Context) {
-	limit := uint(5)
-	if value := c.Query("limit"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
-			limit = uint(parsed)
-		}
+	page, err := parsePage(c, 5, 20)
+	if err != nil {
+		response.Error(c, errcode.ErrInvalid, "invalid pagination")
+		return
 	}
-	result, err := h.documents.Summary(c.Request.Context(), getUserID(c), limit)
+	result, err := h.documents.Summary(
+		c.Request.Context(), getUserID(c), safeconv.IntToUint(page.Limit),
+	)
 	if err != nil {
 		handleError(c, err)
 		return
 	}
 	response.Success(c, gin.H{
-		"recent":        result.Recent,
+		"recent":        toDocumentResponses(result.Recent),
 		"tag_counts":    result.TagCounts,
 		"total":         result.Total,
 		"starred_total": result.StarredTotal,
@@ -468,28 +453,16 @@ func (h *DocumentHandler) Backlinks(c *gin.Context) {
 		if docTagIDs == nil {
 			docTagIDs = []string{}
 		}
-		docTags := make([]model.Tag, 0, len(docTagIDs))
+		docTags := make([]tagResponse, 0, len(docTagIDs))
 		for _, tid := range docTagIDs {
 			if t, ok := tagMap[tid]; ok {
-				docTags = append(docTags, t)
+				docTags = append(docTags, toTagResponse(t))
 			}
 		}
 		items = append(items, documentListItem{
-			ID:              doc.ID,
-			UserID:          doc.UserID,
-			Title:           doc.Title,
-			Content:         doc.Content,
-			Summary:         doc.Summary,
-			State:           doc.State,
-			Pinned:          doc.Pinned,
-			Starred:         doc.Starred,
-			Ctime:           doc.Ctime,
-			Mtime:           doc.Mtime,
-			ContentHash:     doc.ContentHash,
-			ContentMtime:    doc.ContentMtime,
-			ContentRevision: doc.ContentRevision,
-			Tags:            docTags,
-			TagIDs:          docTagIDs,
+			documentResponse: toDocumentResponse(doc),
+			Tags:             docTags,
+			TagIDs:           docTagIDs,
 		})
 	}
 

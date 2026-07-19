@@ -267,9 +267,10 @@ func (
 		orderBy += ", id asc"
 	}
 	where["_orderby"] = orderBy
-	if limit > 0 {
-		where["_limit"] = []uint{offset, limit}
+	if limit == 0 || limit > 200 {
+		limit = 50
 	}
+	where["_limit"] = []uint{offset, limit}
 	sqlStr, args, err := builder.BuildSelect("documents", where, documentSelectColumns)
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)
@@ -292,6 +293,38 @@ func (
 		return nil, fmt.Errorf("iterate rows: %w", err)
 	}
 	return docs, nil
+}
+
+func (r *DocumentRepo) ListAllByUser(
+	ctx context.Context, userID string,
+) ([]model.Document, error) {
+	where := map[string]any{
+		"user_id":  userID,
+		"state":    DocumentStateNormal,
+		"_orderby": "pinned desc, ctime desc, id asc",
+	}
+	sqlStr, args, err := builder.BuildSelect("documents", where, documentSelectColumns)
+	if err != nil {
+		return nil, fmt.Errorf("build select all documents: %w", err)
+	}
+	sqlStr, args = dbutil.Finalize(sqlStr, args)
+	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query all documents: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	documents := make([]model.Document, 0)
+	for rows.Next() {
+		var document model.Document
+		if err := scanDocument(rows, &document); err != nil {
+			return nil, err
+		}
+		documents = append(documents, document)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate all documents: %w", err)
+	}
+	return documents, nil
 }
 
 func (r *DocumentRepo) ListByIDs(ctx context.Context, userID string, docIDs []string) ([]model.Document, error) {
@@ -382,9 +415,10 @@ func (
 	if starred != nil {
 		where["starred"] = *starred
 	}
-	if limit > 0 {
-		where["_limit"] = []uint{offset, limit}
+	if limit == 0 || limit > 200 {
+		limit = 50
 	}
+	where["_limit"] = []uint{offset, limit}
 	sqlStr, args, err := builder.BuildSelect("documents", where, documentSelectColumns)
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)

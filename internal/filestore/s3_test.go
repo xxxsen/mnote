@@ -82,16 +82,19 @@ func TestS3Store_ApplyPrefix_NoPrefix(t *testing.T) {
 
 func TestS3Store_GenerateFileRef_WithPrefix(t *testing.T) {
 	store := &s3Store{prefix: "uploads", baseURL: "http://s3:9000/bucket"}
-	ref := store.GenerateFileRef("user1", "doc.pdf")
-	assert.Contains(t, ref, "http://s3:9000/bucket/")
-	assert.Contains(t, ref, "uploads/")
+	ref, err := store.GenerateFileRef("user1", "doc.pdf")
+	require.NoError(t, err)
+	assert.NotContains(t, ref, "http")
+	assert.Contains(t, store.PublicURL(ref), "http://s3:9000/bucket/")
 }
 
 func TestS3Store_GenerateFileRef_NoBaseURL(t *testing.T) {
 	store := &s3Store{prefix: "uploads", baseURL: ""}
-	ref := store.GenerateFileRef("user1", "doc.pdf")
-	assert.Contains(t, ref, "uploads/")
+	ref, err := store.GenerateFileRef("user1", "doc.pdf")
+	require.NoError(t, err)
+	assert.NotContains(t, ref, "uploads/")
 	assert.NotContains(t, ref, "http")
+	assert.Equal(t, ref, store.PublicURL(ref))
 }
 
 func TestCreateS3Store_NilConfig(t *testing.T) {

@@ -49,7 +49,7 @@ func NewExportService(
 }
 
 func (s *ExportService) Export(ctx context.Context, userID string) (*ExportPayload, error) {
-	docs, err := s.docs.List(ctx, userID, nil, 0, 0, "")
+	docs, err := s.docs.ListAllByUser(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list documents: %w", err)
 	}
@@ -72,7 +72,7 @@ func (s *ExportService) Export(ctx context.Context, userID string) (*ExportPaylo
 }
 
 func (s *ExportService) ExportNotesZip(ctx context.Context, userID string) (string, error) {
-	docs, err := s.docs.List(ctx, userID, nil, 0, 0, "")
+	docs, err := s.docs.ListAllByUser(ctx, userID)
 	if err != nil {
 		return "", fmt.Errorf("list documents: %w", err)
 	}

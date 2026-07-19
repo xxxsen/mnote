@@ -246,12 +246,10 @@ func TestFileHandler_ResolveContentType(t *testing.T) {
 	assert.Equal(t, "application/octet-stream", resolveContentType("application/octet-stream", "file.unknown"))
 }
 
-func TestFileHandler_SetAssetService(t *testing.T) {
-	h := &FileHandler{store: &mockFileStore{}}
-	assert.Nil(t, h.assets)
+func TestFileHandler_ConstructorInjectsAssetService(t *testing.T) {
 	mock := &mockAssetHandlerService{}
-	h.SetAssetService(mock)
-	assert.NotNil(t, h.assets)
+	h := NewFileHandler(&mockFileStore{}, 1024, mock)
+	assert.Same(t, mock, h.assets)
 }
 
 func TestFileHandler_ExtractUserID_NoKey(t *testing.T) {

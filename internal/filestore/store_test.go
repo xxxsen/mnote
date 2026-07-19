@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/xxxsen/mnote/internal/pkg/idgen"
 )
 
 func TestNew_EmptyType(t *testing.T) {
@@ -33,32 +35,25 @@ func TestNew_LocalStore(t *testing.T) {
 }
 
 func TestBuildFileKey(t *testing.T) {
-	key := buildFileKey("user1", "photo.jpg")
+	key, err := buildFileKey(idgen.New(bytes.NewReader(bytes.Repeat([]byte{1}, 8))), "user1", "photo.jpg")
+	require.NoError(t, err)
 	assert.True(t, len(key) > 0)
 	assert.Contains(t, key, "user1_")
 	assert.True(t, filepath.Ext(key) == ".jpg")
 }
 
 func TestBuildFileKey_NoExt(t *testing.T) {
-	key := buildFileKey("user1", "noext")
+	key, err := buildFileKey(idgen.New(bytes.NewReader(bytes.Repeat([]byte{1}, 8))), "user1", "noext")
+	require.NoError(t, err)
 	assert.Contains(t, key, "user1_")
 	assert.Equal(t, "", filepath.Ext(key))
 }
 
 func TestBuildFileKey_EmptyUser(t *testing.T) {
-	key := buildFileKey("", "test.png")
+	key, err := buildFileKey(idgen.New(bytes.NewReader(bytes.Repeat([]byte{1}, 8))), "", "test.png")
+	require.NoError(t, err)
 	assert.NotContains(t, key, "_")
 	assert.Equal(t, ".png", filepath.Ext(key))
-}
-
-func TestRandomHex(t *testing.T) {
-	hex := randomHex(8)
-	assert.Len(t, hex, 16)
-}
-
-func TestRandomHex_Zero(t *testing.T) {
-	assert.Empty(t, randomHex(0))
-	assert.Empty(t, randomHex(-1))
 }
 
 func TestDecodeConfig_Nil(t *testing.T) {
@@ -70,6 +65,18 @@ func TestDecodeConfig_Valid(t *testing.T) {
 	err := decodeConfig(map[string]any{"dir": "/tmp/test"}, cfg)
 	require.NoError(t, err)
 	assert.Equal(t, "/tmp/test", cfg.Dir)
+}
+
+func TestDecodeConfig_RejectsUnknownFields(t *testing.T) {
+	var dst struct {
+		Dir string `json:"dir"`
+	}
+	err := decodeConfig(map[string]any{
+		"dir":       "/tmp/test",
+		"directory": "/tmp/other",
+	}, &dst)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown field")
 }
 
 type memReadSeekCloser struct {
@@ -119,7 +126,8 @@ func TestLocalStore_Open_NotFound(t *testing.T) {
 
 func TestLocalStore_GenerateFileRef(t *testing.T) {
 	store := &localStore{dir: t.TempDir()}
-	ref := store.GenerateFileRef("u1", "doc.pdf")
+	ref, err := store.GenerateFileRef("u1", "doc.pdf")
+	require.NoError(t, err)
 	assert.Contains(t, ref, "u1_")
 	assert.Equal(t, ".pdf", filepath.Ext(ref))
 }
@@ -205,6 +213,8 @@ func TestDecodeConfig_UnmarshalError(t *testing.T) {
 
 func TestS3Store_GenerateFileRef_NoPrefix(t *testing.T) {
 	store := &s3Store{prefix: "", baseURL: "http://s3:9000/bucket"}
-	ref := store.GenerateFileRef("u1", "file.txt")
-	assert.Contains(t, ref, "http://s3:9000/bucket/")
+	ref, err := store.GenerateFileRef("u1", "file.txt")
+	require.NoError(t, err)
+	assert.NotContains(t, ref, "http://")
+	assert.Contains(t, store.PublicURL(ref), "http://s3:9000/bucket/")
 }

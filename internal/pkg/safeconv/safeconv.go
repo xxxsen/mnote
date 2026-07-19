@@ -19,3 +19,10 @@ func UintToInt(v uint) int {
 	}
 	return int(v)
 }
+
+func IntToUint(v int) uint {
+	if v <= 0 {
+		return 0
+	}
+	return uint(v)
+}

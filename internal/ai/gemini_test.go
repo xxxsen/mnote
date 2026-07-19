@@ -50,6 +50,15 @@ func TestCreateGeminiFactory_ValidKey(t *testing.T) {
 	assert.Equal(t, "sk-test", gp.apiKey, "api key should be trimmed")
 }
 
+func TestCreateGeminiFactory_RejectsUnknownConfig(t *testing.T) {
+	_, err := createGeminiFactory(map[string]any{
+		"api_key":  "sk-test",
+		"api_keyy": "typo",
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown field")
+}
+
 func TestGeminiProvider_Generate_InvalidKey(t *testing.T) {
 	p := &geminiProvider{apiKey: "invalid-key"}
 	_, err := p.Generate(context.Background(), "gemini-pro", "hello")

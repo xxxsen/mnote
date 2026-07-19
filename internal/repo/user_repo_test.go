@@ -50,8 +50,8 @@ func TestUserRepo_GetByEmail(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	r := NewUserRepo(db)
-	rows := sqlmock.NewRows([]string{"id", "email", "password_hash", "ctime", "mtime"}).
-		AddRow("u1", "test@example.com", "hash", int64(1000), int64(2000))
+	rows := sqlmock.NewRows([]string{"id", "email", "email_normalized", "password_hash", "ctime", "mtime"}).
+		AddRow("u1", "test@example.com", "test@example.com", "hash", int64(1000), int64(2000))
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
 	user, err := r.GetByEmail(context.Background(), "test@example.com")
@@ -67,7 +67,7 @@ func TestUserRepo_GetByEmail_NotFound(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	r := NewUserRepo(db)
-	rows := sqlmock.NewRows([]string{"id", "email", "password_hash", "ctime", "mtime"})
+	rows := sqlmock.NewRows([]string{"id", "email", "email_normalized", "password_hash", "ctime", "mtime"})
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
 	_, err = r.GetByEmail(context.Background(), "missing@example.com")
@@ -80,8 +80,8 @@ func TestUserRepo_GetByID(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	r := NewUserRepo(db)
-	rows := sqlmock.NewRows([]string{"id", "email", "password_hash", "ctime", "mtime"}).
-		AddRow("u1", "test@example.com", "hash", int64(1000), int64(2000))
+	rows := sqlmock.NewRows([]string{"id", "email", "email_normalized", "password_hash", "ctime", "mtime"}).
+		AddRow("u1", "test@example.com", "test@example.com", "hash", int64(1000), int64(2000))
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
 	user, err := r.GetByID(context.Background(), "u1")

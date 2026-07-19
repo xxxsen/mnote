@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/xxxsen/mnote/internal/ai"
+	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/service"
 )
 
@@ -24,6 +28,21 @@ func TestHandleError_NilError(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandleError_AIUnavailable(t *testing.T) {
+	r := newTestRouter()
+	r.GET("/test", func(c *gin.Context) {
+		handleError(c, fmt.Errorf("semantic search: %w", ai.ErrUnavailable))
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/test", nil)
+	r.ServeHTTP(w, req)
+
+	resp := parseResponseT(t, w)
+	assert.Equal(t, float64(errcode.ErrAIUnavailable), resp["code"])
+	assert.Equal(t, "ai unavailable", resp["message"])
 }
 
 func TestGetUserID_NoValue(t *testing.T) {

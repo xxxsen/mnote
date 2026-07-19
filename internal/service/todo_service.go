@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
@@ -11,24 +12,30 @@ import (
 )
 
 type TodoService struct {
-	todos todoRepo
+	todos   todoRepo
+	runtime Runtime
 }
 
-func NewTodoService(todos todoRepo) *TodoService {
-	return &TodoService{todos: todos}
+func NewTodoService(todos todoRepo, runtime Runtime) *TodoService {
+	return &TodoService{todos: todos, runtime: prepareRuntime(runtime)}
 }
 
 func (s *TodoService) CreateTodo(ctx context.Context, userID, content, dueDate string, done bool) (*model.Todo, error) {
-	if content == "" {
+	content = strings.TrimSpace(content)
+	if content == "" || utf8.RuneCountInString(content) > 500 {
 		return nil, appErr.ErrInvalid
 	}
 	doneVal := 0
 	if done {
 		doneVal = 1
 	}
+	id, err := s.runtime.IDs.ID()
+	if err != nil {
+		return nil, fmt.Errorf("generate todo id: %w", err)
+	}
 	now := timeutil.NowUnix()
 	todo := &model.Todo{
-		ID:      newID(),
+		ID:      id,
 		UserID:  userID,
 		Content: content,
 		DueDate: dueDate,
@@ -56,7 +63,7 @@ func (s *TodoService) ToggleDone(ctx context.Context, userID, todoID string, don
 
 func (s *TodoService) UpdateContent(ctx context.Context, userID, todoID, content string) (*model.Todo, error) {
 	newContent := strings.TrimSpace(content)
-	if newContent == "" {
+	if newContent == "" || utf8.RuneCountInString(newContent) > 500 {
 		return nil, appErr.ErrInvalid
 	}
 

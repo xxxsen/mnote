@@ -22,7 +22,7 @@ func newDocSvc(
 	tags documentTagRepo,
 	shares shareRepo,
 ) *DocumentService {
-	return NewDocumentService(nil, docs, summaries, versions, tags, shares, &mockTagRepo{}, &mockUserRepo{}, nil, 10)
+	return NewDocumentService(testRuntime(), docs, summaries, versions, tags, shares, &mockTagRepo{}, &mockUserRepo{}, nil, 10, nil)
 }
 
 func noopSummaryRepo() *mockDocumentSummaryRepo {
@@ -362,8 +362,10 @@ func TestDocumentService_ListSharedDocuments_InjectsNow(t *testing.T) {
 			return map[string][]string{}, nil
 		},
 	}
-	svc := newDocSvc(nil, nil, nil, tags, shares)
-	svc.SetNowFunc(func() int64 { return 7777 })
+	svc := NewDocumentService(
+		testRuntimeAt(7777), nil, nil, nil, tags, shares,
+		&mockTagRepo{}, &mockUserRepo{}, nil, 10, nil,
+	)
 	_, err := svc.ListSharedDocuments(context.Background(), "u1", "")
 	require.NoError(t, err)
 	assert.Equal(t, int64(7777), gotNow)
@@ -442,7 +444,7 @@ func TestDocumentService_PruneVersions(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		svc := NewDocumentService(nil, nil, nil, nil, nil, nil, nil, nil, nil, 0)
+		svc := NewDocumentService(testRuntime(), nil, nil, nil, nil, nil, nil, nil, nil, 0, nil)
 		err := svc.pruneVersions(context.Background(), "u1", "d1")
 		require.NoError(t, err)
 	})
@@ -492,7 +494,7 @@ func TestDocumentService_SemanticSearch_WithAI(t *testing.T) {
 			return []model.Document{{ID: "d1", Title: "Good"}, {ID: "d2", Title: "Bad"}}, nil
 		},
 	}
-	svc := NewDocumentService(nil, docs, noopSummaryRepo(), nil, nil, nil, nil, nil, aiSvc, 10)
+	svc := NewDocumentService(testRuntime(), docs, noopSummaryRepo(), nil, nil, nil, nil, nil, aiSvc, 10, nil)
 	result, scores, err := svc.SemanticSearch(context.Background(), "u1", "query", "", nil, 10, 0, "", "")
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
@@ -521,7 +523,7 @@ func TestDocumentService_SemanticSearch_Offset(t *testing.T) {
 			return []model.Document{{ID: "d1"}, {ID: "d2"}}, nil
 		},
 	}
-	svc := NewDocumentService(nil, docs, noopSummaryRepo(), nil, nil, nil, nil, nil, aiSvc, 10)
+	svc := NewDocumentService(testRuntime(), docs, noopSummaryRepo(), nil, nil, nil, nil, nil, aiSvc, 10, nil)
 	result, _, err := svc.SemanticSearch(context.Background(), "u1", "query", "", nil, 10, 5, "", "")
 	require.NoError(t, err)
 	assert.Empty(t, result)
@@ -659,7 +661,7 @@ func TestDocumentService_GetShareByToken(t *testing.T) {
 				return []model.Tag{{ID: "t1", Name: "Go"}}, nil
 			},
 		}
-		svc := NewDocumentService(nil, docs, nil, nil, tagsMock, shares, tagRepoMock, users, nil, 10)
+		svc := NewDocumentService(testRuntime(), docs, nil, nil, tagsMock, shares, tagRepoMock, users, nil, 10, nil)
 		detail, err := svc.GetShareByToken(context.Background(), "tok1", "")
 		require.NoError(t, err)
 		assert.Equal(t, "Test", detail.Document.Title)
@@ -709,7 +711,8 @@ func TestDocumentService_VerifySharePassword(t *testing.T) {
 func TestDocumentService_ResolveCommentThread(t *testing.T) {
 	t.Run("empty_reply_to", func(t *testing.T) {
 		svc := &DocumentService{}
-		rootID, replyToID := svc.resolveCommentThread(context.Background(), "s1", "")
+		rootID, replyToID, err := svc.resolveCommentThread(context.Background(), "s1", "")
+		require.NoError(t, err)
 		assert.Empty(t, rootID)
 		assert.Empty(t, replyToID)
 	})
@@ -721,7 +724,8 @@ func TestDocumentService_ResolveCommentThread(t *testing.T) {
 			},
 		}
 		svc := newDocSvc(nil, nil, nil, nil, shares)
-		rootID, replyToID := svc.resolveCommentThread(context.Background(), "s1", "c1")
+		rootID, replyToID, err := svc.resolveCommentThread(context.Background(), "s1", "c1")
+		require.NoError(t, err)
 		assert.Equal(t, "c1", rootID)
 		assert.Equal(t, "c1", replyToID)
 	})
@@ -733,7 +737,8 @@ func TestDocumentService_ResolveCommentThread(t *testing.T) {
 			},
 		}
 		svc := newDocSvc(nil, nil, nil, nil, shares)
-		rootID, replyToID := svc.resolveCommentThread(context.Background(), "s1", "c2")
+		rootID, replyToID, err := svc.resolveCommentThread(context.Background(), "s1", "c2")
+		require.NoError(t, err)
 		assert.Equal(t, "c1", rootID)
 		assert.Equal(t, "c2", replyToID)
 	})
@@ -745,9 +750,10 @@ func TestDocumentService_ResolveCommentThread(t *testing.T) {
 			},
 		}
 		svc := newDocSvc(nil, nil, nil, nil, shares)
-		rootID, replyToID := svc.resolveCommentThread(context.Background(), "s1", "c99")
+		rootID, replyToID, err := svc.resolveCommentThread(context.Background(), "s1", "c99")
 		assert.Empty(t, rootID)
 		assert.Empty(t, replyToID)
+		assert.ErrorIs(t, err, appErr.ErrNotFound)
 	})
 }
 
@@ -822,7 +828,7 @@ func TestDocumentService_ProcessPendingSummaries_NoDocs(t *testing.T) {
 			return nil, nil
 		},
 	}
-	svc := NewDocumentService(nil, nil, summaries, nil, nil, nil, nil, nil, &AIService{}, 0)
+	svc := NewDocumentService(testRuntime(), nil, summaries, nil, nil, nil, nil, nil, &AIService{}, 0, nil)
 	err := svc.ProcessPendingSummaries(context.Background(), 60)
 	require.NoError(t, err)
 }
@@ -903,17 +909,19 @@ func TestDocumentService_ListTagsByIDs(t *testing.T) {
 			return []model.Tag{{ID: "t1", Name: "go"}}, nil
 		},
 	}
-	svc := NewDocumentService(nil, nil, nil, nil, nil, nil, tagRepo, nil, nil, 10)
+	svc := NewDocumentService(testRuntime(), nil, nil, nil, nil, nil, tagRepo, nil, nil, 10, nil)
 	result, err := svc.ListTagsByIDs(context.Background(), "u1", []string{"t1"})
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
 }
 
-func TestDocumentService_SetAssetService(t *testing.T) {
-	svc := newDocSvc(nil, nil, nil, nil, nil)
-	assert.Nil(t, svc.assets)
-	svc.SetAssetService(&AssetService{})
-	assert.NotNil(t, svc.assets)
+func TestDocumentService_ConstructorInjectsAssets(t *testing.T) {
+	assets := &AssetService{}
+	svc := NewDocumentService(
+		testRuntime(), nil, nil, nil, nil, nil,
+		&mockTagRepo{}, &mockUserRepo{}, nil, 10, assets,
+	)
+	assert.Same(t, assets, svc.assets)
 }
 
 func TestDocumentService_UpdateTags_DeleteError(t *testing.T) {
@@ -1248,7 +1256,7 @@ func TestDocumentService_ListTagsByIDs_Error(t *testing.T) {
 			return nil, errors.New("fail")
 		},
 	}
-	svc := NewDocumentService(nil, nil, nil, nil, nil, nil, tagRepo, nil, nil, 10)
+	svc := NewDocumentService(testRuntime(), nil, nil, nil, nil, nil, tagRepo, nil, nil, 10, nil)
 	_, err := svc.ListTagsByIDs(context.Background(), "u1", []string{"t1"})
 	assert.Error(t, err)
 }
@@ -1540,7 +1548,7 @@ func TestDocumentService_ProcessPendingSummaries(t *testing.T) {
 	t.Run("nil_summaries", func(t *testing.T) {
 		mgr := &mockAIManager{maxInputCharFn: func() int { return 0 }}
 		aiSvc := newTestAIService(mgr, nil, nil)
-		svc := NewDocumentService(nil, nil, nil, nil, nil, nil, nil, nil, aiSvc, 10)
+		svc := NewDocumentService(testRuntime(), nil, nil, nil, nil, nil, nil, nil, aiSvc, 10, nil)
 		err := svc.ProcessPendingSummaries(context.Background(), 0)
 		assert.NoError(t, err)
 	})
@@ -1553,7 +1561,7 @@ func TestDocumentService_ProcessPendingSummaries(t *testing.T) {
 				return nil, errors.New("db err")
 			},
 		}
-		svc := NewDocumentService(nil, nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10)
+		svc := NewDocumentService(testRuntime(), nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10, nil)
 		err := svc.ProcessPendingSummaries(context.Background(), 60)
 		assert.Error(t, err)
 	})
@@ -1566,7 +1574,7 @@ func TestDocumentService_ProcessPendingSummaries(t *testing.T) {
 				return nil, nil
 			},
 		}
-		svc := NewDocumentService(nil, nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10)
+		svc := NewDocumentService(testRuntime(), nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10, nil)
 		err := svc.ProcessPendingSummaries(context.Background(), 0)
 		assert.NoError(t, err)
 	})
@@ -1581,7 +1589,7 @@ func TestDocumentService_ProcessPendingSummaries(t *testing.T) {
 				return []model.Document{{ID: "d1", UserID: "u1", Content: "short"}}, nil
 			},
 		}
-		svc := NewDocumentService(nil, nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10)
+		svc := NewDocumentService(testRuntime(), nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10, nil)
 		err := svc.ProcessPendingSummaries(ctx, 0)
 		assert.Error(t, err)
 	})
@@ -1603,7 +1611,7 @@ func TestDocumentService_ProcessPendingSummaries(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewDocumentService(nil, nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10)
+		svc := NewDocumentService(testRuntime(), nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10, nil)
 		err := svc.ProcessPendingSummaries(context.Background(), 0)
 		assert.NoError(t, err)
 		assert.True(t, upserted)
@@ -1625,7 +1633,7 @@ func TestDocumentService_ProcessPendingSummaries(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		svc := NewDocumentService(nil, nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10)
+		svc := NewDocumentService(testRuntime(), nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10, nil)
 		err := svc.ProcessPendingSummaries(ctx, 0)
 		assert.Error(t, err)
 	})
@@ -1644,7 +1652,7 @@ func TestDocumentService_ProcessPendingSummaries(t *testing.T) {
 				return []model.Document{{ID: "d1", UserID: "u1", Content: longContent}}, nil
 			},
 		}
-		svc := NewDocumentService(nil, nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10)
+		svc := NewDocumentService(testRuntime(), nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10, nil)
 		err := svc.ProcessPendingSummaries(context.Background(), 0)
 		assert.NoError(t, err)
 	})
@@ -1662,7 +1670,7 @@ func TestDocumentService_ProcessPendingSummaries(t *testing.T) {
 			},
 			upsertFn: func(context.Context, string, string, string, int64) error { return nil },
 		}
-		svc := NewDocumentService(nil, nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10)
+		svc := NewDocumentService(testRuntime(), nil, summaries, nil, nil, nil, nil, nil, aiSvc, 10, nil)
 		err := svc.ProcessPendingSummaries(context.Background(), 0)
 		assert.NoError(t, err)
 	})
@@ -1776,9 +1784,9 @@ func TestDocumentService_Create_Errors(t *testing.T) {
 		docAssets := &mockDocumentAssetRepo{
 			replaceByDocumentFn: func(context.Context, string, string, []string, int64) error { return errors.New("fail") },
 		}
-		assetSvc := NewAssetService(&mockAssetRepo{}, docAssets)
+		assetSvc := NewAssetService(&mockAssetRepo{}, docAssets, testRuntime())
 		svc := newDocSvc(docs, noopSummaryRepo(), versions, nil, nil)
-		svc.SetAssetService(assetSvc)
+		svc.assets = assetSvc
 		_, err := svc.Create(context.Background(), "u1", DocumentCreateInput{Title: "T", Content: "C"})
 		assert.Error(t, err)
 	})
@@ -1844,7 +1852,7 @@ func TestDocumentService_GetShareByToken_Errors(t *testing.T) {
 		users := &mockUserRepo{
 			getByIDFn: func(context.Context, string) (*model.User, error) { return nil, errors.New("fail") },
 		}
-		svc := NewDocumentService(nil, docs, nil, nil, nil, shares, nil, users, nil, 10)
+		svc := NewDocumentService(testRuntime(), docs, nil, nil, nil, shares, nil, users, nil, 10, nil)
 		_, err := svc.GetShareByToken(context.Background(), "tok", "")
 		assert.Error(t, err)
 	})
@@ -1866,7 +1874,7 @@ func TestDocumentService_GetShareByToken_Errors(t *testing.T) {
 		docTags := &mockDocumentTagRepo{
 			listTagIDsFn: func(context.Context, string, string) ([]string, error) { return nil, errors.New("fail") },
 		}
-		svc := NewDocumentService(nil, docs, nil, nil, docTags, shares, nil, users, nil, 10)
+		svc := NewDocumentService(testRuntime(), docs, nil, nil, docTags, shares, nil, users, nil, 10, nil)
 		_, err := svc.GetShareByToken(context.Background(), "tok", "")
 		assert.Error(t, err)
 	})
@@ -1891,7 +1899,7 @@ func TestDocumentService_GetShareByToken_Errors(t *testing.T) {
 		tagRepo := &mockTagRepo{
 			listByIDsFn: func(context.Context, string, []string) ([]model.Tag, error) { return nil, errors.New("fail") },
 		}
-		svc := NewDocumentService(nil, docs, nil, nil, docTags, shares, tagRepo, users, nil, 10)
+		svc := NewDocumentService(testRuntime(), docs, nil, nil, docTags, shares, tagRepo, users, nil, 10, nil)
 		_, err := svc.GetShareByToken(context.Background(), "tok", "")
 		assert.Error(t, err)
 	})
@@ -1918,7 +1926,7 @@ func TestDocumentService_GetShareByToken_Errors(t *testing.T) {
 				return []model.Tag{{ID: "t1", Name: "go"}}, nil
 			},
 		}
-		svc := NewDocumentService(nil, docs, nil, nil, docTags, shares, tagRepo, users, nil, 10)
+		svc := NewDocumentService(testRuntime(), docs, nil, nil, docTags, shares, tagRepo, users, nil, 10, nil)
 		detail, err := svc.GetShareByToken(context.Background(), "tok", "")
 		require.NoError(t, err)
 		assert.Equal(t, "a@b.com", detail.Author)
@@ -2187,15 +2195,15 @@ func TestDocumentService_CreateShareCommentByToken_Errors(t *testing.T) {
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
 
-	t.Run("reply_to_wrong_share_ignored", func(t *testing.T) {
-		var capturedRootID string
+	t.Run("reply_to_wrong_share_rejected", func(t *testing.T) {
+		created := false
 		shares := &mockShareRepo{
 			getByTokenFn: func(context.Context, string) (*model.Share, error) { return activeShare, nil },
 			getCommentByIDFn: func(context.Context, string) (*model.ShareComment, error) {
 				return &model.ShareComment{ID: "c1", ShareID: "other"}, nil
 			},
 			createCommentFn: func(_ context.Context, c *model.ShareComment) error {
-				capturedRootID = c.RootID
+				created = true
 				return nil
 			},
 		}
@@ -2203,9 +2211,9 @@ func TestDocumentService_CreateShareCommentByToken_Errors(t *testing.T) {
 		comment, err := svc.CreateShareCommentByToken(context.Background(), CreateShareCommentInput{
 			Token: "tok", Author: "A", Content: "Hi", ReplyToID: "c1",
 		})
-		require.NoError(t, err)
-		assert.Empty(t, capturedRootID)
-		assert.NotNil(t, comment)
+		assert.ErrorIs(t, err, appErr.ErrNotFound)
+		assert.False(t, created)
+		assert.Nil(t, comment)
 	})
 }
 
@@ -2272,7 +2280,7 @@ func TestDocumentService_ResolveAccessibleShareByToken(t *testing.T) {
 		tagRepo := &mockTagRepo{
 			listByIDsFn: func(context.Context, string, []string) ([]model.Tag, error) { return nil, nil },
 		}
-		svc := NewDocumentService(nil, docs, nil, nil, docTags, shares, tagRepo, users, nil, 10)
+		svc := NewDocumentService(testRuntime(), docs, nil, nil, docTags, shares, tagRepo, users, nil, 10, nil)
 		detail, err := svc.GetShareByToken(context.Background(), "tok", "secret")
 		require.NoError(t, err)
 		assert.NotNil(t, detail)
@@ -2311,7 +2319,7 @@ func TestDocumentService_Save_RejectsStaleSaveSeq(t *testing.T) {
 	}
 	svc := newDocSvc(docs, nil, versions, nil, nil)
 	ai := &stubAIClient{}
-	svc.setAIClient(ai)
+	svc.ai = ai
 	for _, seq := range []int64{5, 9} {
 		result, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{
 			Title: "Local", Content: "Local body", SaveSeq: seq,
@@ -2364,7 +2372,7 @@ func TestDocumentService_Save_AcceptsFreshSaveSeq(t *testing.T) {
 	}
 	svc := newDocSvc(docs, nil, versions, nil, nil)
 	ai := &stubAIClient{}
-	svc.setAIClient(ai)
+	svc.ai = ai
 
 	result, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{
 		Title: "T", Content: "C", SaveSeq: 7,
@@ -2485,7 +2493,7 @@ func TestDocumentService_Save_RefreshReferences_AssetAndEmbeddingErrors(t *testi
 	t.Run("assets_sync_error", func(t *testing.T) {
 		svc := build()
 		assets := &stubAssetSyncer{syncErr: errors.New("assets boom")}
-		svc.setAssetSyncer(assets)
+		svc.assets = assets
 		_, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{Title: "T", Content: "C"})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "sync document references")
@@ -2495,9 +2503,9 @@ func TestDocumentService_Save_RefreshReferences_AssetAndEmbeddingErrors(t *testi
 	t.Run("embedding_mark_pending_error", func(t *testing.T) {
 		svc := build()
 		// assets stub succeeds so we reach the AI branch.
-		svc.setAssetSyncer(&stubAssetSyncer{})
+		svc.assets = &stubAssetSyncer{}
 		ai := &stubAIClient{markErr: errors.New("embed boom")}
-		svc.setAIClient(ai)
+		svc.ai = ai
 		_, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{Title: "T", Content: "C"})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "mark embedding pending")
@@ -2505,15 +2513,11 @@ func TestDocumentService_Save_RefreshReferences_AssetAndEmbeddingErrors(t *testi
 	})
 }
 
-// TestDocumentService_SetNowFunc_NilPanics ensures we reject nil clocks as
-// a programming error rather than silently leaving share expiry filtering
-// broken (the expiry filter relies on a deterministic clock).
-func TestDocumentService_SetNowFunc_NilPanics(t *testing.T) {
-	svc := newDocSvc(nil, nil, nil, nil, nil)
+func TestNewRuntime_NilTransactorPanics(t *testing.T) {
 	assert.PanicsWithValue(
 		t,
-		"DocumentService.SetNowFunc: now must not be nil",
-		func() { svc.SetNowFunc(nil) },
+		"service runtime requires a transactor",
+		func() { NewRuntime(nil) },
 	)
 }
 
@@ -2590,7 +2594,7 @@ func TestDocumentService_SemanticSearch_Errors(t *testing.T) {
 				return nil, errors.New("fail")
 			},
 		}
-		svc := NewDocumentService(nil, docRepo, noopSummaryRepo(), nil, nil, nil, nil, nil, aiSvc, 10)
+		svc := NewDocumentService(testRuntime(), docRepo, noopSummaryRepo(), nil, nil, nil, nil, nil, aiSvc, 10, nil)
 		_, _, err := svc.SemanticSearch(context.Background(), "u1", "query", "", nil, 10, 0, "", "")
 		assert.Error(t, err)
 	})
@@ -2615,7 +2619,7 @@ func TestDocumentService_SemanticSearch_Errors(t *testing.T) {
 				return nil, nil
 			},
 		}
-		svc := NewDocumentService(nil, docRepo, summaries, nil, nil, nil, nil, nil, aiSvc, 10)
+		svc := NewDocumentService(testRuntime(), docRepo, summaries, nil, nil, nil, nil, nil, aiSvc, 10, nil)
 		docs, scores, err := svc.SemanticSearch(context.Background(), "u1", "query", "", nil, 10, 100, "", "")
 		require.NoError(t, err)
 		assert.Empty(t, docs)

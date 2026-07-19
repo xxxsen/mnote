@@ -80,11 +80,26 @@ Go 服务从配置文件和环境读取数据库、JWT、邮件、存储、AI、
 1. 解析并校验配置。
 2. 连接数据库并执行迁移。
 3. 初始化 Repository、Service、Provider 和存储。
-4. 注册路由和中间件。
-5. 启动后台调度。
-6. 监听 HTTP。
+4. 校验 Router 依赖并注册路由和中间件。
+5. 启动后台 Scheduler 与常驻 Worker。
+6. 使用带读写、Header 和空闲超时的 `http.Server` 监听。
 
-任何必需依赖初始化失败应退出；可选 AI Provider 失败按配置降级。
+监听失败、必需依赖初始化失败或后台 Worker 系统性退出都会结束进程。`SIGINT/SIGTERM` 先把
+readiness 置为失败，再 graceful shutdown HTTP，撤销 Worker context、停止 Scheduler、等待任务并
+关闭数据库。`/health/live` 只表示进程存活，`/health/ready` 还要求应用就绪且数据库 Ping 成功。
+
+`mnote config validate --config=<path>` 执行与运行命令相同的严格 JSON、跨字段和文件存储校验。
+存储的 `data` 同样拒绝未知字段；local 必须配置 `dir`，S3 必须配置 endpoint、bucket、
+`secret_id` 和 `secret_key`。发布流程应先运行 validate，再连接生产数据库。
+
+AI 是可选依赖。开发环境通过 `"ai": {"enabled": false}` 明确关闭；关闭后不初始化 Provider，也不
+注册 AI 定时任务。生产若启用 AI，应同时显式设置所需的 `polish_enabled`、
+`generate_enabled`、`tagging_enabled`、`summary_enabled` 和 `embed_enabled`，未启用功能的配置
+错误不影响启动。旧配置没有这些开关时仅按兼容规则推断，发布时应补齐显式开关。
+
+迁移器只执行 `internal/db/migrations/*.sql`。账本 DDL 位于 `000_schema_migrations.sql`；Go 代码不得
+内联 DDL、探测 legacy 业务结构或补写未执行版本。未管理的非空 schema、checksum 不一致和数据库中
+存在二进制未知版本都会阻止启动。
 
 ## 8. Docker 部署
 
@@ -118,6 +133,7 @@ Go 服务从配置文件和环境读取数据库、JWT、邮件、存储、AI、
 - 公开前端环境变量不能包含服务端密钥。
 - 生产数据和文件使用持久卷或对象存储。
 - 数据库迁移成功前后端不能接收业务流量。
+- Service 事务依赖必须显式注入，生产和集成环境不得以 nil DB 隐式绕过事务。
 - 覆盖率门槛关注关键路径，不能用跳过失败测试或排除核心目录规避。
 
 ## 11. 验证要点
@@ -126,5 +142,7 @@ Go 服务从配置文件和环境读取数据库、JWT、邮件、存储、AI、
 - 覆盖三个端口后，API、CORS、数据库和 OAuth 回调仍使用覆盖值。
 - 退出开发脚本后没有遗留进程、容器或端口。
 - 空库和已有库均可启动。
+- 未管理非空 schema、被修改的 migration 和未知高版本明确拒绝启动；双实例只执行一次 migration。
+- SIGTERM、监听失败和数据库 readiness 失败具备可重复的进程级验证。
 - 前后端生产构建通过，容器健康检查正常。
 - 反向代理下登录、上传、分享和 OAuth 回调使用正确外部地址。

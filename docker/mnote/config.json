@@ -55,6 +55,7 @@
         }
     ],
     "ai": {
+        "enabled": true,
         "provider": "gemini",
         "model": "gemini-1.5-flash",
         "timeout": 30,

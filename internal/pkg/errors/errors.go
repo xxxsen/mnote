@@ -87,6 +87,7 @@ func Normalize(err error) *AppError {
 }
 
 var (
+	ErrNoWork                      = errors.New("no work available")
 	ErrNotFound                    = New(errcode.ErrNotFound, "not found")
 	ErrUnauthorized                = New(errcode.ErrUnauthorized, "unauthorized")
 	ErrForbidden                   = New(errcode.ErrForbidden, "forbidden")

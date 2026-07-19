@@ -13,6 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+
+	"github.com/xxxsen/mnote/internal/pkg/idgen"
 )
 
 var (
@@ -31,10 +33,11 @@ type s3Config struct {
 }
 
 type s3Store struct {
-	client  *s3.Client
-	bucket  string
-	prefix  string
-	baseURL string
+	client    *s3.Client
+	bucket    string
+	prefix    string
+	baseURL   string
+	generator idgen.Generator
 }
 
 func init() {
@@ -78,10 +81,11 @@ func createS3Store(args any) (Store, error) {
 		}
 	})
 	return &s3Store{
-		client:  client,
-		bucket:  cfg.Bucket,
-		prefix:  strings.Trim(cfg.Prefix, "/"),
-		baseURL: buildBaseURL(cfg),
+		client:    client,
+		bucket:    cfg.Bucket,
+		prefix:    strings.Trim(cfg.Prefix, "/"),
+		baseURL:   buildBaseURL(cfg),
+		generator: idgen.NewCrypto(),
 	}, nil
 }
 
@@ -120,11 +124,29 @@ func (s *s3Store) Open(ctx context.Context, key string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
-func (s *s3Store) GenerateFileRef(userID, filename string) string {
-	objectKey := buildFileKey(userID, filename)
-	if s.prefix != "" {
-		objectKey = path.Join(s.prefix, objectKey)
+func (s *s3Store) Delete(ctx context.Context, key string) error {
+	objectKey, err := s.objectKey(key)
+	if err != nil {
+		return fmt.Errorf("resolve object key: %w", err)
 	}
+	if _, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(objectKey),
+	}); err != nil {
+		return fmt.Errorf("delete object: %w", err)
+	}
+	return nil
+}
+
+func (s *s3Store) GenerateFileRef(userID, filename string) (string, error) {
+	generator := s.generator
+	if generator == nil {
+		generator = idgen.NewCrypto()
+	}
+	return buildFileKey(generator, userID, filename)
+}
+
+func (s *s3Store) PublicURL(objectKey string) string {
 	if s.baseURL == "" {
 		return objectKey
 	}

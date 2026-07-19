@@ -49,3 +49,15 @@ func TestRequestID_UniquePerRequest(t *testing.T) {
 	}
 	assert.Len(t, ids, 100, "all request IDs should be unique")
 }
+
+func TestRequestID_ReplacesInvalidValue(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequestWithContext(context.Background(), "GET", "/", nil)
+	c.Request.Header.Set("X-Request-Id", "contains spaces and is not accepted")
+
+	RequestID()(c)
+
+	assert.Regexp(t, requestIDPattern, w.Header().Get("X-Request-Id"))
+	assert.NotEqual(t, "contains spaces and is not accepted", w.Header().Get("X-Request-Id"))
+}

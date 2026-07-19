@@ -14,6 +14,7 @@ type mockDocumentRepo struct {
 	getByIDForUpdateFn func(ctx context.Context, userID, docID string) (*model.Document, error)
 	getByTitleFn       func(ctx context.Context, userID, title string) (*model.Document, error)
 	listFn             func(ctx context.Context, userID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error)
+	listAllFn          func(ctx context.Context, userID string) ([]model.Document, error)
 	listByIDsFn        func(ctx context.Context, userID string, docIDs []string) ([]model.Document, error)
 	countFn            func(ctx context.Context, userID string, starred *int) (int, error)
 	searchLikeFn       func(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy string) ([]model.Document, error)
@@ -55,7 +56,23 @@ func (m *mockDocumentRepo) List(ctx context.Context, userID string, starred *int
 	return m.listFn(ctx, userID, starred, limit, offset, orderBy)
 }
 
+func (m *mockDocumentRepo) ListAllByUser(
+	ctx context.Context, userID string,
+) ([]model.Document, error) {
+	if m.listAllFn != nil {
+		return m.listAllFn(ctx, userID)
+	}
+	return m.listFn(ctx, userID, nil, 0, 0, "")
+}
+
 func (m *mockDocumentRepo) ListByIDs(ctx context.Context, userID string, docIDs []string) ([]model.Document, error) {
+	if m.listByIDsFn == nil {
+		result := make([]model.Document, 0, len(docIDs))
+		for _, id := range docIDs {
+			result = append(result, model.Document{ID: id, UserID: userID})
+		}
+		return result, nil
+	}
 	return m.listByIDsFn(ctx, userID, docIDs)
 }
 

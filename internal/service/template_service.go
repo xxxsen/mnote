@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
@@ -14,8 +15,14 @@ import (
 
 type TemplateService struct {
 	templates templateRepo
-	documents *DocumentService
+	documents templateDocumentService
 	tags      tagRepo
+	runtime   Runtime
+}
+
+type templateDocumentService interface {
+	Create(ctx context.Context, userID string, input DocumentCreateInput) (*model.Document, error)
+	ValidateOwnedTagIDs(ctx context.Context, userID string, tagIDs []string) ([]string, error)
 }
 
 type CreateTemplateInput struct {
@@ -43,8 +50,13 @@ type TemplateMetaListResult struct {
 	Total int                  `json:"total"`
 }
 
-func NewTemplateService(templates templateRepo, documents *DocumentService, tags tagRepo) *TemplateService {
-	return &TemplateService{templates: templates, documents: documents, tags: tags}
+func NewTemplateService(
+	templates templateRepo, documents templateDocumentService, tags tagRepo, runtime Runtime,
+) *TemplateService {
+	return &TemplateService{
+		templates: templates, documents: documents, tags: tags,
+		runtime: prepareRuntime(runtime),
+	}
 }
 
 func (s *TemplateService) List(ctx context.Context, userID string) ([]model.Template, error) {
@@ -64,7 +76,7 @@ func (
 	error,
 ) {
 	query = strings.TrimSpace(query)
-	if len([]rune(query)) > 100 {
+	if utf8.RuneCountInString(query) > 200 {
 		return nil, appErr.ErrInvalid
 	}
 	if limit <= 0 {
@@ -104,18 +116,28 @@ func (
 	input CreateTemplateInput) (*model.Template,
 	error,
 ) {
-	if strings.TrimSpace(input.Name) == "" || strings.TrimSpace(input.Content) == "" {
+	if err := s.validateTemplate(
+		input.Name, input.Description, input.Content, input.DefaultTagIDs,
+	); err != nil {
 		return nil, appErr.ErrInvalid
 	}
 	normalizedContent := normalizeTemplateContentPlaceholders(input.Content)
+	tagIDs, err := s.validateOwnedTagIDs(ctx, userID, input.DefaultTagIDs)
+	if err != nil {
+		return nil, err
+	}
+	id, err := s.runtime.IDs.ID()
+	if err != nil {
+		return nil, fmt.Errorf("generate template id: %w", err)
+	}
 	now := timeutil.NowUnix()
 	tpl := &model.Template{
-		ID:            newID(),
+		ID:            id,
 		UserID:        userID,
 		Name:          strings.TrimSpace(input.Name),
 		Description:   strings.TrimSpace(input.Description),
 		Content:       normalizedContent,
-		DefaultTagIDs: uniqueStringSlice(input.DefaultTagIDs),
+		DefaultTagIDs: tagIDs,
 		BuiltIn:       0,
 		Ctime:         now,
 		Mtime:         now,
@@ -127,21 +149,41 @@ func (
 }
 
 func (s *TemplateService) Update(ctx context.Context, userID, templateID string, input UpdateTemplateInput) error {
-	if strings.TrimSpace(input.Name) == "" || strings.TrimSpace(input.Content) == "" {
+	if err := s.validateTemplate(
+		input.Name, input.Description, input.Content, input.DefaultTagIDs,
+	); err != nil {
 		return appErr.ErrInvalid
 	}
 	normalizedContent := normalizeTemplateContentPlaceholders(input.Content)
+	tagIDs, err := s.validateOwnedTagIDs(ctx, userID, input.DefaultTagIDs)
+	if err != nil {
+		return err
+	}
 	tpl := &model.Template{
 		ID:            templateID,
 		UserID:        userID,
 		Name:          strings.TrimSpace(input.Name),
 		Description:   strings.TrimSpace(input.Description),
 		Content:       normalizedContent,
-		DefaultTagIDs: uniqueStringSlice(input.DefaultTagIDs),
+		DefaultTagIDs: tagIDs,
 		Mtime:         timeutil.NowUnix(),
 	}
 	if err := s.templates.Update(ctx, tpl); err != nil {
 		return fmt.Errorf("update: %w", err)
+	}
+	return nil
+}
+
+func (s *TemplateService) validateTemplate(
+	name, description, content string, tagIDs []string,
+) error {
+	if strings.TrimSpace(name) == "" ||
+		strings.TrimSpace(content) == "" ||
+		utf8.RuneCountInString(name) > 120 ||
+		utf8.RuneCountInString(description) > 1000 ||
+		len([]byte(content)) > s.runtime.Limits.MaxTemplateBytes ||
+		len(uniqueStringSlice(tagIDs)) > 100 {
+		return appErr.ErrInvalid
 	}
 	return nil
 }
@@ -176,28 +218,55 @@ func (
 	if title == "" {
 		title = inferTemplateTitle(content, tpl.Name)
 	}
-	tagIDs := uniqueStringSlice(tpl.DefaultTagIDs)
-	if s.tags != nil && len(tagIDs) > 0 {
-		existingTags, listErr := s.tags.ListByIDs(ctx, userID, tagIDs)
-		if listErr == nil {
-			existingMap := make(map[string]struct{}, len(existingTags))
-			for _, tag := range existingTags {
-				existingMap[tag.ID] = struct{}{}
-			}
-			filtered := make([]string, 0, len(tagIDs))
-			for _, id := range tagIDs {
-				if _, ok := existingMap[id]; ok {
-					filtered = append(filtered, id)
-				}
-			}
-			tagIDs = filtered
-		}
+	tagIDs, err := s.validateOwnedTagIDs(ctx, userID, tpl.DefaultTagIDs)
+	if err != nil {
+		return nil, err
 	}
-	return s.documents.Create(ctx, userID, DocumentCreateInput{
+	doc, err := s.documents.Create(ctx, userID, DocumentCreateInput{
 		Title:   title,
 		Content: content,
 		TagIDs:  tagIDs,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("create document: %w", err)
+	}
+	return doc, nil
+}
+
+func (s *TemplateService) validateOwnedTagIDs(
+	ctx context.Context, userID string, ids []string,
+) ([]string, error) {
+	unique := uniqueStringSlice(ids)
+	if len(unique) == 0 {
+		return []string{}, nil
+	}
+	if s.tags == nil && s.documents != nil {
+		owned, err := s.documents.ValidateOwnedTagIDs(ctx, userID, unique)
+		if err != nil {
+			return nil, fmt.Errorf("validate document tags: %w", err)
+		}
+		return owned, nil
+	}
+	if s.tags == nil {
+		return nil, appErr.ErrInvalid
+	}
+	items, err := s.tags.ListByIDs(ctx, userID, unique)
+	if err != nil {
+		return nil, fmt.Errorf("validate default tags: %w", err)
+	}
+	owned := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		owned[item.ID] = struct{}{}
+	}
+	if len(owned) != len(unique) {
+		return nil, appErr.ErrInvalid
+	}
+	for _, id := range unique {
+		if _, ok := owned[id]; !ok {
+			return nil, appErr.ErrInvalid
+		}
+	}
+	return unique, nil
 }
 
 var builtInTemplateVarsRegex = regexp.MustCompile(`\{\{\s*([a-zA-Z0-9_:\-]+)\s*\}\}`)

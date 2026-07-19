@@ -23,7 +23,10 @@ func NewTemplateRepo(db *sql.DB) *TemplateRepo {
 }
 
 func (r *TemplateRepo) Create(ctx context.Context, tpl *model.Template) error {
-	tagIDsJSON, _ := json.Marshal(tpl.DefaultTagIDs)
+	tagIDsJSON, err := json.Marshal(tpl.DefaultTagIDs)
+	if err != nil {
+		return fmt.Errorf("marshal template %s default tag ids: %w", tpl.ID, err)
+	}
 	data := map[string]any{
 		"id":                   tpl.ID,
 		"user_id":              tpl.UserID,
@@ -50,7 +53,10 @@ func (r *TemplateRepo) Create(ctx context.Context, tpl *model.Template) error {
 }
 
 func (r *TemplateRepo) Update(ctx context.Context, tpl *model.Template) error {
-	tagIDsJSON, _ := json.Marshal(tpl.DefaultTagIDs)
+	tagIDsJSON, err := json.Marshal(tpl.DefaultTagIDs)
+	if err != nil {
+		return fmt.Errorf("marshal template %s default tag ids: %w", tpl.ID, err)
+	}
 	where := map[string]any{"id": tpl.ID, "user_id": tpl.UserID}
 	update := map[string]any{
 		"name":                 tpl.Name,
@@ -127,7 +133,8 @@ func (r *TemplateRepo) ListByUser(ctx context.Context, userID string) ([]model.T
 		WHERE user_id = ?
 		ORDER BY mtime DESC
 	`
-	args := []any{userID}
+	args := make([]any, 0, 3)
+	args = append(args, userID)
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
@@ -161,13 +168,18 @@ func (
 		FROM templates
 		WHERE user_id = ?
 	`
-	args := []any{userID}
+	args := make([]any, 0, 3)
+	args = append(args, userID)
 	sqlStr, args = addTemplateNameFilter(sqlStr, args, query)
 	sqlStr += ` ORDER BY mtime DESC`
-	if limit > 0 {
-		sqlStr += ` LIMIT ? OFFSET ?`
-		args = append(args, limit, offset)
+	if limit <= 0 || limit > 200 {
+		limit = 20
 	}
+	if offset < 0 {
+		offset = 0
+	}
+	sqlStr += ` LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
@@ -232,7 +244,9 @@ func scanTemplate(s templateScanner) (*model.Template, error) {
 	); err != nil {
 		return nil, fmt.Errorf("repo: %w", err)
 	}
-	_ = json.Unmarshal([]byte(tagIDsJSON), &tpl.DefaultTagIDs)
+	if err := json.Unmarshal([]byte(tagIDsJSON), &tpl.DefaultTagIDs); err != nil {
+		return nil, fmt.Errorf("decode templates.default_tag_ids_json for %s: %w", tpl.ID, err)
+	}
 	return &tpl, nil
 }
 
@@ -250,6 +264,8 @@ func scanTemplateMeta(s templateScanner) (*model.TemplateMeta, error) {
 	); err != nil {
 		return nil, fmt.Errorf("repo: %w", err)
 	}
-	_ = json.Unmarshal([]byte(tagIDsJSON), &tpl.DefaultTagIDs)
+	if err := json.Unmarshal([]byte(tagIDsJSON), &tpl.DefaultTagIDs); err != nil {
+		return nil, fmt.Errorf("decode templates.default_tag_ids_json for %s: %w", tpl.ID, err)
+	}
 	return &tpl, nil
 }

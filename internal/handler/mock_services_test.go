@@ -7,6 +7,7 @@ import (
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/oauth"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/service"
 )
 
@@ -50,12 +51,16 @@ func (m *mockAuthService) UpdatePassword(ctx context.Context, userID, current, n
 // --- IOAuthService mock ---
 
 type mockOAuthService struct {
-	getAuthURLFn    func(provider, state string) (string, error)
-	exchangeCodeFn  func(ctx context.Context, provider, code string) (*oauth.Profile, error)
-	bindFn          func(ctx context.Context, userID string, profile *oauth.Profile) error
-	loginOrCreateFn func(ctx context.Context, profile *oauth.Profile) (*model.User, string, error)
-	listBindingsFn  func(ctx context.Context, userID string) ([]model.OAuthAccount, error)
-	unbindFn        func(ctx context.Context, userID, provider string) error
+	getAuthURLFn      func(provider, state string) (string, error)
+	createStateFn     func(ctx context.Context, provider, purpose, userID, returnTo string) (string, error)
+	consumeStateFn    func(ctx context.Context, state string) (*service.OAuthState, error)
+	exchangeCodeFn    func(ctx context.Context, provider, code string) (*oauth.Profile, error)
+	bindFn            func(ctx context.Context, userID string, profile *oauth.Profile) error
+	loginOrCreateFn   func(ctx context.Context, profile *oauth.Profile) (*model.User, string, error)
+	createExchangeFn  func(ctx context.Context, user *model.User) (string, error)
+	consumeExchangeFn func(ctx context.Context, code string) (*service.OAuthExchange, error)
+	listBindingsFn    func(ctx context.Context, userID string) ([]model.OAuthAccount, error)
+	unbindFn          func(ctx context.Context, userID, provider string) error
 }
 
 func (m *mockOAuthService) GetAuthURL(provider, state string) (string, error) {
@@ -63,6 +68,22 @@ func (m *mockOAuthService) GetAuthURL(provider, state string) (string, error) {
 		panic("mockOAuthService.GetAuthURL not configured")
 	}
 	return m.getAuthURLFn(provider, state)
+}
+
+func (m *mockOAuthService) CreateState(
+	ctx context.Context, provider, purpose, userID, returnTo string,
+) (string, error) {
+	if m.createStateFn == nil {
+		return "test-state", nil
+	}
+	return m.createStateFn(ctx, provider, purpose, userID, returnTo)
+}
+
+func (m *mockOAuthService) ConsumeState(ctx context.Context, state string) (*service.OAuthState, error) {
+	if m.consumeStateFn == nil {
+		return nil, appErr.ErrInvalid
+	}
+	return m.consumeStateFn(ctx, state)
 }
 
 func (m *mockOAuthService) ExchangeCode(ctx context.Context, provider, code string) (*oauth.Profile, error) {
@@ -84,6 +105,20 @@ func (m *mockOAuthService) LoginOrCreate(ctx context.Context, profile *oauth.Pro
 		panic("mockOAuthService.LoginOrCreate not configured")
 	}
 	return m.loginOrCreateFn(ctx, profile)
+}
+
+func (m *mockOAuthService) CreateExchange(ctx context.Context, user *model.User) (string, error) {
+	if m.createExchangeFn == nil {
+		return "test-exchange", nil
+	}
+	return m.createExchangeFn(ctx, user)
+}
+
+func (m *mockOAuthService) ConsumeExchange(ctx context.Context, code string) (*service.OAuthExchange, error) {
+	if m.consumeExchangeFn == nil {
+		return nil, appErr.ErrInvalid
+	}
+	return m.consumeExchangeFn(ctx, code)
 }
 
 func (m *mockOAuthService) ListBindings(ctx context.Context, userID string) ([]model.OAuthAccount, error) {
@@ -669,9 +704,12 @@ func (m *mockTodoHandlerService) DeleteTodo(ctx context.Context, userID, todoID 
 // --- filestore.Store mock ---
 
 type mockFileStore struct {
-	saveFn   func(ctx context.Context, key string, r filestore.ReadSeekCloser, size int64) error
-	openFn   func(ctx context.Context, key string) (io.ReadCloser, error)
-	genRefFn func(userID, filename string) string
+	saveFn      func(ctx context.Context, key string, r filestore.ReadSeekCloser, size int64) error
+	openFn      func(ctx context.Context, key string) (io.ReadCloser, error)
+	deleteFn    func(ctx context.Context, key string) error
+	genRefFn    func(userID, filename string) string
+	genRefErr   error
+	publicURLFn func(key string) string
 }
 
 func (m *mockFileStore) Save(ctx context.Context, key string, r filestore.ReadSeekCloser, size int64) error {
@@ -688,9 +726,26 @@ func (m *mockFileStore) Open(ctx context.Context, key string) (io.ReadCloser, er
 	return m.openFn(ctx, key)
 }
 
-func (m *mockFileStore) GenerateFileRef(userID, filename string) string {
+func (m *mockFileStore) Delete(ctx context.Context, key string) error {
+	if m.deleteFn == nil {
+		return nil
+	}
+	return m.deleteFn(ctx, key)
+}
+
+func (m *mockFileStore) GenerateFileRef(userID, filename string) (string, error) {
+	if m.genRefErr != nil {
+		return "", m.genRefErr
+	}
 	if m.genRefFn == nil {
 		panic("mockFileStore.GenerateFileRef not configured")
 	}
-	return m.genRefFn(userID, filename)
+	return m.genRefFn(userID, filename), nil
+}
+
+func (m *mockFileStore) PublicURL(key string) string {
+	if m.publicURLFn != nil {
+		return m.publicURLFn(key)
+	}
+	return resolveFileURL(key)
 }

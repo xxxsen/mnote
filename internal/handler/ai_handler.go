@@ -3,7 +3,6 @@ package handler
 import (
 	"errors"
 	"fmt"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -11,15 +10,20 @@ import (
 	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
 	"github.com/xxxsen/mnote/internal/pkg/response"
+	"github.com/xxxsen/mnote/internal/pkg/safeconv"
 )
 
 type AIHandler struct {
 	ai        IAIHandlerService
-	documents IDocumentService
-	tags      ITagService
+	documents ISemanticSearchHandlerService
+	tags      IAITagLookupService
 }
 
-func NewAIHandler(ai IAIHandlerService, documents IDocumentService, tags ITagService) *AIHandler {
+func NewAIHandler(
+	ai IAIHandlerService,
+	documents ISemanticSearchHandlerService,
+	tags IAITagLookupService,
+) *AIHandler {
 	return &AIHandler{ai: ai, documents: documents, tags: tags}
 }
 
@@ -43,7 +47,7 @@ type aiTagsRequest struct {
 
 func (h *AIHandler) Polish(c *gin.Context) {
 	var req aiPolishRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -61,7 +65,7 @@ func (h *AIHandler) Polish(c *gin.Context) {
 
 func (h *AIHandler) Generate(c *gin.Context) {
 	var req aiGenerateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -79,7 +83,7 @@ func (h *AIHandler) Generate(c *gin.Context) {
 
 func (h *AIHandler) Summary(c *gin.Context) {
 	var req aiSummaryRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -97,7 +101,7 @@ func (h *AIHandler) Summary(c *gin.Context) {
 
 func (h *AIHandler) Tags(c *gin.Context) {
 	var req aiTagsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -115,7 +119,7 @@ func (h *AIHandler) Tags(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, gin.H{"tags": tags, "existing_tags": existingTags})
+	response.Success(c, gin.H{"tags": tags, "existing_tags": toTagResponses(existingTags)})
 }
 
 func (h *AIHandler) Search(c *gin.Context) {
@@ -124,16 +128,18 @@ func (h *AIHandler) Search(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalid, "query required")
 		return
 	}
-	limitStr := c.DefaultQuery("limit", "4")
-	limit, _ := strconv.Atoi(limitStr)
-	if limit <= 0 || limit > 20 {
-		limit = 20
+	page, err := parsePage(c, 4, 20)
+	if err != nil || page.Offset != 0 {
+		response.Error(c, errcode.ErrInvalid, "invalid pagination")
+		return
 	}
 	excludeID := c.Query("exclude_id")
 
 	userID := getUserID(c)
-	docs, scores, err := h.documents.SemanticSearch(c.Request.Context(), userID, query, "", nil, uint(limit), 0, "",
-		excludeID)
+	docs, scores, err := h.documents.SemanticSearch(
+		c.Request.Context(), userID, query, "", nil,
+		safeconv.IntToUint(page.Limit), 0, "", excludeID,
+	)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -144,7 +150,7 @@ func (h *AIHandler) Search(c *gin.Context) {
 	}
 
 	type documentWithScore struct {
-		model.Document
+		documentResponse
 		Score float32 `json:"score"`
 	}
 
@@ -155,8 +161,8 @@ func (h *AIHandler) Search(c *gin.Context) {
 			score = scores[i]
 		}
 		results = append(results, documentWithScore{
-			Document: doc,
-			Score:    score,
+			documentResponse: toDocumentResponse(doc),
+			Score:            score,
 		})
 	}
 	response.Success(c, gin.H{"items": results})

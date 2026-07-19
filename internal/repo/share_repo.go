@@ -241,8 +241,8 @@ func (r *ShareRepo) CreateComment(ctx context.Context, comment *model.ShareComme
 		"id":          comment.ID,
 		"share_id":    comment.ShareID,
 		"document_id": comment.DocumentID,
-		"root_id":     comment.RootID,
-		"reply_to_id": comment.ReplyToID,
+		"root_id":     nullableCommentID(comment.RootID),
+		"reply_to_id": nullableCommentID(comment.ReplyToID),
 		"author":      comment.Author,
 		"content":     comment.Content,
 		"state":       comment.State,
@@ -260,6 +260,26 @@ func (r *ShareRepo) CreateComment(ctx context.Context, comment *model.ShareComme
 	return nil
 }
 
+func nullableCommentID(id string) any {
+	if id == "" {
+		return nil
+	}
+	return id
+}
+
+var shareCommentSelectColumns = []string{
+	"id",
+	"share_id",
+	"document_id",
+	"COALESCE(root_id, '') AS root_id",
+	"COALESCE(reply_to_id, '') AS reply_to_id",
+	"author",
+	"content",
+	"state",
+	"ctime",
+	"mtime",
+}
+
 func (
 	r *ShareRepo) ListCommentsByShare(ctx context.Context,
 	shareID string,
@@ -273,19 +293,14 @@ func (
 	if offset < 0 {
 		offset = 0
 	}
-	where := map[string]any{
-		"share_id": shareID,
-		"state":    ShareCommentStateNormal,
-		"root_id":  "",
-		"_orderby": "ctime desc",
-		"_limit":   []uint{uint(offset), uint(limit)},
-	}
-	sqlStr, args, err := builder.BuildSelect("share_comments", where, []string{
-		"id", "share_id", "document_id", "root_id", "reply_to_id", "author", "content", "state", "ctime", "mtime",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build select: %w", err)
-	}
+	sqlStr := `SELECT id, share_id, document_id,
+		COALESCE(root_id, ''), COALESCE(reply_to_id, ''),
+		author, content, state, ctime, mtime
+		FROM share_comments
+		WHERE share_id = ? AND state = ? AND root_id IS NULL
+		ORDER BY ctime DESC
+		LIMIT ? OFFSET ?`
+	args := []any{shareID, ShareCommentStateNormal, limit, offset}
 	sqlStr, args = dbutil.Finalize(sqlStr, args)
 	rows, err := conn(ctx, r.db).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
@@ -322,9 +337,7 @@ func (r *ShareRepo) GetCommentByID(ctx context.Context, commentID string) (*mode
 		"id":    commentID,
 		"state": ShareCommentStateNormal,
 	}
-	sqlStr, args, err := builder.BuildSelect("share_comments", where, []string{
-		"id", "share_id", "document_id", "root_id", "reply_to_id", "author", "content", "state", "ctime", "mtime",
-	})
+	sqlStr, args, err := builder.BuildSelect("share_comments", where, shareCommentSelectColumns)
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)
 	}
@@ -373,9 +386,7 @@ func (
 		"root_id in": rootIDs,
 		"_orderby":   "ctime asc", // Replies are usually oldest first
 	}
-	sqlStr, args, err := builder.BuildSelect("share_comments", where, []string{
-		"id", "share_id", "document_id", "root_id", "reply_to_id", "author", "content", "state", "ctime", "mtime",
-	})
+	sqlStr, args, err := builder.BuildSelect("share_comments", where, shareCommentSelectColumns)
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)
 	}
@@ -453,8 +464,8 @@ func (
 }
 
 func (r *ShareRepo) CountRootCommentsByShare(ctx context.Context, shareID string) (int, error) {
-	query := `SELECT COUNT(*) FROM share_comments WHERE share_id = ? AND state = ? AND root_id = ?`
-	args := []any{shareID, ShareCommentStateNormal, ""}
+	query := `SELECT COUNT(*) FROM share_comments WHERE share_id = ? AND state = ? AND root_id IS NULL`
+	args := []any{shareID, ShareCommentStateNormal}
 	query, args = dbutil.Finalize(query, args)
 	row := conn(ctx, r.db).QueryRowContext(ctx, query, args...)
 	var count int
@@ -485,9 +496,7 @@ func (
 		"_orderby": "ctime asc",
 		"_limit":   []uint{uint(offset), uint(limit)},
 	}
-	sqlStr, args, err := builder.BuildSelect("share_comments", where, []string{
-		"id", "share_id", "document_id", "root_id", "reply_to_id", "author", "content", "state", "ctime", "mtime",
-	})
+	sqlStr, args, err := builder.BuildSelect("share_comments", where, shareCommentSelectColumns)
 	if err != nil {
 		return nil, fmt.Errorf("build select: %w", err)
 	}

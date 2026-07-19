@@ -64,8 +64,8 @@ func TestDocumentServiceSaveRejectsRevisionConflictWithoutWrites(t *testing.T) {
 	svc := newDocSvc(docs, summaries, versions, tags, nil)
 	assets := &stubAssetSyncer{}
 	ai := &stubAIClient{}
-	svc.setAssetSyncer(assets)
-	svc.setAIClient(ai)
+	svc.assets = assets
+	svc.ai = ai
 
 	summary := "Local summary"
 	result, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{

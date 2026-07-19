@@ -72,21 +72,21 @@ func TestAssetService_RecordUpload(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewAssetService(assets, nil)
+		svc := NewAssetService(assets, nil, testRuntime())
 		err := svc.RecordUpload(context.Background(), "u1", "fk1", "http://url", "file.png", "image/png", 1024)
 		require.NoError(t, err)
 	})
 
 	t.Run("empty_user_id", func(t *testing.T) {
-		svc := NewAssetService(&mockAssetRepo{}, nil)
+		svc := NewAssetService(&mockAssetRepo{}, nil, testRuntime())
 		err := svc.RecordUpload(context.Background(), "", "fk1", "", "", "", 0)
-		require.NoError(t, err)
+		assert.Error(t, err)
 	})
 
 	t.Run("empty_file_key", func(t *testing.T) {
-		svc := NewAssetService(&mockAssetRepo{}, nil)
+		svc := NewAssetService(&mockAssetRepo{}, nil, testRuntime())
 		err := svc.RecordUpload(context.Background(), "u1", "", "", "", "", 0)
-		require.NoError(t, err)
+		assert.Error(t, err)
 	})
 
 	t.Run("repo_error", func(t *testing.T) {
@@ -95,7 +95,7 @@ func TestAssetService_RecordUpload(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewAssetService(assets, nil)
+		svc := NewAssetService(assets, nil, testRuntime())
 		err := svc.RecordUpload(context.Background(), "u1", "fk1", "", "", "", 0)
 		assert.Error(t, err)
 	})
@@ -113,7 +113,7 @@ func TestAssetService_List(t *testing.T) {
 				return map[string]int{"a1": 3, "a2": 0}, nil
 			},
 		}
-		svc := NewAssetService(assets, docAssets)
+		svc := NewAssetService(assets, docAssets, testRuntime())
 		result, err := svc.List(context.Background(), "u1", "", 10, 0)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
@@ -127,7 +127,7 @@ func TestAssetService_List(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewAssetService(assets, &mockDocumentAssetRepo{})
+		svc := NewAssetService(assets, &mockDocumentAssetRepo{}, testRuntime())
 		_, err := svc.List(context.Background(), "u1", "", 10, 0)
 		assert.Error(t, err)
 	})
@@ -143,7 +143,7 @@ func TestAssetService_List(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewAssetService(assets, docAssets)
+		svc := NewAssetService(assets, docAssets, testRuntime())
 		_, err := svc.List(context.Background(), "u1", "", 10, 0)
 		assert.Error(t, err)
 	})
@@ -161,7 +161,7 @@ func TestAssetService_ListReferences(t *testing.T) {
 				return []repo.DocumentAssetReference{{DocumentID: "d1", Title: "Note 1", Mtime: 1000}}, nil
 			},
 		}
-		svc := NewAssetService(assets, docAssets)
+		svc := NewAssetService(assets, docAssets, testRuntime())
 		result, err := svc.ListReferences(context.Background(), "u1", "a1")
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
@@ -174,7 +174,7 @@ func TestAssetService_ListReferences(t *testing.T) {
 				return nil, errors.New("not found")
 			},
 		}
-		svc := NewAssetService(assets, &mockDocumentAssetRepo{})
+		svc := NewAssetService(assets, &mockDocumentAssetRepo{}, testRuntime())
 		_, err := svc.ListReferences(context.Background(), "u1", "a1")
 		assert.Error(t, err)
 	})
@@ -190,7 +190,7 @@ func TestAssetService_SyncDocumentReferences(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewAssetService(&mockAssetRepo{}, docAssets)
+		svc := NewAssetService(&mockAssetRepo{}, docAssets, testRuntime())
 		err := svc.SyncDocumentReferences(context.Background(), "u1", "d1", "plain text no urls")
 		require.NoError(t, err)
 		assert.True(t, replaced)
@@ -212,7 +212,7 @@ func TestAssetService_SyncDocumentReferences(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewAssetService(assets, docAssets)
+		svc := NewAssetService(assets, docAssets, testRuntime())
 		content := "check out /api/v1/files/abc123 and http://example.com/image.png"
 		err := svc.SyncDocumentReferences(context.Background(), "u1", "d1", content)
 		require.NoError(t, err)
@@ -230,7 +230,7 @@ func TestAssetService_SyncDocumentReferences(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewAssetService(&mockAssetRepo{}, docAssets)
+		svc := NewAssetService(&mockAssetRepo{}, docAssets, testRuntime())
 		err := svc.SyncDocumentReferences(context.Background(), "u1", "d1", "no refs here")
 		assert.Error(t, err)
 	})
@@ -241,7 +241,7 @@ func TestAssetService_SyncDocumentReferences(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewAssetService(assets, &mockDocumentAssetRepo{})
+		svc := NewAssetService(assets, &mockDocumentAssetRepo{}, testRuntime())
 		err := svc.SyncDocumentReferences(context.Background(), "u1", "d1", "ref /api/v1/files/abc123")
 		assert.Error(t, err)
 	})
@@ -255,7 +255,7 @@ func TestAssetService_SyncDocumentReferences(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewAssetService(assets, &mockDocumentAssetRepo{})
+		svc := NewAssetService(assets, &mockDocumentAssetRepo{}, testRuntime())
 		err := svc.SyncDocumentReferences(context.Background(), "u1", "d1",
 			"/api/v1/files/abc123 https://example.com/img.png")
 		assert.Error(t, err)
@@ -275,7 +275,7 @@ func TestAssetService_SyncDocumentReferences(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewAssetService(assets, docAssets)
+		svc := NewAssetService(assets, docAssets, testRuntime())
 		err := svc.SyncDocumentReferences(context.Background(), "u1", "d1",
 			"/api/v1/files/abc123 https://example.com/img.png")
 		assert.Error(t, err)
@@ -297,7 +297,7 @@ func TestAssetService_SyncDocumentReferences(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewAssetService(assets, docAssets)
+		svc := NewAssetService(assets, docAssets, testRuntime())
 		err := svc.SyncDocumentReferences(context.Background(), "u1", "d1",
 			"/api/v1/files/abc123 https://example.com/img.png")
 		require.NoError(t, err)
@@ -316,7 +316,7 @@ func TestAssetService_ListReferences_ListError(t *testing.T) {
 			return nil, errors.New("db error")
 		},
 	}
-	svc := NewAssetService(assets, docAssets)
+	svc := NewAssetService(assets, docAssets, testRuntime())
 	_, err := svc.ListReferences(context.Background(), "u1", "a1")
 	assert.Error(t, err)
 }
@@ -330,7 +330,7 @@ func TestAssetService_RemoveDocumentReferences(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewAssetService(&mockAssetRepo{}, docAssets)
+		svc := NewAssetService(&mockAssetRepo{}, docAssets, testRuntime())
 		err := svc.RemoveDocumentReferences(context.Background(), "u1", "d1")
 		require.NoError(t, err)
 	})
@@ -347,7 +347,7 @@ func TestAssetService_RemoveDocumentReferences(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewAssetService(&mockAssetRepo{}, docAssets)
+		svc := NewAssetService(&mockAssetRepo{}, docAssets, testRuntime())
 		err := svc.RemoveDocumentReferences(context.Background(), "u1", "d1")
 		assert.Error(t, err)
 	})

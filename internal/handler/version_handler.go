@@ -10,10 +10,10 @@ import (
 )
 
 type VersionHandler struct {
-	documents IDocumentService
+	documents IVersionHandlerService
 }
 
-func NewVersionHandler(documents IDocumentService) *VersionHandler {
+func NewVersionHandler(documents IVersionHandlerService) *VersionHandler {
 	return &VersionHandler{documents: documents}
 }
 
@@ -23,7 +23,7 @@ func (h *VersionHandler) List(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, versions)
+	response.Success(c, toDocumentVersionSummaryResponses(versions))
 }
 
 func (h *VersionHandler) Get(c *gin.Context) {
@@ -37,5 +37,5 @@ func (h *VersionHandler) Get(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, version)
+	response.Success(c, toDocumentVersionResponse(*version))
 }

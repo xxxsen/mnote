@@ -29,7 +29,7 @@ func (h *ExportHandler) Export(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, payload)
+	response.Success(c, toExportPayloadResponse(payload))
 }
 
 func (h *ExportHandler) ExportNotes(c *gin.Context) {
@@ -47,7 +47,7 @@ func (h *ExportHandler) ExportNotes(c *gin.Context) {
 
 func (h *ExportHandler) ConvertMarkdownToConfluenceHTML(c *gin.Context) {
 	var req markdownToConfluenceHTMLRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}

@@ -120,10 +120,97 @@ func TestAIFeatureConfig_WithDefaults(t *testing.T) {
 	assert.Equal(t, "pro", f2.Model)
 }
 
+func TestAIConfigFeatureSwitches(t *testing.T) {
+	t.Run("no configuration disables AI", func(t *testing.T) {
+		cfg := AIConfig{}
+		assert.False(t, cfg.IsEnabled())
+		assert.False(t, cfg.IsGenerateEnabled())
+		assert.False(t, cfg.IsEmbedEnabled())
+	})
+
+	t.Run("legacy configuration keeps all features enabled", func(t *testing.T) {
+		cfg := AIConfig{Provider: "openai", Model: "model"}
+		assert.True(t, cfg.IsEnabled())
+		assert.True(t, cfg.IsPolishEnabled())
+		assert.True(t, cfg.IsGenerateEnabled())
+		assert.True(t, cfg.IsTaggingEnabled())
+		assert.True(t, cfg.IsSummaryEnabled())
+		assert.True(t, cfg.IsEmbedEnabled())
+	})
+
+	t.Run("explicit global disable overrides feature flags", func(t *testing.T) {
+		enabled := false
+		generate := true
+		cfg := AIConfig{Enabled: &enabled, GenerateEnabled: &generate}
+		assert.False(t, cfg.IsEnabled())
+		assert.False(t, cfg.IsGenerateEnabled())
+	})
+
+	t.Run("any feature switch makes unspecified features disabled", func(t *testing.T) {
+		enabled := true
+		generate := true
+		cfg := AIConfig{
+			Enabled:         &enabled,
+			GenerateEnabled: &generate,
+			Provider:        "openai",
+			Model:           "model",
+		}
+		assert.True(t, cfg.IsGenerateEnabled())
+		assert.False(t, cfg.IsPolishEnabled())
+		assert.False(t, cfg.IsTaggingEnabled())
+		assert.False(t, cfg.IsSummaryEnabled())
+		assert.False(t, cfg.IsEmbedEnabled())
+	})
+}
+
+func TestLoad_AIValidationOnlyForEnabledFeatures(t *testing.T) {
+	t.Run("disabled AI ignores AI-only limits", func(t *testing.T) {
+		j := `{
+			"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
+			"ai": {"enabled": false, "timeout": -1, "max_input_chars": -1},
+			"ai_job": {"summary_delay_seconds": -1, "embedding_delay_seconds": -1}
+		}`
+		cfg, err := Load(writeConfig(t, j))
+		require.NoError(t, err)
+		assert.False(t, cfg.AI.IsEnabled())
+	})
+
+	t.Run("disabled summary does not validate summary delay", func(t *testing.T) {
+		j := `{
+			"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
+			"ai": {
+				"enabled": true, "provider": "p", "model": "m",
+				"generate_enabled": true
+			},
+			"ai_job": {"summary_delay_seconds": -1}
+		}`
+		cfg, err := Load(writeConfig(t, j))
+		require.NoError(t, err)
+		assert.True(t, cfg.AI.IsGenerateEnabled())
+		assert.False(t, cfg.AI.IsSummaryEnabled())
+	})
+
+	t.Run("enabled feature validates shared limits", func(t *testing.T) {
+		j := `{
+			"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
+			"ai": {
+				"enabled": true, "provider": "p", "model": "m",
+				"generate_enabled": true, "timeout": -1
+			}
+		}`
+		_, err := Load(writeConfig(t, j))
+		assert.ErrorIs(t, err, errInvalidAIConfig)
+	})
+}
+
 func TestApplyOAuthDefaults_GithubScopes(t *testing.T) {
 	j := `{
 		"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
-		"properties": {"enable_github_oauth": true}
+		"properties": {"enable_github_oauth": true},
+		"oauth": {"github": {
+			"client_id": "client", "client_secret": "secret",
+			"redirect_url": "https://example.test/oauth/github/callback"
+		}}
 	}`
 	cfg, err := Load(writeConfig(t, j))
 	require.NoError(t, err)
@@ -133,7 +220,11 @@ func TestApplyOAuthDefaults_GithubScopes(t *testing.T) {
 func TestApplyOAuthDefaults_GoogleScopes(t *testing.T) {
 	j := `{
 		"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
-		"properties": {"enable_google_oauth": true}
+		"properties": {"enable_google_oauth": true},
+		"oauth": {"google": {
+			"client_id": "client", "client_secret": "secret",
+			"redirect_url": "https://example.test/oauth/google/callback"
+		}}
 	}`
 	cfg, err := Load(writeConfig(t, j))
 	require.NoError(t, err)
@@ -144,7 +235,11 @@ func TestApplyOAuthDefaults_CustomScopes(t *testing.T) {
 	j := `{
 		"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
 		"properties": {"enable_github_oauth": true},
-		"oauth": {"github": {"scopes": ["repo"]}}
+		"oauth": {"github": {
+			"client_id": "client", "client_secret": "secret",
+			"redirect_url": "https://example.test/oauth/github/callback",
+			"scopes": ["repo"]
+		}}
 	}`
 	cfg, err := Load(writeConfig(t, j))
 	require.NoError(t, err)

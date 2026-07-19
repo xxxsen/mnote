@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"strconv"
-
 	"github.com/gin-gonic/gin"
 
 	"github.com/xxxsen/mnote/internal/model"
@@ -36,7 +34,7 @@ type tagPinRequest struct {
 
 func (h *TagHandler) Create(c *gin.Context) {
 	var req tagRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -49,12 +47,12 @@ func (h *TagHandler) Create(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, tag)
+	response.Success(c, toTagResponse(*tag))
 }
 
 func (h *TagHandler) CreateBatch(c *gin.Context) {
 	var req tagBatchRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -67,32 +65,26 @@ func (h *TagHandler) CreateBatch(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, tags)
+	response.Success(c, toTagResponses(tags))
 }
 
 func (h *TagHandler) List(c *gin.Context) {
 	query := c.Query("q")
-	limit := 0
-	offset := 0
-	if value := c.Query("limit"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil {
-			limit = parsed
-		}
-	}
-	if limit > 20 {
-		limit = 20
-	}
-	if value := c.Query("offset"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil {
-			offset = parsed
-		}
-	}
 	var (
 		tags []model.Tag
 		err  error
 	)
-	if query != "" || limit > 0 || offset > 0 {
-		tags, err = h.tags.ListPage(c.Request.Context(), getUserID(c), query, limit, offset)
+	_, hasLimit := c.GetQuery("limit")
+	_, hasOffset := c.GetQuery("offset")
+	if query != "" || hasLimit || hasOffset {
+		page, pageErr := parsePage(c, 20, 100)
+		if pageErr != nil {
+			response.Error(c, errcode.ErrInvalid, "invalid pagination")
+			return
+		}
+		tags, err = h.tags.ListPage(
+			c.Request.Context(), getUserID(c), query, page.Limit, page.Offset,
+		)
 	} else {
 		tags, err = h.tags.List(c.Request.Context(), getUserID(c))
 	}
@@ -100,12 +92,12 @@ func (h *TagHandler) List(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, tags)
+	response.Success(c, toTagResponses(tags))
 }
 
 func (h *TagHandler) ListByIDs(c *gin.Context) {
 	var req tagIDsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}
@@ -118,32 +110,24 @@ func (h *TagHandler) ListByIDs(c *gin.Context) {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, tags)
+	response.Success(c, toTagResponses(tags))
 }
 
 func (h *TagHandler) Summary(c *gin.Context) {
 	query := c.Query("q")
-	limit := 20
-	offset := 0
-	if value := c.Query("limit"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil {
-			limit = parsed
-		}
+	page, err := parsePage(c, 20, 100)
+	if err != nil {
+		response.Error(c, errcode.ErrInvalid, "invalid pagination")
+		return
 	}
-	if limit > 20 {
-		limit = 20
-	}
-	if value := c.Query("offset"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil {
-			offset = parsed
-		}
-	}
-	items, err := h.tags.ListSummary(c.Request.Context(), getUserID(c), query, limit, offset)
+	items, err := h.tags.ListSummary(
+		c.Request.Context(), getUserID(c), query, page.Limit, page.Offset,
+	)
 	if err != nil {
 		handleError(c, err)
 		return
 	}
-	response.Success(c, items)
+	response.Success(c, toTagSummaryResponses(items))
 }
 
 func (h *TagHandler) Delete(c *gin.Context) {
@@ -156,7 +140,7 @@ func (h *TagHandler) Delete(c *gin.Context) {
 
 func (h *TagHandler) Pin(c *gin.Context) {
 	var req tagPinRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindJSON(c, &req); err != nil {
 		response.Error(c, errcode.ErrInvalid, "invalid request")
 		return
 	}

@@ -46,6 +46,13 @@ func (m *mockTagRepo) ListByNames(ctx context.Context, userID string, names []st
 }
 
 func (m *mockTagRepo) ListByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error) {
+	if m.listByIDsFn == nil {
+		result := make([]model.Tag, 0, len(ids))
+		for _, id := range ids {
+			result = append(result, model.Tag{ID: id, UserID: userID})
+		}
+		return result, nil
+	}
 	return m.listByIDsFn(ctx, userID, ids)
 }
 
@@ -104,7 +111,7 @@ func TestTagService_Create(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		tag, err := svc.Create(context.Background(), "u1", "golang")
 		require.NoError(t, err)
 		assert.Equal(t, "golang", tag.Name)
@@ -120,7 +127,7 @@ func TestTagService_Create(t *testing.T) {
 				return []model.Tag{{ID: "existing-id", Name: names[0]}}, nil
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		tag, err := svc.Create(context.Background(), "u1", "golang")
 		require.NoError(t, err)
 		assert.Equal(t, "existing-id", tag.ID)
@@ -135,7 +142,7 @@ func TestTagService_Create(t *testing.T) {
 				return nil, nil
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		_, err := svc.Create(context.Background(), "u1", "golang")
 		assert.ErrorIs(t, err, appErr.ErrConflict)
 	})
@@ -146,7 +153,7 @@ func TestTagService_Create(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		_, err := svc.Create(context.Background(), "u1", "golang")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "create tag")
@@ -161,14 +168,14 @@ func TestTagService_CreateBatch(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		result, err := svc.CreateBatch(context.Background(), "u1", []string{"go", "rust"})
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 	})
 
 	t.Run("empty_names", func(t *testing.T) {
-		svc := NewTagService(nil, &mockTagRepo{}, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), &mockTagRepo{}, &mockDocumentTagRepo{})
 		result, err := svc.CreateBatch(context.Background(), "u1", nil)
 		require.NoError(t, err)
 		assert.Empty(t, result)
@@ -181,14 +188,14 @@ func TestTagService_CreateBatch(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		result, err := svc.CreateBatch(context.Background(), "u1", []string{"Go", "go", " go "})
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 	})
 
 	t.Run("all_blank", func(t *testing.T) {
-		svc := NewTagService(nil, &mockTagRepo{}, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), &mockTagRepo{}, &mockDocumentTagRepo{})
 		result, err := svc.CreateBatch(context.Background(), "u1", []string{"", " ", "  "})
 		require.NoError(t, err)
 		assert.Empty(t, result)
@@ -200,7 +207,7 @@ func TestTagService_CreateBatch(t *testing.T) {
 				return appErr.ErrConflict
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		_, err := svc.CreateBatch(context.Background(), "u1", []string{"go"})
 		assert.ErrorIs(t, err, appErr.ErrConflict)
 	})
@@ -211,7 +218,7 @@ func TestTagService_CreateBatch(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		_, err := svc.CreateBatch(context.Background(), "u1", []string{"go"})
 		assert.Error(t, err)
 	})
@@ -224,7 +231,7 @@ func TestTagService_List(t *testing.T) {
 				return []model.Tag{{ID: "t1", Name: "go"}}, nil
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		result, err := svc.List(context.Background(), "u1")
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
@@ -236,7 +243,7 @@ func TestTagService_List(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		_, err := svc.List(context.Background(), "u1")
 		assert.Error(t, err)
 	})
@@ -252,7 +259,7 @@ func TestTagService_ListPage(t *testing.T) {
 				return []model.Tag{{Name: "golang"}}, nil
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		result, err := svc.ListPage(context.Background(), "u1", "go", 10, 0)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
@@ -264,7 +271,7 @@ func TestTagService_ListPage(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		_, err := svc.ListPage(context.Background(), "u1", "", 10, 0)
 		assert.Error(t, err)
 	})
@@ -277,7 +284,7 @@ func TestTagService_ListSummary(t *testing.T) {
 				return []model.TagSummary{{Name: "go", Count: 5}}, nil
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		result, err := svc.ListSummary(context.Background(), "u1", "", 10, 0)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
@@ -290,7 +297,7 @@ func TestTagService_ListSummary(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		_, err := svc.ListSummary(context.Background(), "u1", "", 10, 0)
 		assert.Error(t, err)
 	})
@@ -304,7 +311,7 @@ func TestTagService_ListByNames(t *testing.T) {
 				return []model.Tag{{Name: "go"}, {Name: "rust"}}, nil
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		result, err := svc.ListByNames(context.Background(), "u1", []string{"go", "rust"})
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
@@ -316,7 +323,7 @@ func TestTagService_ListByNames(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		_, err := svc.ListByNames(context.Background(), "u1", []string{"go"})
 		assert.Error(t, err)
 	})
@@ -329,7 +336,7 @@ func TestTagService_ListByIDs(t *testing.T) {
 				return []model.Tag{{ID: "t1"}}, nil
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		result, err := svc.ListByIDs(context.Background(), "u1", []string{"t1"})
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
@@ -341,7 +348,7 @@ func TestTagService_ListByIDs(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		_, err := svc.ListByIDs(context.Background(), "u1", []string{"t1"})
 		assert.Error(t, err)
 	})
@@ -367,7 +374,7 @@ func TestTagService_Delete(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTagService(nil, tags, docTags)
+		svc := NewTagService(testRuntime(), tags, docTags)
 		err := svc.Delete(context.Background(), "u1", "t1")
 		require.NoError(t, err)
 		assert.True(t, docTagsCalled)
@@ -381,7 +388,7 @@ func TestTagService_Delete(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewTagService(nil, tags, docTags)
+		svc := NewTagService(testRuntime(), tags, docTags)
 		err := svc.Delete(context.Background(), "u1", "t1")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "delete by tag")
@@ -396,7 +403,7 @@ func TestTagService_Delete(t *testing.T) {
 		docTags := &mockDocumentTagRepo{
 			deleteByTagFn: func(context.Context, string, string) error { return nil },
 		}
-		svc := NewTagService(nil, tags, docTags)
+		svc := NewTagService(testRuntime(), tags, docTags)
 		err := svc.Delete(context.Background(), "u1", "t1")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "delete")
@@ -413,13 +420,13 @@ func TestTagService_UpdatePinned(t *testing.T) {
 				return nil
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		err := svc.UpdatePinned(context.Background(), "u1", "t1", 1)
 		require.NoError(t, err)
 	})
 
 	t.Run("invalid_value", func(t *testing.T) {
-		svc := NewTagService(nil, &mockTagRepo{}, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), &mockTagRepo{}, &mockDocumentTagRepo{})
 		err := svc.UpdatePinned(context.Background(), "u1", "t1", 2)
 		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
@@ -430,7 +437,7 @@ func TestTagService_UpdatePinned(t *testing.T) {
 				return errors.New("db error")
 			},
 		}
-		svc := NewTagService(nil, tags, &mockDocumentTagRepo{})
+		svc := NewTagService(testRuntime(), tags, &mockDocumentTagRepo{})
 		err := svc.UpdatePinned(context.Background(), "u1", "t1", 0)
 		assert.Error(t, err)
 	})

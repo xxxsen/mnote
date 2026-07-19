@@ -1,7 +1,8 @@
-.PHONY: build test test-coverage install-golangci-lint lint-go backend-build backend-test backend-check build-image build-web-image build-yaegi-wasm run-web run dev run-dev-docker web-install web-lint web-test web-build web-e2e web-e2e-update-snapshots
+.PHONY: build test test-unit test-integration test-coverage install-golangci-lint lint-go backend-build backend-test backend-check build-image build-web-image build-yaegi-wasm run-web run dev run-dev-docker web-install web-lint web-test web-build web-e2e web-e2e-update-snapshots
 
 BIN ?= mnote
 GO_TEST_PKGS ?= ./cmd/... ./internal/...
+GO_INTEGRATION_TEST_PKGS ?= ./internal/db/... ./internal/repo/... ./internal/service/... ./internal/handler/...
 GOBIN ?= $(CURDIR)/bin
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.cache/golangci-lint
@@ -12,8 +13,13 @@ GO_COVERAGE_THRESHOLD ?= 80
 build:
 	GOCACHE=$(GOCACHE) go build -o $(BIN) ./cmd/mnote
 
-test:
+test: test-unit
+
+test-unit:
 	GOCACHE=$(GOCACHE) go test -race $(GO_TEST_PKGS)
+
+test-integration:
+	GOCACHE=$(GOCACHE) go test -race -count=1 -tags=integration $(GO_INTEGRATION_TEST_PKGS)
 
 test-coverage:
 	GOCACHE=$(GOCACHE) bash scripts/check-go-coverage.sh $(GO_COVERAGE_THRESHOLD)
@@ -23,6 +29,7 @@ install-golangci-lint:
 
 lint-go:
 	GOCACHE=$(GOCACHE) GOLANGCI_LINT_CACHE=$(GOLANGCI_LINT_CACHE) $(GOLANGCI_LINT) run --config .golangci.yml ./cmd/... ./internal/...
+	./scripts/check-no-inline-ddl.sh
 
 backend-build: build
 
