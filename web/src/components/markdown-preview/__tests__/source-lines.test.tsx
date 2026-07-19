@@ -29,4 +29,15 @@ describe("MarkdownPreview source line markers", () => {
     expect(container.querySelector("li")?.getAttribute("data-source-line")).toBe("5");
     expect(container.querySelector("blockquote")?.getAttribute("data-source-line")).toBe("7");
   });
+
+  it("keeps original source lines when the editor hides an inline toc", () => {
+    const content = "[TOC]\n\n# Heading\n\nParagraph";
+    const { container } = render(
+      <MarkdownPreview content={content} showInlineToc={false} />,
+    );
+
+    expect(container.querySelector(".toc-wrapper")).toBeNull();
+    expect(container.querySelector("h1")?.getAttribute("data-source-line")).toBe("3");
+    expect(container.querySelector("p")?.getAttribute("data-source-line")).toBe("5");
+  });
 });

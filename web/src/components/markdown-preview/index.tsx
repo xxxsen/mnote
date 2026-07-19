@@ -32,7 +32,18 @@ export { ADMONITION_STYLES, FONT_SIZE_MAP } from "./constants";
 
 const MarkdownPreview = memo(
   forwardRef<HTMLDivElement, MarkdownPreviewProps>(function MarkdownPreview(
-    { content, className, showTocAside = false, tocClassName, onScroll, outline, onOutlineLoaded, onTocLoaded, enableMentionHoverPreview = false },
+    {
+      content,
+      className,
+      showInlineToc = true,
+      showTocAside = false,
+      tocClassName,
+      onScroll,
+      outline,
+      onOutlineLoaded,
+      onTocLoaded,
+      enableMentionHoverPreview = false,
+    },
     ref
   ) {
     const { hoverPreview, openHoverPreview, closeHoverPreview } = useHoverPreview(enableMentionHoverPreview);
@@ -44,7 +55,7 @@ const MarkdownPreview = memo(
 
     const { processedContent, tocMarkdown } = useMemo(() => {
       const toc = buildTocMarkdown([...resolvedOutline]);
-      const updated = injectToc(content, toc);
+      const updated = injectToc(content, showInlineToc ? toc : "");
 
       const mathFixed = updated
         .replace(/\\\((.*?)\\\)/g, '$$$1$$')
@@ -54,7 +65,7 @@ const MarkdownPreview = memo(
       const safeContent = escapeUnsupportedHtml(convertAdmonitions(wikilinkProcessed));
       const lazyFixed = breakLazyListContinuation(safeContent);
       return { processedContent: lazyFixed, tocMarkdown: toc };
-    }, [content, resolvedOutline]);
+    }, [content, resolvedOutline, showInlineToc]);
 
     /* v8 ignore start -- rehype plugin tested indirectly via markdown output */
     const rehypeSlugger = useMemo(() => {

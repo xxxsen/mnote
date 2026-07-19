@@ -65,6 +65,15 @@ describe("MarkdownPreview", () => {
     expect(aside).toBeNull();
   });
 
+  it("removes the inline toc without shifting source lines when disabled", () => {
+    const { container } = render(
+      <MarkdownPreview content={"[toc]\n\n# Heading"} showInlineToc={false} />,
+    );
+    expect(container.querySelector("[data-testid='markdown']")?.textContent).toBe(
+      "\n\n# Heading",
+    );
+  });
+
   it("handles empty content", () => {
     const { container } = render(<MarkdownPreview content="" />);
     expect(container.querySelector(".markdown-body")).toBeTruthy();

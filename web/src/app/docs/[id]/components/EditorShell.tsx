@@ -229,6 +229,7 @@ function PreviewPane({ p }: { p: EditorShellFlatContract }) {
               <MarkdownPreview
                 content={p.ec.previewContent}
                 outline={p.outline}
+                showInlineToc={false}
                 className="markdown-body h-auto overflow-visible bg-transparent p-0 text-slate-800"
                 enableMentionHoverPreview
               />
