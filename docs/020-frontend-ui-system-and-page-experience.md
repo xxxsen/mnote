@@ -366,7 +366,9 @@ Docs、Tags、Tasks、Templates、Assets 和 Settings 的 layout 复用 `Authent
 - Revert：`Revert <Document title> · Micro Note`。
 - Share：`<Public document title> · Micro Note`。
 
-加载阶段使用稳定页面名，不生成 `undefined`、空标题或不同分隔符。新增客户端标题逻辑前必须搜索现有写入，避免多个 Effect 互相覆盖。
+加载阶段使用稳定页面名，不生成 `undefined`、空标题或不同分隔符。Editor 在路由存活期间
+保持文档标题优先于 App Router 延迟提交的父级 metadata，并在卸载时解除 head 监听。
+新增客户端标题逻辑前必须搜索现有写入，避免多个 Effect 互相覆盖。
 
 ## 12. 测试与验证
 
@@ -413,4 +415,3 @@ make test-coverage
 - 修改标题或路由时同步检查 metadata、动态标题和 safe return。
 - 修改共享控件后必须回归所有接入页面，不能只验证组件自身。
 - 任何正式行为变化都要同步更新本目录中的对应功能文档。
-

@@ -4,12 +4,77 @@ import {
   type ConsoleMessage,
   type Page,
 } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 type RuntimeErrorMonitor = {
   errors: string[];
 };
 
-export const test = base.extend<{ runtimeErrorMonitor: RuntimeErrorMonitor }>({
+function fontDataUrl(packageName: string, fileName: string) {
+  const fontPath = path.join(
+    __dirname,
+    "..",
+    "node_modules",
+    "@fontsource-variable",
+    packageName,
+    "files",
+    fileName,
+  );
+  return `data:font/woff2;base64,${readFileSync(fontPath).toString("base64")}`;
+}
+
+const stableVisualFontCss = `
+  @font-face {
+    font-family: "MNote E2E Sans";
+    src: url("${fontDataUrl("inter", "inter-latin-wght-normal.woff2")}") format("woff2");
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: block;
+  }
+  @font-face {
+    font-family: "MNote E2E Mono";
+    src: url("${fontDataUrl(
+      "jetbrains-mono",
+      "jetbrains-mono-latin-wght-normal.woff2",
+    )}") format("woff2");
+    font-style: normal;
+    font-weight: 100 800;
+    font-display: block;
+  }
+  :root {
+    --font-sans: "MNote E2E Sans", sans-serif;
+    --font-mono: "MNote E2E Mono", monospace;
+  }
+`;
+
+export const test = base.extend<{
+  runtimeErrorMonitor: RuntimeErrorMonitor;
+  stableVisualFonts: void;
+}>({
+  stableVisualFonts: [
+    async ({ page }, use) => {
+      await page.addInitScript((css) => {
+        const install = () => {
+          if (!document.documentElement) return false;
+          if (document.querySelector("style[data-mnote-e2e-fonts]")) return true;
+          const style = document.createElement("style");
+          style.dataset.mnoteE2eFonts = "true";
+          style.textContent = css;
+          document.documentElement.appendChild(style);
+          return true;
+        };
+        if (!install()) {
+          const observer = new MutationObserver(() => {
+            if (install()) observer.disconnect();
+          });
+          observer.observe(document, { childList: true });
+        }
+      }, stableVisualFontCss);
+      await use();
+    },
+    { auto: true },
+  ],
   runtimeErrorMonitor: [
     async ({ page }, use) => {
       const monitor: RuntimeErrorMonitor = { errors: [] };

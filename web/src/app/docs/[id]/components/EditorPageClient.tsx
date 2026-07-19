@@ -103,10 +103,25 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const popover = usePopover({ handleFormat: ec.handleFormat });
   const filePaste = useFilePaste({ insertTextAtCursor: ec.insertTextAtCursor, replacePlaceholder: ec.replacePlaceholder, toast });
 
+  const pageTitle = title || (loading ? "Editor" : "Untitled note");
   useEffect(() => {
-    const pageTitle = title || (loading ? "Editor" : "Untitled note");
-    document.title = `${pageTitle} · Micro Note`;
-  }, [loading, title]);
+    const desiredTitle = `${pageTitle} · Micro Note`;
+    const syncTitle = () => {
+      if (document.title !== desiredTitle) document.title = desiredTitle;
+    };
+
+    // App Router can stream parent metadata after this client component has
+    // mounted. Keep the loaded document title authoritative while this route
+    // is active, regardless of that commit order.
+    syncTitle();
+    const observer = new MutationObserver(syncTitle);
+    observer.observe(document.head, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    return () => observer.disconnect();
+  }, [pageTitle]);
 
   const slashMenu = useSlashMenu({ editorViewRef, handleFormat: ec.handleFormat, executeCommand: ec.executeCommand, handleInsertTable: ec.handleInsertTable, insertTextAtCursor: ec.insertTextAtCursor });
   const wikilinkMenu = useWikilinkMenu({ editorViewRef, contentRef, lastSavedContentRef, schedulePreviewUpdate: ec.schedulePreviewUpdate, setContent: ec.setContent, setPreviewContent: ec.setPreviewContent, setHasUnsavedChanges: ec.setHasUnsavedChanges });
