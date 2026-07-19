@@ -24,7 +24,7 @@ export function PopoverPanels(props: PopoverPanelsProps) {
       {activePopover === "color" && renderPopover(
         <div className="p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
           <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
-            <span className="text-[10px] font-bold uppercase text-muted-foreground">Select Color</span>
+            <span className="text-xs font-semibold text-muted-foreground">Select color</span>
             <Button size="icon" variant="ghost" aria-label="Close color picker" title="Close" className="h-4 w-4" onClick={() => setActivePopover(null)}><X className="h-3 w-3" /></Button>
           </div>
           <div className="grid grid-cols-4 gap-2 w-48">
@@ -40,7 +40,7 @@ export function PopoverPanels(props: PopoverPanelsProps) {
       {activePopover === "size" && renderPopover(
         <div className="p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
           <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
-            <span className="text-[10px] font-bold uppercase text-muted-foreground">Select Size</span>
+            <span className="text-xs font-semibold text-muted-foreground">Select size</span>
             <Button size="icon" variant="ghost" aria-label="Close size picker" title="Close" className="h-4 w-4" onClick={() => setActivePopover(null)}><X className="h-3 w-3" /></Button>
           </div>
           <div className="flex flex-col gap-1 w-32">
@@ -57,7 +57,7 @@ export function PopoverPanels(props: PopoverPanelsProps) {
       {activePopover === "emoji" && renderPopover(
         <div className="p-3 bg-background border border-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200">
           <div className="flex justify-between items-center mb-2 pb-2 border-b border-border">
-            <span className="text-[10px] font-bold uppercase text-muted-foreground">Insert Emoji</span>
+            <span className="text-xs font-semibold text-muted-foreground">Insert emoji</span>
             <Button size="icon" variant="ghost" aria-label="Close emoji picker" title="Close" className="h-4 w-4" onClick={() => setActivePopover(null)}><X className="h-3 w-3" /></Button>
           </div>
           <div className="flex flex-wrap gap-1 mb-2">

@@ -1,74 +1,81 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch, ApiError } from "@/lib/api";
+import { Eye, EyeOff } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+
+import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
+import { apiFetch } from "@/lib/api";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [code, setCode] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [codeSending, setCodeSending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [codeStatus, setCodeStatus] = useState("");
   const [error, setError] = useState("");
   const [properties, setProperties] = useState<Record<string, boolean> | null>(null);
+  const submitRef = useRef(false);
+  const codeRef = useRef(false);
 
   useEffect(() => {
-    const loadProperties = async () => {
-      try {
-        const res = await apiFetch<{ properties: Record<string, boolean> }>("/properties", { requireAuth: false });
-        setProperties(res.properties);
-      } catch (err) {
-        console.error(err);
-        setProperties({});
-      }
-    };
-    void loadProperties();
+    void apiFetch<{ properties: Record<string, boolean> }>("/properties", {
+      requireAuth: false,
+    }).then((response) => {
+      setProperties(response.properties);
+    }).catch((loadError: unknown) => {
+      console.error(loadError);
+      setProperties({});
+    });
   }, []);
 
   useEffect(() => {
     if (cooldown <= 0) return;
-    const timer = setInterval(() => {
-      setCooldown((prev) => Math.max(0, prev - 1));
+    const timer = window.setInterval(() => {
+      setCooldown((previous) => Math.max(0, previous - 1));
     }, 1000);
-    return () => clearInterval(timer);
+    return () => window.clearInterval(timer);
   }, [cooldown]);
 
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (submitRef.current) return;
+    submitRef.current = true;
+    setSubmitting(true);
     setError("");
-
     try {
       await apiFetch("/auth/register", {
         method: "POST",
         body: JSON.stringify({ email, password, code }),
         requireAuth: false,
       });
-
-      router.push("/login?registered=true");
-    } catch (err: unknown) {
-      const message = err instanceof ApiError ? `${err.message} (Code: ${err.code})` : (err instanceof Error ? err.message : "Registration failed");
-      setError(message);
+      router.replace("/login?registered=true");
+    } catch {
+      setError("Registration failed. Check the form and verification code, then try again.");
     } finally {
-      setIsLoading(false);
+      submitRef.current = false;
+      setSubmitting(false);
     }
   };
 
   const handleSendCode = async () => {
     if (!email.trim()) {
-      setError("Email is required");
+      setError("Enter your email before requesting a verification code.");
       return;
     }
-    if (cooldown > 0) return;
+    if (codeRef.current || cooldown > 0) return;
+    codeRef.current = true;
     setCodeSending(true);
     setError("");
+    setCodeStatus("");
     try {
       await apiFetch("/auth/register/code", {
         method: "POST",
@@ -76,104 +83,122 @@ export default function RegisterPage() {
         requireAuth: false,
       });
       setCooldown(60);
-    } catch (err: unknown) {
-      const message = err instanceof ApiError ? `${err.message} (Code: ${err.code})` : (err instanceof Error ? err.message : "Failed to send code");
-      setError(message);
+      setCodeStatus("Verification code sent. Check your inbox.");
+    } catch {
+      setError("Could not send a verification code. Try again.");
     } finally {
+      codeRef.current = false;
       setCodeSending(false);
     }
   };
 
   if (properties && (!properties.enable_user_register || !properties.enable_email_register)) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4">
-        <div className="w-full max-w-sm border border-border bg-card p-8 shadow-sm text-center space-y-3">
-          <div className="text-lg font-semibold">Registration Disabled</div>
-          <div className="text-sm text-muted-foreground">New user registration is currently closed.</div>
-          <Button onClick={() => router.push("/login")}>Back to Login</Button>
+      <AuthShell
+        title="Registration unavailable"
+        description="New account registration is currently disabled."
+      >
+        <Button type="button" className="w-full" onClick={() => router.replace("/login")}>
+          Back to sign in
+        </Button>
+      </AuthShell>
+    );
+  }
+
+  if (!properties) {
+    return (
+      <AuthShell title="Create an account" description="Start a private Micro Note library.">
+        <div role="status" aria-busy="true" className="py-2 text-center text-sm text-muted-foreground">
+          Loading registration settings…
         </div>
-      </div>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm border border-border bg-card p-8 shadow-sm">
-        <div className="mb-8 text-center">
-          <div className="flex items-center justify-center mb-2">
-            <h1 className="text-2xl font-bold font-mono tracking-tighter">Micro Note</h1>
-          </div>
-          <p className="text-muted-foreground text-sm">Create an account</p>
+    <AuthShell title="Create an account" description="Start a private Micro Note library.">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium" htmlFor="email">Email</label>
+          <Input
+            id="email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+          />
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-xs font-medium uppercase text-muted-foreground" htmlFor="email">
-              Email
-            </label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="user@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-medium uppercase text-muted-foreground" htmlFor="password">
-              Password
-            </label>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium" htmlFor="password">Password</label>
+          <div className="relative">
             <Input
               id="password"
-              type="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="new-password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(event) => setPassword(event.target.value)}
+              className="pr-10"
+              aria-invalid={Boolean(error)}
+              aria-describedby={error ? "register-error" : undefined}
               required
             />
+            <IconButton
+              type="button"
+              label={showPassword ? "Hide password" : "Show password"}
+              variant="ghost"
+              className="absolute right-0 top-0"
+              onClick={() => setShowPassword((visible) => !visible)}
+            >
+              {showPassword
+                ? <EyeOff className="h-4 w-4" aria-hidden="true" />
+                : <Eye className="h-4 w-4" aria-hidden="true" />}
+            </IconButton>
           </div>
-          <div className="space-y-2">
-            <label className="text-xs font-medium uppercase text-muted-foreground" htmlFor="code">
-              Verification Code
-            </label>
-            <div className="flex gap-2">
-              <Input
-                id="code"
-                type="text"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="6-digit code"
-                required
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleSendCode}
-                disabled={codeSending || cooldown > 0 || !email.trim()}
-              >
-                {cooldown > 0 ? `${cooldown}s` : (codeSending ? "Sending..." : "Send")}
-              </Button>
-            </div>
-          </div>
-
-          {error && (
-            <div className="bg-destructive/10 text-destructive text-sm p-2 border border-destructive/20">
-              {error}
-            </div>
-          )}
-
-          <Button type="submit" className="w-full" isLoading={isLoading}>
-            Register
-          </Button>
-        </form>
-
-        <div className="mt-6 text-center text-sm text-muted-foreground">
-          Already have an account?{" "}
-          <Link href="/login" className="underline underline-offset-4 hover:text-primary">
-            Login
-          </Link>
         </div>
-      </div>
-    </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium" htmlFor="code">Verification code</label>
+          <div className="flex gap-2">
+            <Input
+              id="code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              required
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0"
+              onClick={() => void handleSendCode()}
+              disabled={cooldown > 0 || !email.trim()}
+              isLoading={codeSending}
+            >
+              {cooldown > 0 ? `${cooldown}s` : "Send code"}
+            </Button>
+          </div>
+        </div>
+        {codeStatus ? (
+          <p role="status" className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm">
+            {codeStatus}
+          </p>
+        ) : null}
+        {error ? (
+          <p id="register-error" role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+        <Button type="submit" className="w-full" isLoading={submitting}>
+          Create account
+        </Button>
+      </form>
+      <p className="mt-5 text-center text-sm text-muted-foreground">
+        Already have an account?{" "}
+        <Link href="/login" className="font-medium text-primary hover:underline">Sign in</Link>
+      </p>
+    </AuthShell>
   );
 }

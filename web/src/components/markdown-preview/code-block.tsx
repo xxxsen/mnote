@@ -55,7 +55,7 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
       }}
     >
       <div className="flex items-center justify-between px-3 h-8 bg-black/[0.02] border-b border-black/[0.03]">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 font-mono">
+        <span className="font-mono text-xs font-semibold text-muted-foreground">
           {displayTitle}
         </span>
         <button
@@ -70,7 +70,7 @@ const CodeBlock = memo(({ language, fileName, rawCode, ...rest }: CodeBlockProps
           title="Copy"
         >
           {copied ? (
-            <Check className="h-3 w-3 text-green-500" />
+            <Check className="h-3 w-3 text-success" />
           ) : (
             <Copy className="h-3 w-3 text-muted-foreground/50" />
           )}

@@ -1,112 +1,236 @@
 "use client";
 
+import { Plus, Save, Tags, X } from "lucide-react";
+import { useState } from "react";
+
+import { AppPage } from "@/components/app-page";
+import { ResponsiveMasterDetail } from "@/components/responsive-master-detail";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { ChevronLeft, Copy, Save, Tags, X } from "lucide-react";
-import { useTemplates } from "./hooks/useTemplates";
-import { MAX_TAGS, normalizeTemplatePlaceholders } from "./utils";
-import { VariableModal } from "./components/VariableModal";
+import { PageState } from "@/components/ui/page-state";
 import { DeleteTemplateDialog } from "./components/DeleteTemplateDialog";
 import { TemplateList } from "./components/TemplateList";
+import { UnsavedTemplateDialog } from "./components/UnsavedTemplateDialog";
+import { VariableModal } from "./components/VariableModal";
+import { useTemplates } from "./hooks/useTemplates";
+import { MAX_TAGS, normalizeTemplatePlaceholders } from "./utils";
 
 export default function TemplatesPage() {
-  const {
-    router, templates: filteredTemplates, templatesTotal, loading, loadingMore,
-    selectedID, setSelectedID, selected, draft, setDraft, creatingDoc,
-    showVariableModal, setShowVariableModal, variableValues, setVariableValues,
-    search, setSearch, pendingDelete, deletingTemplate,
-    selectedTagIDs, setSelectedTagIDs, visibleSelectedTags,
-    tagQuery, setTagQuery, showTagInput, setShowTagInput, isSaveDisabled,
-    handleTemplateListScroll, createTemplate, saveTemplate, addTag,
-    requestDeleteTemplate, cancelDeleteTemplate, confirmDeleteTemplate,
-    prepareUseTemplate, createFromTemplate, previewContent,
-  } = useTemplates();
+  const templates = useTemplates();
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const hasSelection = Boolean(templates.selectedID);
 
   return (
-    <div className="min-h-screen bg-background p-6 text-foreground">
-      <div className="mx-auto mb-4 flex max-w-6xl items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/docs")}><ChevronLeft className="h-4 w-4" /></Button>
-          <h1 className="text-xl font-bold">Templates</h1>
-        </div>
-      </div>
-      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 md:grid-cols-[320px_1fr]">
-        <TemplateList filteredTemplates={filteredTemplates} templatesTotal={templatesTotal} loading={loading} loadingMore={loadingMore}
-          selectedID={selectedID} search={search} setSearch={setSearch} setSelectedID={setSelectedID}
-          onDelete={requestDeleteTemplate} onCreate={() => void createTemplate()} onScroll={handleTemplateListScroll} />
-
-        <div className="flex h-[75vh] max-h-[calc(100vh-10rem)] flex-col overflow-hidden rounded-xl border border-border bg-card p-4">
-          {!selected ? (
-            <div className="text-sm text-muted-foreground">Select a template.</div>
-          ) : (
-            <div className="flex min-h-0 flex-1 flex-col gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground">Name</label>
-                <Input value={draft.name} onChange={(event) => setDraft((previous) => ({ ...previous, name: event.target.value }))} />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Description</label>
-                <Input value={draft.description} onChange={(event) => setDraft((previous) => ({ ...previous, description: event.target.value }))} />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Template Tags</label>
-                <div className="no-scrollbar mt-1 flex h-8 items-center gap-1.5 overflow-x-auto">
-                  {visibleSelectedTags.map((tag) => (
-                    <span key={tag.id} className="group relative inline-flex h-6 items-center whitespace-nowrap rounded-full border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-700" title={`#${tag.name}`}>
-                      {tag.name}
-                      <button type="button" onClick={() => setSelectedTagIDs((previous) => previous.filter((id) => id !== tag.id))}
-                        className="absolute -right-1 -top-1 hidden h-3.5 w-3.5 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-400 hover:text-slate-700 group-hover:flex"
-                        aria-label={`Remove ${tag.name}`} title="Remove tag"><X className="h-2.5 w-2.5" /></button>
-                    </span>
-                  ))}
-                  {selectedTagIDs.length < MAX_TAGS && (
-                    showTagInput ? (
-                      <input autoFocus value={tagQuery}
-                        onChange={(event) => setTagQuery(event.target.value.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "").slice(0, 16))}
-                        placeholder="Tag name" maxLength={16}
-                        className="h-6 w-28 rounded-full border border-slate-300 bg-white px-2 text-[11px] outline-none focus:border-slate-500"
-                        onBlur={() => { setShowTagInput(false); setTagQuery(""); }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") { event.preventDefault(); void addTag(tagQuery); return; }
-                          if (event.key === "Escape") { event.preventDefault(); setTagQuery(""); setShowTagInput(false); }
-                        }} />
-                    ) : (
-                      <button type="button" onClick={() => setShowTagInput(true)}
-                        className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] text-slate-500 transition-colors hover:text-slate-800" title="Add tag">
-                        <Tags className="h-3.5 w-3.5" />Add Tag
-                      </button>
-                    )
-                  )}
-                  <div className="ml-auto shrink-0 text-[11px] text-muted-foreground">{visibleSelectedTags.length}/{MAX_TAGS}</div>
-                </div>
-              </div>
-              <div className="flex min-h-0 flex-1 flex-col">
-                <label className="text-xs text-muted-foreground">Content</label>
-                <textarea className="h-full min-h-[240px] w-full rounded-md border border-border bg-background p-3 font-mono text-sm"
-                  value={draft.content} onChange={(event) => setDraft((previous) => ({ ...previous, content: event.target.value }))}
-                  onBlur={() => { const normalized = normalizeTemplatePlaceholders(draft.content); if (normalized !== draft.content) setDraft((previous) => ({ ...previous, content: normalized })); }} />
-              </div>
-              <div className="mt-auto flex flex-wrap justify-between gap-2 border-t border-border pt-2">
-                <Button onClick={prepareUseTemplate} disabled={creatingDoc}><Copy className="mr-2 h-4 w-4" />Use Template</Button>
-                <Button variant="outline" onClick={() => void saveTemplate()} disabled={isSaveDisabled}><Save className="mr-2 h-4 w-4" />Save</Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      {showVariableModal && selected ? (
-        <VariableModal variableValues={variableValues} setVariableValues={setVariableValues}
-          previewContent={previewContent} creatingDoc={creatingDoc}
-          onCancel={() => setShowVariableModal(false)} onApply={createFromTemplate} />
-      ) : null}
-      {pendingDelete ? (
-        <DeleteTemplateDialog
-          templateName={pendingDelete.name}
-          deleting={deletingTemplate}
-          onCancel={cancelDeleteTemplate}
-          onConfirm={confirmDeleteTemplate}
+    <AppPage
+      title="Templates"
+      description={templates.isDirty ? "Unsaved changes" : "Reusable note structures"}
+      width="wide"
+      onBack={() => templates.requestNavigate("/docs")}
+      onNavigateRequest={templates.requestNavigate}
+      primaryAction={(
+        <Button
+          onClick={() => templates.requestCreateTemplate(() => setMobileDetailOpen(true))}
+          disabled={templates.saving}
+        >
+          <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+          New template
+        </Button>
+      )}
+    >
+      <ResponsiveMasterDetail
+        hasSelection={hasSelection}
+        mobileDetailOpen={mobileDetailOpen}
+        listLabel="Templates"
+        detailLabel={templates.selectedTemplate?.name || "Template editor"}
+        onBackToList={() => templates.requestMobileBack(() => setMobileDetailOpen(false))}
+        list={(
+          <TemplateList
+            templates={templates.templates}
+            templatesTotal={templates.templatesTotal}
+            loading={templates.loading}
+            loadingMore={templates.loadingMore}
+            listError={templates.listError}
+            loadMoreError={templates.loadMoreError}
+            selectedID={templates.selectedID}
+            search={templates.search}
+            setSearch={templates.setSearch}
+            onSelect={(id) => templates.requestSelectTemplate(id, () => setMobileDetailOpen(true))}
+            onDelete={templates.requestDeleteTemplate}
+            onRetry={() => void templates.reload()}
+            onRetryLoadMore={templates.retryLoadMore}
+            onScroll={templates.handleTemplateListScroll}
+          />
+        )}
+        emptyDetail={<PageState kind="empty" title="Select a template" description="Choose a template from the list to edit it." />}
+        detail={(
+          <TemplateEditor templates={templates} />
+        )}
+      />
+      {templates.showVariableModal && templates.selected ? (
+        <VariableModal
+          variableValues={templates.variableValues}
+          setVariableValues={templates.setVariableValues}
+          previewContent={templates.previewContent}
+          creatingDoc={templates.creatingDoc}
+          onCancel={() => templates.setShowVariableModal(false)}
+          onApply={templates.createFromTemplate}
         />
       ) : null}
+      {templates.pendingDelete ? (
+        <DeleteTemplateDialog
+          templateName={templates.pendingDelete.name}
+          deleting={templates.deletingTemplate}
+          onCancel={templates.cancelDeleteTemplate}
+          onConfirm={templates.confirmDeleteTemplate}
+        />
+      ) : null}
+      {templates.pendingChange ? (
+        <UnsavedTemplateDialog
+          saving={templates.saving}
+          onCancel={templates.cancelPendingChange}
+          onDiscard={templates.discardAndContinue}
+          onSave={templates.saveAndContinue}
+        />
+      ) : null}
+    </AppPage>
+  );
+}
+
+type TemplatesState = ReturnType<typeof useTemplates>;
+
+function TemplateEditor({ templates }: { templates: TemplatesState }) {
+  if (templates.detailLoading) {
+    return <PageState kind="loading" title="Loading template…" />;
+  }
+  if (templates.detailError) {
+    return (
+      <PageState
+        kind="error"
+        title="Template could not be loaded"
+        description={templates.detailError}
+        actionLabel="Retry"
+        onAction={templates.retryDetail}
+      />
+    );
+  }
+  if (!templates.selectedTemplate) {
+    return <PageState kind="empty" title="Select a template" />;
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
+        {templates.isDirty ? (
+          <div role="status" className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+            Unsaved changes
+          </div>
+        ) : null}
+        <Field label="Name" htmlFor="template-name">
+          <Input
+            id="template-name"
+            value={templates.draft.name}
+            onChange={(event) => templates.setDraft((previous) => ({ ...previous, name: event.target.value }))}
+          />
+        </Field>
+        <Field label="Description" htmlFor="template-description">
+          <Input
+            id="template-description"
+            value={templates.draft.description}
+            onChange={(event) => templates.setDraft((previous) => ({ ...previous, description: event.target.value }))}
+          />
+        </Field>
+        <TemplateTags templates={templates} />
+        <Field label="Content" htmlFor="template-content">
+          <textarea
+            id="template-content"
+            className="min-h-72 w-full resize-y rounded-md border border-border bg-background p-3 font-mono text-sm leading-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={templates.draft.content}
+            onChange={(event) => templates.setDraft((previous) => ({ ...previous, content: event.target.value }))}
+            onBlur={() => {
+              const normalized = normalizeTemplatePlaceholders(templates.draft.content);
+              if (normalized !== templates.draft.content) {
+                templates.setDraft((previous) => ({ ...previous, content: normalized }));
+              }
+            }}
+          />
+        </Field>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border p-3 sm:p-4">
+        <Button
+          variant="secondary"
+          onClick={templates.prepareUseTemplate}
+          disabled={templates.creatingDoc || templates.saving}
+        >
+          Use template
+        </Button>
+        <Button
+          onClick={() => void templates.saveTemplate()}
+          disabled={templates.isSaveDisabled}
+          isLoading={templates.saving}
+        >
+          <Save className="mr-2 h-4 w-4" aria-hidden="true" />
+          Save
+        </Button>
+      </div>
     </div>
+  );
+}
+
+function TemplateTags({ templates }: { templates: TemplatesState }) {
+  return (
+    <Field label="Tags" htmlFor="template-tag-input" description={`${templates.visibleSelectedTags.length} of ${MAX_TAGS} tags selected`}>
+      <div className="flex min-h-10 flex-wrap items-center gap-2 rounded-md border border-border p-2">
+        {templates.visibleSelectedTags.map((tag) => (
+          <span key={tag.id} className="inline-flex min-h-8 items-center gap-1 rounded-full border border-border bg-muted px-2 text-xs">
+            {tag.name}
+            <button
+              type="button"
+              aria-label={`Remove ${tag.name}`}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => templates.setSelectedTagIDs((previous) => previous.filter((id) => id !== tag.id))}
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </span>
+        ))}
+        {templates.selectedTagIDs.length < MAX_TAGS ? (
+          templates.showTagInput ? (
+            <input
+              id="template-tag-input"
+              autoFocus
+              value={templates.tagQuery}
+              placeholder="Tag name"
+              maxLength={16}
+              className="h-8 min-w-28 flex-1 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              onChange={(event) => templates.setTagQuery(event.target.value.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, "").slice(0, 16))}
+              onBlur={() => {
+                templates.setShowTagInput(false);
+                templates.setTagQuery("");
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void templates.addTag(templates.tagQuery);
+                } else if (event.key === "Escape") {
+                  templates.setTagQuery("");
+                  templates.setShowTagInput(false);
+                }
+              }}
+            />
+          ) : (
+            <button
+              id="template-tag-input"
+              type="button"
+              className="inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={() => templates.setShowTagInput(true)}
+            >
+              <Tags className="h-4 w-4" aria-hidden="true" />
+              Add tag
+            </button>
+          )
+        ) : null}
+      </div>
+    </Field>
   );
 }

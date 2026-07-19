@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/didi/gendry/builder"
 
@@ -149,7 +150,8 @@ func (r *TemplateRepo) ListByUser(ctx context.Context, userID string) ([]model.T
 
 func (
 	r *TemplateRepo) ListMetaByUser(ctx context.Context,
-	userID string,
+	userID,
+	query string,
 	limit,
 	offset int) ([]model.TemplateMeta,
 	error,
@@ -160,6 +162,7 @@ func (
 		WHERE user_id = ?
 	`
 	args := []any{userID}
+	sqlStr, args = addTemplateNameFilter(sqlStr, args, query)
 	sqlStr += ` ORDER BY mtime DESC`
 	if limit > 0 {
 		sqlStr += ` LIMIT ? OFFSET ?`
@@ -185,14 +188,29 @@ func (
 	return items, nil
 }
 
-func (r *TemplateRepo) CountByUser(ctx context.Context, userID string) (int, error) {
-	query, args := dbutil.Finalize("SELECT COUNT(*) FROM templates WHERE user_id = ?", []any{userID})
+func (r *TemplateRepo) CountByUser(ctx context.Context, userID, nameQuery string) (int, error) {
+	query := "SELECT COUNT(*) FROM templates WHERE user_id = ?"
+	args := []any{userID}
+	query, args = addTemplateNameFilter(query, args, nameQuery)
+	query, args = dbutil.Finalize(query, args)
 	row := conn(ctx, r.db).QueryRowContext(ctx, query, args...)
 	count := 0
 	if err := row.Scan(&count); err != nil {
 		return 0, fmt.Errorf("scan: %w", err)
 	}
 	return count, nil
+}
+
+func addTemplateNameFilter(query string, args []any, nameQuery string) (string, []any) {
+	if nameQuery == "" {
+		return query, args
+	}
+	escaped := strings.NewReplacer(
+		`\`, `\\`,
+		`%`, `\%`,
+		`_`, `\_`,
+	).Replace(nameQuery)
+	return query + ` AND name ILIKE ? ESCAPE '\'`, append(args, "%"+escaped+"%")
 }
 
 type templateScanner interface {

@@ -1,4 +1,6 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRef, useState } from "react";
 
@@ -70,6 +72,29 @@ function StandardHarness() {
 }
 
 describe("Dialog", () => {
+  it("hydrates a closed dialog without a server/client mismatch", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const container = document.createElement("div");
+    container.innerHTML = renderToString(
+      <Dialog open={false} title="Closed"><DialogBody>Hidden</DialogBody></Dialog>,
+    );
+    document.body.appendChild(container);
+
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    await act(async () => {
+      root = hydrateRoot(
+        container,
+        <Dialog open={false} title="Closed"><DialogBody>Hidden</DialogBody></Dialog>,
+      );
+      await Promise.resolve();
+    });
+
+    expect(consoleError.mock.calls.flat().join(" ")).not.toContain("Hydration failed");
+    await act(async () => root?.unmount());
+    consoleError.mockRestore();
+    container.remove();
+  });
+
   it("renders through a portal with labelled semantics and standard regions", () => {
     render(<StandardHarness />);
     expect(screen.queryByRole("dialog")).toBeNull();

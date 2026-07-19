@@ -7,6 +7,7 @@ import {
   DialogBody,
   DialogHeader,
 } from "@/components/ui/dialog";
+import { IconButton } from "@/components/ui/icon-button";
 
 type TocNavigationProps = {
   tocContent: string;
@@ -14,6 +15,14 @@ type TocNavigationProps = {
   getElementById: (id: string) => HTMLElement | null;
   scrollToElement: (element: HTMLElement) => void;
 };
+
+function decodeHash(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
 
 export function FloatingToc({
   tocContent,
@@ -27,18 +36,23 @@ export function FloatingToc({
   setTocCollapsed: (value: boolean) => void;
 }) {
   return (
-    <div className="fixed right-8 top-24 z-30 hidden w-72 animate-in rounded-2xl border border-slate-200/60 bg-white/80 shadow-2xl backdrop-blur-md duration-500 fade-in slide-in-from-right-4 xl:block">
-      <div className="flex items-center justify-between border-b border-slate-200/60 px-4 py-3">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">On this page</div>
-        <button
+    <aside
+      aria-label="Table of contents"
+      className="fixed right-8 top-24 z-30 hidden w-72 animate-in rounded-xl border border-border bg-popover/95 shadow-lg backdrop-blur-md duration-200 fade-in slide-in-from-right-4 motion-reduce:animate-none xl:block"
+    >
+      <div className="flex items-center justify-between border-b border-border px-4 py-2">
+        <div className="text-xs font-semibold text-muted-foreground">On this page</div>
+        <IconButton
           type="button"
-          aria-label={tocCollapsed ? "Expand contents" : "Collapse contents"}
-          title={tocCollapsed ? "Expand contents" : "Collapse contents"}
+          label={tocCollapsed ? "Expand contents" : "Collapse contents"}
+          variant="ghost"
+          className="h-8 w-8"
           onClick={() => setTocCollapsed(!tocCollapsed)}
-          className="rounded-md p-1 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-900"
         >
-          {tocCollapsed ? <Menu className="h-3 w-3" /> : <X className="h-3 w-3" />}
-        </button>
+          {tocCollapsed
+            ? <Menu className="h-4 w-4" aria-hidden="true" />
+            : <X className="h-4 w-4" aria-hidden="true" />}
+        </IconButton>
       </div>
       {!tocCollapsed ? (
         <div className="toc-wrapper custom-scrollbar max-h-[60vh] overflow-y-auto p-4 text-sm">
@@ -49,12 +63,12 @@ export function FloatingToc({
                 return (
                   <a
                     {...props}
-                    className="block py-1 text-slate-500 no-underline transition-colors hover:text-indigo-600"
+                    className="block rounded-md px-2 py-1.5 text-muted-foreground no-underline transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={(event) => {
                       props.onClick?.(event);
                       if (!href.startsWith("#")) return;
                       event.preventDefault();
-                      const rawHash = decodeURIComponent(href.slice(1));
+                      const rawHash = decodeHash(href.slice(1));
                       const normalizedHash = rawHash.normalize("NFKC");
                       for (const candidate of [
                         rawHash,
@@ -78,7 +92,7 @@ export function FloatingToc({
           </ReactMarkdown>
         </div>
       ) : null}
-    </div>
+    </aside>
   );
 }
 
@@ -106,11 +120,11 @@ export function MobileToc({
             a: (props) => (
               <a
                 {...props}
-                className="block min-h-11 border-b border-slate-100 py-2 text-slate-600 transition-colors last:border-0 hover:text-indigo-600"
+                className="block min-h-11 rounded-md border-b border-border px-2 py-3 text-muted-foreground transition-colors last:border-0 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={(event) => {
                   if (!props.href?.startsWith("#")) return;
                   event.preventDefault();
-                  const id = decodeURIComponent(props.href.slice(1));
+                  const id = decodeHash(props.href.slice(1));
                   const element = getElementById(id) || getElementById(slugify(id));
                   if (element) {
                     scrollToElement(element);

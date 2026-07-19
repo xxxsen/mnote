@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Menu } from "@/components/ui/menu";
 
 type ActiveShare = {
   expires_at: number;
@@ -179,12 +180,12 @@ export function DetailsShareContent(props: DetailsShareContentProps) {
           onClick={props.onRevokeShare}
         >
           <X className="mr-2 h-3.5 w-3.5" />
-          Revoke Share Link
+          Revoke share link
         </Button>
       ) : (
         <Button onClick={props.onShare} className="w-full text-xs font-bold">
           <Share2 className="mr-2 h-3.5 w-3.5" />
-          Generate Share Link
+          Generate share link
         </Button>
       )}
       {props.shareUrl ? (
@@ -213,10 +214,10 @@ function ShareLink(props: {
     <button
       type="button"
       onClick={props.onCopy}
-      className="group relative w-full break-all rounded-lg border border-border bg-muted p-3 text-left font-mono text-[10px] transition-colors hover:bg-accent"
+      className="group relative w-full break-all rounded-lg border border-border bg-muted p-3 text-left font-mono text-xs transition-colors hover:bg-accent"
     >
-      <span className="mb-1 flex items-center justify-between uppercase tracking-tighter text-muted-foreground">
-        <span>Share Link</span>
+      <span className="mb-1 flex items-center justify-between text-muted-foreground">
+        <span>Share link</span>
         <Copy className="h-3 w-3 opacity-50 group-hover:opacity-100" />
       </span>
       <span className="block select-all leading-relaxed text-foreground">
@@ -229,7 +230,7 @@ function ShareLink(props: {
       >
         <span className="flex items-center gap-2">
           <Check className="h-3.5 w-3.5 text-primary" />
-          <span className="text-[10px] font-bold">COPIED TO CLIPBOARD</span>
+          <span className="text-xs font-semibold">Copied to clipboard</span>
         </span>
       </span>
     </button>
@@ -242,15 +243,15 @@ function ShareSettings({ settings }: { settings: Settings }) {
   return (
     <div className="space-y-3 rounded-lg border border-border p-3">
       <div className="flex items-center justify-between">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Share Settings
+        <div className="text-xs font-semibold text-muted-foreground">
+          Share settings
         </div>
         {settings.saving ? (
-          <div className="text-[10px] text-muted-foreground">Saving…</div>
+          <div className="text-xs text-muted-foreground">Saving…</div>
         ) : null}
       </div>
       <label className="block space-y-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="text-xs font-semibold text-muted-foreground">
           Expiration date
         </span>
         <input
@@ -261,7 +262,7 @@ function ShareSettings({ settings }: { settings: Settings }) {
         />
       </label>
       <label className="block space-y-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="text-xs font-semibold text-muted-foreground">
           Permission
         </span>
         <select
@@ -288,7 +289,7 @@ function ShareSettings({ settings }: { settings: Settings }) {
       <div className="space-y-1">
         <label
           htmlFor="share-password"
-          className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+          className="text-xs font-semibold text-muted-foreground"
         >
           Password
         </label>
@@ -306,7 +307,7 @@ function ShareSettings({ settings }: { settings: Settings }) {
             type="button"
             variant="outline"
             size="sm"
-            className="h-9 px-2 text-[10px]"
+            className="h-9 px-2 text-xs"
             onClick={() => settings.clearPassword()}
           >
             Clear
@@ -322,69 +323,35 @@ function DocumentActions(props: {
   onExportConfluenceHTML: () => void;
   onShowDeleteConfirm: () => void;
 }) {
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!showExportMenu) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (target && !menuRef.current?.contains(target)) {
-        setShowExportMenu(false);
-      }
-    };
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => window.removeEventListener("pointerdown", handlePointerDown);
-  }, [showExportMenu]);
-
   return (
     <div className="mt-4 border-t border-border pt-4">
-      <div className="relative mb-2" ref={menuRef}>
+      <div className="mb-2">
         <div className="flex items-center">
           <Button
             variant="outline"
             className="w-full rounded-r-none text-xs font-bold"
-            onClick={() => {
-              setShowExportMenu(false);
-              props.onExportMarkdown();
-            }}
+            onClick={props.onExportMarkdown}
           >
-            <Download className="mr-2 h-3.5 w-3.5" />
+            <Download className="mr-2 h-3.5 w-3.5" aria-hidden="true" />
             Download
           </Button>
-          <Button
-            variant="outline"
-            className="rounded-l-none border-l-0 px-2"
-            onClick={() => setShowExportMenu(!showExportMenu)}
-            aria-label="More download options"
-            aria-expanded={showExportMenu}
-            aria-haspopup="menu"
-          >
-            <ChevronDown
-              className={`h-3.5 w-3.5 transition-transform ${
-                showExportMenu ? "rotate-180" : ""
-              }`}
-            />
-          </Button>
+          <Menu
+            label="More download options"
+            trigger={<ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
+            entries={[
+              {
+                id: "confluence-html",
+                label: "Confluence HTML",
+                icon: <FileCode className="h-4 w-4" />,
+                onSelect: props.onExportConfluenceHTML,
+              },
+            ]}
+            triggerVariant="outline"
+            triggerSize="icon"
+            triggerClassName="rounded-l-none border-l-0"
+            width={224}
+          />
         </div>
-        {showExportMenu ? (
-          <div
-            role="menu"
-            className="absolute right-0 top-full z-[220] mt-2 w-56 rounded-xl border border-border bg-popover p-1 shadow-md"
-          >
-            <button
-              type="button"
-              role="menuitem"
-              className="flex w-full items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold hover:bg-accent hover:text-accent-foreground"
-              onClick={() => {
-                setShowExportMenu(false);
-                props.onExportConfluenceHTML();
-              }}
-            >
-              <FileCode className="h-3.5 w-3.5" />
-              Confluence HTML
-            </button>
-          </div>
-        ) : null}
       </div>
       <Button
         variant="destructive"
@@ -392,7 +359,7 @@ function DocumentActions(props: {
         onClick={props.onShowDeleteConfirm}
       >
         <Trash2 className="mr-2 h-3.5 w-3.5" />
-        Delete Note
+        Delete note
       </Button>
     </div>
   );

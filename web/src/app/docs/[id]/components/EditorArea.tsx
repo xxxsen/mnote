@@ -65,7 +65,7 @@ here is the body of note.`}
 
       {slashMenu.open && (
         <div id="editor-slash-menu" role="listbox" aria-label="Editor commands" className="fixed z-[220] w-48 max-w-[calc(100vw-16px)] rounded-lg border border-border bg-popover p-1 shadow-2xl" style={slashPosition}>
-          <div className="text-[10px] font-bold text-muted-foreground px-2 py-1 uppercase tracking-widest border-b border-border mb-1">Commands</div>
+          <div className="mb-1 border-b border-border px-2 py-1 text-xs font-semibold text-muted-foreground">Commands</div>
           <div className="max-h-64 overflow-y-auto no-scrollbar">
             {filteredSlashCommands.map((cmd, index) => (
               <button id={"slash-option-" + String(index)} role="option" aria-selected={index === slashIndex} key={cmd.id} onClick={() => handleSlashAction(cmd.action)} onMouseEnter={() => setSlashIndex(index)} className={`flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-md text-left transition-colors ${index === slashIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"}`}>
@@ -80,7 +80,7 @@ here is the body of note.`}
 
       {wikilinkMenu.open && (
         <div id="editor-wikilink-menu" role="listbox" aria-label="Link to note" className="fixed z-[220] w-56 max-w-[calc(100vw-16px)] rounded-lg border border-border bg-popover p-1 shadow-2xl" style={wikilinkPosition}>
-          <div className="text-[10px] font-bold text-muted-foreground px-2 py-1 uppercase tracking-widest border-b border-border mb-1 flex items-center gap-1"><FileText className="h-3 w-3" /> Link to Note</div>
+          <div className="mb-1 flex items-center gap-1 border-b border-border px-2 py-1 text-xs font-semibold text-muted-foreground"><FileText className="h-3 w-3" aria-hidden="true" /> Link to note</div>
           <div className="max-h-64 overflow-y-auto no-scrollbar">
             {wikilinkLoading ? (
               <div className="px-2 py-2 text-xs text-muted-foreground italic">Searching...</div>

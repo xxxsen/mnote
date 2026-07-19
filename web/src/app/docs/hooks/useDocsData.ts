@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Tag } from "@/types";
 import { apiFetch } from "@/lib/api";
+import type { ToastInput } from "@/components/ui/toast";
 import type { DocumentWithTags, SharedItem } from "../types";
 import { sortDocs, sortRecentDocs } from "../utils";
 
@@ -12,6 +13,7 @@ interface UseDocsDataDeps {
   mergeTags: (items: Tag[]) => void;
   fetchTagsByIDs: (ids: string[]) => Promise<void>;
   tagIndexRef: { current: Partial<Record<string, Tag>> };
+  toast: (input: ToastInput) => void;
 }
 
 const isAbortError = (e: unknown): boolean =>
@@ -31,8 +33,69 @@ function mapSharedItem(item: SharedItem): DocumentWithTags {
   };
 }
 
+function useDocumentActions({
+  setDocs,
+  onStarredChange,
+  toast,
+}: {
+  setDocs: React.Dispatch<React.SetStateAction<DocumentWithTags[]>>;
+  onStarredChange: () => Promise<void>;
+  toast: (input: ToastInput) => void;
+}) {
+  const pendingRef = useRef(new Set<string>());
+  const [pendingActions, setPendingActions] = useState<ReadonlySet<string>>(() => new Set());
+
+  const runAction = useCallback(async (
+    action: "pin" | "star",
+    doc: DocumentWithTags,
+  ) => {
+    const key = `${action}:${doc.id}`;
+    if (pendingRef.current.has(key)) return;
+    pendingRef.current.add(key);
+    setPendingActions(new Set(pendingRef.current));
+
+    const previousValue = action === "pin" ? doc.pinned : doc.starred;
+    const nextValue = previousValue ? 0 : 1;
+    setDocs((previous) => {
+      const updated = previous.map((item) => item.id === doc.id
+        ? { ...item, [action === "pin" ? "pinned" : "starred"]: nextValue }
+        : item);
+      return action === "pin" ? sortDocs(updated) : updated;
+    });
+
+    try {
+      await apiFetch(`/documents/${doc.id}/${action}`, {
+        method: "PUT",
+        body: JSON.stringify({ [action === "pin" ? "pinned" : "starred"]: nextValue === 1 }),
+      });
+      if (action === "star") void onStarredChange();
+    } catch {
+      setDocs((previous) => {
+        const restored = previous.map((item) => item.id === doc.id
+          ? { ...item, [action === "pin" ? "pinned" : "starred"]: previousValue }
+          : item);
+        return action === "pin" ? sortDocs(restored) : restored;
+      });
+      toast({
+        title: `Could not ${action} note`,
+        description: "The note was restored to its previous state.",
+        variant: "error",
+      });
+    } finally {
+      pendingRef.current.delete(key);
+      setPendingActions(new Set(pendingRef.current));
+    }
+  }, [onStarredChange, setDocs, toast]);
+
+  return {
+    pendingActions,
+    handlePinToggle: (doc: DocumentWithTags) => runAction("pin", doc),
+    handleStarToggle: (doc: DocumentWithTags) => runAction("star", doc),
+  };
+}
+
 export function useDocsData(deps: UseDocsDataDeps) {
-  const { search, selectedTag, showStarred, showShared, mergeTags, fetchTagsByIDs, tagIndexRef } = deps;
+  const { search, selectedTag, showStarred, showShared, mergeTags, fetchTagsByIDs, tagIndexRef, toast } = deps;
   const [docs, setDocs] = useState<DocumentWithTags[]>([]);
   const [recentDocs, setRecentDocs] = useState<DocumentWithTags[]>([]);
   const [totalDocs, setTotalDocs] = useState(0);
@@ -40,6 +103,8 @@ export function useDocsData(deps: UseDocsDataDeps) {
   const [sharedTotal, setSharedTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [initialError, setInitialError] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [nextOffset, setNextOffset] = useState(0);
   const [aiSearchDocs, setAiSearchDocs] = useState<DocumentWithTags[]>([]);
@@ -79,7 +144,13 @@ export function useDocsData(deps: UseDocsDataDeps) {
     const controller = new AbortController();
     fetchAbortRef.current = controller;
     fetchInFlightRef.current = true;
-    if (append) { setLoadingMore(true); } else { setLoading(true); }
+    if (append) {
+      setLoadingMore(true);
+      setLoadMoreError(false);
+    } else {
+      setLoading(true);
+      setInitialError(false);
+    }
     try {
       if (showShared) {
         const params = new URLSearchParams();
@@ -131,6 +202,8 @@ export function useDocsData(deps: UseDocsDataDeps) {
     } catch (e) {
       if (isAbortError(e)) return;
       console.error(e);
+      if (append) setLoadMoreError(true);
+      else setInitialError(true);
     } finally {
       if (fetchAbortRef.current === controller) fetchAbortRef.current = null;
       if (!controller.signal.aborted) {
@@ -161,40 +234,20 @@ export function useDocsData(deps: UseDocsDataDeps) {
     }
   }, []);
 
-  const handlePinToggle = useCallback(async (e: React.MouseEvent, doc: DocumentWithTags) => {
-    e.stopPropagation();
-    const newPinned = doc.pinned ? 0 : 1;
-    setDocs(prev => {
-      const updated = prev.map(d => d.id === doc.id ? { ...d, pinned: newPinned } : d);
-      return sortDocs(updated);
-    });
-    try {
-      await apiFetch(`/documents/${doc.id}/pin`, {
-        method: "PUT", body: JSON.stringify({ pinned: newPinned === 1 }),
-      });
-    } catch (err) {
-      console.error("Failed to pin document", err);
-      setDocs(prev => {
-        const restored = prev.map(d => d.id === doc.id ? { ...d, pinned: doc.pinned } : d);
-        return sortDocs(restored);
-      });
-    }
-  }, []);
+  const actions = useDocumentActions({
+    setDocs,
+    onStarredChange: fetchSummary,
+    toast,
+  });
 
-  const handleStarToggle = useCallback(async (e: React.MouseEvent, doc: DocumentWithTags) => {
-    e.stopPropagation();
-    const newStarred = doc.starred ? 0 : 1;
-    setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, starred: newStarred } : d));
-    try {
-      await apiFetch(`/documents/${doc.id}/star`, {
-        method: "PUT", body: JSON.stringify({ starred: newStarred === 1 }),
-      });
-      void fetchSummary();
-    } catch (err) {
-      console.error("Failed to star document", err);
-      setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, starred: doc.starred } : d));
-    }
-  }, [fetchSummary]);
+  const retryInitial = useCallback(() => {
+    fetchInFlightRef.current = false;
+    void fetchDocs(0, false);
+  }, [fetchDocs]);
+  const retryLoadMore = useCallback(() => {
+    fetchInFlightRef.current = false;
+    void fetchDocs(nextOffset, true);
+  }, [fetchDocs, nextOffset]);
 
   /* v8 ignore start -- IntersectionObserver requires real browser viewport */
   useEffect(() => {
@@ -218,6 +271,8 @@ export function useDocsData(deps: UseDocsDataDeps) {
       setHasMore(true);
       setNextOffset(0);
       setLoading(true);
+      setInitialError(false);
+      setLoadMoreError(false);
       setLoadingMore(false);
       fetchInFlightRef.current = false;
       void fetchDocs(0, false);
@@ -237,8 +292,9 @@ export function useDocsData(deps: UseDocsDataDeps) {
 
   return {
     docs, recentDocs, totalDocs, starredTotal, sharedTotal,
-    loading, loadingMore, hasMore, aiSearchDocs, aiSearching, loadMoreRef,
+    loading, loadingMore, initialError, loadMoreError, hasMore, aiSearchDocs, aiSearching, loadMoreRef,
     fetchDocs, fetchSummary, fetchSharedSummary, fetchAiSearch,
-    handlePinToggle, handleStarToggle,
+    retryInitial, retryLoadMore,
+    ...actions,
   };
 }

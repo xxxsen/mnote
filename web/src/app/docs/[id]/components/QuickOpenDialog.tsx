@@ -37,7 +37,7 @@ export function QuickOpenDialog(props: Props) {
       initialFocusRef={inputRef}
     >
       <DialogHeader />
-      <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 px-4 py-3">
+      <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3">
         <Search className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
         <input
           ref={inputRef}
@@ -68,7 +68,7 @@ export function QuickOpenDialog(props: Props) {
       </div>
       <DialogBody className="p-2">
         <div id="quick-open-results" role="listbox" aria-label="Notes">
-          <div className="px-2 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          <div className="px-2 py-2 text-xs font-semibold text-muted-foreground">
             {props.showSearchResults ? "Search results" : "Recent updates"}
           </div>
           {props.loading ? (
@@ -95,14 +95,12 @@ export function QuickOpenDialog(props: Props) {
               >
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate font-medium">{document.title || "Untitled"}</span>
-                  <span className="truncate text-[10px] text-muted-foreground">
+                  <span className="truncate text-xs text-muted-foreground">
                     {formatDate(document.mtime)}
                   </span>
                 </span>
                 <ChevronRight
-                  className={`ml-auto h-3.5 w-3.5 ${
-                    active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                  }`}
+                  className="ml-auto h-3.5 w-3.5 text-muted-foreground"
                   aria-hidden="true"
                 />
               </button>
@@ -110,7 +108,7 @@ export function QuickOpenDialog(props: Props) {
           })}
         </div>
       </DialogBody>
-      <DialogFooter className="justify-between text-[10px] font-medium uppercase text-muted-foreground">
+      <DialogFooter className="justify-between text-xs text-muted-foreground">
         <span>Use ↑ ↓ and Enter</span>
         <span>Esc to close</span>
       </DialogFooter>

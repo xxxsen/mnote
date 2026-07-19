@@ -1,12 +1,12 @@
 "use client";
 
 import type { HTMLAttributes, ReactNode } from "react";
-import { AlertCircle, CheckCircle2, Info, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Info, Loader2, TriangleAlert } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 export type DialogStatusProps = HTMLAttributes<HTMLDivElement> & {
-  variant: "loading" | "error" | "success" | "info";
+  variant: "loading" | "error" | "success" | "info" | "warning";
 };
 
 function renderStatusIcon(variant: DialogStatusProps["variant"]): ReactNode {
@@ -19,6 +19,9 @@ function renderStatusIcon(variant: DialogStatusProps["variant"]): ReactNode {
   }
   if (variant === "success") {
     return <CheckCircle2 className={className} aria-hidden="true" />;
+  }
+  if (variant === "warning") {
+    return <TriangleAlert className={className} aria-hidden="true" />;
   }
   return <Info className={className} aria-hidden="true" />;
 }
@@ -35,10 +38,11 @@ export function DialogStatus({
       aria-live={variant === "error" ? "assertive" : "polite"}
       className={cn(
         "flex items-start gap-2 rounded-xl border px-3 py-2 text-sm",
-        variant === "error" && "border-red-200 bg-red-50 text-red-700",
-        variant === "success" && "border-emerald-200 bg-emerald-50 text-emerald-700",
-        variant === "loading" && "border-slate-200 bg-slate-50 text-slate-600",
-        variant === "info" && "border-blue-200 bg-blue-50 text-blue-700",
+        variant === "error" && "border-destructive/30 bg-destructive/10 text-destructive",
+        variant === "success" && "border-success/30 bg-success/10 text-success",
+        variant === "warning" && "border-warning/30 bg-warning/10 text-warning",
+        variant === "loading" && "border-border bg-muted text-muted-foreground",
+        variant === "info" && "border-info/30 bg-info/10 text-info",
         className,
       )}
       {...props}

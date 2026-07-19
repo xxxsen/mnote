@@ -87,13 +87,13 @@ function PreviewStep({ importPreview, importMode, onSetImportMode }: {
           ["Conflicts", importPreview.conflicts],
         ].map(([label, value]) => (
           <div key={label} className="rounded-xl border border-border bg-muted/20 p-3">
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
+            <div className="text-xs font-medium text-muted-foreground">{label}</div>
             <div className="mt-1 text-lg font-bold">{value}</div>
           </div>
         ))}
       </div>
       <fieldset className="space-y-2">
-        <legend className="text-xs font-medium text-slate-700">Conflict handling</legend>
+        <legend className="text-xs font-medium text-foreground">Conflict handling</legend>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {([
             { label: "Ignore", value: "skip" as ImportMode, hint: "Skip existing titles" },
@@ -112,14 +112,14 @@ function PreviewStep({ importPreview, importMode, onSetImportMode }: {
               }`}
             >
               <span className="block">{item.label}</span>
-              <span className="mt-1 block text-[10px] font-normal text-muted-foreground">{item.hint}</span>
+              <span className="mt-1 block text-xs font-normal text-muted-foreground">{item.hint}</span>
             </button>
           ))}
         </div>
       </fieldset>
       {importPreview.samples.length > 0 ? (
         <div className="space-y-2">
-          <div className="text-xs font-medium text-slate-700">Sample notes</div>
+          <div className="text-xs font-medium text-foreground">Sample notes</div>
           <div className="space-y-2">
             {importPreview.samples.map((item) => (
               <div key={item.title} className="rounded-xl border border-border bg-background p-3">
@@ -155,7 +155,7 @@ function DoneStep({ importReport }: { importReport: ImportReport }) {
       </div>
       {importReport.failed_titles.length > 0 ? (
         <div className="space-y-2">
-          <div className="text-xs font-medium text-slate-700">Failed notes</div>
+          <div className="text-xs font-medium text-foreground">Failed notes</div>
           <div className="max-h-40 overflow-y-auto rounded-xl border border-border p-3 text-xs text-muted-foreground">
             {importReport.failed_titles.map((title) => (
               <div key={title} className="truncate">{title}</div>
@@ -217,7 +217,7 @@ export function ImportDialog(props: ImportDialogProps) {
     onImportFile,
     onImportConfirm,
   } = props;
-  const title = importSource === "hedgedoc" ? "Import from HedgeDoc" : "Import MicroNote archive";
+  const title = importSource === "hedgedoc" ? "Import from HedgeDoc" : "Import Micro Note archive";
   const description = importStep === "upload"
     ? "Choose a ZIP archive to inspect before importing."
     : importStep === "preview"

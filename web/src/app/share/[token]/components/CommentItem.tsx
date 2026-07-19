@@ -1,259 +1,414 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { apiFetch } from "@/lib/api";
-import type { ShareComment } from "@/types";
-import { formatDate, generatePixelAvatar } from "@/lib/utils";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Send } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { isGuestAuthor, guestFingerprint } from "../utils";
-import type { CommentItemProps } from "../types";
 
-function InlineReplyForm({
-  targetAuthor, inlineReplyContent, setInlineReplyContent,
-  inlineReplySubmitting, onSubmit, onCancel, compact,
-}: {
-  targetAuthor: string; inlineReplyContent: string; setInlineReplyContent: (v: string) => void;
-  inlineReplySubmitting: boolean; onSubmit: () => void; onCancel: () => void; compact?: boolean;
-}) {
-  const sizeClass = compact ? "text-xs" : "text-sm";
-  const btnH = compact ? "h-7" : "h-8";
-  const btnText = compact ? "text-[10px]" : "text-xs";
+import { Button } from "@/components/ui/button";
+import { apiFetch } from "@/lib/api";
+import { formatDate, generatePixelAvatar } from "@/lib/utils";
+import type { ShareComment } from "@/types";
+
+import type { CommentItemProps } from "../types";
+import { guestFingerprint, isGuestAuthor } from "../utils";
+
+function mergeByID(base: ShareComment[], incoming: ShareComment[]) {
+  const seen = new Set(base.map((item) => item.id));
+  return [...base, ...incoming.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  })];
+}
+
+function AuthorAvatar({ author, size = "md" }: { author: string; size?: "sm" | "md" }) {
   return (
-    <div className={`${compact ? "mt-1 ml-11" : "mt-2 ml-14"} bg-${compact ? "white" : "slate-50"} rounded-xl p-3 border border-slate-200 ${compact ? "shadow-sm" : ""}`}>
-      <textarea
-        value={inlineReplyContent}
-        onChange={(e) => setInlineReplyContent(e.target.value.slice(0, 2000))}
-        placeholder={`Reply to ${targetAuthor}...`}
-        className={`w-full bg-${compact ? "slate-50" : "white"} rounded-md border border-slate-300 px-3 py-2 ${sizeClass} min-h-[80px] resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500/50`}
+    <div className={`${size === "sm" ? "h-8 w-8" : "h-10 w-10"} shrink-0 overflow-hidden rounded-full border border-border`}>
+      <img
+        src={generatePixelAvatar(author)}
+        alt=""
+        className="h-full w-full object-cover"
+        style={{ imageRendering: "pixelated" }}
       />
-      <div className="mt-2 flex items-center justify-between">
-        <div className={`${compact ? "text-[10px]" : "text-xs"} text-slate-400`}>{inlineReplyContent.length}/2000</div>
+    </div>
+  );
+}
+
+function AuthorName({ author, compact = false }: { author: string; compact?: boolean }) {
+  const fingerprint = isGuestAuthor(author) ? guestFingerprint(author) : "";
+  return (
+    <span className={`${compact ? "text-xs" : "text-sm"} min-w-0 truncate font-semibold text-foreground`}>
+      {author}
+      {fingerprint ? (
+        <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
+          ID:{fingerprint}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function ReplyForm({
+  targetAuthor,
+  content,
+  setContent,
+  submitting,
+  error,
+  onSubmit,
+  onCancel,
+}: {
+  targetAuthor: string;
+  content: string;
+  setContent: (value: string) => void;
+  submitting: boolean;
+  error: string;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const inputId = `reply-${targetAuthor.replaceAll(/[^a-zA-Z0-9]/g, "-")}`;
+  return (
+    <form
+      className="ml-0 mt-3 rounded-xl border border-border bg-muted/40 p-3 sm:ml-12"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <label htmlFor={inputId} className="mb-2 block text-sm font-medium">
+        Reply to {targetAuthor}
+      </label>
+      <textarea
+        id={inputId}
+        value={content}
+        onChange={(event) => setContent(event.target.value.slice(0, 2000))}
+        className="min-h-20 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        maxLength={2000}
+        aria-invalid={Boolean(error)}
+        aria-describedby={`${inputId}-count${error ? ` ${inputId}-error` : ""}`}
+      />
+      {error ? (
+        <p id={`${inputId}-error`} role="alert" className="mt-2 text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <span id={`${inputId}-count`} className="text-xs text-muted-foreground">
+          {content.length}/2000 characters
+        </span>
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={onCancel} className={`${btnH} ${btnText}`}>Cancel</Button>
-          <Button onClick={onSubmit} disabled={inlineReplySubmitting || !inlineReplyContent.trim()} className={`${btnH} ${compact ? "px-3" : "px-4"} ${btnText}`}>
-            <Send className={compact ? "mr-1 h-2.5 w-2.5" : "mr-2 h-3 w-3"} />
-            {inlineReplySubmitting ? "Posting..." : "REPLY"}
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="submit" size="sm" isLoading={submitting} disabled={!content.trim()}>
+            <Send className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+            Post reply
           </Button>
         </div>
       </div>
-    </div>
+    </form>
   );
 }
 
-function ReplyItem({
-  reply, parentCommentId, replies, replyingToId, canAnnotate,
-  onToggleReply, formatDateFn,
+function ReplyRow({
+  reply,
+  canAnnotate,
+  active,
+  onToggleReply,
 }: {
-  reply: ShareComment; parentCommentId: string; replies: ShareComment[];
-  replyingToId: string | null; canAnnotate: boolean;
-  onToggleReply: (reply: ShareComment) => void; formatDateFn: (ts: number) => string;
+  reply: ShareComment;
+  canAnnotate: boolean;
+  active: boolean;
+  onToggleReply: () => void;
 }) {
+  const author = reply.author || "Guest";
   return (
-    <div className="flex gap-3 mt-2">
-      <div className="w-8 h-8 rounded-full border border-slate-200 flex-shrink-0 overflow-hidden">
-        <img src={generatePixelAvatar(reply.author || "Guest")} alt={reply.author || "Guest"} className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
-      </div>
-      <div className="flex-1 min-w-0 bg-slate-50/80 p-3 rounded-xl border border-slate-200/60 hover:border-slate-300 transition-colors">
-        <div className="flex justify-between items-baseline mb-1">
-          <div className="font-semibold text-xs text-slate-900 truncate mr-2">
-            {reply.author || "Guest"}
-            {isGuestAuthor(reply.author) && guestFingerprint(reply.author) && (
-              <span className="ml-2 text-[9px] font-mono text-slate-400 align-middle">ID:{guestFingerprint(reply.author)}</span>
-            )}
-            {reply.reply_to_id !== parentCommentId && reply.reply_to_id && (
-              <span className="text-slate-400 font-normal ml-1">
-                <span className="inline-block mx-1">▸</span>
-                {replies.find(r => r.id === reply.reply_to_id)?.author || "Someone"}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="text-[10px] text-slate-400 whitespace-nowrap">{formatDateFn(reply.ctime)}</div>
-            {canAnnotate && (
-              <button onClick={() => onToggleReply(reply)} className="text-[10px] font-medium text-slate-400 hover:text-indigo-600 transition-colors">
-                {replyingToId === reply.id ? 'Cancel' : 'REPLY'}
-              </button>
-            )}
+    <div className="flex gap-3 rounded-xl border border-border bg-muted/30 p-3">
+      <AuthorAvatar author={author} size="sm" />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <AuthorName author={author} compact />
+          <div className="flex items-center gap-2">
+            <time className="text-xs text-muted-foreground">{formatDate(reply.ctime)}</time>
+            {canAnnotate ? (
+              <Button type="button" variant="ghost" size="sm" onClick={onToggleReply}>
+                {active ? "Cancel" : "Reply"}
+              </Button>
+            ) : null}
           </div>
         </div>
-        <div className="text-xs text-slate-700 whitespace-pre-wrap break-words leading-relaxed mb-2">{reply.content}</div>
+        <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+          {reply.content}
+        </p>
       </div>
     </div>
   );
 }
 
-function CommentBody({ comment, authorName, canAnnotate, replyingToId, onToggleReply }: {
-  comment: ShareComment; authorName: string; canAnnotate: boolean; replyingToId: string | null; onToggleReply: () => void;
-}) {
-  return (
-    <div className="flex gap-4">
-      <div className="w-10 h-10 rounded-full border border-slate-200 flex-shrink-0 overflow-hidden">
-        <img src={generatePixelAvatar(authorName)} alt={authorName} className="w-full h-full object-cover" style={{ imageRendering: "pixelated" }} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex justify-between items-baseline mb-1">
-          <div className="font-semibold text-sm text-slate-900 truncate mr-2">
-            {authorName}
-            {isGuestAuthor(comment.author) && guestFingerprint(comment.author) && (
-              <span className="ml-2 text-[10px] font-mono text-slate-400 align-middle">ID:{guestFingerprint(comment.author)}</span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="text-xs text-slate-400 whitespace-nowrap">{formatDate(comment.ctime)}</div>
-            {canAnnotate && (
-              <button onClick={onToggleReply} className="text-xs font-medium text-slate-400 hover:text-indigo-600 transition-colors">
-                {replyingToId === comment.id ? 'Cancel' : 'REPLY'}
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="text-sm text-slate-700 whitespace-pre-wrap break-words leading-relaxed mb-2">{comment.content}</div>
-      </div>
-    </div>
-  );
-}
+type CommentItemViewProps = {
+  comment: ShareComment;
+  author: string;
+  canAnnotate: boolean;
+  replyingToId: string | null;
+  inlineReplyContent: string;
+  setInlineReplyContent: (value: string) => void;
+  setReplyingTo: CommentItemProps["setReplyingTo"];
+  replySubmitting: boolean;
+  replyError: string;
+  replyCount: number;
+  replies: ShareComment[];
+  repliesExpanded: boolean;
+  setRepliesExpanded: (value: boolean) => void;
+  repliesLoading: boolean;
+  repliesError: string;
+  hasMoreReplies: boolean;
+  activeTargetFound: boolean;
+  toggleReply: (reply: ShareComment) => void;
+  fetchReplies: () => Promise<void>;
+  submitReply: () => Promise<void>;
+};
 
-function RepliesList({ replies, repliesExpanded, repliesLoading, hasMoreReplies, loadedRepliesCount: _lrc,
-  parentCommentId, replyingToId, canAnnotate, inlineReplyContent, setInlineReplyContent,
-  inlineReplySubmitting, onSubmitReply, onCancelReply, onToggleReply, onLoadMore,
-}: {
-  replies: ShareComment[]; repliesExpanded: boolean; repliesLoading: boolean;
-  hasMoreReplies: boolean; loadedRepliesCount: number;
-  parentCommentId: string; replyingToId: string | null; canAnnotate: boolean;
-  inlineReplyContent: string; setInlineReplyContent: (v: string) => void;
-  inlineReplySubmitting: boolean; onSubmitReply: () => void; onCancelReply: () => void;
-  onToggleReply: (reply: ShareComment) => void; onLoadMore: () => void;
-}) {
-  if (!repliesExpanded) return null;
+function CommentItemView(props: CommentItemViewProps) {
   return (
-    <div className="mt-2 ml-4 pl-4 border-l-2 border-slate-100 space-y-4">
-      {replies.map((reply) => (
-        <div key={reply.id} className="flex flex-col gap-2">
-          <ReplyItem reply={reply} parentCommentId={parentCommentId} replies={replies} replyingToId={replyingToId}
-            canAnnotate={canAnnotate} onToggleReply={onToggleReply} formatDateFn={formatDate} />
-          {replyingToId === reply.id && (
-            <InlineReplyForm targetAuthor={reply.author || "Guest"} inlineReplyContent={inlineReplyContent} setInlineReplyContent={setInlineReplyContent}
-              inlineReplySubmitting={inlineReplySubmitting} onSubmit={onSubmitReply} onCancel={onCancelReply} compact />
-          )}
+    <article className="rounded-xl border border-border bg-background p-4">
+      <div className="flex gap-3">
+        <AuthorAvatar author={props.author} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <AuthorName author={props.author} />
+            <div className="flex items-center gap-2">
+              <time className="text-xs text-muted-foreground">{formatDate(props.comment.ctime)}</time>
+              {props.canAnnotate ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => props.toggleReply(props.comment)}
+                >
+                  {props.replyingToId === props.comment.id ? "Cancel" : "Reply"}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+          <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+            {props.comment.content}
+          </p>
         </div>
-      ))}
-      {repliesLoading && <div className="text-xs text-slate-400 mt-2 ml-4">Loading replies...</div>}
-      {hasMoreReplies && !repliesLoading && (
-        <button onClick={onLoadMore} className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors ml-4 mt-2">
-          Load more replies...
-        </button>
-      )}
-    </div>
-  );
-}
+      </div>
 
-function mergeByID(base: ShareComment[], incoming: ShareComment[]) {
-  if (!incoming.length) return base;
-  const seen = new Set(base.map((item) => item.id));
-  const merged = [...base];
-  for (const item of incoming) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    merged.push(item);
-  }
-  return merged;
+      {props.replyingToId === props.comment.id ? (
+        <ReplyForm
+          targetAuthor={props.author}
+          content={props.inlineReplyContent}
+          setContent={props.setInlineReplyContent}
+          submitting={props.replySubmitting}
+          error={props.replyError}
+          onSubmit={() => void props.submitReply()}
+          onCancel={() => props.setReplyingTo(null)}
+        />
+      ) : null}
+
+      {props.replyCount > 0 && !props.repliesExpanded ? (
+        <div className="ml-0 mt-3 sm:ml-12">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            isLoading={props.repliesLoading}
+            onClick={() => {
+              if (props.replies.length > 0) props.setRepliesExpanded(true);
+              else void props.fetchReplies();
+            }}
+          >
+            View {props.replyCount} {props.replyCount === 1 ? "reply" : "replies"}
+          </Button>
+        </div>
+      ) : null}
+
+      {props.repliesExpanded ? (
+        <div className="ml-0 mt-3 space-y-3 border-l-2 border-border pl-3 sm:ml-12">
+          {props.replies.map((reply) => (
+            <div key={reply.id}>
+              <ReplyRow
+                reply={reply}
+                canAnnotate={props.canAnnotate}
+                active={props.replyingToId === reply.id}
+                onToggleReply={() => props.toggleReply(reply)}
+              />
+              {props.replyingToId === reply.id ? (
+                <ReplyForm
+                  targetAuthor={reply.author || "Guest"}
+                  content={props.inlineReplyContent}
+                  setContent={props.setInlineReplyContent}
+                  submitting={props.replySubmitting}
+                  error={props.replyError}
+                  onSubmit={() => void props.submitReply()}
+                  onCancel={() => props.setReplyingTo(null)}
+                />
+              ) : null}
+            </div>
+          ))}
+          {props.repliesError ? (
+            <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">
+              <span>{props.repliesError}</span>
+              <Button type="button" size="sm" variant="outline" onClick={() => void props.fetchReplies()}>
+                Retry
+              </Button>
+            </div>
+          ) : null}
+          {props.hasMoreReplies ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              isLoading={props.repliesLoading}
+              onClick={() => void props.fetchReplies()}
+            >
+              Load more replies
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {props.replyingToId && !props.activeTargetFound ? (
+        <p role="status" className="mt-3 text-sm text-muted-foreground">
+          Select the original comment again to continue replying.
+        </p>
+      ) : null}
+    </article>
+  );
 }
 
 export default function CommentItem({
-  comment, token, accessPassword, canAnnotate, replyingToId,
-  setReplyingTo, inlineReplyContent, setInlineReplyContent, onToast, guestAuthor,
+  comment,
+  token,
+  accessPassword,
+  canAnnotate,
+  replyingToId,
+  setReplyingTo,
+  inlineReplyContent,
+  setInlineReplyContent,
+  notify,
+  guestAuthor,
 }: CommentItemProps) {
   const [replies, setReplies] = useState<ShareComment[]>(comment.replies || []);
   const [repliesLoading, setRepliesLoading] = useState(false);
-  const [hasMoreReplies, setHasMoreReplies] = useState(false);
-  const [inlineReplySubmitting, setInlineReplySubmitting] = useState(false);
+  const [repliesError, setRepliesError] = useState("");
+  const [replySubmitting, setReplySubmitting] = useState(false);
+  const [replyError, setReplyError] = useState("");
   const [repliesExpanded, setRepliesExpanded] = useState((comment.replies?.length || 0) > 0);
-  const [loadedRepliesCount, setLoadedRepliesCount] = useState(comment.replies?.length || 0);
-  const [replyCount, setReplyCount] = useState<number>(typeof comment.reply_count === "number" ? comment.reply_count : replies.length);
+  const [replyCount, setReplyCount] = useState(comment.reply_count ?? comment.replies?.length ?? 0);
+  const repliesRequestRef = useRef(false);
+  const replySubmitRef = useRef(false);
 
   useEffect(() => {
-    if (comment.replies && replies.length === 0) {
-      setReplies(comment.replies);
-      setLoadedRepliesCount(comment.replies.length);
-      if (comment.replies.length > 0) setRepliesExpanded(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comment.replies]);
+    setReplyCount((current) => Math.max(current, comment.reply_count ?? 0));
+  }, [comment.reply_count]);
 
-  useEffect(() => {
-    if (typeof comment.reply_count === "number" && comment.reply_count > replyCount) setReplyCount(comment.reply_count);
-  }, [comment.reply_count, replyCount]);
-
-  useEffect(() => { setHasMoreReplies(replyCount > replies.length); }, [replyCount, replies.length]);
-
-  const fetchReplies = async (offset = 0) => {
+  const fetchReplies = useCallback(async () => {
+    if (repliesRequestRef.current) return;
+    repliesRequestRef.current = true;
     setRepliesLoading(true);
+    setRepliesError("");
     try {
-      const res = await apiFetch<ShareComment[]>(`/public/share/${token}/comments/${comment.id}/replies?limit=10&offset=${offset}${accessPassword.trim() ? `&password=${accessPassword.trim()}` : ''}`, { requireAuth: false });
-      if (offset === 0) { setReplies(res); setLoadedRepliesCount(res.length); }
-      else { setReplies(prev => mergeByID(prev, res)); setLoadedRepliesCount((prev) => prev + res.length); }
+      const query = new URLSearchParams({
+        limit: "10",
+        offset: String(replies.length),
+      });
+      if (accessPassword.trim()) query.set("password", accessPassword.trim());
+      const result = await apiFetch<ShareComment[]>(
+        `/public/share/${token}/comments/${comment.id}/replies?${query.toString()}`,
+        { requireAuth: false },
+      );
+      setReplies((current) => mergeByID(current, result));
       setRepliesExpanded(true);
-    } catch (err) {
-      console.error("Failed to load replies:", err);
-    } finally { setRepliesLoading(false); }
-  };
+    } catch {
+      setRepliesError("Could not load replies.");
+    } finally {
+      repliesRequestRef.current = false;
+      setRepliesLoading(false);
+    }
+  }, [accessPassword, comment.id, replies.length, token]);
 
-  const handleSubmitInlineReply = async () => {
-    if (!canAnnotate || inlineReplySubmitting || !replyingToId) return;
+  const submitReply = useCallback(async () => {
+    if (!canAnnotate || !replyingToId || replySubmitRef.current) return;
     const content = inlineReplyContent.trim();
-    if (!content) return;
-    setInlineReplySubmitting(true);
+    if (!content) {
+      setReplyError("Enter a reply before posting.");
+      return;
+    }
+    replySubmitRef.current = true;
+    setReplySubmitting(true);
+    setReplyError("");
     try {
       const created = await apiFetch<ShareComment>(`/public/share/${token}/comments`, {
-        method: "POST", requireAuth: false,
-        body: JSON.stringify({ password: accessPassword.trim() || undefined, author: guestAuthor || undefined, content, reply_to_id: replyingToId }),
+        method: "POST",
+        requireAuth: false,
+        body: JSON.stringify({
+          password: accessPassword.trim() || undefined,
+          author: guestAuthor || undefined,
+          content,
+          reply_to_id: replyingToId,
+        }),
       });
-      setReplies(prev => mergeByID(prev, [created]));
-      setReplyCount((prev) => prev + 1);
+      setReplies((current) => mergeByID(current, [created]));
+      setReplyCount((current) => current + 1);
       setRepliesExpanded(true);
       setInlineReplyContent("");
       setReplyingTo(null);
-    } catch (err) {
-      console.error(err);
-      onToast(err instanceof Error ? err.message : "Failed to add reply", 3000);
-    } finally { setInlineReplySubmitting(false); }
-  };
+      notify("Reply added.", "success");
+    } catch {
+      setReplyError("Could not add the reply. Try again.");
+      notify("Could not add the reply. Try again.", "error");
+    } finally {
+      replySubmitRef.current = false;
+      setReplySubmitting(false);
+    }
+  }, [
+    accessPassword,
+    canAnnotate,
+    guestAuthor,
+    inlineReplyContent,
+    notify,
+    replyingToId,
+    setInlineReplyContent,
+    setReplyingTo,
+    token,
+  ]);
 
-  const handleToggleReply = useCallback((reply: ShareComment) => {
-    setReplyingTo(replyingToId === reply.id ? null : { id: reply.id, author: reply.author || "Guest" });
+  const toggleReply = useCallback((reply: ShareComment) => {
+    const author = reply.author || "Guest";
+    setReplyError("");
     setInlineReplyContent("");
-  }, [replyingToId, setReplyingTo, setInlineReplyContent]);
+    setReplyingTo(replyingToId === reply.id ? null : { id: reply.id, author });
+  }, [replyingToId, setInlineReplyContent, setReplyingTo]);
 
-  const authorName = comment.author || "Guest";
+  const author = comment.author || "Guest";
+  const activeTarget = replyingToId
+    ? [comment, ...replies].find((item) => item.id === replyingToId)
+    : undefined;
+  const hasMoreReplies = replyCount > replies.length;
 
   return (
-    <div className="flex flex-col gap-3 p-4 rounded-xl border border-slate-200/60 bg-white shadow-sm hover:border-slate-300 hover:shadow-md transition-all duration-200">
-      <CommentBody comment={comment} authorName={authorName} canAnnotate={canAnnotate} replyingToId={replyingToId}
-        onToggleReply={() => { setReplyingTo(replyingToId === comment.id ? null : { id: comment.id, author: authorName }); setInlineReplyContent(""); }} />
-
-      {replyingToId === comment.id && (
-        <InlineReplyForm targetAuthor={authorName} inlineReplyContent={inlineReplyContent} setInlineReplyContent={setInlineReplyContent}
-          inlineReplySubmitting={inlineReplySubmitting} onSubmit={() => void handleSubmitInlineReply()} onCancel={() => setReplyingTo(null)} />
-      )}
-
-      {replyCount > 0 && !repliesExpanded && (
-        <div className="mt-1 ml-14">
-          <button onClick={() => { if (replies.length === 0) void fetchReplies(0); else setRepliesExpanded(true); }}
-            className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1">
-            <span className="inline-block transform rotate-90 scale-y-125 text-[10px] text-indigo-400">▸</span>
-            View {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
-          </button>
-        </div>
-      )}
-
-      <RepliesList replies={replies} repliesExpanded={repliesExpanded} repliesLoading={repliesLoading}
-        hasMoreReplies={hasMoreReplies} loadedRepliesCount={loadedRepliesCount}
-        parentCommentId={comment.id} replyingToId={replyingToId} canAnnotate={canAnnotate}
-        inlineReplyContent={inlineReplyContent} setInlineReplyContent={setInlineReplyContent}
-        inlineReplySubmitting={inlineReplySubmitting} onSubmitReply={() => void handleSubmitInlineReply()}
-        onCancelReply={() => setReplyingTo(null)} onToggleReply={handleToggleReply}
-        onLoadMore={() => void fetchReplies(loadedRepliesCount)} />
-    </div>
+    <CommentItemView
+      comment={comment}
+      author={author}
+      canAnnotate={canAnnotate}
+      replyingToId={replyingToId}
+      inlineReplyContent={inlineReplyContent}
+      setInlineReplyContent={setInlineReplyContent}
+      setReplyingTo={setReplyingTo}
+      replySubmitting={replySubmitting}
+      replyError={replyError}
+      replyCount={replyCount}
+      replies={replies}
+      repliesExpanded={repliesExpanded}
+      setRepliesExpanded={setRepliesExpanded}
+      repliesLoading={repliesLoading}
+      repliesError={repliesError}
+      hasMoreReplies={hasMoreReplies}
+      activeTargetFound={Boolean(activeTarget)}
+      toggleReply={toggleReply}
+      fetchReplies={fetchReplies}
+      submitReply={submitReply}
+    />
   );
 }

@@ -64,8 +64,8 @@ export function AiModal(props: AiModalProps) {
             <Sparkles className="h-4 w-4" aria-hidden="true" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-slate-950">{title}</h2>
-            <p className="mt-1 text-sm text-slate-600">
+            <h2 className="text-base font-semibold text-foreground">{title}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
               {props.aiLoading ? "Working on your request…" : "Review before applying"}
             </p>
           </div>
@@ -111,7 +111,7 @@ function AiModalResult({
     return (
       <div className="space-y-4">
         <label className="block space-y-2">
-          <span className="text-sm font-medium text-slate-700">Brief description</span>
+          <span className="text-sm font-medium text-foreground">Brief description</span>
           <textarea
             ref={setPromptElement}
             className="min-h-[120px] w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
@@ -126,7 +126,7 @@ function AiModalResult({
             <div className="rounded-xl border border-border bg-muted/20 p-4">
               <MarkdownPreview
                 content={aiResultText}
-                className="prose prose-slate max-w-none"
+                className="prose max-w-none text-foreground"
                 enableMentionHoverPreview
               />
             </div>
@@ -237,8 +237,8 @@ function DiffPanel({
               className={`whitespace-pre-wrap px-2 py-1 ${
                 changed
                   ? side === "left"
-                    ? "bg-rose-50 text-rose-700"
-                    : "bg-emerald-50 text-emerald-700"
+                    ? "bg-destructive/10 text-destructive"
+                    : "bg-success/10 text-success"
                   : "bg-background"
               }`}
             >
@@ -274,8 +274,8 @@ function TagsPanel(props: Pick<
               aria-pressed={!removed}
               className={`min-h-11 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                 removed
-                  ? "border-rose-200 bg-rose-50 text-rose-700"
-                  : "border-black bg-black text-white"
+                  ? "border-destructive/30 bg-destructive/10 text-destructive"
+                  : "border-primary bg-primary text-primary-foreground"
               }`}
               onClick={() => props.toggleExistingTag(tag.id)}
             >
@@ -293,7 +293,7 @@ function TagsPanel(props: Pick<
               key={tag}
               aria-pressed={selected}
               className={`min-h-11 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                selected ? "border-black bg-black text-white" : "border-border bg-background"
+                selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background"
               } hover:bg-accent`}
               onClick={() => props.toggleAiTag(tag)}
             >
@@ -317,7 +317,7 @@ function TagSection({
 }) {
   return (
     <section className="space-y-2">
-      <h3 className="text-sm font-medium text-slate-700">{title}</h3>
+      <h3 className="text-sm font-medium text-foreground">{title}</h3>
       {children.length === 0 ? (
         <div className="text-sm text-muted-foreground">{empty}</div>
       ) : (

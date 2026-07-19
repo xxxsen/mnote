@@ -11,6 +11,7 @@ export const getAuthToken = () => {
 export const setAuthToken = (token: string) => {
   if (typeof window !== "undefined") {
     localStorage.setItem("mnote_token", token);
+    window.dispatchEvent(new Event("mnote-auth-change"));
   }
 };
 
@@ -30,6 +31,7 @@ export const setAuthEmail = (email: string) => {
 export const removeAuthToken = () => {
   if (typeof window !== "undefined") {
     localStorage.removeItem("mnote_token");
+    window.dispatchEvent(new Event("mnote-auth-change"));
   }
 };
 
@@ -62,9 +64,12 @@ export class ApiError extends Error {
 }
 
 function redirectToLogin(): never {
+  const currentPath = typeof window === "undefined"
+    ? "/docs"
+    : `${window.location.pathname || "/docs"}${window.location.search || ""}`;
   removeAuthToken();
   removeAuthEmail();
-  window.location.href = "/login";
+  window.location.replace(`/login?return=${encodeURIComponent(currentPath)}`);
   throw new ApiError("Unauthorized", 401);
 }
 

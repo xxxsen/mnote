@@ -5,7 +5,10 @@ import { ToastProvider } from "@/components/ui/toast";
 
 
 export const metadata: Metadata = {
-  title: "Micro Note",
+  title: {
+    default: "Micro Note",
+    template: "%s · Micro Note",
+  },
   description: "Minimal Markdown Notes",
   icons: {
     icon: "/favicon.ico",
@@ -21,7 +24,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className="antialiased bg-background text-foreground min-h-screen flex flex-col"
+        className="flex min-h-dvh flex-col bg-background text-foreground antialiased"
       >
         <ToastProvider>{children}</ToastProvider>
       </body>

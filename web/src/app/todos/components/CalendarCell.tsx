@@ -1,58 +1,147 @@
 "use client";
 
-import { CheckCircle2, Circle, Eye } from "lucide-react";
-import type { Todo } from "@/types";
-import { MAX_PREVIEW_TODOS, dateKey, isSameDay, monthKey } from "../utils";
+import { CheckCircle2, Circle, Eye, Loader2, Plus } from "lucide-react";
 
-export function CalendarCell({ day, dayIndex, month, todosByDate, onCreatePanel, onDayView, onToggleDone, onEditPanel }: {
-  day: Date | null; dayIndex: number; month: Date;
-  todosByDate: (key: string) => Todo[]; onCreatePanel: (d: Date) => void;
-  onDayView: (key: string) => void; onToggleDone: (t: Todo) => Promise<void>; onEditPanel: (t: Todo) => void;
-}) {
+import type { Todo } from "@/types";
+
+import { MAX_PREVIEW_TODOS, dateKey, isSameDay } from "../utils";
+
+type CalendarCellProps = {
+  day: Date | null;
+  dayIndex: number;
+  todosByDate: (key: string) => Todo[];
+  pendingToggleIDs: ReadonlySet<string>;
+  onCreatePanel: (day: Date) => void;
+  onDayView: (key: string) => void;
+  onToggleDone: (todo: Todo) => Promise<void>;
+  onEditPanel: (todo: Todo) => void;
+};
+
+export function CalendarCell({
+  day,
+  dayIndex,
+  todosByDate,
+  pendingToggleIDs,
+  onCreatePanel,
+  onDayView,
+  onToggleDone,
+  onEditPanel,
+}: CalendarCellProps) {
   const rightBorderClass = (dayIndex + 1) % 7 === 0 ? "border-r-0" : "border-r";
-  if (!day) return <div key={`${monthKey(month)}-empty-${dayIndex}`} className={`min-h-[188px] border-b border-border/40 ${rightBorderClass} bg-muted/5`} />;
+  if (!day) {
+    return (
+      <div
+        aria-hidden="true"
+        className={`min-h-[188px] border-b border-border/40 ${rightBorderClass} bg-muted/20`}
+      />
+    );
+  }
 
   const key = dateKey(day);
   const dayTodos = todosByDate(key);
   const previewTodos = dayTodos.slice(0, MAX_PREVIEW_TODOS);
   const hiddenCount = Math.max(0, dayTodos.length - previewTodos.length);
   const isToday = isSameDay(day, new Date());
+  const label = day.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
 
   return (
-    <div onClick={() => onCreatePanel(day)}
-      className={`group min-h-[188px] border-b border-border/40 ${rightBorderClass} p-2 flex flex-col gap-2 transition-colors cursor-pointer bg-card hover:bg-muted/10`}>
-      <div className="flex items-center justify-between">
-        <span className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full ${isToday ? "bg-indigo-500 text-white" : "text-foreground"}`}>{day.getDate()}</span>
-        <button onClick={(evt) => { evt.stopPropagation(); onDayView(key); }}
-          className="h-6 w-6 inline-flex items-center justify-center text-muted-foreground opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto hover:text-indigo-500 transition-colors"
-          title="View all todos" aria-label="View all todos"><Eye className="h-3.5 w-3.5" /></button>
+    <section
+      aria-label={label}
+      className={`flex min-h-[188px] flex-col gap-1.5 border-b border-border/40 ${rightBorderClass} bg-card p-2`}
+    >
+      <div className="flex items-center justify-between gap-1">
+        <span
+          className={`flex h-7 min-w-7 items-center justify-center rounded-md px-1 text-xs font-medium ${
+            isToday ? "bg-primary text-primary-foreground" : "text-foreground"
+          }`}
+        >
+          {day.getDate()}
+        </span>
+        <div className="flex items-center gap-0.5">
+          {dayTodos.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => onDayView(key)}
+              className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`View all todos for ${label}`}
+            >
+              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="hidden xl:inline">View</span>
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => onCreatePanel(day)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={`Add todo for ${label}`}
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
       </div>
-      <div className="relative flex-1 overflow-hidden">
-        <div className="space-y-1 pr-0.5">
-          {previewTodos.map((todo) => (
-            <div key={todo.id} onClick={(evt) => evt.stopPropagation()}
-              className={`group/todo text-xs rounded border px-2 py-1.5 flex items-start gap-1.5 transition-colors ${todo.done === 1 ? "bg-muted/50 border-transparent opacity-70" : "bg-background border-border hover:border-indigo-400/60"}`}>
-              <button onClick={(evt) => { evt.stopPropagation(); void onToggleDone(todo); }}
-                className="mt-0.5 shrink-0 text-muted-foreground hover:text-indigo-500 transition-colors">
-                {todo.done === 1 ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <Circle className="h-3.5 w-3.5" />}
+      <div className="min-h-0 flex-1 space-y-1 overflow-hidden">
+        {previewTodos.map((todo) => {
+          const pending = pendingToggleIDs.has(todo.id);
+          return (
+            <div
+              key={todo.id}
+              className={`flex items-start gap-1 rounded-md border px-1 py-0.5 ${
+                todo.done === 1
+                  ? "border-transparent bg-muted/60"
+                  : "border-border bg-background"
+              }`}
+            >
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={todo.done === 1}
+                aria-label={todo.done === 1
+                  ? `Mark ${todo.content} incomplete`
+                  : `Mark ${todo.content} complete`}
+                aria-busy={pending || undefined}
+                disabled={pending}
+                onClick={() => void onToggleDone(todo)}
+                className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+              >
+                {pending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                ) : todo.done === 1 ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden="true" />
+                ) : (
+                  <Circle className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
               </button>
-              <button onClick={(evt) => { evt.stopPropagation(); onEditPanel(todo); }}
-                className={`flex-1 min-w-0 text-left ${todo.done === 1 ? "line-through text-muted-foreground" : "text-foreground"}`}
-                title={`完整内容: ${todo.content}`}>
-                {todo.content.length > 18 ? (
-                  <span className="block overflow-hidden whitespace-nowrap"><span className="inline-block max-w-none group-hover/todo:animate-[todo-marquee_6s_linear_infinite]">{todo.content}</span></span>
-                ) : (<span className="block truncate">{todo.content}</span>)}
+              <button
+                type="button"
+                aria-label={`Edit ${todo.content}`}
+                onClick={() => onEditPanel(todo)}
+                className={`min-h-7 min-w-0 flex-1 py-1 text-left text-xs leading-4 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  todo.done === 1 ? "text-muted-foreground line-through" : "text-foreground"
+                }`}
+                title={todo.content}
+              >
+                <span className="line-clamp-1">{todo.content}</span>
+                <span className="block text-xs font-medium no-underline">
+                  {todo.done === 1 ? "Completed" : "Open"}
+                </span>
               </button>
             </div>
-          ))}
-        </div>
-        {hiddenCount > 0 && (
-          <div onClick={(evt) => { evt.stopPropagation(); onDayView(key); }}
-            className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card via-card/80 to-transparent flex items-end justify-center pb-1.5 text-[10px] text-muted-foreground">
-            <span>{hiddenCount} more todos</span>
-          </div>
-        )}
+          );
+        })}
       </div>
-    </div>
+      {hiddenCount > 0 ? (
+        <button
+          type="button"
+          onClick={() => onDayView(key)}
+          className="min-h-7 rounded-md px-2 text-left text-xs font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          View {hiddenCount} more
+        </button>
+      ) : null}
+    </section>
   );
 }

@@ -96,7 +96,7 @@ export function MobileEditorToolbar(props: Props) {
             ["Table", { kind: "insert", item: "table" }],
           ]} run={run} />
           <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI</h3>
+            <h3 className="mb-2 text-xs font-semibold text-muted-foreground">AI</h3>
             <div className="grid grid-cols-2 gap-2">
               <Button className="min-h-11" variant="outline" disabled={props.aiBusy} onClick={() => { props.onAiPolish(); closeSheet(); }}>Polish</Button>
               <Button className="min-h-11" variant="outline" disabled={props.aiBusy} onClick={() => { props.onAiGenerate(); closeSheet(); }}>Generate</Button>
@@ -104,7 +104,7 @@ export function MobileEditorToolbar(props: Props) {
             </div>
           </section>
           <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Appearance</h3>
+            <h3 className="mb-2 text-xs font-semibold text-muted-foreground">Appearance</h3>
             <div className="grid grid-cols-2 gap-2">
               <Button className="min-h-11" variant="outline" aria-expanded={panel === "emoji"} onClick={() => setPanel(panel === "emoji" ? null : "emoji")}>Emoji</Button>
               <Button className="min-h-11" variant="outline" aria-expanded={panel === "color"} onClick={() => setPanel(panel === "color" ? null : "color")}>Text color</Button>
@@ -216,7 +216,7 @@ function CommandGroup(props: {
 }) {
   return (
     <section>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{props.title}</h3>
+      <h3 className="mb-2 text-xs font-semibold text-muted-foreground">{props.title}</h3>
       <div className="grid grid-cols-2 gap-2">
         {props.commands.map(([label, command]) => (
           <Button className="min-h-11" key={label} variant="outline" onClick={() => props.run(command)}>{label}</Button>

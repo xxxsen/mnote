@@ -1,4 +1,5 @@
 import { Sparkles, ChevronRight, RefreshCw, X } from "lucide-react";
+import { IconButton } from "@/components/ui/icon-button";
 import type { SimilarDoc } from "../types";
 
 type SimilarNotesPanelProps = {
@@ -19,46 +20,83 @@ export function SimilarNotesPanel(props: SimilarNotesPanelProps) {
   if (!similarIconVisible) return null;
 
   return (
-    <div className={`fixed bottom-12 right-6 z-[100] transition-all duration-300 ${similarCollapsed ? "w-10 h-10" : "w-72 max-h-[400px]"} flex flex-col bg-background/80 backdrop-blur-md border border-border shadow-2xl rounded-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4`}>
+    <aside
+      aria-label="Similar notes"
+      className={`fixed bottom-[calc(3rem+env(safe-area-inset-bottom))] right-4 z-[100] flex flex-col overflow-hidden rounded-xl border border-border bg-background/95 shadow-lg backdrop-blur-md transition-all duration-200 motion-reduce:transition-none md:right-6 ${
+        similarCollapsed ? "h-10 w-10" : "max-h-[400px] w-72 max-w-[calc(100vw-2rem)]"
+      }`}
+    >
       {similarCollapsed ? (
-        <button onClick={onToggle} className="w-full h-full flex items-center justify-center text-primary hover:bg-muted/50 transition-colors relative" title="Find similar notes">
-          <Sparkles className={`h-5 w-5 ${similarLoading ? "animate-pulse" : ""}`} />
-          {similarDocs.length > 0 && (
-            <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-[8px] font-bold rounded-full flex items-center justify-center border-2 border-background">{similarDocs.length}</div>
-          )}
+        <button
+          type="button"
+          onClick={onToggle}
+          className="relative flex h-full w-full items-center justify-center text-primary transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          aria-label={`Show similar notes${similarDocs.length > 0 ? `, ${similarDocs.length} found` : ""}`}
+          title="Show similar notes"
+        >
+          <Sparkles className={`h-5 w-5 ${similarLoading ? "animate-pulse motion-reduce:animate-none" : ""}`} aria-hidden="true" />
+          {similarDocs.length > 0 ? (
+            <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-background bg-primary text-xs font-semibold text-primary-foreground">
+              {similarDocs.length}
+            </span>
+          ) : null}
         </button>
       ) : (
         <>
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
+          <div className="flex items-center justify-between border-b border-border bg-muted/20 px-4 py-2">
             <div className="flex items-center gap-2">
-              <Sparkles className={`h-3.5 w-3.5 text-primary ${similarLoading ? "animate-spin" : ""}`} />
-              <span className="text-xs font-bold uppercase tracking-wider">Similar Notes</span>
+              <Sparkles className={`h-4 w-4 text-primary ${similarLoading ? "animate-spin motion-reduce:animate-none" : ""}`} aria-hidden="true" />
+              <span className="text-sm font-semibold">Similar notes</span>
             </div>
             <div className="flex items-center gap-1">
-              <button type="button" aria-label="Collapse" onClick={onCollapse} className="p-1 text-muted-foreground hover:text-foreground transition-colors" title="Collapse"><ChevronRight className="h-3.5 w-3.5 rotate-90" /></button>
-              <button type="button" aria-label="Close" onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground transition-colors" title="Close"><X className="h-3.5 w-3.5" /></button>
+              <IconButton type="button" label="Collapse similar notes" variant="ghost" className="h-8 w-8" onClick={onCollapse}>
+                <ChevronRight className="h-4 w-4 rotate-90" aria-hidden="true" />
+              </IconButton>
+              <IconButton type="button" label="Close similar notes" variant="ghost" className="h-8 w-8" onClick={onClose}>
+                <X className="h-4 w-4" aria-hidden="true" />
+              </IconButton>
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-3 space-y-2 no-scrollbar">
+          <div className="flex-1 space-y-2 overflow-y-auto p-3">
             {similarLoading && similarDocs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground"><RefreshCw className="h-5 w-5 animate-spin opacity-50" /><span className="text-[10px] font-mono uppercase tracking-widest">Searching...</span></div>
+              <div role="status" className="flex flex-col items-center justify-center gap-3 py-10 text-muted-foreground">
+                <RefreshCw className="h-5 w-5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                <span className="text-sm">Finding similar notes…</span>
+              </div>
             ) : similarDocs.length === 0 ? (
-              <div className="text-center py-12 text-sm text-muted-foreground">No similar notes found.</div>
+              <div className="py-10 text-center text-sm text-muted-foreground">No similar notes found.</div>
             ) : similarDocs.map((doc) => (
-              <div key={doc.id} onClick={() => onOpenPreview(doc.id)} className="p-3 border border-border rounded-xl cursor-pointer hover:border-primary transition-all bg-background/50 hover:bg-background group">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-tighter">{Math.round((doc.score || 0) * 100)}% Match</span>
-                  <div className="flex items-center gap-1">
-                    <button onClick={(e) => { e.stopPropagation(); onNavigate(doc.id); }} className="p-1 hover:bg-muted rounded-md transition-colors" title="Open full page"><ChevronRight className="h-3 w-3 text-muted-foreground" /></button>
-                  </div>
-                </div>
-                <div className="font-bold text-xs leading-snug line-clamp-2 group-hover:text-primary transition-colors">{doc.title || "Untitled"}</div>
+              <div key={doc.id} className="grid grid-cols-[minmax(0,1fr)_2rem] items-start gap-1 rounded-xl border border-border bg-background">
+                <button
+                  type="button"
+                  onClick={() => onOpenPreview(doc.id)}
+                  className="min-w-0 rounded-l-xl p-3 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  aria-label={`Preview ${doc.title || "Untitled"}`}
+                >
+                  <span className="block text-xs text-muted-foreground">
+                    {Math.round((doc.score || 0) * 100)}% match
+                  </span>
+                  <span className="mt-1 block line-clamp-2 text-sm font-semibold leading-snug">
+                    {doc.title || "Untitled"}
+                  </span>
+                </button>
+                <IconButton
+                  type="button"
+                  label={`Open ${doc.title || "Untitled"}`}
+                  variant="ghost"
+                  className="mt-2 h-8 w-8"
+                  onClick={() => onNavigate(doc.id)}
+                >
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </IconButton>
               </div>
             ))}
           </div>
-          <div className="px-3 py-2 border-t border-border bg-muted/10"><p className="text-[9px] text-muted-foreground text-center italic">Based on your current title</p></div>
+          <div className="border-t border-border bg-muted/10 px-3 py-2">
+            <p className="text-center text-xs text-muted-foreground">Based on the current title</p>
+          </div>
         </>
       )}
-    </div>
+    </aside>
   );
 }

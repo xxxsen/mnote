@@ -57,6 +57,10 @@ Dialog 通过 Portal 渲染到 `document.body`，避免被页面的 `overflow` �
 - Tab 和 Shift+Tab 只能在最上层 Dialog 内循环。
 - 关闭后优先返回 `returnFocusRef`，否则返回打开前的活动元素。
 
+Portal readiness 使用服务端 snapshot 为 false 的 hydration-safe 外部存储判定。服务端输出和
+客户端 hydration 首帧都不创建 Portal，挂载完成后才渲染 Dialog。不得通过
+`suppressHydrationWarning` 隐藏首帧差异。
+
 每个打开的 Dialog 都向全局栈注册。只有栈顶响应 Escape 和遮罩操作。滚动锁使用引用计数：打开首个 Dialog 时保存并覆盖 `body.style.overflow`，关闭最后一个 Dialog 时恢复原值。关闭下层 Dialog 或关闭上层后仍有其他 Dialog 时，不得提前解锁背景。
 
 遮罩只在事件目标就是遮罩自身时请求关闭；面板内部不依赖大范围 `stopPropagation()`。
@@ -163,6 +167,9 @@ Header 和 Footer 不滚动，`DialogBody` 是窗体唯一主纵向滚动容器�
 ## 12. 验证原则
 
 基础能力需要验证 Portal、ARIA 关联、初始焦点、焦点圈定、焦点恢复、三种关闭策略、关闭原因、栈顶关闭、滚动锁引用计数、变体样式和 reduced motion。
+
+Dialog 的基础验证还必须包含 `renderToString + hydrateRoot`，并断言关闭状态和打开状态在
+hydration 期间都没有 mismatch、pageerror 或 console error。
 
 业务流程需要验证正常完成、失败保留、重复触发、关闭取消、过期响应、Dirty guard、破坏性确认和按钮顺序。响应式验收覆盖手机、平板、桌面和 200% 缩放；键盘验收覆盖打开、填写、确认、取消、关闭及焦点返回。
 

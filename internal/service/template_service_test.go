@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,8 +19,8 @@ type mockTemplateRepo struct {
 	deleteFn         func(ctx context.Context, userID, templateID string) error
 	getByIDFn        func(ctx context.Context, userID, templateID string) (*model.Template, error)
 	listByUserFn     func(ctx context.Context, userID string) ([]model.Template, error)
-	listMetaByUserFn func(ctx context.Context, userID string, limit, offset int) ([]model.TemplateMeta, error)
-	countByUserFn    func(ctx context.Context, userID string) (int, error)
+	listMetaByUserFn func(ctx context.Context, userID, query string, limit, offset int) ([]model.TemplateMeta, error)
+	countByUserFn    func(ctx context.Context, userID, query string) (int, error)
 }
 
 func (m *mockTemplateRepo) Create(ctx context.Context, tpl *model.Template) error {
@@ -42,12 +43,18 @@ func (m *mockTemplateRepo) ListByUser(ctx context.Context, userID string) ([]mod
 	return m.listByUserFn(ctx, userID)
 }
 
-func (m *mockTemplateRepo) ListMetaByUser(ctx context.Context, userID string, limit, offset int) ([]model.TemplateMeta, error) {
-	return m.listMetaByUserFn(ctx, userID, limit, offset)
+func (m *mockTemplateRepo) ListMetaByUser(
+	ctx context.Context,
+	userID,
+	query string,
+	limit,
+	offset int,
+) ([]model.TemplateMeta, error) {
+	return m.listMetaByUserFn(ctx, userID, query, limit, offset)
 }
 
-func (m *mockTemplateRepo) CountByUser(ctx context.Context, userID string) (int, error) {
-	return m.countByUserFn(ctx, userID)
+func (m *mockTemplateRepo) CountByUser(ctx context.Context, userID, query string) (int, error) {
+	return m.countByUserFn(ctx, userID, query)
 }
 
 func TestTemplateService_List(t *testing.T) {
@@ -78,15 +85,16 @@ func TestTemplateService_List(t *testing.T) {
 func TestTemplateService_ListMeta(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		repo := &mockTemplateRepo{
-			countByUserFn: func(context.Context, string) (int, error) { return 5, nil },
-			listMetaByUserFn: func(_ context.Context, _ string, limit, offset int) ([]model.TemplateMeta, error) {
+			countByUserFn: func(context.Context, string, string) (int, error) { return 5, nil },
+			listMetaByUserFn: func(_ context.Context, _, query string, limit, offset int) ([]model.TemplateMeta, error) {
+				assert.Equal(t, "", query)
 				assert.Equal(t, 20, limit)
 				assert.Equal(t, 0, offset)
 				return []model.TemplateMeta{{ID: "t1"}}, nil
 			},
 		}
 		svc := NewTemplateService(repo, nil, nil)
-		result, err := svc.ListMeta(context.Background(), "u1", 0, -1)
+		result, err := svc.ListMeta(context.Background(), "u1", "", 0, -1)
 		require.NoError(t, err)
 		assert.Equal(t, 5, result.Total)
 		assert.Len(t, result.Items, 1)
@@ -94,36 +102,68 @@ func TestTemplateService_ListMeta(t *testing.T) {
 
 	t.Run("clamp_limit", func(t *testing.T) {
 		repo := &mockTemplateRepo{
-			countByUserFn: func(context.Context, string) (int, error) { return 0, nil },
-			listMetaByUserFn: func(_ context.Context, _ string, limit, _ int) ([]model.TemplateMeta, error) {
+			countByUserFn: func(context.Context, string, string) (int, error) { return 0, nil },
+			listMetaByUserFn: func(_ context.Context, _, _ string, limit, _ int) ([]model.TemplateMeta, error) {
 				assert.Equal(t, 200, limit)
 				return nil, nil
 			},
 		}
 		svc := NewTemplateService(repo, nil, nil)
-		_, err := svc.ListMeta(context.Background(), "u1", 999, 0)
+		_, err := svc.ListMeta(context.Background(), "u1", "", 999, 0)
 		require.NoError(t, err)
 	})
 
 	t.Run("count_error", func(t *testing.T) {
 		repo := &mockTemplateRepo{
-			countByUserFn: func(context.Context, string) (int, error) { return 0, errors.New("db error") },
+			countByUserFn: func(context.Context, string, string) (int, error) {
+				return 0, errors.New("db error")
+			},
 		}
 		svc := NewTemplateService(repo, nil, nil)
-		_, err := svc.ListMeta(context.Background(), "u1", 10, 0)
+		_, err := svc.ListMeta(context.Background(), "u1", "", 10, 0)
 		assert.Error(t, err)
 	})
 
 	t.Run("list_meta_error", func(t *testing.T) {
 		repo := &mockTemplateRepo{
-			countByUserFn: func(context.Context, string) (int, error) { return 5, nil },
-			listMetaByUserFn: func(context.Context, string, int, int) ([]model.TemplateMeta, error) {
+			countByUserFn: func(context.Context, string, string) (int, error) { return 5, nil },
+			listMetaByUserFn: func(context.Context, string, string, int, int) ([]model.TemplateMeta, error) {
 				return nil, errors.New("db error")
 			},
 		}
 		svc := NewTemplateService(repo, nil, nil)
-		_, err := svc.ListMeta(context.Background(), "u1", 10, 0)
+		_, err := svc.ListMeta(context.Background(), "u1", "", 10, 0)
 		assert.Error(t, err)
+	})
+
+	t.Run("trim_search_and_filter_total", func(t *testing.T) {
+		repo := &mockTemplateRepo{
+			countByUserFn: func(_ context.Context, _, query string) (int, error) {
+				assert.Equal(t, "Daily", query)
+				return 1, nil
+			},
+			listMetaByUserFn: func(
+				_ context.Context,
+				_,
+				query string,
+				_,
+				_ int,
+			) ([]model.TemplateMeta, error) {
+				assert.Equal(t, "Daily", query)
+				return []model.TemplateMeta{{ID: "daily"}}, nil
+			},
+		}
+		svc := NewTemplateService(repo, nil, nil)
+		result, err := svc.ListMeta(context.Background(), "u1", "  Daily  ", 20, 0)
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.Total)
+		assert.Equal(t, "daily", result.Items[0].ID)
+	})
+
+	t.Run("reject_search_over_100_unicode_characters", func(t *testing.T) {
+		svc := NewTemplateService(&mockTemplateRepo{}, nil, nil)
+		_, err := svc.ListMeta(context.Background(), "u1", strings.Repeat("界", 101), 20, 0)
+		assert.ErrorIs(t, err, appErr.ErrInvalid)
 	})
 }
 

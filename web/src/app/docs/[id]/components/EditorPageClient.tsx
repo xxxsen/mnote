@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { EditorView } from "@codemirror/view";
 import { loadThemePreference, type ThemeId } from "@/lib/editor-themes";
 import { useToast } from "@/components/ui/toast";
+import { PageState } from "@/components/ui/page-state";
 import { buildOutline } from "@/components/markdown-preview/helpers";
 import type { DocDetail } from "../types";
 
@@ -102,6 +103,11 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const popover = usePopover({ handleFormat: ec.handleFormat });
   const filePaste = useFilePaste({ insertTextAtCursor: ec.insertTextAtCursor, replacePlaceholder: ec.replacePlaceholder, toast });
 
+  useEffect(() => {
+    const pageTitle = title || (loading ? "Editor" : "Untitled note");
+    document.title = `${pageTitle} · Micro Note`;
+  }, [loading, title]);
+
   const slashMenu = useSlashMenu({ editorViewRef, handleFormat: ec.handleFormat, executeCommand: ec.executeCommand, handleInsertTable: ec.handleInsertTable, insertTextAtCursor: ec.insertTextAtCursor });
   const wikilinkMenu = useWikilinkMenu({ editorViewRef, contentRef, lastSavedContentRef, schedulePreviewUpdate: ec.schedulePreviewUpdate, setContent: ec.setContent, setPreviewContent: ec.setPreviewContent, setHasUnsavedChanges: ec.setHasUnsavedChanges });
   const linkGraphHook = useLinkGraph({ docId, title, previewContent: ec.previewContent });
@@ -166,14 +172,20 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   }, []);
 
   const onCreateEditor = useEditorDomBindings({
-    title, onSave: pageActions.handleSave, editorViewRef, setEditorView, pasteHandlerRef, setPasteHandler, keydownHandlerRef: editorKeydownHandlerRef, setKeydownHandler,
+    onSave: pageActions.handleSave, editorViewRef, setEditorView, pasteHandlerRef, setPasteHandler, keydownHandlerRef: editorKeydownHandlerRef, setKeydownHandler,
     handleEditorScroll: scrollSync.handleEditorScroll, handlePaste: filePaste.handlePaste,
     slashKeydownRef: slashMenu.slashKeydownRef, wikilinkKeydownRef: wikilinkMenu.wikilinkKeydownRef,
     previewTimerRef: ec.previewUpdateTimerRef, scrollFrameRef: scrollSync.scrollSyncTimerRef,
   });
 
   const recovery = decisionState.draftRecovery;
-  if (loading) return <div className="flex h-dvh items-center justify-center">Loading...</div>;
+  if (loading) {
+    return (
+      <main aria-label="Document editor" className="flex h-dvh items-center justify-center">
+        <PageState kind="loading" title="Loading editor" description="Opening your note." />
+      </main>
+    );
+  }
   if (recovery) return (
     <DraftRecoveryDialog
       open localContent={recovery.draft.content} serverContent={recovery.detail.document.content}

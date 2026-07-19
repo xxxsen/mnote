@@ -44,8 +44,3 @@ export function formatRelativeTime(timestamp?: number): string {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
 }
-
-export async function copyToClipboard(text: string): Promise<boolean> {
-  /* v8 ignore next */ if (typeof navigator === "undefined") return false;
-  try { return await navigator.clipboard.writeText(text).then(() => true); } catch { return false; }
-}

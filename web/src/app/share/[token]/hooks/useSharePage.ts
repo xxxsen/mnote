@@ -1,9 +1,17 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useSyncExternalStore,
+} from "react";
 import { useParams } from "next/navigation";
 import { apiFetch, ApiError, getAuthToken } from "@/lib/api";
 import type { PublicShareDetail } from "@/types";
+import { useToast } from "@/components/ui/toast";
+import { copyToClipboard } from "@/lib/clipboard";
 import { GUEST_ANON_ID_KEY, generateGuestAnonID } from "../utils";
 import { useShareComments } from "./useShareComments";
 import { useShareToc } from "./useShareToc";
@@ -21,54 +29,72 @@ function extractDocTitle(value: string) {
   return "";
 }
 
+const subscribeGuestAuthor = () => () => undefined;
+
+function getGuestAuthorSnapshot() {
+  if (getAuthToken()) return "";
+  let anonID = "";
+  try {
+    anonID = localStorage.getItem(GUEST_ANON_ID_KEY) || "";
+    if (!/^[A-Z0-9]{4}$/.test(anonID)) {
+      anonID = generateGuestAnonID();
+      localStorage.setItem(GUEST_ANON_ID_KEY, anonID);
+    }
+  } catch {
+    anonID = generateGuestAnonID();
+  }
+  return `Guest #${anonID}`;
+}
+
+function useShareNotifier() {
+  const { toast } = useToast();
+  return useCallback((
+    message: string,
+    variant: "default" | "success" | "error" = "default",
+  ) => toast({ description: message, variant }), [toast]);
+}
+
+function getShareIdentity(detail: PublicShareDetail | null) {
+  const canAnnotate = detail?.permission === 2;
+  return {
+    doc: detail?.document,
+    canAnnotate,
+    permissionLabel: canAnnotate ? "Annotate" : "Read",
+    permissionHint: canAnnotate ? "Can comment on this share" : "Read access only",
+  };
+}
+
 export function useSharePage() {
   const params = useParams();
   const token = params.token as string;
+  const notify = useShareNotifier();
   const [detail, setDetail] = useState<PublicShareDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
   const [sharePasswordInput, setSharePasswordInput] = useState("");
   const [accessPassword, setAccessPassword] = useState("");
   const [passwordRequired, setPasswordRequired] = useState(false);
   const [passwordError, setPasswordError] = useState("");
-  const [guestAuthor, setGuestAuthor] = useState("");
+  const [requestVersion, setRequestVersion] = useState(0);
   const previewRef = useRef<HTMLDivElement>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const passwordRequestRef = useRef(false);
+  const guestAuthor = useSyncExternalStore(
+    subscribeGuestAuthor,
+    getGuestAuthorSnapshot,
+    () => "",
+  );
 
-  const doc = detail?.document;
-  const canAnnotate = detail?.permission === 2;
-  const permissionLabel = canAnnotate ? "Annotate" : "Read";
-  const permissionHint = canAnnotate ? "Can comment on this share" : "Read access only";
-
-  const showToast = useCallback((message: string, durationMs = 2500) => {
-    setToast(message);
-    if (toastTimerRef.current !== null) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => {
-      setToast(null);
-      toastTimerRef.current = null;
-    }, durationMs);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current !== null) clearTimeout(toastTimerRef.current);
-    };
-  }, []);
+  const { doc, canAnnotate, permissionLabel, permissionHint } = getShareIdentity(detail);
 
   const toc = useShareToc(previewRef, doc);
-  const commentState = useShareComments({ detail, token, accessPassword, canAnnotate, guestAuthor, showToast });
-
-  useEffect(() => {
-    const authToken = getAuthToken();
-    if (authToken) { setGuestAuthor(""); return; }
-    let anonID = "";
-    try {
-      anonID = localStorage.getItem(GUEST_ANON_ID_KEY) || "";
-      if (!/^[A-Z0-9]{4}$/.test(anonID)) { anonID = generateGuestAnonID(); localStorage.setItem(GUEST_ANON_ID_KEY, anonID); }
-    } catch { anonID = generateGuestAnonID(); }
-    setGuestAuthor(`Guest #${anonID}`);
-  }, []);
+  const commentState = useShareComments({
+    detail,
+    token,
+    accessPassword,
+    canAnnotate,
+    guestAuthor,
+    notify,
+  });
 
   const slugify = useCallback((value: string) => {
     const base = value.toLowerCase().trim()
@@ -98,77 +124,90 @@ export function useSharePage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const fetchDoc = async (attempt = 0) => {
-      try {
-        const fetchParams = new URLSearchParams();
-        if (accessPassword.trim()) fetchParams.set("password", accessPassword.trim());
-        const query = fetchParams.toString();
-        const d = await apiFetch<PublicShareDetail>(`/public/share/${token}${query ? `?${query}` : ""}`, { requireAuth: false, signal: controller.signal });
-        if (controller.signal.aborted) return;
-        setDetail(d);
-        setPasswordRequired(false);
-        setPasswordError("");
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        if (err instanceof ApiError && err.code === 10000002) {
-          setPasswordRequired(true);
-          setPasswordError(accessPassword ? "Invalid password." : "");
-        } else if (err instanceof Error && /too many requests/i.test(err.message) && attempt < 2) {
-          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- signal may be aborted during await
-          if (!controller.signal.aborted) { void fetchDoc(attempt + 1); return; }
-        } else {
-          console.error(err);
+    const fetchDoc = async () => {
+      setLoading(true);
+      setError(false);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const fetchParams = new URLSearchParams();
+          if (accessPassword.trim()) fetchParams.set("password", accessPassword.trim());
+          const query = fetchParams.toString();
+          const d = await apiFetch<PublicShareDetail>(
+            `/public/share/${token}${query ? `?${query}` : ""}`,
+            { requireAuth: false, signal: controller.signal },
+          );
+          if (controller.signal.aborted) return;
+          setDetail(d);
+          setPasswordRequired(false);
+          setPasswordError("");
+          return;
+        } catch (fetchError) {
+          if (controller.signal.aborted) return;
+          if (fetchError instanceof ApiError && fetchError.code === 10000002) {
+            setPasswordRequired(true);
+            setPasswordError(accessPassword ? "Invalid password." : "");
+            return;
+          }
+          if (fetchError instanceof ApiError && fetchError.code === 10000003) { setError(true); return; }
+          if (
+            fetchError instanceof Error
+            && /too many requests/i.test(fetchError.message)
+            && attempt < 2
+          ) {
+            await new Promise((resolve) => window.setTimeout(resolve, 1000 * (attempt + 1)));
+            continue;
+          }
+          console.error(fetchError);
           setError(true);
+          return;
         }
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
       }
     };
-    void fetchDoc();
+    void fetchDoc().finally(() => {
+      if (!controller.signal.aborted) {
+        passwordRequestRef.current = false;
+        setLoading(false);
+      }
+    });
     return () => controller.abort();
-  }, [accessPassword, token]);
+  }, [accessPassword, requestVersion, token]);
 
   useEffect(() => {
-    if (!doc) return;
-    const derivedTitle = extractDocTitle(doc.content) || doc.title || "MNOTE";
-    document.title = derivedTitle;
+    const derivedTitle = doc
+      ? extractDocTitle(doc.content) || doc.title || "Shared note"
+      : "Shared note";
+    document.title = `${derivedTitle} · Micro Note`;
   }, [doc]);
 
-  /* v8 ignore start -- clipboard interaction requires secure context */
-  const handleCopyLink = () => {
-    const value = window.location.href;
-    const fallbackCopy = () => {
-      try {
-        const textarea = document.createElement("textarea");
-        textarea.value = value;
-        textarea.setAttribute("readonly", "");
-        textarea.style.position = "absolute";
-        textarea.style.left = "-9999px";
-        document.body.appendChild(textarea);
-        textarea.select();
-        // eslint-disable-next-line @typescript-eslint/no-deprecated
-        const ok = document.execCommand("copy");
-        document.body.removeChild(textarea);
-        return ok;
-      } catch { return false; }
-    };
-    try {
-      void navigator.clipboard.writeText(value)
-        .then(() => { setToast("Link copied to clipboard!"); })
-        .catch(() => {
-          setToast(fallbackCopy() ? "Link copied to clipboard!" : "Failed to copy link");
-        })
-        .finally(() => { setTimeout(() => setToast(null), 3000); });
-    } catch {
-      setToast(fallbackCopy() ? "Link copied to clipboard!" : "Failed to copy link");
-      setTimeout(() => setToast(null), 3000);
+  const submitPassword = useCallback(() => {
+    const password = sharePasswordInput.trim();
+    if (!password) {
+      setPasswordError("Enter the share password.");
+      return;
     }
-  };
-  /* v8 ignore stop */
+    if (passwordRequestRef.current) return;
+    passwordRequestRef.current = true;
+    setPasswordError("");
+    setAccessPassword(password);
+    setRequestVersion((value) => value + 1);
+  }, [sharePasswordInput]);
+
+  const retryShare = useCallback(() => {
+    if (passwordRequestRef.current) return;
+    passwordRequestRef.current = true;
+    setRequestVersion((value) => value + 1);
+  }, []);
+
+  const handleCopyLink = useCallback(async () => {
+    const copied = await copyToClipboard(window.location.href);
+    notify(
+      copied ? "Link copied to clipboard." : "Could not copy the link.",
+      copied ? "success" : "error",
+    );
+  }, [notify]);
 
   const handleExport = () => {
-    if (!doc) return;
+    if (!doc || !detail) return;
     if (detail.allow_download === 0) return;
     const blob = new Blob([doc.content], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
@@ -234,12 +273,11 @@ export function useSharePage() {
     showMobileToc: toc.showMobileToc, setShowMobileToc: toc.setShowMobileToc,
     handleTocLoaded: toc.handleTocLoaded,
     scrollProgress: toc.scrollProgress, showScrollTop: toc.showScrollTop,
-    toast, showToast,
     sharePasswordInput, setSharePasswordInput,
-    accessPassword, setAccessPassword,
-    passwordRequired, passwordError, setLoading,
+    accessPassword, passwordRequired, passwordError,
+    submitPassword, retryShare,
     ...commentState,
-    guestAuthor, handleCopyLink, handleExport,
+    guestAuthor, notify, handleCopyLink, handleExport,
     slugify, getElementById, scrollToElement,
   };
 }

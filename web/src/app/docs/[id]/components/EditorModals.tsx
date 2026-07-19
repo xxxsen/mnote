@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { AlertTriangle, Eye, Home } from "lucide-react";
 import MarkdownPreview from "@/components/markdown-preview";
+import { ReadingSurface } from "@/components/reading-surface";
 
 export function DeleteConfirmDialog(props: {
   show: boolean;
@@ -95,20 +96,22 @@ export function DocPreviewModal(props: {
             <Home className="h-5 w-5" aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-slate-950">{title}</h2>
+            <h2 className="truncate text-base font-semibold text-foreground">{title}</h2>
             <p className="mt-1 text-xs text-muted-foreground">Preview mode</p>
           </div>
         </div>
       </DialogHeader>
-      <DialogBody className="bg-slate-50 p-6 md:p-10">
+      <DialogBody className="bg-muted/30 p-6 md:p-10">
         {props.previewLoading ? (
           <DialogStatus variant="loading">Fetching note content…</DialogStatus>
         ) : (
-          <MarkdownPreview
-            content={props.previewDoc?.content || ""}
-            className="mx-auto max-w-4xl prose-lg"
-            enableMentionHoverPreview
-          />
+          <ReadingSurface>
+            <MarkdownPreview
+              content={props.previewDoc?.content || ""}
+              className="prose-lg"
+              enableMentionHoverPreview
+            />
+          </ReadingSurface>
         )}
       </DialogBody>
       <DialogFooter>
@@ -153,23 +156,21 @@ export function PreviewModal(props: {
             <Eye className="h-4 w-4" aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-slate-950">
+            <h2 className="truncate text-base font-semibold text-foreground">
               {props.title || "Untitled"}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">Full preview</p>
           </div>
         </div>
       </DialogHeader>
-      <DialogBody className="bg-slate-50 p-4 sm:p-6 md:p-10">
-        <article className="mx-auto w-full max-w-5xl rounded-2xl border border-slate-200/50 bg-white shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)]">
-          <div className="p-5 sm:p-6 md:p-10 lg:p-12">
-            <MarkdownPreview
-              content={props.content}
-              className="markdown-body h-auto overflow-visible bg-transparent p-0 text-slate-800"
-              enableMentionHoverPreview
-            />
-          </div>
-        </article>
+      <DialogBody className="bg-muted/30 p-4 sm:p-6 md:p-10">
+        <ReadingSurface className="max-w-5xl p-5 sm:p-6 md:p-10 lg:p-12">
+          <MarkdownPreview
+            content={props.content}
+            className="markdown-body h-auto overflow-visible bg-transparent p-0 text-foreground"
+            enableMentionHoverPreview
+          />
+        </ReadingSurface>
       </DialogBody>
       <DialogFooter>
         <Button className="h-11 w-full sm:w-auto" onClick={props.onClose}>Close preview</Button>

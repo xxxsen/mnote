@@ -7,6 +7,7 @@ import {
   useEffect,
   useId,
   useRef,
+  useSyncExternalStore,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
   type KeyboardEvent,
@@ -29,6 +30,16 @@ const FOCUSABLE = [
   "textarea:not([disabled])",
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
+
+const subscribeHydration = () => () => {};
+
+function usePortalReady() {
+  return useSyncExternalStore(
+    subscribeHydration,
+    () => true,
+    () => false,
+  );
+}
 
 export type DialogVariant = "modal" | "command" | "sheet" | "drawer" | "fullscreen";
 export type DialogSize = "sm" | "md" | "lg" | "xl";
@@ -281,7 +292,7 @@ function DialogLayer({
       data-dialog-overlay=""
       data-state={open ? "open" : "closed"}
       className={cn(
-        "fixed inset-0 z-[200] flex bg-slate-950/55 backdrop-blur-[2px]",
+        "fixed inset-0 z-[200] flex bg-foreground/55 backdrop-blur-[2px]",
         "transition-[opacity,visibility] duration-[160ms] motion-reduce:transition-none",
         open
           ? "visible opacity-100 delay-0"
@@ -300,7 +311,7 @@ function DialogLayer({
         data-state={open ? "open" : "closed"}
         onKeyDown={handleKeyDown}
         className={cn(
-          "flex w-full flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl outline-none",
+          "flex w-full flex-col overflow-hidden border border-border bg-card text-card-foreground shadow-2xl outline-none",
           "transition-[transform,opacity] ease-out motion-reduce:transition-none motion-reduce:transform-none",
           panelVariantClasses[variant],
           panelDurationClasses[variant],
@@ -336,6 +347,7 @@ export function Dialog({
   initialFocusRef,
   returnFocusRef,
 }: DialogProps) {
+  const portalReady = usePortalReady();
   const titleId = useId();
   const descriptionId = useId();
   const stackId = useId();
@@ -355,7 +367,7 @@ export function Dialog({
     requestClose,
   };
 
-  if (typeof document === "undefined") return null;
+  if (!portalReady) return null;
   return createPortal(
     <DialogLayer
       open={open}
@@ -387,7 +399,7 @@ export function DialogHeader({
   return (
     <header
       className={cn(
-        "flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-6",
+        "flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 py-4 sm:px-6",
         className,
       )}
       {...props}
@@ -413,7 +425,7 @@ export function DialogTitle({
   return (
     <h2
       aria-hidden="true"
-      className={cn("text-base font-semibold text-slate-950", className)}
+      className={cn("text-base font-semibold text-foreground", className)}
       {...props}
     >
       {children}
@@ -429,7 +441,7 @@ export function DialogDescription({
   return (
     <p
       aria-hidden="true"
-      className={cn("mt-1 text-sm leading-6 text-slate-600", className)}
+      className={cn("mt-1 text-sm leading-6 text-muted-foreground", className)}
       {...props}
     >
       {children}
@@ -456,7 +468,7 @@ export function DialogFooter({
   return (
     <footer
       className={cn(
-        "grid shrink-0 grid-cols-2 gap-2 border-t border-slate-200 bg-white px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]",
+        "grid shrink-0 grid-cols-2 gap-2 border-t border-border bg-card px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]",
         "[&>*:only-child]:col-span-2 [&>*:nth-child(3)]:col-span-2",
         "sm:flex sm:flex-row sm:items-center sm:justify-end sm:px-6",
         className,
@@ -479,8 +491,8 @@ export function DialogCloseButton({
       aria-label="Close"
       title={dismissDisabled ? "This action must finish before the dialog can close" : "Close"}
       className={cn(
-        "-m-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-500",
-        "transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900",
+        "-m-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground",
+        "transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         "disabled:cursor-not-allowed disabled:opacity-40",
         className,
       )}

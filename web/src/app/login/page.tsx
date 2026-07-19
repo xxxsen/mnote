@@ -1,12 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch, setAuthEmail, setAuthToken, ApiError } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Eye, EyeOff } from "lucide-react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+
+import { AuthShell } from "@/components/auth-shell";
 import { GithubIcon, GoogleIcon } from "@/components/brand-icons";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { Input } from "@/components/ui/input";
+import { PageState } from "@/components/ui/page-state";
+import { apiFetch, setAuthEmail, setAuthToken } from "@/lib/api";
+import { getSafeInternalReturn } from "@/lib/navigation";
 
 type Properties = {
   enable_github_oauth?: boolean;
@@ -25,194 +31,226 @@ type BannerConfig = {
 function LoginBanner({ banner }: { banner: BannerConfig | null }) {
   if (!banner?.enable || (!banner.title && !banner.wording)) return null;
   return (
-    <div className="mb-6 rounded-lg border border-amber-200/60 bg-amber-50/70 px-3 py-2 text-amber-900">
-      {banner.title && (
-        <div className="text-[10px] font-semibold uppercase tracking-wider">{banner.title}</div>
-      )}
-      {banner.wording && (
+    <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground">
+      {banner.title ? <p className="text-xs font-semibold">{banner.title}</p> : null}
+      {banner.wording ? (
         banner.redirect ? (
           <a
             href={banner.redirect}
-            className="text-sm underline underline-offset-4 hover:text-amber-700"
+            className="mt-1 inline-block text-sm text-primary underline underline-offset-4"
             target="_blank"
             rel="noreferrer"
           >
             {banner.wording}
           </a>
-        ) : (
-          <div className="text-sm">{banner.wording}</div>
-        )
-      )}
+        ) : <p className="mt-1">{banner.wording}</p>
+      ) : null}
     </div>
   );
 }
 
 function OAuthButtons({
   properties,
-  oauthLoading,
+  pending,
   onOAuth,
 }: {
   properties: Properties | null;
-  oauthLoading: string | null;
+  pending: "github" | "google" | null;
   onOAuth: (provider: "github" | "google") => void;
 }) {
   if (!properties?.enable_github_oauth && !properties?.enable_google_oauth) return null;
   return (
-    <div className="mt-6 flex items-center justify-center gap-3">
-      {properties.enable_github_oauth && (
-        <Button
-          type="button"
-          variant="outline"
-          className="h-10 w-10 rounded-full p-0"
-          onClick={() => onOAuth("github")}
-          disabled={oauthLoading !== null}
-          aria-label="Continue with GitHub"
-          title={oauthLoading === "github" ? "Connecting..." : "Continue with GitHub"}
-        >
-          <GithubIcon className="h-4 w-4" />
-        </Button>
-      )}
-      {properties.enable_google_oauth && (
-        <Button
-          type="button"
-          variant="outline"
-          className="h-10 w-10 rounded-full p-0"
-          onClick={() => onOAuth("google")}
-          disabled={oauthLoading !== null}
-          aria-label="Continue with Google"
-          title={oauthLoading === "google" ? "Connecting..." : "Continue with Google"}
-        >
-          <GoogleIcon className="h-4 w-4" />
-        </Button>
-      )}
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        Or continue with
+        <span className="h-px flex-1 bg-border" />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {properties.enable_github_oauth ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2"
+            onClick={() => onOAuth("github")}
+            disabled={pending !== null}
+            isLoading={pending === "github"}
+          >
+            <GithubIcon className="h-4 w-4" aria-hidden="true" />
+            GitHub
+          </Button>
+        ) : null}
+        {properties.enable_google_oauth ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2"
+            onClick={() => onOAuth("google")}
+            disabled={pending !== null}
+            isLoading={pending === "google"}
+          >
+            <GoogleIcon className="h-4 w-4" aria-hidden="true" />
+            Google
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = getSafeInternalReturn(searchParams.get("return"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [oauthLoading, setOauthLoading] = useState<string | null>(null);
+  const [oauthLoading, setOauthLoading] = useState<"github" | "google" | null>(null);
   const [properties, setProperties] = useState<Properties | null>(null);
   const [banner, setBanner] = useState<BannerConfig | null>(null);
+  const submitRef = useRef(false);
+  const oauthRef = useRef(false);
 
   useEffect(() => {
-    const loadProperties = async () => {
-      try {
-        const res = await apiFetch<{ properties: Properties; banner?: BannerConfig }>("/properties", { requireAuth: false });
-        setProperties(res.properties);
-        setBanner(res.banner ?? null);
-      } catch (err) {
-        console.error(err);
-        setProperties({});
-        setBanner(null);
-      }
-    };
-    void loadProperties();
+    void apiFetch<{ properties: Properties; banner?: BannerConfig }>("/properties", {
+      requireAuth: false,
+    }).then((response) => {
+      setProperties(response.properties);
+      setBanner(response.banner ?? null);
+    }).catch((loadError: unknown) => {
+      console.error(loadError);
+      setProperties({});
+      setBanner(null);
+    });
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (submitRef.current) return;
+    submitRef.current = true;
+    setSubmitting(true);
     setError("");
-
     try {
-      const res = await apiFetch<{ token: string; user: { email: string } }>("/auth/login", {
+      const response = await apiFetch<{ token: string; user: { email: string } }>("/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
         requireAuth: false,
       });
-
-      setAuthToken(res.token);
-      setAuthEmail(res.user.email);
-      router.push("/docs");
-    } catch (err: unknown) {
-      const message = err instanceof ApiError ? `${err.message} (Code: ${err.code})` : (err instanceof Error ? err.message : "Login failed");
-      setError(message);
+      setAuthToken(response.token);
+      setAuthEmail(response.user.email);
+      router.replace(returnTo);
+    } catch {
+      setError("Sign in failed. Check your email and password, then try again.");
     } finally {
-      setIsLoading(false);
+      submitRef.current = false;
+      setSubmitting(false);
     }
   };
 
   const handleOAuth = async (provider: "github" | "google") => {
+    if (oauthRef.current) return;
+    oauthRef.current = true;
     setOauthLoading(provider);
     setError("");
     try {
-      const res = await apiFetch<{ url: string }>(`/auth/oauth/${provider}/url`, {
+      sessionStorage.setItem("mnote_oauth_return", returnTo);
+      const response = await apiFetch<{ url: string }>(`/auth/oauth/${provider}/url`, {
         requireAuth: false,
       });
-      window.location.href = res.url;
-    } catch (err: unknown) {
-      const message = err instanceof ApiError ? `${err.message} (Code: ${err.code})` : (err instanceof Error ? err.message : "OAuth login failed");
-      setError(message);
+      window.location.assign(response.url);
+    } catch {
+      setError(`Could not start ${provider === "github" ? "GitHub" : "Google"} sign in. Try again.`);
+      oauthRef.current = false;
       setOauthLoading(null);
     }
   };
 
+  const status = searchParams.get("registered") === "true" ? (
+    <div role="status" className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm">
+      Account created. Sign in to continue.
+    </div>
+  ) : null;
+
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm border border-border bg-card p-8 shadow-sm">
-        <div className="mb-8 text-center">
-          <div className="flex items-center justify-center mb-2">
-            <h1 className="text-2xl font-bold font-mono tracking-tighter">Micro Note</h1>
-          </div>
-          <p className="text-muted-foreground text-sm">Enter your credentials</p>
-        </div>
-
+    <AuthShell title="Sign in" description="Continue to your notes." status={status}>
+      <div className="space-y-5">
         <LoginBanner banner={banner} />
-
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-xs font-medium uppercase text-muted-foreground" htmlFor="email">
-              Email
-            </label>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium" htmlFor="email">Email</label>
             <Input
               id="email"
               type="email"
-              placeholder="user@example.com"
+              inputMode="email"
+              autoComplete="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(event) => setEmail(event.target.value)}
               required
             />
           </div>
-          <div className="space-y-2">
-            <label className="text-xs font-medium uppercase text-muted-foreground" htmlFor="password">
-              Password
-            </label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+          <div>
+            <label className="mb-1.5 block text-sm font-medium" htmlFor="password">Password</label>
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="pr-10"
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "login-error" : undefined}
+                required
+              />
+              <IconButton
+                type="button"
+                label={showPassword ? "Hide password" : "Show password"}
+                variant="ghost"
+                className="absolute right-0 top-0"
+                onClick={() => setShowPassword((visible) => !visible)}
+              >
+                {showPassword
+                  ? <EyeOff className="h-4 w-4" aria-hidden="true" />
+                  : <Eye className="h-4 w-4" aria-hidden="true" />}
+              </IconButton>
+            </div>
           </div>
-
-          {error && (
-            <div className="bg-destructive/10 text-destructive text-sm p-2 border border-destructive/20">
+          {error ? (
+            <div id="login-error" role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
             </div>
-          )}
-
-          <Button type="submit" className="w-full" isLoading={isLoading}>
-            Login
+          ) : null}
+          <Button type="submit" className="w-full" isLoading={submitting}>
+            Sign in
           </Button>
         </form>
-
-        <OAuthButtons properties={properties} oauthLoading={oauthLoading} onOAuth={handleOAuth} />
-
-        {properties?.enable_user_register && properties.enable_email_register && (
-          <div className="mt-6 text-center text-sm text-muted-foreground">
+        <OAuthButtons properties={properties} pending={oauthLoading} onOAuth={handleOAuth} />
+        {properties?.enable_user_register && properties.enable_email_register ? (
+          <p className="text-center text-sm text-muted-foreground">
             Don&apos;t have an account?{" "}
-            <Link href="/register" className="underline underline-offset-4 hover:text-primary">
-              Register
-            </Link>
-          </div>
-        )}
+            <Link href="/register" className="font-medium text-primary hover:underline">Create one</Link>
+          </p>
+        ) : null}
       </div>
-    </div>
+    </AuthShell>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={(
+        <PageState
+          kind="loading"
+          title="Loading sign in"
+          description="Preparing the sign-in form."
+          className="min-h-dvh"
+        />
+      )}
+    >
+      <LoginContent />
+    </Suspense>
   );
 }

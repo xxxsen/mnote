@@ -1,142 +1,226 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch, removeAuthToken, removeAuthEmail, getAuthEmail } from "@/lib/api";
+
 import { useToast } from "@/components/ui/toast";
+import {
+  apiFetch,
+  getAuthEmail,
+  removeAuthEmail,
+  removeAuthToken,
+} from "@/lib/api";
 import type { Document, Tag } from "@/types";
-import { generatePixelAvatar, copyToClipboard } from "./utils";
-import { useTagIndex } from "./hooks/useTagIndex";
-import { useSidebarTags } from "./hooks/useSidebarTags";
+import { copyToClipboard } from "@/lib/clipboard";
+
+import { DocsNavigationDrawer } from "./components/DocsNavigationDrawer";
+import { DocumentGrid } from "./components/DocumentGrid";
+import { ExportDialog } from "./components/ExportDialog";
+import { HeaderBar } from "./components/HeaderBar";
+import { ImportDialog } from "./components/ImportDialog";
+import { Sidebar } from "./components/Sidebar";
 import { useDocsData } from "./hooks/useDocsData";
 import { useImportExport } from "./hooks/useImportExport";
-import { Sidebar } from "./components/Sidebar";
-import { HeaderBar } from "./components/HeaderBar";
-import { DocumentGrid } from "./components/DocumentGrid";
-import { ImportDialog } from "./components/ImportDialog";
-import { ExportDialog } from "./components/ExportDialog";
+import { useSidebarTags } from "./hooks/useSidebarTags";
+import { useTagIndex } from "./hooks/useTagIndex";
+import { generatePixelAvatar } from "./utils";
+
+function useDocsFilters() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [search, setSearch] = useState(searchParams.get("q") || "");
+  const [selectedTag, setSelectedTag] = useState(searchParams.get("tag_id") || "");
+  const [showStarred, setShowStarred] = useState(searchParams.get("view") === "starred");
+  const [showShared, setShowShared] = useState(searchParams.get("view") === "shared");
+
+  const showAll = useCallback(() => {
+    setSelectedTag("");
+    setShowStarred(false);
+    setShowShared(false);
+    router.replace("/docs");
+  }, [router]);
+  const showStarredNotes = useCallback(() => {
+    setSelectedTag("");
+    setShowStarred(true);
+    setShowShared(false);
+    router.replace("/docs?view=starred");
+  }, [router]);
+  const showSharedNotes = useCallback(() => {
+    setSelectedTag("");
+    setShowStarred(false);
+    setShowShared(true);
+    router.replace("/docs?view=shared");
+  }, [router]);
+  const selectTag = useCallback((id: string) => {
+    setSelectedTag(id);
+    setShowStarred(false);
+    setShowShared(false);
+    router.replace(`/docs?tag_id=${encodeURIComponent(id)}`);
+  }, [router]);
+  const navigate = useCallback((href: string) => {
+    if (href === "/docs") showAll();
+    else if (href === "/docs?view=starred") showStarredNotes();
+    else if (href === "/docs?view=shared") showSharedNotes();
+    else router.push(href);
+  }, [router, showAll, showSharedNotes, showStarredNotes]);
+  const activeHref = selectedTag
+    ? `/docs?tag_id=${selectedTag}`
+    : showStarred
+      ? "/docs?view=starred"
+      : showShared
+        ? "/docs?view=shared"
+        : "/docs";
+
+  return {
+    search,
+    setSearch,
+    selectedTag,
+    setSelectedTag,
+    showStarred,
+    setShowStarred,
+    showShared,
+    setShowShared,
+    showAll,
+    showStarredNotes,
+    showSharedNotes,
+    selectTag,
+    navigate,
+    activeHref,
+  };
+}
+
+function useTagSuggestions(
+  search: string,
+  mergeTags: (tags: Tag[]) => void,
+) {
+  const [suggestions, setSuggestions] = useState<Tag[]>([]);
+  const requestIDRef = useRef(0);
+
+  useEffect(() => {
+    const query = search.startsWith("/") ? search.slice(1).trim() : "";
+    if (!query) return;
+    const requestID = ++requestIDRef.current;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({ limit: "20", offset: "0", q: query });
+      void apiFetch<Tag[]>(`/tags?${params.toString()}`, { signal: controller.signal })
+        .then((result) => {
+          if (requestIDRef.current !== requestID) return;
+          setSuggestions(result);
+          mergeTags(result);
+        })
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          console.error(error);
+        });
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [mergeTags, search]);
+
+  return useMemo(() => {
+    const query = search.startsWith("/") ? search.slice(1).trim().toLowerCase() : "";
+    if (!query) return [];
+    return suggestions.filter((tag) => tag.name.toLowerCase().includes(query));
+  }, [search, suggestions]);
+}
+
+function useDocsPageTitle(
+  filters: Pick<ReturnType<typeof useDocsFilters>, "selectedTag" | "showShared" | "showStarred">,
+  tagIndex: Partial<Record<string, Tag>>,
+) {
+  const title = filters.selectedTag
+    ? `${tagIndex[filters.selectedTag]?.name || "Tagged"} notes`
+    : filters.showStarred
+      ? "Starred notes"
+      : filters.showShared
+        ? "Shared notes"
+        : "All notes";
+
+  useEffect(() => {
+    document.title = `${title} · Micro Note`;
+  }, [title]);
+
+  return title;
+}
 
 export default function DocsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-
-  const [search, setSearch] = useState(searchParams.get("q") || "");
-  const [selectedTag, setSelectedTag] = useState(searchParams.get("tag_id") || "");
-  const [showStarred, setShowStarred] = useState(false);
-  const [showShared, setShowShared] = useState(false);
-  const [showTagSelector, setShowTagSelector] = useState(false);
-  const [activeTagIndex, setActiveTagIndex] = useState(0);
-  const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showCreateMenu, setShowCreateMenu] = useState(false);
-  const [showImportMenu, setShowImportMenu] = useState(false);
-  const [tagSuggestions, setTagSuggestions] = useState<Tag[]>([]);
-  const [avatarUrl, setAvatarUrl] = useState("");
-  const [userEmail, setUserEmail] = useState("");
-  const menuRef = useRef<HTMLDivElement>(null);
-  const tagSelectorRef = useRef<HTMLDivElement>(null);
+  const filters = useDocsFilters();
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [identity, setIdentity] = useState({ email: "", avatar: "" });
+  const navigationButtonRef = useRef<HTMLButtonElement>(null);
   const initialFetchRef = useRef(false);
-
-  const filteredTags = tagSuggestions.filter((tag) =>
-    tag.name.toLowerCase().includes(search.slice(1).toLowerCase()),
-  );
-
+  const creatingRef = useRef(false);
   const { tagIndex, tagIndexRef, mergeTags, fetchTagsByIDs, fetchTags } = useTagIndex();
+  const filteredTags = useTagSuggestions(filters.search, mergeTags);
   const sidebar = useSidebarTags({ toast });
-  const {
-    docs, recentDocs, totalDocs, starredTotal, sharedTotal,
-    loading, loadingMore, hasMore, aiSearchDocs, aiSearching, loadMoreRef,
-    fetchSummary, fetchSharedSummary, handlePinToggle, handleStarToggle,
-  } = useDocsData({ search, selectedTag, showStarred, showShared, mergeTags, fetchTagsByIDs, tagIndexRef });
-  const ie = useImportExport({ fetchSummary, fetchTags, fetchSidebarTags: sidebar.fetchSidebarTags, tagSearch: sidebar.tagSearch, toast });
+  const data = useDocsData({
+    search: filters.search,
+    selectedTag: filters.selectedTag,
+    showStarred: filters.showStarred,
+    showShared: filters.showShared,
+    mergeTags,
+    fetchTagsByIDs,
+    tagIndexRef,
+    toast,
+  });
+  const ie = useImportExport({
+    fetchSummary: data.fetchSummary,
+    fetchTags,
+    fetchSidebarTags: sidebar.fetchSidebarTags,
+    tagSearch: sidebar.tagSearch,
+    toast,
+  });
+  const pageTitle = useDocsPageTitle(filters, tagIndex);
 
   useEffect(() => {
-    setActiveTagIndex(0); // eslint-disable-line react-hooks/set-state-in-effect -- reset index on search change
-  }, [search, showTagSelector]);
-
-  useEffect(() => {
-    const storedEmail = getAuthEmail();
-    if (storedEmail) {
-      setUserEmail(storedEmail); // eslint-disable-line react-hooks/set-state-in-effect -- initialize from localStorage on mount
-      setAvatarUrl(generatePixelAvatar(storedEmail));
-      return;
-    }
-    setAvatarUrl(generatePixelAvatar("anon"));
+    const email = getAuthEmail() || "";
+    setIdentity({
+      email,
+      avatar: generatePixelAvatar(email || "anon"),
+    });
   }, []);
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setShowUserMenu(false);
-        setShowCreateMenu(false);
-      }
-      if (tagSelectorRef.current && !tagSelectorRef.current.contains(event.target as Node)) {
-        setShowTagSelector(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (!showUserMenu) setShowImportMenu(false); // eslint-disable-line react-hooks/set-state-in-effect -- close submenu when parent closes
-  }, [showUserMenu]);
-  useEffect(() => {
-    if (showUserMenu) setShowCreateMenu(false); // eslint-disable-line react-hooks/set-state-in-effect -- close other menu when user menu opens
-  }, [showUserMenu]);
-
-  const fetchTagSuggestions = useCallback(async (query: string) => {
-    if (!query) { setTagSuggestions([]); return; }
-    try {
-      const params = new URLSearchParams();
-      params.set("limit", "20");
-      params.set("offset", "0");
-      params.set("q", query);
-      const result = await apiFetch<Tag[]>(`/tags?${params.toString()}`);
-      setTagSuggestions(result || []); // eslint-disable-line @typescript-eslint/no-unnecessary-condition
-      mergeTags(result || []); // eslint-disable-line @typescript-eslint/no-unnecessary-condition
-    } catch (error) {
-      console.error(error);
-    }
-  }, [mergeTags]);
-
-  useEffect(() => {
-    if (!showTagSelector) return;
-    const query = search.startsWith("/") ? search.slice(1).trim() : "";
-    const timer = setTimeout(() => { void fetchTagSuggestions(query); }, 150);
-    return () => clearTimeout(timer);
-  }, [fetchTagSuggestions, search, showTagSelector]);
-
-  useEffect(() => { if (!showTagSelector) setTagSuggestions([]); }, [showTagSelector]); // eslint-disable-line react-hooks/set-state-in-effect
-
-  useEffect(() => {
-    if (!selectedTag || tagIndex[selectedTag]) return;
-    void fetchTagsByIDs([selectedTag]);
-  }, [fetchTagsByIDs, selectedTag, tagIndex]);
+    if (!filters.selectedTag || tagIndex[filters.selectedTag]) return;
+    void fetchTagsByIDs([filters.selectedTag]);
+  }, [fetchTagsByIDs, filters.selectedTag, tagIndex]);
 
   useEffect(() => {
     if (initialFetchRef.current) return;
     initialFetchRef.current = true;
     void fetchTags("");
-    void fetchSummary();
-    void fetchSharedSummary();
-  }, [fetchTags, fetchSummary, fetchSharedSummary]);
+    void data.fetchSummary();
+    void data.fetchSharedSummary();
+  }, [data, fetchTags]);
 
   useEffect(() => {
     const oauthStatus = searchParams.get("oauth");
     if (!oauthStatus) return;
     const provider = searchParams.get("provider") || "Provider";
-    if (oauthStatus === "bound") toast({ description: `${provider} bound successfully.` });
-    else if (oauthStatus === "conflict") toast({ description: "This provider is already linked to another account.", variant: "error" });
-    else toast({ description: "Failed to bind provider.", variant: "error" });
+    if (oauthStatus === "bound") {
+      toast({ description: `${provider} bound successfully.`, variant: "success" });
+    } else if (oauthStatus === "conflict") {
+      toast({ description: "This provider is already linked to another account.", variant: "error" });
+    } else {
+      toast({ description: "Failed to bind provider.", variant: "error" });
+    }
     const params = new URLSearchParams(searchParams.toString());
     params.delete("oauth");
     params.delete("provider");
-    const next = params.toString();
-    router.replace(next ? `/docs?${next}` : "/docs");
+    router.replace(params.size ? `/docs?${params.toString()}` : "/docs");
   }, [router, searchParams, toast]);
 
   const handleCreate = async () => {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    setCreating(true);
     try {
       const doc = await apiFetch<Document>("/documents", {
         method: "POST",
@@ -145,76 +229,125 @@ export default function DocsPage() {
       router.push(`/docs/${doc.id}`);
     } catch (error) {
       console.error(error);
-      toast({ description: error instanceof Error ? error : "Failed to create document", variant: "error" });
+      toast({ description: "Failed to create document.", variant: "error" });
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
     }
   };
-
-  const handleLogout = () => { removeAuthToken(); removeAuthEmail(); router.push("/login"); };
-
-  const handleCopyShare = useCallback(async (token: string) => {
-    try {
-      const url = `${window.location.origin}/share/${token}`;
-      const copied = await copyToClipboard(url);
-      if (copied) toast({ description: "Share link copied" });
-      else toast({ description: "Failed to copy link", variant: "error" });
-    } catch (error) {
-      console.error(error);
-      toast({ description: error instanceof Error ? error : "Failed to copy link", variant: "error" });
-    }
-  }, [toast]);
-
-  const navigate = useCallback((path: string) => router.push(path), [router]);
+  const handleLogout = () => {
+    removeAuthToken();
+    removeAuthEmail();
+    router.replace("/login");
+  };
+  const handleCopyShare = async (token: string) => {
+    const copied = await copyToClipboard(`${window.location.origin}/share/${token}`);
+    toast({
+      description: copied ? "Share link copied." : "Failed to copy link.",
+      variant: copied ? "success" : "error",
+    });
+  };
 
   return (
-    <div className="flex h-screen flex-col md:flex-row bg-background text-foreground">
+    <div className="flex h-dvh flex-col bg-background text-foreground lg:flex-row">
       <Sidebar
-        selectedTag={selectedTag} showStarred={showStarred} showShared={showShared}
-        totalDocs={totalDocs} starredTotal={starredTotal} sharedTotal={sharedTotal}
-        recentDocs={recentDocs} tagIndex={tagIndex}
-        sidebarTags={sidebar.sidebarTags} sidebarLoading={sidebar.sidebarLoading} sidebarHasMore={sidebar.sidebarHasMore}
-        tagSearch={sidebar.tagSearch} sidebarScrollRef={sidebar.sidebarScrollRef} tagListRef={sidebar.tagListRef}
-        onSelectTag={(id) => { setSelectedTag(id); setShowStarred(false); setShowShared(false); }}
-        onShowAll={() => { setSelectedTag(""); setShowStarred(false); setShowShared(false); }}
-        onShowStarred={() => { setSelectedTag(""); setShowStarred(true); setShowShared(false); }}
-        onShowShared={() => { setSelectedTag(""); setShowStarred(false); setShowShared(true); }}
-        onNavigate={navigate}
+        selectedTag={filters.selectedTag}
+        showStarred={filters.showStarred}
+        showShared={filters.showShared}
+        totalDocs={data.totalDocs}
+        starredTotal={data.starredTotal}
+        sharedTotal={data.sharedTotal}
+        recentDocs={data.recentDocs}
+        sidebarTags={sidebar.sidebarTags}
+        sidebarLoading={sidebar.sidebarLoading}
+        sidebarHasMore={sidebar.sidebarHasMore}
+        tagSearch={sidebar.tagSearch}
+        sidebarScrollRef={sidebar.sidebarScrollRef}
+        tagListRef={sidebar.tagListRef}
+        onSelectTag={filters.selectTag}
+        onShowAll={filters.showAll}
+        onShowStarred={filters.showStarredNotes}
+        onShowShared={filters.showSharedNotes}
         onTagSearchChange={sidebar.setTagSearch}
         onToggleTagPin={sidebar.handleToggleTagPin}
         onAutoLoadTags={sidebar.maybeAutoLoadTags}
       />
-      <main className="flex-1 flex flex-col min-w-0">
+      <main aria-labelledby="docs-page-title" className="flex min-w-0 flex-1 flex-col">
+        <h1 id="docs-page-title" className="sr-only">{pageTitle}</h1>
         <HeaderBar
-          search={search} selectedTag={selectedTag} tagIndex={tagIndex}
-          showTagSelector={showTagSelector} activeTagIndex={activeTagIndex} filteredTags={filteredTags}
-          showUserMenu={showUserMenu} showCreateMenu={showCreateMenu} showImportMenu={showImportMenu}
-          avatarUrl={avatarUrl} userEmail={userEmail} menuRef={menuRef} tagSelectorRef={tagSelectorRef}
-          onSearchChange={setSearch} onClearSearch={() => setSearch("")}
-          onSetSelectedTag={setSelectedTag} onSetShowTagSelector={setShowTagSelector}
-          onSetActiveTagIndex={setActiveTagIndex} onSetShowStarred={setShowStarred} onSetShowShared={setShowShared}
-          onSetShowUserMenu={setShowUserMenu} onSetShowCreateMenu={setShowCreateMenu} onSetShowImportMenu={setShowImportMenu}
-          onNavigate={navigate} onCreate={handleCreate} onLogout={handleLogout}
-          onOpenImport={ie.openImportModal} onOpenExport={ie.openExportModal}
+          search={filters.search}
+          selectedTag={filters.selectedTag}
+          tagIndex={tagIndex}
+          filteredTags={filteredTags}
+          avatarUrl={identity.avatar}
+          userEmail={identity.email}
+          creating={creating}
+          navigationButtonRef={navigationButtonRef}
+          onOpenNavigation={() => setNavigationOpen(true)}
+          onSearchChange={filters.setSearch}
+          onClearSearch={() => filters.setSearch("")}
+          onSetSelectedTag={filters.selectTag}
+          onSetShowStarred={filters.setShowStarred}
+          onSetShowShared={filters.setShowShared}
+          onNavigate={(path) => filters.navigate(path)}
+          onCreate={() => void handleCreate()}
+          onLogout={handleLogout}
+          onOpenImport={ie.openImportModal}
+          onOpenExport={ie.openExportModal}
         />
         <DocumentGrid
-          docs={docs} aiSearchDocs={aiSearchDocs} aiSearching={aiSearching}
-          loading={loading} loadingMore={loadingMore} hasMore={hasMore}
-          showShared={showShared} tagIndex={tagIndex} loadMoreRef={loadMoreRef}
-          onNavigate={navigate} onPinToggle={handlePinToggle} onStarToggle={handleStarToggle}
-          onCopyShare={handleCopyShare}
+          {...data}
+          search={filters.search}
+          selectedTag={filters.selectedTag}
+          showStarred={filters.showStarred}
+          showShared={filters.showShared}
+          tagIndex={tagIndex}
+          onCreate={() => void handleCreate()}
+          onClearSearch={() => filters.setSearch("")}
+          onClearFilter={filters.showAll}
+          onRetryInitial={data.retryInitial}
+          onRetryLoadMore={data.retryLoadMore}
+          onPinToggle={(doc) => void data.handlePinToggle(doc)}
+          onStarToggle={(doc) => void data.handleStarToggle(doc)}
+          onCopyShare={(token) => void handleCopyShare(token)}
         />
       </main>
       <ImportDialog
         open={ie.importOpen}
-        importStep={ie.importStep} importMode={ie.importMode} importSource={ie.importSource}
-        importPreview={ie.importPreview} importReport={ie.importReport}
-        importError={ie.importError} importFileName={ie.importFileName} importProgress={ie.importProgress}
-        onSetImportMode={ie.setImportMode} onClose={ie.closeImportModal}
-        onImportFile={ie.handleImportFile} onImportConfirm={ie.handleImportConfirm}
+        importStep={ie.importStep}
+        importMode={ie.importMode}
+        importSource={ie.importSource}
+        importPreview={ie.importPreview}
+        importReport={ie.importReport}
+        importError={ie.importError}
+        importFileName={ie.importFileName}
+        importProgress={ie.importProgress}
+        onSetImportMode={ie.setImportMode}
+        onClose={ie.closeImportModal}
+        onImportFile={ie.handleImportFile}
+        onImportConfirm={ie.handleImportConfirm}
       />
       <ExportDialog
-        open={ie.exportOpen} exporting={ie.exporting} error={ie.exportError}
-        onClose={ie.closeExportModal} onExport={ie.handleExportNotes}
+        open={ie.exportOpen}
+        exporting={ie.exporting}
+        error={ie.exportError}
+        onClose={ie.closeExportModal}
+        onExport={ie.handleExportNotes}
       />
+      <DocsNavigationDrawer
+        open={navigationOpen}
+        activeHref={filters.activeHref}
+        selectedTag={filters.selectedTag}
+        recentDocs={data.recentDocs}
+        tags={sidebar.sidebarTags}
+        returnFocusRef={navigationButtonRef}
+        onClose={() => setNavigationOpen(false)}
+        onNavigate={filters.navigate}
+        onSelectTag={filters.selectTag}
+      />
+      <span className="sr-only" aria-live="polite">
+        {creating ? "Creating note" : ""}
+      </span>
     </div>
   );
 }
