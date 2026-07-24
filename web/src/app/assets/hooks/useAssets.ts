@@ -7,7 +7,7 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { apiFetch } from "@/lib/api";
 import type { Asset } from "@/types";
 
-import { assetMarkdown, resolveAssetURL } from "../helpers";
+import { assetMarkdown, resolveAssetDownloadURL } from "../helpers";
 
 export type AssetReference = {
   document_id: string;
@@ -194,13 +194,16 @@ export function useAssets(toast: Toast) {
   }, [toast]);
   const copyURL = useCallback(async () => {
     if (catalog.selected) {
-      await copy(resolveAssetURL(catalog.selected.url), "Asset URL copied.");
+      const url = resolveAssetDownloadURL(catalog.selected.file_key);
+      if (url) await copy(url, "Asset URL copied.");
     }
   }, [catalog.selected, copy]);
   const copyMarkdown = useCallback(async () => {
     if (catalog.selected) {
-      const url = resolveAssetURL(catalog.selected.url);
-      await copy(assetMarkdown(catalog.selected.name, url), "Markdown copied.");
+      const url = resolveAssetDownloadURL(catalog.selected.file_key);
+      if (url) {
+        await copy(assetMarkdown(catalog.selected.name, url), "Markdown copied.");
+      }
     }
   }, [catalog.selected, copy]);
 

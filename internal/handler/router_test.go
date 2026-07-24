@@ -37,10 +37,17 @@ func TestRegisterRoutes(t *testing.T) {
 	routes := r.Routes()
 	assert.True(t, len(routes) > 30)
 
+	var previewGET, previewHEAD bool
 	for _, route := range routes {
 		assert.NotContains(t, route.Path, "/saved-views",
 			"saved views feature must not register routes after deprecation")
+		if route.Path == "/api/v1/files/:key/preview" {
+			previewGET = previewGET || route.Method == "GET"
+			previewHEAD = previewHEAD || route.Method == "HEAD"
+		}
 	}
+	assert.True(t, previewGET, "public preview GET route must be registered")
+	assert.True(t, previewHEAD, "public preview HEAD route must be registered")
 }
 
 func TestRouterDepsValidateRejectsMissingDependency(t *testing.T) {

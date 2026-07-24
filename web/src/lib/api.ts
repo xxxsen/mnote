@@ -1,5 +1,11 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api/v1";
 
+export function resolveAPIURL(endpoint: string) {
+  const base = API_BASE.replace(/\/+$/, "");
+  const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  return `${base}${path}`;
+}
+
 /* v8 ignore start -- SSR guards untestable in jsdom where window is always defined */
 export const getAuthToken = () => {
   if (typeof window !== "undefined") {
@@ -114,7 +120,7 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
   }
   Object.assign(mergedHeaders, headerInit as Record<string, string>);
 
-  const res = await fetch(`${API_BASE}${endpoint}`, {
+  const res = await fetch(resolveAPIURL(endpoint), {
     headers: mergedHeaders,
     ...rest,
   });
@@ -140,7 +146,7 @@ export async function uploadFile(file: File): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", file, file.name);
 
-  const res = await fetch(`${API_BASE}/files/upload`, {
+  const res = await fetch(resolveAPIURL("/files/upload"), {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,

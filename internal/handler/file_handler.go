@@ -226,19 +226,22 @@ func (h *FileHandler) recordAsset(
 
 func (h *FileHandler) Get(c *gin.Context) {
 	key := c.Param("key")
-	if key == "" || strings.Contains(key, "/") || strings.Contains(key, "\\") {
+	if err := validateFileKey(key); err != nil {
 		c.Status(http.StatusBadRequest)
 		return
 	}
 	file, err := h.store.Open(c.Request.Context(), key)
 	if err != nil {
-		c.Status(http.StatusNotFound)
+		h.handleFileStoreError(c, "file download open failed", key, err)
 		return
 	}
 	defer func() { _ = file.Close() }()
 	contentType := detectContentType(key, file)
 	c.Header("Content-Type", contentType)
 	c.Header("X-Content-Type-Options", "nosniff")
+	if normalizeMediaType(contentType) == "application/pdf" {
+		setPDFSecurityHeaders(c)
+	}
 	isInline := contentType == "image/png" ||
 		contentType == "image/jpeg" ||
 		contentType == "image/gif" ||
@@ -249,7 +252,9 @@ func (h *FileHandler) Get(c *gin.Context) {
 	if !isInline {
 		c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, key))
 	}
-	_, _ = io.Copy(c.Writer, file)
+	if written, err := copyWithContext(c.Request.Context(), c.Writer, file); err != nil {
+		logFileStreamError(c, "file download stream failed", key, written, err)
+	}
 }
 
 func detectContentType(key string, file io.ReadCloser) string {

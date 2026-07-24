@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -14,6 +17,36 @@ import (
 
 func boolPointer(value bool) *bool {
 	return &value
+}
+
+func TestResponseCompression_LeavesFileBytesAndLengthUntouched(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(responseCompression())
+	router.GET("/api/v1/files/:key/preview", func(c *gin.Context) {
+		c.Header("Content-Length", "4")
+		c.Data(http.StatusOK, "application/pdf", []byte("%PDF"))
+	})
+	router.HEAD("/api/v1/files/:key/preview", func(c *gin.Context) {
+		c.Header("Content-Length", "4")
+		c.Status(http.StatusOK)
+	})
+
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(method, "/api/v1/files/test.pdf/preview", nil)
+		request.Header.Set("Accept-Encoding", "gzip")
+		router.ServeHTTP(recorder, request)
+
+		assert.Equal(t, http.StatusOK, recorder.Code)
+		assert.Empty(t, recorder.Header().Get("Content-Encoding"))
+		assert.Equal(t, "4", recorder.Header().Get("Content-Length"))
+		if method == http.MethodGet {
+			assert.Equal(t, "%PDF", recorder.Body.String())
+		} else {
+			assert.Empty(t, recorder.Body.String())
+		}
+	}
 }
 
 func TestInitAIProviders_DisabledSkipsProviderInitialization(t *testing.T) {

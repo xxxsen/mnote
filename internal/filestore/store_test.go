@@ -108,20 +108,19 @@ func TestLocalStore_Save_InvalidKey(t *testing.T) {
 	rsc := &memReadSeekCloser{Reader: bytes.NewReader([]byte("x"))}
 
 	err := store.Save(context.Background(), "../escape", rsc, 1)
-	assert.ErrorIs(t, err, errInvalidFileKey)
+	assert.ErrorIs(t, err, ErrInvalidFileKey)
 }
 
 func TestLocalStore_Open_InvalidKey(t *testing.T) {
 	store := &localStore{dir: t.TempDir()}
 	_, err := store.Open(context.Background(), "sub/dir")
-	assert.ErrorIs(t, err, errInvalidFileKey)
+	assert.ErrorIs(t, err, ErrInvalidFileKey)
 }
 
 func TestLocalStore_Open_NotFound(t *testing.T) {
 	store := &localStore{dir: t.TempDir()}
 	_, err := store.Open(context.Background(), "nonexistent.txt")
-	assert.Error(t, err)
-	assert.True(t, os.IsNotExist(err) || assert.ErrorIs(t, err, os.ErrNotExist) || true)
+	assert.ErrorIs(t, err, ErrObjectNotFound)
 }
 
 func TestLocalStore_GenerateFileRef(t *testing.T) {
@@ -176,7 +175,7 @@ func TestLocalStore_Save_SeekError(t *testing.T) {
 func TestLocalStore_Open_PathTraversal(t *testing.T) {
 	store := &localStore{dir: t.TempDir()}
 	_, err := store.Open(context.Background(), "..\\escape")
-	assert.ErrorIs(t, err, errInvalidFileKey)
+	assert.ErrorIs(t, err, ErrInvalidFileKey)
 }
 
 func TestLocalStore_Save_EnsureDirFails(t *testing.T) {
@@ -199,7 +198,7 @@ func TestLocalStore_Save_BackslashKey(t *testing.T) {
 	store := &localStore{dir: t.TempDir()}
 	rsc := &memReadSeekCloser{Reader: bytes.NewReader([]byte("x"))}
 	err := store.Save(context.Background(), "a\\b", rsc, 1)
-	assert.ErrorIs(t, err, errInvalidFileKey)
+	assert.ErrorIs(t, err, ErrInvalidFileKey)
 }
 
 func TestDecodeConfig_UnmarshalError(t *testing.T) {
@@ -217,4 +216,63 @@ func TestS3Store_GenerateFileRef_NoPrefix(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, ref, "http://")
 	assert.Contains(t, store.PublicURL(ref), "http://s3:9000/bucket/")
+}
+
+func TestValidateFileKey(t *testing.T) {
+	for _, valid := range []string{"file.pdf", "user_123-file.mp4", ".hidden"} {
+		assert.NoError(t, ValidateFileKey(valid))
+	}
+	for _, invalid := range []string{
+		"", ".", "..", "../file", "folder/file", `folder\file`,
+		"https://example.test/file", "file name.pdf", "file\r\nX-Test:value",
+	} {
+		assert.ErrorIs(t, ValidateFileKey(invalid), ErrInvalidFileKey)
+	}
+}
+
+func TestLocalStore_StatAndOpenRange(t *testing.T) {
+	store := &localStore{dir: t.TempDir()}
+	data := []byte("0123456789")
+	require.NoError(t, store.Save(
+		context.Background(),
+		"range.bin",
+		&memReadSeekCloser{Reader: bytes.NewReader(data)},
+		int64(len(data)),
+	))
+
+	info, err := store.Stat(context.Background(), "range.bin")
+	require.NoError(t, err)
+	assert.Equal(t, int64(len(data)), info.Size)
+
+	body, err := store.OpenRange(
+		context.Background(), "range.bin", ByteRange{Start: 2, End: 6},
+	)
+	require.NoError(t, err)
+	content, err := io.ReadAll(body)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("23456"), content)
+	require.NoError(t, body.Close())
+
+	section := body.(*sectionReadCloser)
+	_, err = section.closer.(*os.File).Stat()
+	assert.Error(t, err, "closing the range reader must close the underlying file")
+}
+
+func TestLocalStore_StatAndRangeErrors(t *testing.T) {
+	store := &localStore{dir: t.TempDir()}
+
+	_, err := store.Stat(context.Background(), "missing.pdf")
+	assert.ErrorIs(t, err, ErrObjectNotFound)
+	_, err = store.OpenRange(
+		context.Background(), "missing.pdf", ByteRange{Start: 0, End: 0},
+	)
+	assert.ErrorIs(t, err, ErrObjectNotFound)
+	_, err = store.OpenRange(
+		context.Background(), "../escape", ByteRange{Start: 0, End: 0},
+	)
+	assert.ErrorIs(t, err, ErrInvalidFileKey)
+	_, err = store.OpenRange(
+		context.Background(), "file.pdf", ByteRange{Start: -1, End: 0},
+	)
+	assert.Error(t, err)
 }

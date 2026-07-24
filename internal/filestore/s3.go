@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"path"
 	"strings"
 
@@ -13,14 +12,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 
 	"github.com/xxxsen/mnote/internal/pkg/idgen"
 )
 
-var (
-	errS3ConfigRequired = errors.New("s3 endpoint/bucket/secret_id/secret_key are required")
-	errFileKeyRequired  = errors.New("file key is required")
-)
+var errS3ConfigRequired = errors.New("s3 endpoint/bucket/secret_id/secret_key are required")
 
 type s3Config struct {
 	Endpoint  string `json:"endpoint"`
@@ -33,11 +31,26 @@ type s3Config struct {
 }
 
 type s3Store struct {
-	client    *s3.Client
+	client    s3API
 	bucket    string
 	prefix    string
 	baseURL   string
 	generator idgen.Generator
+}
+
+type s3API interface {
+	PutObject(
+		context.Context, *s3.PutObjectInput, ...func(*s3.Options),
+	) (*s3.PutObjectOutput, error)
+	GetObject(
+		context.Context, *s3.GetObjectInput, ...func(*s3.Options),
+	) (*s3.GetObjectOutput, error)
+	HeadObject(
+		context.Context, *s3.HeadObjectInput, ...func(*s3.Options),
+	) (*s3.HeadObjectOutput, error)
+	DeleteObject(
+		context.Context, *s3.DeleteObjectInput, ...func(*s3.Options),
+	) (*s3.DeleteObjectOutput, error)
 }
 
 func init() {
@@ -90,8 +103,8 @@ func createS3Store(args any) (Store, error) {
 }
 
 func (s *s3Store) Save(ctx context.Context, key string, r ReadSeekCloser, size int64) error {
-	if key == "" {
-		return errFileKeyRequired
+	if err := ValidateFileKey(key); err != nil {
+		return err
 	}
 	objectKey, err := s.objectKey(key)
 	if err != nil {
@@ -104,7 +117,7 @@ func (s *s3Store) Save(ctx context.Context, key string, r ReadSeekCloser, size i
 		ContentLength: aws.Int64(size),
 	})
 	if err != nil {
-		return fmt.Errorf("put object: %w", err)
+		return normalizeS3Error("put object", err)
 	}
 	return nil
 }
@@ -119,7 +132,53 @@ func (s *s3Store) Open(ctx context.Context, key string) (io.ReadCloser, error) {
 		Key:    aws.String(objectKey),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("get object: %w", err)
+		return nil, normalizeS3Error("get object", err)
+	}
+	if resp == nil || resp.Body == nil {
+		return nil, fmt.Errorf("get object: %w", errEmptyObjectBody)
+	}
+	return resp.Body, nil
+}
+
+func (s *s3Store) Stat(ctx context.Context, key string) (ObjectInfo, error) {
+	objectKey, err := s.objectKey(key)
+	if err != nil {
+		return ObjectInfo{}, fmt.Errorf("resolve object key: %w", err)
+	}
+	resp, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		return ObjectInfo{}, normalizeS3Error("head object", err)
+	}
+	if resp == nil || resp.ContentLength == nil || *resp.ContentLength < 0 {
+		return ObjectInfo{}, fmt.Errorf("head object: %w", errInvalidObjectSize)
+	}
+	return ObjectInfo{Size: *resp.ContentLength}, nil
+}
+
+func (s *s3Store) OpenRange(
+	ctx context.Context, key string, value ByteRange,
+) (io.ReadCloser, error) {
+	if value.Start < 0 || value.End < value.Start {
+		return nil, fmt.Errorf("get object range: %w", errInvalidByteRange)
+	}
+	objectKey, err := s.objectKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("resolve object key: %w", err)
+	}
+	rangeValue := fmt.Sprintf("bytes=%d-%d", value.Start, value.End)
+	resp, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(objectKey),
+		Range:  aws.String(rangeValue),
+	})
+	if err != nil {
+		return nil, normalizeS3Error("get object range", err)
+	}
+	if resp == nil || resp.Body == nil {
+		return nil, fmt.Errorf("get object range: %w", errEmptyObjectBody)
 	}
 	return resp.Body, nil
 }
@@ -133,7 +192,7 @@ func (s *s3Store) Delete(ctx context.Context, key string) error {
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(objectKey),
 	}); err != nil {
-		return fmt.Errorf("delete object: %w", err)
+		return normalizeS3Error("delete object", err)
 	}
 	return nil
 }
@@ -154,37 +213,32 @@ func (s *s3Store) PublicURL(objectKey string) string {
 }
 
 func (s *s3Store) objectKey(key string) (string, error) {
-	if !strings.HasPrefix(key, "http://") && !strings.HasPrefix(key, "https://") {
-		return s.applyPrefix(key), nil
+	if err := ValidateFileKey(key); err != nil {
+		return "", err
 	}
-	u, err := url.Parse(key)
-	if err != nil {
-		return "", fmt.Errorf("parse key url: %w", err)
-	}
-	trimmed := s.stripBasePath(strings.TrimPrefix(u.Path, "/"))
-	return s.applyPrefix(trimmed), nil
-}
-
-func (s *s3Store) stripBasePath(p string) string {
-	if s.baseURL == "" {
-		return p
-	}
-	base, _ := url.Parse(s.baseURL)
-	if base == nil {
-		return p
-	}
-	basePath := strings.TrimPrefix(base.Path, "/")
-	if basePath != "" && strings.HasPrefix(p, basePath+"/") {
-		return strings.TrimPrefix(p, basePath+"/")
-	}
-	return p
+	return s.applyPrefix(key), nil
 }
 
 func (s *s3Store) applyPrefix(key string) string {
-	if s.prefix != "" && !strings.HasPrefix(key, s.prefix+"/") {
+	if s.prefix != "" {
 		return path.Join(s.prefix, key)
 	}
 	return key
+}
+
+func normalizeS3Error(operation string, err error) error {
+	var noSuchKey *types.NoSuchKey
+	if errors.As(err, &noSuchKey) {
+		return fmt.Errorf("%s: %w", operation, ErrObjectNotFound)
+	}
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch strings.ToLower(apiErr.ErrorCode()) {
+		case "nosuchkey", "notfound", "404":
+			return fmt.Errorf("%s: %w", operation, ErrObjectNotFound)
+		}
+	}
+	return fmt.Errorf("%s: %w", operation, err)
 }
 
 func buildBaseURL(cfg *s3Config) string {

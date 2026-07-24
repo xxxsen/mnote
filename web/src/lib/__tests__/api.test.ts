@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   getAuthToken, setAuthToken, getAuthEmail, setAuthEmail,
-  removeAuthToken, removeAuthEmail, ApiError, apiFetch, uploadFile,
+  removeAuthToken, removeAuthEmail, ApiError, apiFetch, resolveAPIURL, uploadFile,
 } from "../api";
 
 function mockLocation(pathname = "/docs", search = "") {
@@ -62,6 +62,13 @@ describe("ApiError", () => {
     expect(err.code).toBe(42);
     expect(err.message).toBe("test");
     expect(err).toBeInstanceOf(Error);
+  });
+});
+
+describe("resolveAPIURL", () => {
+  it("joins endpoints against the configured API base exactly once", () => {
+    expect(resolveAPIURL("/files/key.pdf")).toBe("/api/v1/files/key.pdf");
+    expect(resolveAPIURL("files/key.pdf")).toBe("/api/v1/files/key.pdf");
   });
 });
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -18,14 +19,35 @@ var (
 	ErrStoreTypeRequired = errors.New("file_store.type is required")
 	ErrUnsupportedStore  = errors.New("unsupported file store type")
 	ErrConfigRequired    = errors.New("store config is required")
+	ErrInvalidFileKey    = errors.New("invalid file key")
+	ErrObjectNotFound    = errors.New("object not found")
+	errInvalidByteRange  = errors.New("invalid byte range")
+	errRangeOutOfBounds  = errors.New("byte range outside object")
+	errEmptyObjectBody   = errors.New("empty object response body")
+	errInvalidObjectSize = errors.New("invalid object size")
 )
 
+type ObjectInfo struct {
+	Size int64
+}
+
+type ByteRange struct {
+	Start int64
+	End   int64
+}
+
 type Store interface {
+	ReadableStore
 	Save(ctx context.Context, key string, r ReadSeekCloser, size int64) error
-	Open(ctx context.Context, key string) (io.ReadCloser, error)
 	Delete(ctx context.Context, key string) error
 	GenerateFileRef(userID, filename string) (string, error)
 	PublicURL(key string) string
+}
+
+type ReadableStore interface {
+	Open(ctx context.Context, key string) (io.ReadCloser, error)
+	Stat(ctx context.Context, key string) (ObjectInfo, error)
+	OpenRange(ctx context.Context, key string, value ByteRange) (io.ReadCloser, error)
 }
 
 type ReadSeekCloser interface {
@@ -44,6 +66,7 @@ type Factory func(args any) (Store, error)
 var (
 	registryMu sync.RWMutex
 	registry   = map[string]Factory{}
+	fileKeyRE  = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 )
 
 func Register(name string, factory Factory) {
@@ -82,6 +105,13 @@ func decodeConfig(args, dst any) error {
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(dst); err != nil {
 		return fmt.Errorf("decode store config: %w", err)
+	}
+	return nil
+}
+
+func ValidateFileKey(key string) error {
+	if key == "" || key == "." || key == ".." || !fileKeyRE.MatchString(key) {
+		return ErrInvalidFileKey
 	}
 	return nil
 }

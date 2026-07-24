@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { PageState } from "@/components/ui/page-state";
 import type { Asset } from "@/types";
 
-import { formatAssetSize, resolveAssetURL } from "../helpers";
+import { formatAssetSize, resolveAssetDownloadURL } from "../helpers";
 import type { AssetReference } from "../hooks/useAssets";
 import { AssetPreview } from "./AssetPreview";
 
@@ -83,7 +83,7 @@ export function AssetDetail({
       />
     );
   }
-  const url = resolveAssetURL(asset.url);
+  const url = resolveAssetDownloadURL(asset.file_key);
   return (
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 md:p-5">
       <div className="space-y-6">
@@ -105,28 +105,44 @@ export function AssetDetail({
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">URL</dt>
-              <dd className="mt-1 overflow-x-auto whitespace-nowrap pb-1 text-xs text-muted-foreground">{url}</dd>
+              <dd className="mt-1 overflow-x-auto whitespace-nowrap pb-1 text-xs text-muted-foreground">
+                {url || "Download unavailable"}
+              </dd>
             </div>
           </dl>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button type="button" variant="outline" className="gap-2" onClick={onCopyURL}>
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              disabled={!url}
+              onClick={onCopyURL}
+            >
               <Copy className="h-4 w-4" aria-hidden="true" />
               Copy URL
             </Button>
-            <Button type="button" variant="outline" className="gap-2" onClick={onCopyMarkdown}>
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              disabled={!url}
+              onClick={onCopyMarkdown}
+            >
               <Copy className="h-4 w-4" aria-hidden="true" />
               Copy Markdown
             </Button>
-            <a
-              href={url}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`Open ${asset.name} in a new tab`}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-10"
-            >
-              <ExternalLink className="h-4 w-4" aria-hidden="true" />
-              Open
-            </a>
+            {url ? (
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Open ${asset.name} in a new tab`}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:h-10"
+              >
+                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                Open
+              </a>
+            ) : null}
           </div>
         </section>
 

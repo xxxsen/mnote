@@ -20,14 +20,12 @@ func CORS(allowlist []string) gin.HandlerFunc {
 		origin := c.GetHeader("Origin")
 		if allowAll {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-			c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			c.Writer.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id")
+			setCORSResponseHeaders(c)
 		} else if origin != "" {
 			if _, ok := allowed[origin]; ok {
 				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 				c.Writer.Header().Set("Vary", "Origin")
-				c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-				c.Writer.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id")
+				setCORSResponseHeaders(c)
 			}
 		}
 		if c.Request.Method == "OPTIONS" {
@@ -36,4 +34,19 @@ func CORS(allowlist []string) gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+func setCORSResponseHeaders(c *gin.Context) {
+	c.Writer.Header().Set(
+		"Access-Control-Allow-Methods",
+		"GET, HEAD, POST, PUT, DELETE, OPTIONS",
+	)
+	c.Writer.Header().Set(
+		"Access-Control-Allow-Headers",
+		"Authorization, Content-Type, X-Request-Id",
+	)
+	c.Writer.Header().Set(
+		"Access-Control-Expose-Headers",
+		"Accept-Ranges, Content-Length, Content-Range, Content-Type",
+	)
 }

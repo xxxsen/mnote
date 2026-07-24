@@ -467,7 +467,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		webapi.WithExtraMiddlewares(
 			middleware.RequestID(),
 			middleware.CORS(cfg.CORS.AllowOrigins),
-			gzip.Gzip(gzip.DefaultCompression),
+			responseCompression(),
 		),
 	)
 	if err != nil {
@@ -481,6 +481,13 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 			service.NewAssetCleanupWorker(r.asset, store, services.runtime),
 		},
 		r,
+	)
+}
+
+func responseCompression() gin.HandlerFunc {
+	return gzip.Gzip(
+		gzip.DefaultCompression,
+		gzip.WithExcludedPaths([]string{"/api/v1/files/"}),
 	)
 }
 

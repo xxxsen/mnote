@@ -39,7 +39,7 @@ func TestFileHandler_Get_Success(t *testing.T) {
 func TestFileHandler_Get_NotFound(t *testing.T) {
 	store := &mockFileStore{
 		openFn: func(_ context.Context, _ string) (io.ReadCloser, error) {
-			return nil, errors.New("not found")
+			return nil, filestore.ErrObjectNotFound
 		},
 	}
 	h := &FileHandler{store: store}
@@ -163,6 +163,8 @@ func TestFileHandler_Get_ContentDisposition(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Header().Get("Content-Disposition"), "attachment")
+	assert.Equal(t, pdfSecurityPolicy, w.Header().Get("Content-Security-Policy"))
+	assert.Equal(t, "private, no-transform", w.Header().Get("Cache-Control"))
 }
 
 func TestFileHandler_Upload_SaveError(t *testing.T) {

@@ -1,7 +1,10 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/api", () => ({ apiFetch: vi.fn() }));
+vi.mock("@/lib/api", () => ({
+  apiFetch: vi.fn(),
+  resolveAPIURL: (endpoint: string) => `/api/v1${endpoint}`,
+}));
 vi.mock("@/lib/clipboard", () => ({ copyToClipboard: vi.fn() }));
 
 import { apiFetch } from "@/lib/api";
@@ -151,13 +154,32 @@ describe("useAssets", () => {
     await waitFor(() => { expect(result.current.selected).not.toBeNull(); });
 
     await act(async () => { await result.current.copyURL(); });
-    await waitFor(() => { expect(mockCopy).toHaveBeenCalledWith("/uploads/image.png"); });
+    await waitFor(() => { expect(mockCopy).toHaveBeenCalledWith("/api/v1/files/file-1"); });
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
 
     mockCopy.mockResolvedValue(true);
     await act(async () => { await result.current.copyMarkdown(); });
     await waitFor(() => {
-      expect(mockCopy).toHaveBeenCalledWith("![image.png](/uploads/image.png)");
+      expect(mockCopy).toHaveBeenCalledWith("![image.png](/api/v1/files/file-1)");
     });
+  });
+
+  it("never copies an S3 public URL when a file key is available", async () => {
+    mockCatalog([makeAsset({
+      file_key: "safe-file.pdf",
+      url: "https://s3.example.test/bucket/private-path.pdf",
+      name: "private-path.pdf",
+      content_type: "application/pdf",
+    })]);
+    mockCopy.mockResolvedValue(true);
+    const { result } = renderHook(() => useAssets(toast));
+    await waitFor(() => { expect(result.current.selected).not.toBeNull(); });
+
+    await act(async () => { await result.current.copyURL(); });
+    expect(mockCopy).toHaveBeenLastCalledWith("/api/v1/files/safe-file.pdf");
+    await act(async () => { await result.current.copyMarkdown(); });
+    expect(mockCopy).toHaveBeenLastCalledWith(
+      "![private-path.pdf](/api/v1/files/safe-file.pdf)",
+    );
   });
 });

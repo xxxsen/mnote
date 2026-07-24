@@ -29,6 +29,12 @@ func TestCORS_AllowAll(t *testing.T) {
 
 	assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
 	assert.Contains(t, w.Header().Get("Access-Control-Allow-Methods"), "GET")
+	assert.Contains(t, w.Header().Get("Access-Control-Allow-Methods"), "HEAD")
+	assert.Equal(
+		t,
+		"Accept-Ranges, Content-Length, Content-Range, Content-Type",
+		w.Header().Get("Access-Control-Expose-Headers"),
+	)
 }
 
 func TestCORS_AllowList_Matched(t *testing.T) {

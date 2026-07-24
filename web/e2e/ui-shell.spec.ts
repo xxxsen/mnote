@@ -62,7 +62,7 @@ test("tags have stable list and destructive confirmation visuals", async ({
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/tags");
-  await expect(page.getByRole("heading", { name: "Tags" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tags", exact: true })).toBeVisible();
   await expect(page.getByText("#product")).toBeVisible();
   await expect(page).toHaveScreenshot("tags-list.png", { animations: "disabled" });
 
@@ -76,7 +76,7 @@ test("settings and editor modes have stable desktop and mobile visuals", async (
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/settings");
-  await expect(page.getByRole("heading", { name: "Account settings" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Account settings", exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("settings-desktop.png", { animations: "disabled" });
 
   await page.goto("/docs/doc-1");

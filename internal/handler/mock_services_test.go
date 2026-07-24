@@ -706,6 +706,8 @@ func (m *mockTodoHandlerService) DeleteTodo(ctx context.Context, userID, todoID 
 type mockFileStore struct {
 	saveFn      func(ctx context.Context, key string, r filestore.ReadSeekCloser, size int64) error
 	openFn      func(ctx context.Context, key string) (io.ReadCloser, error)
+	statFn      func(ctx context.Context, key string) (filestore.ObjectInfo, error)
+	openRangeFn func(ctx context.Context, key string, value filestore.ByteRange) (io.ReadCloser, error)
 	deleteFn    func(ctx context.Context, key string) error
 	genRefFn    func(userID, filename string) string
 	genRefErr   error
@@ -724,6 +726,22 @@ func (m *mockFileStore) Open(ctx context.Context, key string) (io.ReadCloser, er
 		panic("mockFileStore.Open not configured")
 	}
 	return m.openFn(ctx, key)
+}
+
+func (m *mockFileStore) Stat(ctx context.Context, key string) (filestore.ObjectInfo, error) {
+	if m.statFn == nil {
+		panic("mockFileStore.Stat not configured")
+	}
+	return m.statFn(ctx, key)
+}
+
+func (m *mockFileStore) OpenRange(
+	ctx context.Context, key string, value filestore.ByteRange,
+) (io.ReadCloser, error) {
+	if m.openRangeFn == nil {
+		panic("mockFileStore.OpenRange not configured")
+	}
+	return m.openRangeFn(ctx, key, value)
 }
 
 func (m *mockFileStore) Delete(ctx context.Context, key string) error {
