@@ -60,7 +60,10 @@ export function AssetList({
           />
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div
+        data-testid="asset-list-scroll"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3"
+      >
         {initialError ? (
           <PageState
             kind="error"

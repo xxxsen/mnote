@@ -85,7 +85,7 @@ export function AssetDetail({
   }
   const url = resolveAssetURL(asset.url);
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 md:p-5">
       <div className="space-y-6">
         <section aria-labelledby="asset-preview-heading">
           <h2 id="asset-preview-heading" className="mb-3 text-base font-semibold">Preview</h2>

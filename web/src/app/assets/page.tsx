@@ -23,6 +23,7 @@ export default function AssetsPage() {
       width="wide"
     >
       <ResponsiveMasterDetail
+        className="md:h-[calc(100dvh-8rem)]"
         hasSelection={Boolean(assets.selected)}
         mobileDetailOpen={assets.mobileDetailOpen}
         listLabel="Assets"
