@@ -336,14 +336,6 @@ func TestTemplateService_CreateDocumentFromTemplate(t *testing.T) {
 			createFn:      func(context.Context, *model.Document) error { return nil },
 			updateLinksFn: func(context.Context, string, string, []string, int64) error { return nil },
 		}
-		summaries := &mockDocumentSummaryRepo{
-			getByDocIDFn: func(context.Context, string, string) (string, error) {
-				return "", appErr.ErrNotFound
-			},
-			listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
-				return nil, nil
-			},
-		}
 		versions := &mockVersionRepo{
 			createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
 			deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
@@ -352,7 +344,7 @@ func TestTemplateService_CreateDocumentFromTemplate(t *testing.T) {
 			deleteByDocFn: func(context.Context, string, string) error { return nil },
 			addFn:         func(context.Context, *model.DocumentTag) error { return nil },
 		}
-		docSvc := newDocSvc(docRepo, summaries, versions, tags, nil)
+		docSvc := newDocSvc(docRepo, versions, tags, nil)
 
 		tagRepoMock := &mockTagRepo{
 			listByIDsFn: func(context.Context, string, []string) ([]model.Tag, error) {
@@ -395,7 +387,7 @@ func TestTemplateService_CreateDocumentFromTemplate(t *testing.T) {
 			deleteByDocFn: func(context.Context, string, string) error { return nil },
 			addFn:         func(context.Context, *model.DocumentTag) error { return nil },
 		}
-		docSvc := newDocSvc(docRepo, noopSummaryRepo(), versions, dtags, nil)
+		docSvc := newDocSvc(docRepo, versions, dtags, nil)
 
 		svc := NewTemplateService(tplRepo, docSvc, nil, testRuntime())
 		doc, err := svc.CreateDocumentFromTemplate(context.Background(), "u1", CreateDocumentFromTemplateInput{
@@ -446,7 +438,7 @@ func TestTemplateService_CreateDocumentFromTemplate(t *testing.T) {
 				return nil
 			},
 		}
-		docSvc := newDocSvc(docRepo, noopSummaryRepo(), versions, dtags, nil)
+		docSvc := newDocSvc(docRepo, versions, dtags, nil)
 
 		tagRepoMock := &mockTagRepo{
 			listByIDsFn: func(context.Context, string, []string) ([]model.Tag, error) {

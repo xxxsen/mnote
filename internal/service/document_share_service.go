@@ -26,7 +26,7 @@ type PublicShareDetail struct {
 func (
 	s *DocumentService) ListSharedDocuments(ctx context.Context,
 	userID,
-	query string) ([]SharedDocumentSummary,
+	query string) ([]SharedDocumentListItem,
 	error,
 ) {
 	items, err := s.shares.ListActiveDocuments(ctx, userID, query, s.now())
@@ -41,18 +41,18 @@ func (
 	if err != nil {
 		return nil, fmt.Errorf("list tag ids by doc ids: %w", err)
 	}
-	results := make([]SharedDocumentSummary, 0, len(items))
+	results := make([]SharedDocumentListItem, 0, len(items))
 	for _, item := range items {
-		results = append(results, SharedDocumentSummary{
-			ID:            item.ID,
-			Title:         item.Title,
-			Summary:       item.Summary,
-			Mtime:         item.Mtime,
-			Token:         item.Token,
-			TagIDs:        tagIDsByDoc[item.ID],
-			ExpiresAt:     item.ExpiresAt,
-			Permission:    item.Permission,
-			AllowDownload: item.AllowDownload,
+		results = append(results, SharedDocumentListItem{
+			ID:             item.ID,
+			Title:          item.Title,
+			ContentPreview: item.ContentPreview,
+			Mtime:          item.Mtime,
+			Token:          item.Token,
+			TagIDs:         tagIDsByDoc[item.ID],
+			ExpiresAt:      item.ExpiresAt,
+			Permission:     item.Permission,
+			AllowDownload:  item.AllowDownload,
 		})
 	}
 	return results, nil
@@ -430,14 +430,14 @@ func (s *DocumentService) resolveCommentThread(
 	return target.RootID, replyToID, nil
 }
 
-type SharedDocumentSummary struct {
-	ID            string   `json:"id"`
-	Title         string   `json:"title"`
-	Summary       string   `json:"summary"`
-	Mtime         int64    `json:"mtime"`
-	Token         string   `json:"token"`
-	TagIDs        []string `json:"tag_ids"`
-	ExpiresAt     int64    `json:"expires_at"`
-	Permission    int      `json:"permission"`
-	AllowDownload int      `json:"allow_download"`
+type SharedDocumentListItem struct {
+	ID             string   `json:"id"`
+	Title          string   `json:"title"`
+	ContentPreview string   `json:"content_preview"`
+	Mtime          int64    `json:"mtime"`
+	Token          string   `json:"token"`
+	TagIDs         []string `json:"tag_ids"`
+	ExpiresAt      int64    `json:"expires_at"`
+	Permission     int      `json:"permission"`
+	AllowDownload  int      `json:"allow_download"`
 }

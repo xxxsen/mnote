@@ -2,7 +2,6 @@ package ai
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
@@ -13,17 +12,8 @@ import (
 	"github.com/xxxsen/mnote/internal/model"
 )
 
-type mockGenerator struct {
-	result string
-	err    error
-}
-
-func (m *mockGenerator) Generate(_ context.Context, _ string) (string, error) {
-	return m.result, m.err
-}
-
 func TestChunker_SimpleText(t *testing.T) {
-	c := NewChunker(nil)
+	c := NewChunker()
 	chunks, err := c.Chunk(context.Background(), "Hello world. This is a test document.")
 	require.NoError(t, err)
 	assert.NotEmpty(t, chunks)
@@ -32,7 +22,7 @@ func TestChunker_SimpleText(t *testing.T) {
 
 func TestChunker_Headings(t *testing.T) {
 	md := "# Title\n\nSome intro text\n\n## Section 1\n\nContent for section 1\n\n## Section 2\n\nContent for section 2"
-	c := NewChunker(nil)
+	c := NewChunker()
 	chunks, err := c.Chunk(context.Background(), md)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(chunks), 2)
@@ -40,7 +30,7 @@ func TestChunker_Headings(t *testing.T) {
 
 func TestChunker_CodeBlock(t *testing.T) {
 	md := "Some text\n\n```go\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n```\n\nMore text"
-	c := NewChunker(nil)
+	c := NewChunker()
 	chunks, err := c.Chunk(context.Background(), md)
 	require.NoError(t, err)
 	assert.NotEmpty(t, chunks)
@@ -56,7 +46,7 @@ func TestChunker_CodeBlock(t *testing.T) {
 }
 
 func TestChunker_EmptyInput(t *testing.T) {
-	c := NewChunker(nil)
+	c := NewChunker()
 	chunks, err := c.Chunk(context.Background(), "")
 	require.NoError(t, err)
 	assert.Empty(t, chunks)
@@ -83,7 +73,7 @@ func TestEstimateTokens(t *testing.T) {
 
 func TestExtractCodeLines(t *testing.T) {
 	md := "```go\nline1\nline2\n```"
-	c := NewChunker(nil)
+	c := NewChunker()
 	chunks, err := c.Chunk(context.Background(), md)
 	require.NoError(t, err)
 	assert.NotEmpty(t, chunks)
@@ -95,7 +85,7 @@ func TestChunker_LargeTextSplits(t *testing.T) {
 		parts = append(parts, "This is a sentence with enough words to count as tokens for the chunking logic.")
 	}
 	md := strings.Join(parts, "\n\n")
-	c := NewChunker(nil)
+	c := NewChunker()
 	chunks, err := c.Chunk(context.Background(), md)
 	require.NoError(t, err)
 	assert.Greater(t, len(chunks), 1, "should split into multiple chunks")
@@ -103,7 +93,7 @@ func TestChunker_LargeTextSplits(t *testing.T) {
 
 func TestChunker_HeadingLevels(t *testing.T) {
 	md := "# H1\n\nText under h1\n\n### H3\n\nText under h3\n\n## H2\n\nText under h2"
-	c := NewChunker(nil)
+	c := NewChunker()
 	chunks, err := c.Chunk(context.Background(), md)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(chunks), 2)
@@ -111,39 +101,10 @@ func TestChunker_HeadingLevels(t *testing.T) {
 
 func TestChunker_MixedCodeAndText(t *testing.T) {
 	md := "Some intro\n\n```python\nprint('hello')\n```\n\nMiddle text\n\n```js\nconsole.log('hi')\n```\n\nEnd text"
-	c := NewChunker(nil)
+	c := NewChunker()
 	chunks, err := c.Chunk(context.Background(), md)
 	require.NoError(t, err)
 	assert.NotEmpty(t, chunks)
-}
-
-func TestChunker_CodeSummary(t *testing.T) {
-	gen := &mockGenerator{result: "This function does X"}
-	c := NewChunker(gen)
-
-	var longCode strings.Builder
-	for range 100 {
-		longCode.WriteString("x := doSomething(a, b, c, d)\n")
-	}
-	md := "```go\n" + longCode.String() + "```"
-
-	chunks, err := c.Chunk(context.Background(), md)
-	require.NoError(t, err)
-	assert.NotEmpty(t, chunks)
-}
-
-func TestChunker_SummarizeCode_NilGen(t *testing.T) {
-	c := NewChunker(nil)
-	_, err := c.summarizeCode(context.Background(), "code")
-	assert.ErrorIs(t, err, ErrNotConfigured)
-}
-
-func TestChunker_SummarizeCode_Success(t *testing.T) {
-	gen := &mockGenerator{result: "summary of code"}
-	c := NewChunker(gen)
-	summary, err := c.summarizeCode(context.Background(), "func main() {}")
-	require.NoError(t, err)
-	assert.Equal(t, "summary of code", summary)
 }
 
 func TestEstimateTokens_SingleChar(t *testing.T) {
@@ -179,7 +140,7 @@ func TestChunkState_PreserveOverlap_Code(t *testing.T) {
 }
 
 func TestChunker_TextBlockOverflow(t *testing.T) {
-	c := NewChunker(nil)
+	c := NewChunker()
 	longParagraphs := make([]string, 0, 20)
 	for range 20 {
 		longParagraphs = append(longParagraphs, "Word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word.")
@@ -192,30 +153,15 @@ func TestChunker_TextBlockOverflow(t *testing.T) {
 
 func TestChunker_EmptyTextBlock(t *testing.T) {
 	md := "# Title\n\n\n\n## Section"
-	c := NewChunker(nil)
+	c := NewChunker()
 	chunks, err := c.Chunk(context.Background(), md)
 	require.NoError(t, err)
 	assert.Empty(t, chunks, "headings-only input produces no content chunks")
 }
 
-func TestChunker_CodeSummaryFail(t *testing.T) {
-	gen := &mockGenerator{err: errors.New("summary fail")}
-	c := NewChunker(gen)
-
-	var longCode strings.Builder
-	for range 100 {
-		longCode.WriteString("x := doSomething(a, b, c, d)\n")
-	}
-	md := "```go\n" + longCode.String() + "```"
-
-	chunks, err := c.Chunk(context.Background(), md)
-	require.NoError(t, err)
-	assert.NotEmpty(t, chunks)
-}
-
 func TestChunker_SmallCodeBlockMixed(t *testing.T) {
 	md := "Some intro text here with enough content to start a chunk.\n\n```go\nfmt.Println(\"short\")\n```"
-	c := NewChunker(nil)
+	c := NewChunker()
 	chunks, err := c.Chunk(context.Background(), md)
 	require.NoError(t, err)
 	assert.NotEmpty(t, chunks)
@@ -223,7 +169,7 @@ func TestChunker_SmallCodeBlockMixed(t *testing.T) {
 
 func TestChunker_CodeBlockNoLanguage(t *testing.T) {
 	md := "```\nplain code\n```"
-	c := NewChunker(nil)
+	c := NewChunker()
 	chunks, err := c.Chunk(context.Background(), md)
 	require.NoError(t, err)
 	assert.NotEmpty(t, chunks)
@@ -235,7 +181,7 @@ func TestChunker_TextThenOverflow(t *testing.T) {
 		parts = append(parts, "This is a moderately long sentence that should contribute many tokens for overflow testing purposes.")
 	}
 	md := "# Section\n\n" + strings.Join(parts, "\n\n")
-	c := NewChunker(nil)
+	c := NewChunker()
 	chunks, err := c.Chunk(context.Background(), md)
 	require.NoError(t, err)
 	assert.Greater(t, len(chunks), 1)
@@ -243,7 +189,7 @@ func TestChunker_TextThenOverflow(t *testing.T) {
 
 func TestChunker_MultipleH2Sections(t *testing.T) {
 	md := "## A\n\nText A\n\n## B\n\nText B\n\n## C\n\nText C"
-	c := NewChunker(nil)
+	c := NewChunker()
 	chunks, err := c.Chunk(context.Background(), md)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(chunks), 3)
@@ -257,12 +203,4 @@ func TestEstimateTokens_OnlyNonASCII(t *testing.T) {
 func TestEstimateTokens_WhitespaceOnly(t *testing.T) {
 	count := estimateTokens("   ")
 	assert.Equal(t, 1, count)
-}
-
-func TestGroupGenerator_AllNilNotConfigured(t *testing.T) {
-	gen := NewGroupGenerator([]GeneratorEntry{
-		{Name: "nil1", Generator: nil},
-	})
-	_, err := gen.Generate(context.Background(), "prompt")
-	assert.ErrorIs(t, err, ErrNotConfigured)
 }

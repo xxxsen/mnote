@@ -20,7 +20,6 @@ func TestTemplateServiceSystemVariables(t *testing.T) {
 	defer cleanup()
 
 	docRepo := repo.NewDocumentRepo(db)
-	summaryRepo := repo.NewDocumentSummaryRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
@@ -30,7 +29,7 @@ func TestTemplateServiceSystemVariables(t *testing.T) {
 	runtime := service.NewRuntime(repo.NewTransactor(db))
 
 	docs := service.NewDocumentService(
-		runtime, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo,
+		runtime, docRepo, versionRepo, docTagRepo, shareRepo,
 		tagRepo, userRepo, nil, 10, nil)
 
 	templates := service.NewTemplateService(templateRepo, docs, tagRepo, runtime)
@@ -58,7 +57,6 @@ func TestTemplateServiceCreateRejectsDeletedDefaultTags(t *testing.T) {
 	defer cleanup()
 
 	docRepo := repo.NewDocumentRepo(db)
-	summaryRepo := repo.NewDocumentSummaryRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
@@ -68,7 +66,7 @@ func TestTemplateServiceCreateRejectsDeletedDefaultTags(t *testing.T) {
 	runtime := service.NewRuntime(repo.NewTransactor(db))
 
 	docs := service.NewDocumentService(
-		runtime, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo,
+		runtime, docRepo, versionRepo, docTagRepo, shareRepo,
 		tagRepo, userRepo, nil, 10, nil)
 
 	templates := service.NewTemplateService(templateRepo, docs, tagRepo, runtime)

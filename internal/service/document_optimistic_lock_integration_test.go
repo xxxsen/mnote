@@ -22,7 +22,6 @@ func newIntegrationDocumentService(db *sql.DB) *service.DocumentService {
 	return service.NewDocumentService(
 		service.NewRuntime(repo.NewTransactor(db)),
 		repo.NewDocumentRepo(db),
-		repo.NewDocumentSummaryRepo(db),
 		repo.NewVersionRepo(db),
 		repo.NewDocumentTagRepo(db),
 		repo.NewShareRepo(db),
@@ -30,7 +29,6 @@ func newIntegrationDocumentService(db *sql.DB) *service.DocumentService {
 		repo.NewUserRepo(db),
 		nil,
 		10, nil)
-
 }
 
 func TestDocumentServiceOptimisticLockIntegration_SameBaseHasSingleWinner(t *testing.T) {
@@ -163,7 +161,6 @@ func TestDocumentServiceOptimisticLockIntegration_VersionFailureRollsBackDocumen
 	failing := service.NewDocumentService(
 		service.NewRuntime(repo.NewTransactor(db)),
 		repo.NewDocumentRepo(db),
-		repo.NewDocumentSummaryRepo(db),
 		failingVersionRepo{},
 		repo.NewDocumentTagRepo(db),
 		repo.NewShareRepo(db),

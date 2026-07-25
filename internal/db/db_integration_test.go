@@ -26,6 +26,34 @@ type integrationSchema struct {
 	name     string
 }
 
+const integrationExtensionLockKey int64 = 6_202_607_251
+
+func ensureIntegrationExtensions(t *testing.T, admin *sql.DB) {
+	t.Helper()
+	ctx := context.Background()
+	connection, err := admin.Conn(ctx)
+	require.NoError(t, err)
+	defer func() { _ = connection.Close() }()
+
+	_, err = connection.ExecContext(
+		ctx, "SELECT pg_advisory_lock($1)", integrationExtensionLockKey,
+	)
+	require.NoError(t, err)
+	defer func() {
+		_, unlockErr := connection.ExecContext(
+			ctx, "SELECT pg_advisory_unlock($1)", integrationExtensionLockKey,
+		)
+		assert.NoError(t, unlockErr)
+	}()
+
+	for _, extension := range []string{"vector", "pgcrypto"} {
+		query := "CREATE EXTENSION IF NOT EXISTS " +
+			pq.QuoteIdentifier(extension) + " WITH SCHEMA public"
+		_, err = connection.ExecContext(ctx, query)
+		require.NoError(t, err)
+	}
+}
+
 func integrationConfig(t *testing.T) Config {
 	t.Helper()
 	host := os.Getenv("TEST_DB_HOST")
@@ -62,6 +90,7 @@ func newIntegrationSchema(t *testing.T) *integrationSchema {
 	admin, err := Open(context.Background(), cfg)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
+	ensureIntegrationExtensions(t, admin)
 
 	random := make([]byte, 12)
 	_, err = rand.Read(random)
@@ -134,6 +163,76 @@ func TestApplyMigrationsIntegration_EmptySchema(t *testing.T) {
 	).Scan(&usersTable, &savedViewsTable))
 	assert.True(t, usersTable.Valid)
 	assert.False(t, savedViewsTable.Valid)
+}
+
+func TestApplyMigrationsIntegration_RemovesDocumentSummarySchema(t *testing.T) {
+	schema := newIntegrationSchema(t)
+	files, err := loadMigrationFiles()
+	require.NoError(t, err)
+	baseline := make([]migrationFile, 0, len(files)-1)
+	for _, file := range files {
+		if file.Version != "014_remove_document_summary" {
+			baseline = append(baseline, file)
+		}
+	}
+	conn, err := schema.database.Conn(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, applyMigrationsWithFiles(context.Background(), conn, baseline))
+	require.NoError(t, conn.Close())
+
+	_, err = schema.database.ExecContext(context.Background(), `
+		INSERT INTO users (id, email, email_normalized, password_hash, ctime, mtime)
+		VALUES ('user-1', 'user@example.test', 'user@example.test', 'hash', 1, 1);
+		INSERT INTO documents (
+			id, user_id, title, content, state, pinned, starred, ctime, mtime
+		) VALUES ('doc-1', 'user-1', 'title', 'content', 1, 0, 0, 1, 1);
+		INSERT INTO document_summaries (
+			document_id, user_id, summary, source_content_hash, status,
+			attempts, next_retry_at, locked_until, last_error, ctime, mtime
+		) VALUES ('doc-1', 'user-1', 'legacy summary', '', 'succeeded', 0, 0, 0, '', 1, 1);
+		INSERT INTO import_jobs (
+			id, user_id, source, status, ctime, mtime
+		) VALUES ('job-1', 'user-1', 'notes', 'ready', 1, 1);
+		INSERT INTO import_job_notes (
+			id, job_id, user_id, position, title, content, summary, ctime, mtime
+		) VALUES ('note-1', 'job-1', 'user-1', 0, 'title', 'content', 'legacy summary', 1, 1);
+	`)
+	require.NoError(t, err)
+
+	require.NoError(t, ApplyMigrations(schema.database))
+
+	var summaryTable sql.NullString
+	require.NoError(t, schema.database.QueryRowContext(
+		context.Background(),
+		"SELECT to_regclass(current_schema() || '.document_summaries')::text",
+	).Scan(&summaryTable))
+	assert.False(t, summaryTable.Valid)
+
+	var summaryColumnCount int
+	require.NoError(t, schema.database.QueryRowContext(
+		context.Background(),
+		`SELECT COUNT(*)
+		 FROM information_schema.columns
+		 WHERE table_schema = current_schema()
+		   AND table_name = 'import_job_notes'
+		   AND column_name = 'summary'`,
+	).Scan(&summaryColumnCount))
+	assert.Zero(t, summaryColumnCount)
+
+	var documentCount, importNoteCount, migrationCount int
+	require.NoError(t, schema.database.QueryRowContext(
+		context.Background(), "SELECT COUNT(*) FROM documents WHERE id = 'doc-1'",
+	).Scan(&documentCount))
+	require.NoError(t, schema.database.QueryRowContext(
+		context.Background(), "SELECT COUNT(*) FROM import_job_notes WHERE id = 'note-1' AND content = 'content'",
+	).Scan(&importNoteCount))
+	require.NoError(t, schema.database.QueryRowContext(
+		context.Background(),
+		"SELECT COUNT(*) FROM schema_migrations WHERE version = '014_remove_document_summary'",
+	).Scan(&migrationCount))
+	assert.Equal(t, 1, documentCount)
+	assert.Equal(t, 1, importNoteCount)
+	assert.Equal(t, 1, migrationCount)
 }
 
 func TestApplyMigrationsIntegration_CurrentProductionLedgerAddsOnlyBootstrap(t *testing.T) {

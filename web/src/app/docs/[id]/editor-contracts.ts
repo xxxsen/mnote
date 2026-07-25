@@ -13,8 +13,6 @@ import type { EmojiTab } from "./constants";
 import type { EditorContextRailController } from "./hooks/useEditorContextRail";
 import type { MarkdownCommand } from "./commands/markdown-commands";
 import type {
-  AIAction,
-  DiffLine,
   EditorSyncStatus,
   InlineTagDropdownItem,
   SimilarDoc,
@@ -165,44 +163,6 @@ export interface EditorTagContract {
   findExistingTagByName: (name: string) => Promise<Tag | null>;
 }
 
-export interface EditorAiContract {
-  aiModalOpen: boolean;
-  aiAction: AIAction | null;
-  aiLoading: boolean;
-  aiApplying: boolean;
-  aiPrompt: string;
-  aiResultText: string;
-  aiResultReady: boolean;
-  aiExistingTags: Tag[];
-  aiSuggestedTags: string[];
-  aiSelectedTags: string[];
-  aiRemovedTagIDs: string[];
-  aiError: string | null;
-  aiDiffLines: DiffLine[];
-  aiTitle: string;
-  aiAvailableSlots: number;
-  setAiPrompt: (prompt: string) => void;
-  closeAiModal: () => void;
-  handleAiPolish: (content: string) => Promise<void>;
-  handleAiGenerateOpen: () => void;
-  handleAiGenerate: () => Promise<void>;
-  handleAiRetry: () => Promise<void> | undefined;
-  handleAiSummary: (content: string) => Promise<void>;
-  handleAiTags: (content: string) => Promise<void>;
-  handleApplyAiSummary: (options: {
-    onApplied: (summary: string) => void;
-    onError: (message: string) => void;
-  }) => Promise<void>;
-  handleApplyAiTags: (options: {
-    findExistingTagByName: (name: string) => Promise<Tag | null>;
-    mergeTags: (tags: Tag[]) => void;
-    saveTagIDs: (tagIDs: string[]) => Promise<void>;
-    onError: (message: string) => void;
-  }) => Promise<void>;
-  toggleAiTag: (name: string) => void;
-  toggleExistingTag: (tagID: string) => void;
-}
-
 export interface EditorSimilarContract {
   similarDocs: SimilarDoc[];
   similarLoading: boolean;
@@ -236,11 +196,8 @@ export interface EditorCommandsContract {
   handleStarToggle: () => Promise<void>;
   handleExportMarkdown: () => void;
   handleExportConfluenceHTML: () => Promise<void>;
-  handleApplyAiText: () => void;
   handleRevert: (version: DocumentVersionSummary) => void;
   onCreateEditor: (view: EditorView) => void;
-  setSummary: (summary: string) => void;
-  setLastSavedAt: (timestamp: number) => void;
 }
 
 export interface EditorUiContract {
@@ -254,12 +211,10 @@ export interface EditorUiContract {
   share: EditorShareContract;
   quickOpen: EditorQuickOpenContract;
   tagState: EditorTagContract;
-  ai: EditorAiContract;
   sim: EditorSimilarContract;
   documentActions: {
     listVersions: () => Promise<DocumentVersionSummary[]>;
   };
-  summary: string;
   starred: number;
   currentThemeId: ThemeId;
   showDeleteConfirm: boolean;

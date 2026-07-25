@@ -21,7 +21,7 @@ export type ImportSource = "hedgedoc" | "notes";
 export type SharedItem = {
   id: string;
   title: string;
-  summary?: string;
+  content_preview: string;
   tag_ids?: string[];
   mtime: number;
   token: string;

@@ -471,7 +471,7 @@ func TestShareHandler_CreateComment_EmptyEmailValue(t *testing.T) {
 
 func TestShareHandler_List_Error(t *testing.T) {
 	mock := newShareDocMock()
-	mock.listSharedDocumentsFn = func(_ context.Context, _, _ string) ([]service.SharedDocumentSummary, error) {
+	mock.listSharedDocumentsFn = func(_ context.Context, _, _ string) ([]service.SharedDocumentListItem, error) {
 		return nil, errors.New("list error")
 	}
 	h := &ShareHandler{documents: mock}
@@ -488,8 +488,10 @@ func TestShareHandler_List_Error(t *testing.T) {
 
 func TestShareHandler_List_Success(t *testing.T) {
 	mock := newShareDocMock()
-	mock.listSharedDocumentsFn = func(_ context.Context, _, _ string) ([]service.SharedDocumentSummary, error) {
-		return []service.SharedDocumentSummary{{ID: "d1", Title: "Shared Doc"}}, nil
+	mock.listSharedDocumentsFn = func(_ context.Context, _, _ string) ([]service.SharedDocumentListItem, error) {
+		return []service.SharedDocumentListItem{{
+			ID: "d1", Title: "Shared Doc", ContentPreview: "Preview from content",
+		}}, nil
 	}
 	h := &ShareHandler{documents: mock}
 	r := newTestRouter()
@@ -500,4 +502,6 @@ func TestShareHandler_List_Success(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"content_preview":"Preview from content"`)
+	assert.NotContains(t, w.Body.String(), `"summary"`)
 }

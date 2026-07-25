@@ -20,25 +20,18 @@ import {
   Quote,
   Redo,
   Smile,
-  Sparkles,
   Strikethrough,
   Table as TableIcon,
-  Tags,
   Type,
   Underline as UnderlineIcon,
   Undo,
-  Wand2,
 } from "lucide-react";
 
 type EditorToolbarProps = {
   handleUndo: () => void;
   handleRedo: () => void;
   executeCommand: (command: MarkdownCommand) => void;
-  handleAiPolish: () => void;
-  handleAiGenerateOpen: () => void;
-  handleAiTags: () => void;
   handlePreviewOpen: () => void;
-  aiBusy: boolean;
   activePopover: "emoji" | "color" | "size" | null;
   setActivePopover: (v: "emoji" | "color" | "size" | null) => void;
   colorButtonRef: RefObject<HTMLButtonElement | null>;
@@ -52,11 +45,7 @@ export const EditorToolbar = memo(function EditorToolbar({
   handleUndo,
   handleRedo,
   executeCommand,
-  handleAiPolish,
-  handleAiGenerateOpen,
-  handleAiTags,
   handlePreviewOpen,
-  aiBusy,
   activePopover,
   setActivePopover,
   colorButtonRef,
@@ -196,19 +185,6 @@ export const EditorToolbar = memo(function EditorToolbar({
         <div className="w-px h-3 bg-border mx-1 shrink-0" />
 
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleAiPolish} aria-label="AI Polish" title="AI Polish" disabled={aiBusy}>
-            <Sparkles className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleAiGenerateOpen} aria-label="AI Generate" title="AI Generate" disabled={aiBusy}>
-            <Wand2 className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleAiTags} aria-label="AI Tags" title="AI Tags" disabled={aiBusy}>
-            <Tags className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-        <div className="w-px h-3 bg-border mx-1 shrink-0" />
-
-        <div className="flex items-center gap-0.5">
           <select
             value={currentTheme}
             onChange={(e) => onThemeChange(e.target.value as ThemeId)}
@@ -232,4 +208,3 @@ export const EditorToolbar = memo(function EditorToolbar({
     </div>
   );
 });
-

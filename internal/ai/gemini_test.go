@@ -13,12 +13,6 @@ func TestGeminiProvider_Name(t *testing.T) {
 	assert.Equal(t, "gemini", p.Name())
 }
 
-func TestGeminiProvider_Generate_EmptyKey(t *testing.T) {
-	p := &geminiProvider{}
-	_, err := p.Generate(context.Background(), "model", "prompt")
-	assert.ErrorIs(t, err, ErrUnavailable)
-}
-
 func TestGeminiProvider_Embed_EmptyKey(t *testing.T) {
 	p := &geminiProvider{}
 	_, err := p.Embed(context.Background(), "model", "text", "search")
@@ -34,9 +28,6 @@ func TestCreateGeminiFactory_EmptyKey(t *testing.T) {
 	p, err := createGeminiFactory(map[string]any{"api_key": ""})
 	require.NoError(t, err)
 	assert.Equal(t, "gemini", p.Name())
-
-	_, gErr := p.Generate(context.Background(), "m", "p")
-	assert.ErrorIs(t, gErr, ErrUnavailable)
 
 	_, eErr := p.Embed(context.Background(), "m", "t", "s")
 	assert.ErrorIs(t, eErr, ErrUnavailable)
@@ -57,12 +48,6 @@ func TestCreateGeminiFactory_RejectsUnknownConfig(t *testing.T) {
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown field")
-}
-
-func TestGeminiProvider_Generate_InvalidKey(t *testing.T) {
-	p := &geminiProvider{apiKey: "invalid-key"}
-	_, err := p.Generate(context.Background(), "gemini-pro", "hello")
-	assert.Error(t, err)
 }
 
 func TestGeminiProvider_Embed_InvalidKey(t *testing.T) {

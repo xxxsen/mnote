@@ -108,29 +108,6 @@ func (m *mockDocumentRepo) GetBacklinks(ctx context.Context, userID, targetID st
 	return m.getBacklinksFn(ctx, userID, targetID)
 }
 
-type mockDocumentSummaryRepo struct {
-	upsertFn               func(ctx context.Context, userID, docID, summary string, now int64) error
-	getByDocIDFn           func(ctx context.Context, userID, docID string) (string, error)
-	listByDocIDsFn         func(ctx context.Context, userID string, docIDs []string) (map[string]string, error)
-	listPendingDocumentsFn func(ctx context.Context, limit int, maxMtime int64) ([]model.Document, error)
-}
-
-func (m *mockDocumentSummaryRepo) Upsert(ctx context.Context, userID, docID, summary string, now int64) error {
-	return m.upsertFn(ctx, userID, docID, summary, now)
-}
-
-func (m *mockDocumentSummaryRepo) GetByDocID(ctx context.Context, userID, docID string) (string, error) {
-	return m.getByDocIDFn(ctx, userID, docID)
-}
-
-func (m *mockDocumentSummaryRepo) ListByDocIDs(ctx context.Context, userID string, docIDs []string) (map[string]string, error) {
-	return m.listByDocIDsFn(ctx, userID, docIDs)
-}
-
-func (m *mockDocumentSummaryRepo) ListPendingDocuments(ctx context.Context, limit int, maxMtime int64) ([]model.Document, error) {
-	return m.listPendingDocumentsFn(ctx, limit, maxMtime)
-}
-
 type mockVersionRepo struct {
 	createFn            func(ctx context.Context, version *model.DocumentVersion) error
 	getByVersionFn      func(ctx context.Context, userID, docID string, version int) (*model.DocumentVersion, error)

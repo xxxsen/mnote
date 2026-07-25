@@ -207,12 +207,8 @@ func (worker *ImportWorker) importNote(
 		return classifyImportNoteError(err)
 	}
 	if exists && job.Mode == model.ImportModeOverwrite {
-		var summary *string
-		if note.Summary != "" {
-			summary = &note.Summary
-		}
 		err := worker.imports.documents.Update(ctx, job.UserID, existingID, DocumentUpdateInput{
-			Title: note.Title, Content: note.Content, TagIDs: tagIDs, Summary: summary,
+			Title: note.Title, Content: note.Content, TagIDs: tagIDs,
 		})
 		if err != nil {
 			return classifyImportNoteError(err)
@@ -227,7 +223,7 @@ func (worker *ImportWorker) importNote(
 		title = worker.imports.appendSuffix(ctx, job.UserID, note.Title)
 	}
 	document, err := worker.imports.documents.Create(ctx, job.UserID, DocumentCreateInput{
-		Title: title, Content: note.Content, TagIDs: tagIDs, Summary: note.Summary,
+		Title: title, Content: note.Content, TagIDs: tagIDs,
 	})
 	if err != nil {
 		return classifyImportNoteError(err)

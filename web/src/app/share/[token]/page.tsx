@@ -68,15 +68,6 @@ export default function SharePage() {
             permissionHint={share.permissionHint}
           />
 
-          {share.doc.summary ? (
-            <ReadingSurface as="section" className="mb-8 p-6 shadow-none">
-              <h2 className="text-sm font-semibold">Summary</h2>
-              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
-                {share.doc.summary}
-              </p>
-            </ReadingSurface>
-          ) : null}
-
           <SharedContent
             previewRef={share.previewRef}
             content={share.doc.content}

@@ -66,7 +66,7 @@ function UploadStep({ importSource, importFileName, onImportFile }: {
             <code className="font-mono">###### tags:</code> and removed from note content.
           </>
         ) : (
-          <>Each JSON file must include title and content; summary and tag_list are optional.</>
+          <>Each JSON file must include title and content; tag_list is optional.</>
         )}
       </div>
     </div>
@@ -141,7 +141,7 @@ function DoneStep({ importReport }: { importReport: ImportReport }) {
   return (
     <div className="space-y-4">
       <DialogStatus variant={importReport.failed > 0 ? "info" : "success"}>
-        Import finished. Review the summary before returning to your notes.
+        Import finished. Review the report before returning to your notes.
       </DialogStatus>
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-border bg-muted/20 p-3">

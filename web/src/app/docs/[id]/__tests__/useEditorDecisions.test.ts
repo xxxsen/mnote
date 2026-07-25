@@ -11,7 +11,6 @@ function detail(content = "# Server\nbody", revision = 9): DocDetail {
       user_id: "u1",
       title: "Server",
       content,
-      summary: "",
       state: 1,
       pinned: 0,
       starred: 0,

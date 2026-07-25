@@ -9,15 +9,13 @@ import { PageState } from "@/components/ui/page-state";
 import { buildOutline } from "@/components/markdown-preview/helpers";
 import type { DocDetail } from "../types";
 
-import { MAX_TAGS } from "../constants";
-import { extractTitleFromContent, downloadFile, normalizeTagName, isValidTagName } from "../utils";
+import { extractTitleFromContent, downloadFile } from "../utils";
 
 import { useDocumentActions } from "../hooks/useDocumentActions";
 import { useTagActions } from "../hooks/useTagActions";
 import { useQuickOpen } from "../hooks/useQuickOpen";
 import { useShareLink } from "../hooks/useShareLink";
 import { usePreviewDoc } from "../hooks/usePreviewDoc";
-import { useAiAssistant } from "../hooks/useAiAssistant";
 import { useSimilarDocs } from "../hooks/useSimilarDocs";
 import { useEditorLifecycle } from "../hooks/useEditorLifecycle";
 import { useEditorSession } from "../hooks/useEditorSession";
@@ -58,7 +56,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const setPasteHandler = useCallback((handler: (event: ClipboardEvent) => void) => { pasteHandlerRef.current = handler; }, []);
   const setKeydownHandler = useCallback((handler: (event: KeyboardEvent) => void) => { editorKeydownHandlerRef.current = handler; }, []);
 
-  const [summary, setSummary] = useState("");
   const [starred, setStarred] = useState(0);
   const [loading, setLoading] = useState(true);
   const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(loadThemePreference);
@@ -70,9 +67,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const documentActions = useDocumentActions(docId);
   const decisionState = useEditorDecisionState(documentActions);
   const tagActionsHook = useTagActions(docId);
-
-  const notifyAi = useCallback((message: string) => { toast({ description: message }); }, [toast]);
-  const ai = useAiAssistant({ docId, maxTags: MAX_TAGS, normalizeTagName, isValidTagName, notify: notifyAi });
 
   const session = useEditorSession({
     enabled: !loading && decisionState.draftRecovery === null,
@@ -132,7 +126,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const initializeLoaded = (initialContent: string, detail: DocDetail, hasDraftOverride: boolean) => {
     ec.publishContent(initialContent, true);
     ec.setHasUnsavedChanges(hasDraftOverride);
-    setSummary(detail.document.summary || ""); setStarred(detail.document.starred || 0);
+    setStarred(detail.document.starred || 0);
     tagState.setSelectedTagIDs(detail.tag_ids); tagState.setAllTags(detail.tags ?? []);
     saveQueue.resyncRevision({
       revision: detail.document.content_revision || 1,
@@ -175,7 +169,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
     extractTitle: extractTitleFromContent,
     notify: (message, error) => toast({ description: message, variant: error ? "error" : "default" }),
     navigate, navigateWithoutFlush: (path) => router.push(path), discardLocalDraft: removeLocalDraft,
-    saveQueue, documentActions, ai, applyContent: ec.applyContent,
+    saveQueue, documentActions,
   });
 
   const handleResolveConflict = useCallback(() => {
@@ -221,12 +215,12 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         handleThemeChange: pageActions.handleThemeChange, handleSave: pageActions.handleSave,
         handleRetry: pageActions.handleRetry, handleResolveConflict, handleDelete: pageActions.handleDelete,
         handleStarToggle: pageActions.handleStarToggle, handleExportMarkdown: pageActions.handleExportMarkdown,
-        handleExportConfluenceHTML: pageActions.handleExportConfluenceHTML, handleApplyAiText: pageActions.handleApplyAiText,
-        handleRevert: pageActions.handleRevert, onCreateEditor, setSummary, setLastSavedAt,
+        handleExportConfluenceHTML: pageActions.handleExportConfluenceHTML,
+        handleRevert: pageActions.handleRevert, onCreateEditor,
       }}
       ui={{
-        navigate, toast, linkGraphHook, outline, contextRail, inlineTag, preview, share, quickOpen, tagState, ai, sim, documentActions,
-        summary, starred, currentThemeId,
+        navigate, toast, linkGraphHook, outline, contextRail, inlineTag, preview, share, quickOpen, tagState, sim, documentActions,
+        starred, currentThemeId,
         showDeleteConfirm, setShowDeleteConfirm, showPreviewModal, setShowPreviewModal,
         viewMode: viewPrefs.viewMode, setViewMode: viewPrefs.setViewMode,
         splitRatio: viewPrefs.splitRatio, setSplitRatio: viewPrefs.setSplitRatio,

@@ -26,7 +26,7 @@ type RouterDeps struct {
 	Tags            *TagHandler
 	Export          *ExportHandler
 	Files           *FileHandler
-	AI              *AIHandler
+	SemanticSearch  *SemanticSearchHandler
 	Import          *ImportHandler
 	Templates       *TemplateHandler
 	Assets          *AssetHandler
@@ -49,7 +49,7 @@ func (deps RouterDeps) Validate() error {
 		{name: "tags", dependency: deps.Tags},
 		{name: "export", dependency: deps.Export},
 		{name: "files", dependency: deps.Files},
-		{name: "ai", dependency: deps.AI},
+		{name: "semantic search", dependency: deps.SemanticSearch},
 		{name: "import", dependency: deps.Import},
 		{name: "templates", dependency: deps.Templates},
 		{name: "assets", dependency: deps.Assets},
@@ -119,7 +119,6 @@ func registerDocumentRoutes(g *gin.RouterGroup, deps RouterDeps) {
 	g.GET("/documents/:id", deps.Documents.Get)
 	g.PUT("/documents/:id", deps.Documents.Update)
 	g.PUT("/documents/:id/tags", deps.Documents.UpdateTags)
-	g.PUT("/documents/:id/summary", deps.Documents.UpdateSummary)
 	g.PUT("/documents/:id/pin", deps.Documents.Pin)
 	g.PUT("/documents/:id/star", deps.Documents.Star)
 	g.DELETE("/documents/:id", deps.Documents.Delete)
@@ -145,11 +144,7 @@ func registerFeatureRoutes(g *gin.RouterGroup, deps RouterDeps) {
 	g.GET("/export/notes", deps.Export.ExportNotes)
 	g.POST("/export/confluence-html", deps.Export.ConvertMarkdownToConfluenceHTML)
 	g.POST("/files/upload", deps.Files.Upload)
-	g.POST("/ai/polish", deps.AI.Polish)
-	g.POST("/ai/generate", deps.AI.Generate)
-	g.POST("/ai/summary", deps.AI.Summary)
-	g.POST("/ai/tags", deps.AI.Tags)
-	g.GET("/ai/search", deps.AI.Search)
+	g.GET("/ai/search", deps.SemanticSearch.Search)
 	g.POST("/import/hedgedoc/upload", deps.Import.HedgeDocUpload)
 	g.GET("/import/hedgedoc/:job_id/preview", deps.Import.HedgeDocPreview)
 	g.POST("/import/hedgedoc/:job_id/confirm", deps.Import.HedgeDocConfirm)

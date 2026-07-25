@@ -44,7 +44,7 @@ type documentLookupService interface {
 	Search(ctx context.Context, userID, query, tagID string,
 		starred *int, limit, offset uint, orderBy string) ([]model.Document, error)
 	Get(ctx context.Context, userID, docID string) (*model.Document, error)
-	Summary(ctx context.Context, userID string, limit uint) (*service.DocumentSummary, error)
+	Overview(ctx context.Context, userID string, limit uint) (*service.DocumentOverview, error)
 	GetBacklinks(ctx context.Context, userID, docID string) ([]model.Document, error)
 }
 
@@ -59,7 +59,6 @@ type documentContentWriteService interface {
 	Save(ctx context.Context, userID, docID string,
 		input service.DocumentUpdateInput) (*model.SaveDocumentResult, error)
 	UpdateTags(ctx context.Context, userID, docID string, tagIDs []string) error
-	UpdateSummary(ctx context.Context, userID, docID, summary string) error
 }
 
 type documentMetadataWriteService interface {
@@ -99,7 +98,7 @@ type publicShareService interface {
 type IShareHandlerService interface {
 	shareConfigService
 	publicShareService
-	ListSharedDocuments(ctx context.Context, userID, query string) ([]service.SharedDocumentSummary, error)
+	ListSharedDocuments(ctx context.Context, userID, query string) ([]service.SharedDocumentListItem, error)
 }
 
 type ISemanticSearchHandlerService interface {
@@ -128,21 +127,10 @@ type ITagService interface {
 	tagQueryService
 }
 
-type IAITagLookupService interface {
-	ListByIDs(ctx context.Context, userID string, ids []string) ([]model.Tag, error)
-}
-
 type IExportService interface {
 	Export(ctx context.Context, userID string) (*service.ExportPayload, error)
 	ExportNotesZip(ctx context.Context, userID string) (string, error)
 	ConvertMarkdownToConfluenceHTML(ctx context.Context, userID, docID string) (string, error)
-}
-
-type IAIHandlerService interface {
-	Polish(ctx context.Context, input string) (string, error)
-	Generate(ctx context.Context, prompt string) (string, error)
-	Summarize(ctx context.Context, input string) (string, error)
-	ExtractTags(ctx context.Context, input string, maxTags int) ([]string, error)
 }
 
 type IImportHandlerService interface {

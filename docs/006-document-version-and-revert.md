@@ -13,7 +13,7 @@
 3. 基准一致时，由服务端生成 `new_revision = current + 1`。
 4. 更新正文、标题、hash、正文修改时间和修订号。
 5. 使用同一 `new_revision` 写入历史版本。
-6. 同一事务重建标签、链接和资产关系，并更新 embedding、摘要等待处理状态。
+6. 同一事务重建标签、链接和资产关系，并把 Embedding 状态标记为待处理。
 
 基准不一致时返回 `accepted=false`、`reason=revision_conflict` 和当前元数据，不修改任何表，也不产生版本。
 

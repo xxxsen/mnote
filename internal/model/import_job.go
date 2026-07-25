@@ -59,7 +59,6 @@ func (status ImportNoteStatus) Valid() bool {
 type ImportNote struct {
 	Title   string   `json:"title"`
 	Content string   `json:"content"`
-	Summary string   `json:"summary"`
 	Tags    []string `json:"tags"`
 	Source  string   `json:"source"`
 }
@@ -99,7 +98,6 @@ type ImportJobNote struct {
 	Position         int
 	Title            string
 	Content          string
-	Summary          string
 	Tags             []string
 	Source           string
 	Status           ImportNoteStatus

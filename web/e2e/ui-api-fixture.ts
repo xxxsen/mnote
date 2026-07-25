@@ -36,7 +36,6 @@ const documentFixture = {
     "",
     "Measure the experience after release.",
   ].join("\n"),
-  summary: "Launch decisions and follow-up actions.",
   state: 1,
   pinned: 1,
   starred: 1,
@@ -330,7 +329,7 @@ async function handlePublicShare(route: Route, url: URL) {
 
 async function handleDocuments(route: Route, url: URL, method: string, state: UiApiState) {
   const path = url.pathname;
-  if (path.endsWith("/summary")) {
+  if (method === "GET" && path === "/api/v1/documents/summary") {
     return ok(route, {
       recent: state.docsEmpty ? [] : [documentFixture],
       tag_counts: { "tag-1": 1 },

@@ -299,34 +299,6 @@ func TestDocumentHandler_UpdateTags_NilTagIDs(t *testing.T) {
 	assert.NotEqual(t, float64(0), resp["code"])
 }
 
-func TestDocumentHandler_UpdateSummary_Success(t *testing.T) {
-	mock := newDocMock()
-	mock.updateSummaryFn = func(_ context.Context, _, _, _ string) error { return nil }
-	h := &DocumentHandler{documents: mock}
-	r := newTestRouter()
-	r.PUT("/documents/:id/summary", withUserID("u1"), h.UpdateSummary)
-
-	w := httptest.NewRecorder()
-	s := "A short summary"
-	req := jsonRequestT(t, "PUT", "/documents/d1/summary", summaryUpdateRequest{Summary: &s})
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-}
-
-func TestDocumentHandler_UpdateSummary_NilSummary(t *testing.T) {
-	h := &DocumentHandler{documents: newDocMock()}
-	r := newTestRouter()
-	r.PUT("/documents/:id/summary", withUserID("u1"), h.UpdateSummary)
-
-	w := httptest.NewRecorder()
-	req := jsonRequestT(t, "PUT", "/documents/d1/summary", summaryUpdateRequest{})
-	r.ServeHTTP(w, req)
-
-	resp := parseResponseT(t, w)
-	assert.NotEqual(t, float64(0), resp["code"])
-}
-
 func TestDocumentHandler_Pin_Success(t *testing.T) {
 	mock := newDocMock()
 	mock.updatePinnedFn = func(_ context.Context, _, _ string, pinned int) error {
@@ -377,8 +349,8 @@ func TestDocumentHandler_Delete_Success(t *testing.T) {
 
 func TestDocumentHandler_Summary_Success(t *testing.T) {
 	mock := newDocMock()
-	mock.summaryFn = func(_ context.Context, _ string, _ uint) (*service.DocumentSummary, error) {
-		return &service.DocumentSummary{
+	mock.overviewFn = func(_ context.Context, _ string, _ uint) (*service.DocumentOverview, error) {
+		return &service.DocumentOverview{
 			Recent: []model.Document{{ID: "d1"}},
 			Total:  5, StarredTotal: 2,
 			TagCounts: map[string]int{"t1": 3},
@@ -397,9 +369,9 @@ func TestDocumentHandler_Summary_Success(t *testing.T) {
 
 func TestDocumentHandler_Summary_WithLimit(t *testing.T) {
 	mock := newDocMock()
-	mock.summaryFn = func(_ context.Context, _ string, limit uint) (*service.DocumentSummary, error) {
+	mock.overviewFn = func(_ context.Context, _ string, limit uint) (*service.DocumentOverview, error) {
 		assert.Equal(t, uint(10), limit)
-		return &service.DocumentSummary{TagCounts: map[string]int{}}, nil
+		return &service.DocumentOverview{TagCounts: map[string]int{}}, nil
 	}
 	h := &DocumentHandler{documents: mock}
 	r := newTestRouter()
@@ -451,24 +423,6 @@ func TestDocumentHandler_Backlinks_Empty(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/documents/d1/backlinks", nil)
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-}
-
-func TestDocumentHandler_Create_WithSummary(t *testing.T) {
-	mock := newDocMock()
-	mock.createFn = func(_ context.Context, _ string, input service.DocumentCreateInput) (*model.Document, error) {
-		assert.Equal(t, "my summary", input.Summary)
-		return &model.Document{ID: "d1"}, nil
-	}
-	h := &DocumentHandler{documents: mock}
-	r := newTestRouter()
-	r.POST("/documents", withUserID("u1"), h.Create)
-
-	w := httptest.NewRecorder()
-	s := "my summary"
-	req := jsonRequestT(t, "POST", "/documents", documentRequest{Title: "T", Summary: &s})
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -737,24 +691,6 @@ func TestDocumentHandler_UpdateTags_ServiceError(t *testing.T) {
 	assert.NotEqual(t, float64(0), resp["code"])
 }
 
-func TestDocumentHandler_UpdateSummary_ServiceError(t *testing.T) {
-	mock := newDocMock()
-	mock.updateSummaryFn = func(_ context.Context, _, _, _ string) error {
-		return errors.New("summary update error")
-	}
-	h := &DocumentHandler{documents: mock}
-	r := newTestRouter()
-	r.PUT("/documents/:id/summary", withUserID("u1"), h.UpdateSummary)
-
-	w := httptest.NewRecorder()
-	s := "summary"
-	req := jsonRequestT(t, "PUT", "/documents/d1/summary", summaryUpdateRequest{Summary: &s})
-	r.ServeHTTP(w, req)
-
-	resp := parseResponseT(t, w)
-	assert.NotEqual(t, float64(0), resp["code"])
-}
-
 func TestDocumentHandler_Pin_Unpin(t *testing.T) {
 	mock := newDocMock()
 	mock.updatePinnedFn = func(_ context.Context, _, _ string, pinned int) error {
@@ -840,8 +776,8 @@ func TestDocumentHandler_Delete_Error(t *testing.T) {
 
 func TestDocumentHandler_Summary_Error(t *testing.T) {
 	mock := newDocMock()
-	mock.summaryFn = func(_ context.Context, _ string, _ uint) (*service.DocumentSummary, error) {
-		return nil, errors.New("summary error")
+	mock.overviewFn = func(_ context.Context, _ string, _ uint) (*service.DocumentOverview, error) {
+		return nil, errors.New("overview error")
 	}
 	h := &DocumentHandler{documents: mock}
 	r := newTestRouter()
@@ -957,25 +893,11 @@ func TestDocumentHandler_UpdateTags_InvalidJSON(t *testing.T) {
 	assert.NotEqual(t, float64(0), resp["code"])
 }
 
-func TestDocumentHandler_UpdateSummary_InvalidJSON(t *testing.T) {
-	h := &DocumentHandler{documents: newDocMock()}
-	r := newTestRouter()
-	r.PUT("/documents/:id/summary", withUserID("u1"), h.UpdateSummary)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("PUT", "/documents/d1/summary", nil)
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	resp := parseResponseT(t, w)
-	assert.NotEqual(t, float64(0), resp["code"])
-}
-
 func TestDocumentHandler_Summary_InvalidLimit(t *testing.T) {
 	mock := newDocMock()
-	mock.summaryFn = func(_ context.Context, _ string, limit uint) (*service.DocumentSummary, error) {
+	mock.overviewFn = func(_ context.Context, _ string, limit uint) (*service.DocumentOverview, error) {
 		assert.Equal(t, uint(5), limit)
-		return &service.DocumentSummary{TagCounts: map[string]int{}}, nil
+		return &service.DocumentOverview{TagCounts: map[string]int{}}, nil
 	}
 	h := &DocumentHandler{documents: mock}
 	r := newTestRouter()

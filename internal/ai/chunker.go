@@ -14,12 +14,10 @@ import (
 	"github.com/xxxsen/mnote/internal/model"
 )
 
-type Chunker struct {
-	gen IGenerator
-}
+type Chunker struct{}
 
-func NewChunker(gen IGenerator) *Chunker {
-	return &Chunker{gen: gen}
+func NewChunker() *Chunker {
+	return &Chunker{}
 }
 
 type chunkState struct {
@@ -111,7 +109,7 @@ func (c *Chunker) Chunk(
 	logger.Info("starting markdown chunking", zap.Int("size", len(markdown)))
 
 	for node := doc.FirstChild(); node != nil; node = node.NextSibling() {
-		if err := c.processNode(ctx, node, source, state, logger); err != nil {
+		if err := c.processNode(node, source, state, logger); err != nil {
 			return nil, err
 		}
 	}
@@ -121,7 +119,6 @@ func (c *Chunker) Chunk(
 }
 
 func (c *Chunker) processNode(
-	ctx context.Context,
 	node ast.Node,
 	source []byte,
 	state *chunkState,
@@ -131,7 +128,7 @@ func (c *Chunker) processNode(
 	case *ast.Heading:
 		return c.processHeading(n, source, state, logger)
 	case *ast.FencedCodeBlock:
-		return c.processCodeBlock(ctx, n, source, state, logger)
+		return c.processCodeBlock(n, source, state, logger)
 	default:
 		return c.processTextBlock(n, source, state, logger)
 	}
@@ -162,7 +159,6 @@ func (c *Chunker) processHeading(
 }
 
 func (c *Chunker) processCodeBlock(
-	ctx context.Context,
 	n *ast.FencedCodeBlock,
 	source []byte,
 	state *chunkState,
@@ -178,12 +174,6 @@ func (c *Chunker) processCodeBlock(
 		zap.String("lang", lang), zap.Int("tokens", tokens),
 	)
 
-	if tokens > 300 {
-		if handled := c.tryCodeSummary(ctx, code, lang, tokens, state, logger); handled {
-			return nil
-		}
-	}
-
 	if state.currentTokens > 0 && state.currentTokens+tokens <= 400 {
 		state.currentChunk = append(state.currentChunk, "```"+lang+"\n"+code+"\n```")
 		state.currentTokens += tokens
@@ -198,33 +188,6 @@ func (c *Chunker) processCodeBlock(
 		state.flush(logger)
 	}
 	return nil
-}
-
-func (c *Chunker) tryCodeSummary(
-	ctx context.Context,
-	code, lang string,
-	tokens int,
-	state *chunkState,
-	logger *zap.Logger,
-) bool {
-	logger.Info("long code block, generating summary", zap.Int("tokens", tokens))
-	summary, err := c.summarizeCode(ctx, code)
-	if err != nil {
-		logger.Warn("failed to summarize code block", zap.Error(err))
-		return false
-	}
-	state.flush(logger)
-	state.chunks = append(state.chunks, &model.ChunkEmbedding{
-		Content: fmt.Sprintf(
-			"[chunk_type=code]\n[language=%s]\n[code_summary]\n%s",
-			lang, summary,
-		),
-		TokenCount: estimateTokens(summary),
-		ChunkType:  model.ChunkTypeCode,
-		Position:   state.position,
-	})
-	state.position++
-	return true
 }
 
 func (*Chunker) processTextBlock(
@@ -256,21 +219,6 @@ func extractCodeLines(n *ast.FencedCodeBlock, source []byte) string {
 		code += string(line.Value(source))
 	}
 	return code
-}
-
-func (c *Chunker) summarizeCode(
-	ctx context.Context, code string,
-) (string, error) {
-	if c.gen == nil {
-		return "", ErrNotConfigured
-	}
-	prompt := "Summarize the following code block in 1-2 sentences. " +
-		"Focus on its purpose and key logic.\n\nCODE:\n" + code
-	res, err := c.gen.Generate(ctx, prompt)
-	if err != nil {
-		return "", fmt.Errorf("summarize code: %w", err)
-	}
-	return res, nil
 }
 
 func estimateTokens(text string) int {

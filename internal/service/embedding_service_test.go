@@ -14,47 +14,26 @@ import (
 	"github.com/xxxsen/mnote/internal/repo"
 )
 
-type mockAIManager struct {
-	polishFn       func(ctx context.Context, text string) (string, error)
-	generateFn     func(ctx context.Context, desc string) (string, error)
-	extractTagsFn  func(ctx context.Context, text string, maxTags int) ([]string, error)
-	summarizeFn    func(ctx context.Context, text string) (string, error)
-	embedFn        func(ctx context.Context, text, taskType string) ([]float32, error)
-	maxInputCharFn func() int
+type mockEmbedder struct {
+	embedFn func(ctx context.Context, text, taskType string) ([]float32, error)
 }
 
-func (m *mockAIManager) Polish(ctx context.Context, text string) (string, error) {
-	return m.polishFn(ctx, text)
-}
-
-func (m *mockAIManager) Generate(ctx context.Context, desc string) (string, error) {
-	return m.generateFn(ctx, desc)
-}
-
-func (m *mockAIManager) ExtractTags(ctx context.Context, text string, maxTags int) ([]string, error) {
-	return m.extractTagsFn(ctx, text, maxTags)
-}
-
-func (m *mockAIManager) Summarize(ctx context.Context, text string) (string, error) {
-	return m.summarizeFn(ctx, text)
-}
-
-func (m *mockAIManager) Embed(ctx context.Context, text, taskType string) ([]float32, error) {
+func (m *mockEmbedder) Embed(ctx context.Context, text, taskType string) ([]float32, error) {
+	if m.embedFn == nil {
+		return nil, nil
+	}
 	return m.embedFn(ctx, text, taskType)
 }
 
-func (m *mockAIManager) MaxInputChars() int {
-	if m.maxInputCharFn != nil {
-		return m.maxInputCharFn()
-	}
-	return 0
+func (m *mockEmbedder) ModelName() string {
+	return "test-embedding"
 }
 
-type mockAIChunker struct {
+type mockEmbeddingChunker struct {
 	chunkFn func(ctx context.Context, markdown string) ([]*model.ChunkEmbedding, error)
 }
 
-func (m *mockAIChunker) Chunk(ctx context.Context, markdown string) ([]*model.ChunkEmbedding, error) {
+func (m *mockEmbeddingChunker) Chunk(ctx context.Context, markdown string) ([]*model.ChunkEmbedding, error) {
 	return m.chunkFn(ctx, markdown)
 }
 
@@ -171,296 +150,44 @@ func (m *mockEmbeddingRepo) CompleteEmbeddingIfCurrent(
 	return m.completeEmbeddingIfCurrentFn(ctx, userID, docID, expectedHash, chunks, now)
 }
 
-func newTestAIService(mgr *mockAIManager, emb *mockEmbeddingRepo, chunker *mockAIChunker) *AIService {
-	return newAIServiceFromInterfaces(mgr, emb, chunker)
+func newTestEmbeddingService(mgr *mockEmbedder, emb *mockEmbeddingRepo, chunker *mockEmbeddingChunker) *EmbeddingService {
+	return newEmbeddingServiceFromInterfaces(mgr, emb, chunker)
 }
 
-func TestAIService_Polish(t *testing.T) {
+func TestEmbeddingService_Embed(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		mgr := &mockAIManager{
-			polishFn: func(_ context.Context, text string) (string, error) {
-				return "polished: " + text, nil
-			},
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		result, err := svc.Polish(context.Background(), "hello world")
-		require.NoError(t, err)
-		assert.Equal(t, "polished: hello world", result)
-	})
-
-	t.Run("empty_input", func(t *testing.T) {
-		mgr := &mockAIManager{
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		result, err := svc.Polish(context.Background(), "   ")
-		require.NoError(t, err)
-		assert.Empty(t, result)
-	})
-
-	t.Run("cached", func(t *testing.T) {
-		callCount := 0
-		mgr := &mockAIManager{
-			polishFn: func(_ context.Context, _ string) (string, error) {
-				callCount++
-				return "polished", nil
-			},
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		_, err := svc.Polish(context.Background(), "test")
-		require.NoError(t, err)
-		result, err := svc.Polish(context.Background(), "test")
-		require.NoError(t, err)
-		assert.Equal(t, "polished", result)
-		assert.Equal(t, 1, callCount)
-	})
-
-	t.Run("error", func(t *testing.T) {
-		mgr := &mockAIManager{
-			polishFn: func(context.Context, string) (string, error) {
-				return "", errors.New("ai error")
-			},
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		_, err := svc.Polish(context.Background(), "test")
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "polish")
-	})
-}
-
-func TestAIService_Generate(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		mgr := &mockAIManager{
-			generateFn: func(_ context.Context, desc string) (string, error) {
-				return "generated: " + desc, nil
-			},
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		result, err := svc.Generate(context.Background(), "write about Go")
-		require.NoError(t, err)
-		assert.Equal(t, "generated: write about Go", result)
-	})
-
-	t.Run("empty_input", func(t *testing.T) {
-		mgr := &mockAIManager{
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		_, err := svc.Generate(context.Background(), "  ")
-		assert.ErrorIs(t, err, errInputTextEmpty)
-	})
-
-	t.Run("cached", func(t *testing.T) {
-		callCount := 0
-		mgr := &mockAIManager{
-			generateFn: func(context.Context, string) (string, error) {
-				callCount++
-				return "article", nil
-			},
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		_, err := svc.Generate(context.Background(), "topic")
-		require.NoError(t, err)
-		result, err := svc.Generate(context.Background(), "topic")
-		require.NoError(t, err)
-		assert.Equal(t, "article", result)
-		assert.Equal(t, 1, callCount)
-	})
-
-	t.Run("error", func(t *testing.T) {
-		mgr := &mockAIManager{
-			generateFn: func(context.Context, string) (string, error) {
-				return "", errors.New("fail")
-			},
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		_, err := svc.Generate(context.Background(), "test")
-		assert.Error(t, err)
-	})
-}
-
-func TestAIService_Summarize(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		mgr := &mockAIManager{
-			summarizeFn: func(_ context.Context, text string) (string, error) {
-				return "summary of: " + text, nil
-			},
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		result, err := svc.Summarize(context.Background(), "long text here")
-		require.NoError(t, err)
-		assert.Equal(t, "summary of: long text here", result)
-	})
-
-	t.Run("empty_input", func(t *testing.T) {
-		mgr := &mockAIManager{
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		result, err := svc.Summarize(context.Background(), "")
-		require.NoError(t, err)
-		assert.Empty(t, result)
-	})
-
-	t.Run("cached", func(t *testing.T) {
-		callCount := 0
-		mgr := &mockAIManager{
-			summarizeFn: func(context.Context, string) (string, error) {
-				callCount++
-				return "cached summary", nil
-			},
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		_, _ = svc.Summarize(context.Background(), "input")
-		result, err := svc.Summarize(context.Background(), "input")
-		require.NoError(t, err)
-		assert.Equal(t, "cached summary", result)
-		assert.Equal(t, 1, callCount)
-	})
-
-	t.Run("error", func(t *testing.T) {
-		mgr := &mockAIManager{
-			summarizeFn: func(context.Context, string) (string, error) {
-				return "", errors.New("fail")
-			},
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		_, err := svc.Summarize(context.Background(), "test")
-		assert.Error(t, err)
-	})
-}
-
-func TestAIService_ExtractTags(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		mgr := &mockAIManager{
-			extractTagsFn: func(_ context.Context, _ string, _ int) ([]string, error) {
-				return []string{"go", "programming"}, nil
-			},
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		tags, err := svc.ExtractTags(context.Background(), "Go programming tutorial", 5)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"go", "programming"}, tags)
-	})
-
-	t.Run("empty_input", func(t *testing.T) {
-		mgr := &mockAIManager{
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		tags, err := svc.ExtractTags(context.Background(), "", 5)
-		require.NoError(t, err)
-		assert.Empty(t, tags)
-	})
-
-	t.Run("cached", func(t *testing.T) {
-		callCount := 0
-		mgr := &mockAIManager{
-			extractTagsFn: func(context.Context, string, int) ([]string, error) {
-				callCount++
-				return []string{"cached"}, nil
-			},
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		_, _ = svc.ExtractTags(context.Background(), "text", 5)
-		tags, err := svc.ExtractTags(context.Background(), "text", 5)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"cached"}, tags)
-		assert.Equal(t, 1, callCount)
-	})
-
-	t.Run("error", func(t *testing.T) {
-		mgr := &mockAIManager{
-			extractTagsFn: func(context.Context, string, int) ([]string, error) {
-				return nil, errors.New("fail")
-			},
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, nil, nil)
-		_, err := svc.ExtractTags(context.Background(), "text", 5)
-		assert.Error(t, err)
-	})
-}
-
-func TestAIService_CleanInput(t *testing.T) {
-	mgr := &mockAIManager{
-		maxInputCharFn: func() int { return 10 },
-	}
-	svc := newTestAIService(mgr, nil, nil)
-
-	assert.Empty(t, svc.cleanInput(""))
-	assert.Empty(t, svc.cleanInput("   "))
-	assert.Equal(t, "hello", svc.cleanInput("  hello  "))
-	assert.Equal(t, "0123456789", svc.cleanInput("0123456789extra"))
-}
-
-func TestAIService_CleanInput_NoLimit(t *testing.T) {
-	mgr := &mockAIManager{
-		maxInputCharFn: func() int { return 0 },
-	}
-	svc := newTestAIService(mgr, nil, nil)
-	long := "a very long string that exceeds nothing because limit is zero"
-	assert.Equal(t, long, svc.cleanInput(long))
-}
-
-func TestAIService_CacheKey(t *testing.T) {
-	mgr := &mockAIManager{
-		maxInputCharFn: func() int { return 0 },
-	}
-	svc := newTestAIService(mgr, nil, nil)
-
-	key1 := svc.cacheKey("polish", "hello")
-	key2 := svc.cacheKey("polish", "hello")
-	key3 := svc.cacheKey("generate", "hello")
-	assert.Equal(t, key1, key2)
-	assert.NotEqual(t, key1, key3)
-}
-
-func TestAIService_Embed(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(_ context.Context, _, _ string) ([]float32, error) {
 				return []float32{0.1, 0.2, 0.3}, nil
 			},
 		}
-		svc := newTestAIService(mgr, nil, nil)
+		svc := newTestEmbeddingService(mgr, nil, nil)
 		emb, err := svc.Embed(context.Background(), "test", "RETRIEVAL_QUERY")
 		require.NoError(t, err)
 		assert.Len(t, emb, 3)
 	})
 
 	t.Run("error", func(t *testing.T) {
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return nil, errors.New("embed fail")
 			},
 		}
-		svc := newTestAIService(mgr, nil, nil)
+		svc := newTestEmbeddingService(mgr, nil, nil)
 		_, err := svc.Embed(context.Background(), "test", "RETRIEVAL_QUERY")
 		assert.Error(t, err)
 	})
 }
 
-func TestAIService_SyncEmbedding(t *testing.T) {
+func TestEmbeddingService_SyncEmbedding(t *testing.T) {
 	t.Run("nil_service", func(t *testing.T) {
-		var svc *AIService
+		var svc *EmbeddingService
 		err := svc.SyncEmbedding(context.Background(), "u1", "d1", "title", "content")
 		require.NoError(t, err)
 	})
 
 	t.Run("nil_embeddings", func(t *testing.T) {
-		svc := &AIService{}
+		svc := &EmbeddingService{}
 		err := svc.SyncEmbedding(context.Background(), "u1", "d1", "title", "content")
 		require.NoError(t, err)
 	})
@@ -474,10 +201,8 @@ func TestAIService_SyncEmbedding(t *testing.T) {
 				}, nil
 			},
 		}
-		mgr := &mockAIManager{
-			maxInputCharFn: func() int { return 0 },
-		}
-		svc := newTestAIService(mgr, emb, nil)
+		mgr := &mockEmbedder{}
+		svc := newTestEmbeddingService(mgr, emb, nil)
 		err := svc.SyncEmbedding(context.Background(), "u1", "d1", "title", "content")
 		require.NoError(t, err)
 	})
@@ -493,20 +218,19 @@ func TestAIService_SyncEmbedding(t *testing.T) {
 				return true, nil
 			},
 		}
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return []float32{0.1, 0.2}, nil
 			},
-			maxInputCharFn: func() int { return 0 },
 		}
-		chunker := &mockAIChunker{
+		chunker := &mockEmbeddingChunker{
 			chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
 				return []*model.ChunkEmbedding{
 					{Content: "chunk1", Position: 0, TokenCount: 10},
 				}, nil
 			},
 		}
-		svc := newTestAIService(mgr, emb, chunker)
+		svc := newTestEmbeddingService(mgr, emb, chunker)
 		err := svc.SyncEmbedding(context.Background(), "u1", "d1", "title", "new content")
 		require.NoError(t, err)
 	})
@@ -517,15 +241,13 @@ func TestAIService_SyncEmbedding(t *testing.T) {
 				return nil, errors.New("not found")
 			},
 		}
-		mgr := &mockAIManager{
-			maxInputCharFn: func() int { return 0 },
-		}
-		chunker := &mockAIChunker{
+		mgr := &mockEmbedder{}
+		chunker := &mockEmbeddingChunker{
 			chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
 				return nil, errors.New("chunk fail")
 			},
 		}
-		svc := newTestAIService(mgr, emb, chunker)
+		svc := newTestEmbeddingService(mgr, emb, chunker)
 		err := svc.SyncEmbedding(context.Background(), "u1", "d1", "t", "c")
 		assert.Error(t, err)
 	})
@@ -536,18 +258,17 @@ func TestAIService_SyncEmbedding(t *testing.T) {
 				return nil, errors.New("not found")
 			},
 		}
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return nil, errors.New("embed fail")
 			},
-			maxInputCharFn: func() int { return 0 },
 		}
-		chunker := &mockAIChunker{
+		chunker := &mockEmbeddingChunker{
 			chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
 				return []*model.ChunkEmbedding{{Content: "c1", Position: 0}}, nil
 			},
 		}
-		svc := newTestAIService(mgr, emb, chunker)
+		svc := newTestEmbeddingService(mgr, emb, chunker)
 		err := svc.SyncEmbedding(context.Background(), "u1", "d1", "t", "c")
 		assert.Error(t, err)
 	})
@@ -576,18 +297,17 @@ func TestAIService_SyncEmbedding(t *testing.T) {
 				return true, nil
 			},
 		}
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return []float32{0.1}, nil
 			},
-			maxInputCharFn: func() int { return 0 },
 		}
-		chunker := &mockAIChunker{
+		chunker := &mockEmbeddingChunker{
 			chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
 				return []*model.ChunkEmbedding{{Content: "c1", Position: 0}}, nil
 			},
 		}
-		svc := newTestAIService(mgr, emb, chunker)
+		svc := newTestEmbeddingService(mgr, emb, chunker)
 		err := svc.SyncEmbedding(context.Background(), "u1", "d1", "t", "c")
 		require.NoError(t, err)
 		assert.Equal(t, "u1", capturedUser)
@@ -612,18 +332,17 @@ func TestAIService_SyncEmbedding(t *testing.T) {
 				return false, nil
 			},
 		}
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return []float32{0.1}, nil
 			},
-			maxInputCharFn: func() int { return 0 },
 		}
-		chunker := &mockAIChunker{
+		chunker := &mockEmbeddingChunker{
 			chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
 				return []*model.ChunkEmbedding{{Content: "c1", Position: 0}}, nil
 			},
 		}
-		svc := newTestAIService(mgr, emb, chunker)
+		svc := newTestEmbeddingService(mgr, emb, chunker)
 		err := svc.SyncEmbedding(context.Background(), "u1", "d1", "t", "c")
 		require.Error(t, err)
 		assert.ErrorIs(t, err, errEmbeddingStale)
@@ -643,18 +362,17 @@ func TestAIService_SyncEmbedding(t *testing.T) {
 				return false, errors.New("tx commit failed")
 			},
 		}
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return []float32{0.1}, nil
 			},
-			maxInputCharFn: func() int { return 0 },
 		}
-		chunker := &mockAIChunker{
+		chunker := &mockEmbeddingChunker{
 			chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
 				return []*model.ChunkEmbedding{{Content: "c1", Position: 0}}, nil
 			},
 		}
-		svc := newTestAIService(mgr, emb, chunker)
+		svc := newTestEmbeddingService(mgr, emb, chunker)
 		err := svc.SyncEmbedding(context.Background(), "u1", "d1", "t", "c")
 		require.Error(t, err)
 		assert.NotErrorIs(t, err, errEmbeddingStale)
@@ -662,9 +380,9 @@ func TestAIService_SyncEmbedding(t *testing.T) {
 	})
 }
 
-func TestAIService_SemanticSearch(t *testing.T) {
+func TestEmbeddingService_SemanticSearch(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return []float32{0.1, 0.2}, nil
 			},
@@ -677,7 +395,7 @@ func TestAIService_SemanticSearch(t *testing.T) {
 				}, nil
 			},
 		}
-		svc := newTestAIService(mgr, emb, nil)
+		svc := newTestEmbeddingService(mgr, emb, nil)
 		ids, scores, err := svc.SemanticSearch(context.Background(), "u1", "query", 10, "")
 		require.NoError(t, err)
 		assert.Len(t, ids, 2)
@@ -686,7 +404,7 @@ func TestAIService_SemanticSearch(t *testing.T) {
 
 	t.Run("trimmed_query_used", func(t *testing.T) {
 		var receivedQuery string
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(_ context.Context, text, _ string) ([]float32, error) {
 				receivedQuery = text
 				return []float32{0.1}, nil
@@ -697,25 +415,25 @@ func TestAIService_SemanticSearch(t *testing.T) {
 				return nil, nil
 			},
 		}
-		svc := newTestAIService(mgr, emb, nil)
+		svc := newTestEmbeddingService(mgr, emb, nil)
 		_, _, err := svc.SemanticSearch(context.Background(), "u1", "  hello  ", 10, "")
 		require.NoError(t, err)
 		assert.Equal(t, "hello", receivedQuery)
 	})
 
 	t.Run("embed_error", func(t *testing.T) {
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return nil, errors.New("embed fail")
 			},
 		}
-		svc := newTestAIService(mgr, nil, nil)
+		svc := newTestEmbeddingService(mgr, nil, nil)
 		_, _, err := svc.SemanticSearch(context.Background(), "u1", "query", 10, "")
 		assert.Error(t, err)
 	})
 
 	t.Run("search_error", func(t *testing.T) {
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return []float32{0.1}, nil
 			},
@@ -725,13 +443,13 @@ func TestAIService_SemanticSearch(t *testing.T) {
 				return nil, errors.New("search fail")
 			},
 		}
-		svc := newTestAIService(mgr, emb, nil)
+		svc := newTestEmbeddingService(mgr, emb, nil)
 		_, _, err := svc.SemanticSearch(context.Background(), "u1", "query", 10, "")
 		assert.Error(t, err)
 	})
 
 	t.Run("no_results", func(t *testing.T) {
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return []float32{0.1}, nil
 			},
@@ -741,7 +459,7 @@ func TestAIService_SemanticSearch(t *testing.T) {
 				return nil, nil
 			},
 		}
-		svc := newTestAIService(mgr, emb, nil)
+		svc := newTestEmbeddingService(mgr, emb, nil)
 		ids, scores, err := svc.SemanticSearch(context.Background(), "u1", "query", 10, "")
 		require.NoError(t, err)
 		assert.Empty(t, ids)
@@ -749,7 +467,7 @@ func TestAIService_SemanticSearch(t *testing.T) {
 	})
 
 	t.Run("with_exclude", func(t *testing.T) {
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return []float32{0.1}, nil
 			},
@@ -762,7 +480,7 @@ func TestAIService_SemanticSearch(t *testing.T) {
 				}, nil
 			},
 		}
-		svc := newTestAIService(mgr, emb, nil)
+		svc := newTestEmbeddingService(mgr, emb, nil)
 		ids, _, err := svc.SemanticSearch(context.Background(), "u1", "query", 10, "d1")
 		require.NoError(t, err)
 		assert.Len(t, ids, 1)
@@ -770,7 +488,7 @@ func TestAIService_SemanticSearch(t *testing.T) {
 	})
 
 	t.Run("topk_limit", func(t *testing.T) {
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return []float32{0.1}, nil
 			},
@@ -784,22 +502,22 @@ func TestAIService_SemanticSearch(t *testing.T) {
 				}, nil
 			},
 		}
-		svc := newTestAIService(mgr, emb, nil)
+		svc := newTestEmbeddingService(mgr, emb, nil)
 		ids, _, err := svc.SemanticSearch(context.Background(), "u1", "query", 2, "")
 		require.NoError(t, err)
 		assert.Len(t, ids, 2)
 	})
 }
 
-func TestAIService_ProcessPendingEmbeddings(t *testing.T) {
+func TestEmbeddingService_ProcessPendingEmbeddings(t *testing.T) {
 	t.Run("nil_service", func(t *testing.T) {
-		var svc *AIService
+		var svc *EmbeddingService
 		err := svc.ProcessPendingEmbeddings(context.Background(), 60)
 		require.NoError(t, err)
 	})
 
 	t.Run("nil_embeddings", func(t *testing.T) {
-		svc := &AIService{}
+		svc := &EmbeddingService{}
 		err := svc.ProcessPendingEmbeddings(context.Background(), 60)
 		require.NoError(t, err)
 	})
@@ -810,7 +528,7 @@ func TestAIService_ProcessPendingEmbeddings(t *testing.T) {
 				return nil, nil
 			},
 		}
-		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		svc := newTestEmbeddingService(&mockEmbedder{}, emb, nil)
 		err := svc.ProcessPendingEmbeddings(context.Background(), 60)
 		require.NoError(t, err)
 	})
@@ -821,7 +539,7 @@ func TestAIService_ProcessPendingEmbeddings(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		svc := newTestEmbeddingService(&mockEmbedder{}, emb, nil)
 		err := svc.ProcessPendingEmbeddings(context.Background(), 60)
 		assert.Error(t, err)
 	})
@@ -834,13 +552,13 @@ func TestAIService_ProcessPendingEmbeddings(t *testing.T) {
 				return []model.Document{{ID: "d1", UserID: "u1"}}, nil
 			},
 		}
-		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		svc := newTestEmbeddingService(&mockEmbedder{}, emb, nil)
 		err := svc.ProcessPendingEmbeddings(ctx, 60)
 		assert.Error(t, err)
 	})
 }
 
-func TestAIService_ProcessOneEmbedding(t *testing.T) {
+func TestEmbeddingService_ProcessOneEmbedding(t *testing.T) {
 	t.Run("success_marks_succeeded", func(t *testing.T) {
 		completed := false
 		emb := &mockEmbeddingRepo{
@@ -856,18 +574,17 @@ func TestAIService_ProcessOneEmbedding(t *testing.T) {
 				return true, nil
 			},
 		}
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return []float32{0.1}, nil
 			},
-			maxInputCharFn: func() int { return 0 },
 		}
-		chunker := &mockAIChunker{
+		chunker := &mockEmbeddingChunker{
 			chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
 				return []*model.ChunkEmbedding{{Content: "c1", Position: 0}}, nil
 			},
 		}
-		svc := newTestAIService(mgr, emb, chunker)
+		svc := newTestEmbeddingService(mgr, emb, chunker)
 		doc := model.Document{ID: "d1", UserID: "u1", Title: "T", Content: "C"}
 		processed, err := svc.processOneEmbedding(context.Background(), doc)
 		require.NoError(t, err)
@@ -877,11 +594,10 @@ func TestAIService_ProcessOneEmbedding(t *testing.T) {
 
 	t.Run("rate_limit_does_not_consume_attempt", func(t *testing.T) {
 		failedCalled := false
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return nil, errors.New("rate limit exceeded")
 			},
-			maxInputCharFn: func() int { return 0 },
 		}
 		emb := &mockEmbeddingRepo{
 			getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
@@ -892,12 +608,12 @@ func TestAIService_ProcessOneEmbedding(t *testing.T) {
 				return nil
 			},
 		}
-		chunker := &mockAIChunker{
+		chunker := &mockEmbeddingChunker{
 			chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
 				return []*model.ChunkEmbedding{{Content: "c1", Position: 0}}, nil
 			},
 		}
-		svc := newTestAIService(mgr, emb, chunker)
+		svc := newTestEmbeddingService(mgr, emb, chunker)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		doc := model.Document{ID: "d1", UserID: "u1", Title: "T", Content: "C"}
@@ -909,11 +625,10 @@ func TestAIService_ProcessOneEmbedding(t *testing.T) {
 	t.Run("non_rate_limit_marks_failed_and_backs_off", func(t *testing.T) {
 		var retryAt int64
 		var errMsg string
-		mgr := &mockAIManager{
+		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {
 				return nil, errors.New("internal error")
 			},
-			maxInputCharFn: func() int { return 0 },
 		}
 		emb := &mockEmbeddingRepo{
 			getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
@@ -928,12 +643,12 @@ func TestAIService_ProcessOneEmbedding(t *testing.T) {
 				return nil
 			},
 		}
-		chunker := &mockAIChunker{
+		chunker := &mockEmbeddingChunker{
 			chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
 				return []*model.ChunkEmbedding{{Content: "c1", Position: 0}}, nil
 			},
 		}
-		svc := newTestAIService(mgr, emb, chunker)
+		svc := newTestEmbeddingService(mgr, emb, chunker)
 		doc := model.Document{ID: "d1", UserID: "u1", Title: "T", Content: "C"}
 		processed, err := svc.processOneEmbedding(context.Background(), doc)
 		require.NoError(t, err)
@@ -943,16 +658,16 @@ func TestAIService_ProcessOneEmbedding(t *testing.T) {
 	})
 }
 
-// TestAIService_MarkEmbeddingPending exercises the wrapper used by the
+// TestEmbeddingService_MarkEmbeddingPending exercises the wrapper used by the
 // save transaction. It covers (a) the nil-service no-op, (b) the empty
 // embeddings no-op, (c) the success path, and (d) error wrapping.
-func TestAIService_MarkEmbeddingPending(t *testing.T) {
+func TestEmbeddingService_MarkEmbeddingPending(t *testing.T) {
 	t.Run("nil_service", func(t *testing.T) {
-		var svc *AIService
+		var svc *EmbeddingService
 		require.NoError(t, svc.MarkEmbeddingPending(context.Background(), "u", "d", "h", 1))
 	})
 	t.Run("nil_embeddings", func(t *testing.T) {
-		svc := &AIService{}
+		svc := &EmbeddingService{}
 		require.NoError(t, svc.MarkEmbeddingPending(context.Background(), "u", "d", "h", 1))
 	})
 	t.Run("success", func(t *testing.T) {
@@ -969,7 +684,7 @@ func TestAIService_MarkEmbeddingPending(t *testing.T) {
 				return nil
 			},
 		}
-		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		svc := newTestEmbeddingService(&mockEmbedder{}, emb, nil)
 		require.NoError(t, svc.MarkEmbeddingPending(context.Background(), "u1", "d1", "hash", 5000))
 		assert.Equal(t, "d1", captured.docID)
 		assert.Equal(t, "u1", captured.userID)
@@ -982,18 +697,18 @@ func TestAIService_MarkEmbeddingPending(t *testing.T) {
 				return errors.New("disk full")
 			},
 		}
-		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		svc := newTestEmbeddingService(&mockEmbedder{}, emb, nil)
 		err := svc.MarkEmbeddingPending(context.Background(), "u", "d", "h", 1)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "upsert pending")
 	})
 }
 
-// TestAIService_ClaimEmbedding exercises the claim/lease branches that
+// TestEmbeddingService_ClaimEmbedding exercises the claim/lease branches that
 // were missed by the higher-level processOneEmbedding tests: a seed insert
 // when no row exists yet, a hard failure from GetByDocID, a failure from
 // the initial seed write, and a Claim that loses the race (returns false).
-func TestAIService_ClaimEmbedding(t *testing.T) {
+func TestEmbeddingService_ClaimEmbedding(t *testing.T) {
 	t.Run("seeds_pending_when_missing", func(t *testing.T) {
 		seeded := false
 		emb := &mockEmbeddingRepo{
@@ -1006,7 +721,7 @@ func TestAIService_ClaimEmbedding(t *testing.T) {
 			},
 			claimFn: func(context.Context, string, int64, int64) (bool, error) { return true, nil },
 		}
-		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		svc := newTestEmbeddingService(&mockEmbedder{}, emb, nil)
 		ok, err := svc.claimEmbedding(context.Background(), model.Document{ID: "d1", UserID: "u1"}, 0)
 		require.NoError(t, err)
 		assert.True(t, ok)
@@ -1018,7 +733,7 @@ func TestAIService_ClaimEmbedding(t *testing.T) {
 				return nil, errors.New("db down")
 			},
 		}
-		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		svc := newTestEmbeddingService(&mockEmbedder{}, emb, nil)
 		ok, err := svc.claimEmbedding(context.Background(), model.Document{ID: "d1"}, 0)
 		require.Error(t, err)
 		assert.False(t, ok)
@@ -1033,7 +748,7 @@ func TestAIService_ClaimEmbedding(t *testing.T) {
 				return errors.New("seed failed")
 			},
 		}
-		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		svc := newTestEmbeddingService(&mockEmbedder{}, emb, nil)
 		_, err := svc.claimEmbedding(context.Background(), model.Document{ID: "d1"}, 0)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "seed pending embedding")
@@ -1050,7 +765,7 @@ func TestAIService_ClaimEmbedding(t *testing.T) {
 				return false, errors.New("locked elsewhere")
 			},
 		}
-		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		svc := newTestEmbeddingService(&mockEmbedder{}, emb, nil)
 		ok, err := svc.claimEmbedding(context.Background(), model.Document{ID: "d1"}, 0)
 		require.NoError(t, err)
 		assert.False(t, ok)
@@ -1062,7 +777,7 @@ func TestAIService_ClaimEmbedding(t *testing.T) {
 			},
 			claimFn: func(context.Context, string, int64, int64) (bool, error) { return false, nil },
 		}
-		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		svc := newTestEmbeddingService(&mockEmbedder{}, emb, nil)
 		ok, err := svc.claimEmbedding(context.Background(), model.Document{ID: "d1"}, 0)
 		require.NoError(t, err)
 		assert.False(t, ok)
@@ -1085,7 +800,7 @@ func TestAIService_ClaimEmbedding(t *testing.T) {
 				return true, nil
 			},
 		}
-		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		svc := newTestEmbeddingService(&mockEmbedder{}, emb, nil)
 		doc := model.Document{
 			ID: "d1", Title: "t", Content: "c", ContentHash: "doc-content-hash",
 		}
@@ -1130,7 +845,7 @@ func TestAIService_ClaimEmbedding(t *testing.T) {
 				return true, nil
 			},
 		}
-		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		svc := newTestEmbeddingService(&mockEmbedder{}, emb, nil)
 		doc := model.Document{
 			ID:           "d1",
 			UserID:       "u1",
@@ -1161,18 +876,18 @@ func TestAIService_ClaimEmbedding(t *testing.T) {
 				return false, errors.New("drift db error")
 			},
 		}
-		svc := newTestAIService(&mockAIManager{}, emb, nil)
+		svc := newTestEmbeddingService(&mockEmbedder{}, emb, nil)
 		ok, err := svc.claimEmbedding(context.Background(), model.Document{ID: "d1"}, 0)
 		require.NoError(t, err)
 		assert.False(t, ok)
 	})
 }
 
-// TestAIService_ProcessOneEmbedding_RateLimitResetsLeaseOnly guards the
+// TestEmbeddingService_ProcessOneEmbedding_RateLimitResetsLeaseOnly guards the
 // rate-limit cool-down path: hitting a 429 must clear the worker lease via
 // ResetLeaseToPending without touching content_hash, so the next stale
 // scan still sees the row as already up to date and does not loop on it.
-func TestAIService_ProcessOneEmbedding_RateLimitResetsLeaseOnly(t *testing.T) {
+func TestEmbeddingService_ProcessOneEmbedding_RateLimitResetsLeaseOnly(t *testing.T) {
 	upsertCalled := false
 	resetCalled := false
 	emb := &mockEmbeddingRepo{
@@ -1189,18 +904,17 @@ func TestAIService_ProcessOneEmbedding_RateLimitResetsLeaseOnly(t *testing.T) {
 			return nil
 		},
 	}
-	mgr := &mockAIManager{
+	mgr := &mockEmbedder{
 		embedFn: func(context.Context, string, string) ([]float32, error) {
 			return nil, errors.New("ai: 429 rate limit exceeded")
 		},
-		maxInputCharFn: func() int { return 0 },
 	}
-	chunker := &mockAIChunker{
+	chunker := &mockEmbeddingChunker{
 		chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
 			return []*model.ChunkEmbedding{{Content: "c1", Position: 0}}, nil
 		},
 	}
-	svc := newTestAIService(mgr, emb, chunker)
+	svc := newTestEmbeddingService(mgr, emb, chunker)
 	// Use a canceled context so the post-rate-limit waitCtx returns
 	// promptly and the test does not idle for 10 seconds.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1221,10 +935,10 @@ func TestTruncateErr(t *testing.T) {
 	assert.Equal(t, embeddingMaxLastErrorChars, len(got))
 }
 
-// TestAIService_ProcessOneEmbedding_ClaimLost covers the early return from
+// TestEmbeddingService_ProcessOneEmbedding_ClaimLost covers the early return from
 // processOneEmbedding when claimEmbedding reports the document is owned by
 // another worker (no sync, no failure recorded).
-func TestAIService_ProcessOneEmbedding_ClaimLost(t *testing.T) {
+func TestEmbeddingService_ProcessOneEmbedding_ClaimLost(t *testing.T) {
 	syncCalled := false
 	emb := &mockEmbeddingRepo{
 		getByDocIDFn: func(context.Context, string) (*model.DocumentEmbedding, error) {
@@ -1232,14 +946,13 @@ func TestAIService_ProcessOneEmbedding_ClaimLost(t *testing.T) {
 		},
 		claimFn: func(context.Context, string, int64, int64) (bool, error) { return false, nil },
 	}
-	mgr := &mockAIManager{
+	mgr := &mockEmbedder{
 		embedFn: func(context.Context, string, string) ([]float32, error) {
 			syncCalled = true
 			return []float32{0}, nil
 		},
-		maxInputCharFn: func() int { return 0 },
 	}
-	svc := newTestAIService(mgr, emb, &mockAIChunker{})
+	svc := newTestEmbeddingService(mgr, emb, &mockEmbeddingChunker{})
 	doc := model.Document{ID: "d1", UserID: "u1", Title: "t", Content: "c"}
 	processed, err := svc.processOneEmbedding(context.Background(), doc)
 	require.NoError(t, err)
@@ -1247,14 +960,16 @@ func TestAIService_ProcessOneEmbedding_ClaimLost(t *testing.T) {
 	assert.False(t, syncCalled, "sync must not run when the claim is lost")
 }
 
-func TestNewAIService(t *testing.T) {
-	svc := newAIServiceFromInterfaces(
-		&mockAIManager{maxInputCharFn: func() int { return 0 }},
+func TestNewEmbeddingService(t *testing.T) {
+	svc := newEmbeddingServiceFromInterfaces(
+		&mockEmbedder{},
 		&mockEmbeddingRepo{},
-		&mockAIChunker{},
+		&mockEmbeddingChunker{},
 	)
 	assert.NotNil(t, svc)
-	assert.NotNil(t, svc.cache)
+	assert.NotNil(t, svc.embedder)
+	assert.NotNil(t, svc.embeddings)
+	assert.NotNil(t, svc.chunker)
 }
 
 func TestExtractLinkIDs(t *testing.T) {
@@ -1271,18 +986,17 @@ func TestProcessPendingEmbeddings_ContextCanceled(t *testing.T) {
 			return []model.Document{{ID: "d1", UserID: "u1", Title: "t", Content: "c"}}, nil
 		},
 	}
-	mgr := &mockAIManager{
+	mgr := &mockEmbedder{
 		embedFn: func(context.Context, string, string) ([]float32, error) {
 			return []float32{0.1}, nil
 		},
-		maxInputCharFn: func() int { return 0 },
 	}
-	chunker := &mockAIChunker{
+	chunker := &mockEmbeddingChunker{
 		chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
 			return []*model.ChunkEmbedding{{Content: "c1", Position: 0}}, nil
 		},
 	}
-	svc := newTestAIService(mgr, emb, chunker)
+	svc := newTestEmbeddingService(mgr, emb, chunker)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -1296,7 +1010,7 @@ func TestProcessPendingEmbeddings_ListError(t *testing.T) {
 			return nil, errors.New("db error")
 		},
 	}
-	svc := newTestAIService(&mockAIManager{maxInputCharFn: func() int { return 0 }}, emb, &mockAIChunker{})
+	svc := newTestEmbeddingService(&mockEmbedder{}, emb, &mockEmbeddingChunker{})
 	err := svc.ProcessPendingEmbeddings(context.Background(), 0)
 	assert.Error(t, err)
 }
@@ -1307,12 +1021,12 @@ func TestProcessPendingEmbeddings_EmptyList(t *testing.T) {
 			return nil, nil
 		},
 	}
-	svc := newTestAIService(&mockAIManager{maxInputCharFn: func() int { return 0 }}, emb, &mockAIChunker{})
+	svc := newTestEmbeddingService(&mockEmbedder{}, emb, &mockEmbeddingChunker{})
 	err := svc.ProcessPendingEmbeddings(context.Background(), 0)
 	assert.NoError(t, err)
 }
 
-// TestAIService_ProcessPendingEmbeddings_DriftLoopBreaksAfterFirstSuccess
+// TestEmbeddingService_ProcessPendingEmbeddings_DriftLoopBreaksAfterFirstSuccess
 // asserts the full closed-loop fix for the "stale forever" bug:
 // a document whose embedding row is succeeded-but-drifted must be picked
 // up by ClaimDrift, re-embedded by SyncEmbedding, and — crucially — must
@@ -1331,7 +1045,7 @@ func TestProcessPendingEmbeddings_EmptyList(t *testing.T) {
 // The repo-level mock observes the CompleteEmbeddingIfCurrent call with
 // the expected hash, which is the same byte-for-byte fingerprint the
 // production query compares against documents.content_hash.
-func TestAIService_ProcessPendingEmbeddings_DriftLoopBreaksAfterFirstSuccess(t *testing.T) {
+func TestEmbeddingService_ProcessPendingEmbeddings_DriftLoopBreaksAfterFirstSuccess(t *testing.T) {
 	// doc.ContentHash mirrors the documents.content_hash snapshot the
 	// stale scan returned. ClaimDrift must receive this exact value
 	// (not a recomputed title/content hash) so its "content_hash <> $4"
@@ -1387,18 +1101,17 @@ func TestAIService_ProcessPendingEmbeddings_DriftLoopBreaksAfterFirstSuccess(t *
 			return true, nil
 		},
 	}
-	mgr := &mockAIManager{
+	mgr := &mockEmbedder{
 		embedFn: func(context.Context, string, string) ([]float32, error) {
 			return []float32{0.1, 0.2}, nil
 		},
-		maxInputCharFn: func() int { return 0 },
 	}
-	chunker := &mockAIChunker{
+	chunker := &mockEmbeddingChunker{
 		chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
 			return []*model.ChunkEmbedding{{Content: "body", Position: 0}}, nil
 		},
 	}
-	svc := newTestAIService(mgr, emb, chunker)
+	svc := newTestEmbeddingService(mgr, emb, chunker)
 
 	require.NoError(t, svc.ProcessPendingEmbeddings(context.Background(), 0))
 	assert.Equal(t, 1, listCalls)
@@ -1415,14 +1128,14 @@ func TestAIService_ProcessPendingEmbeddings_DriftLoopBreaksAfterFirstSuccess(t *
 	assert.Len(t, completeCalls, 1, "no extra completion call should occur on the second pass")
 }
 
-// TestAIService_ProcessOneEmbedding_StaleSkipsWithoutMarkFailed guards
+// TestEmbeddingService_ProcessOneEmbedding_StaleSkipsWithoutMarkFailed guards
 // the worker race fix: when a save advances the document between scan
 // and completion, CompleteEmbeddingIfCurrent reports applied=false,
 // SyncEmbedding returns errEmbeddingStale, and processOneEmbedding must
 // treat the stale return as a clean skip — without calling MarkFailed
 // (which would flip the row to 'failed' with a backoff and waste a
 // retry budget for what is a normal race resolution).
-func TestAIService_ProcessOneEmbedding_StaleSkipsWithoutMarkFailed(t *testing.T) {
+func TestEmbeddingService_ProcessOneEmbedding_StaleSkipsWithoutMarkFailed(t *testing.T) {
 	saveCalled := false
 	deleteCalled := false
 	saveChunksCalled := false
@@ -1459,18 +1172,17 @@ func TestAIService_ProcessOneEmbedding_StaleSkipsWithoutMarkFailed(t *testing.T)
 			return nil
 		},
 	}
-	mgr := &mockAIManager{
+	mgr := &mockEmbedder{
 		embedFn: func(context.Context, string, string) ([]float32, error) {
 			return []float32{0.1}, nil
 		},
-		maxInputCharFn: func() int { return 0 },
 	}
-	chunker := &mockAIChunker{
+	chunker := &mockEmbeddingChunker{
 		chunkFn: func(context.Context, string) ([]*model.ChunkEmbedding, error) {
 			return []*model.ChunkEmbedding{{Content: "c1", Position: 0}}, nil
 		},
 	}
-	svc := newTestAIService(mgr, emb, chunker)
+	svc := newTestEmbeddingService(mgr, emb, chunker)
 	doc := model.Document{ID: "d1", UserID: "u1", Title: "T", Content: "snapshot-A"}
 	processed, err := svc.processOneEmbedding(context.Background(), doc)
 	require.NoError(t, err)

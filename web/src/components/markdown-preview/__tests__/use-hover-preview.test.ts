@@ -44,7 +44,7 @@ describe("useHoverPreview", () => {
   it("fetches and shows preview content", async () => {
     mockApiFetch
       .mockResolvedValueOnce([{ id: "d1", title: "Test" }])
-      .mockResolvedValueOnce({ document: { title: "Test", content: "Hello world content", summary: "" } });
+      .mockResolvedValueOnce({ document: { title: "Test", content: "Hello world content" } });
     const { result } = renderHook(() => useHoverPreview(true));
     act(() => { result.current.openHoverPreview(makeEvent(), "Test"); });
     await act(async () => { await vi.advanceTimersByTimeAsync(200); });
@@ -53,7 +53,7 @@ describe("useHoverPreview", () => {
   });
 
   it("resolves by href when /docs/ path provided", async () => {
-    mockApiFetch.mockResolvedValue({ document: { title: "Doc", content: "Content here", summary: "" } });
+    mockApiFetch.mockResolvedValue({ document: { title: "Doc", content: "Content here" } });
     const { result } = renderHook(() => useHoverPreview(true));
     act(() => { result.current.openHoverPreview(makeEvent(), "Doc", "/docs/d123"); });
     await act(async () => { await vi.advanceTimersByTimeAsync(200); });
@@ -63,7 +63,7 @@ describe("useHoverPreview", () => {
   it("uses cache on second hover", async () => {
     mockApiFetch
       .mockResolvedValueOnce([{ id: "d1", title: "Cached" }])
-      .mockResolvedValueOnce({ document: { title: "Cached", content: "cached content", summary: "" } });
+      .mockResolvedValueOnce({ document: { title: "Cached", content: "cached content" } });
     const { result } = renderHook(() => useHoverPreview(true));
     act(() => { result.current.openHoverPreview(makeEvent(), "Cached"); });
     await act(async () => { await vi.advanceTimersByTimeAsync(200); });
@@ -102,21 +102,21 @@ describe("useHoverPreview", () => {
     expect(result.current.hoverPreview.loading).toBe(false);
   });
 
-  it("uses summary when available", async () => {
+  it("uses document content", async () => {
     mockApiFetch
       .mockResolvedValueOnce([{ id: "d1", title: "Test" }])
-      .mockResolvedValueOnce({ document: { title: "Test", content: "long content", summary: "short summary" } });
+      .mockResolvedValueOnce({ document: { title: "Test", content: "long content" } });
     const { result } = renderHook(() => useHoverPreview(true));
     act(() => { result.current.openHoverPreview(makeEvent(), "Test"); });
     await act(async () => { await vi.advanceTimersByTimeAsync(200); });
-    expect(result.current.hoverPreview.content).toContain("short summary");
+    expect(result.current.hoverPreview.content).toContain("long content");
   });
 
   it("truncates long content to 180 chars", async () => {
     const longContent = "x".repeat(300);
     mockApiFetch
       .mockResolvedValueOnce([{ id: "d1", title: "Test" }])
-      .mockResolvedValueOnce({ document: { title: "Test", content: longContent, summary: "" } });
+      .mockResolvedValueOnce({ document: { title: "Test", content: longContent } });
     const { result } = renderHook(() => useHoverPreview(true));
     act(() => { result.current.openHoverPreview(makeEvent(), "Test"); });
     await act(async () => { await vi.advanceTimersByTimeAsync(200); });
@@ -142,7 +142,7 @@ describe("useHoverPreview", () => {
   it("resolveTargetId uses first doc when no exact title match", async () => {
     mockApiFetch
       .mockResolvedValueOnce([{ id: "d1", title: "Other" }])
-      .mockResolvedValueOnce({ document: { title: "Other", content: "Content", summary: "" } });
+      .mockResolvedValueOnce({ document: { title: "Other", content: "Content" } });
     const { result } = renderHook(() => useHoverPreview(true));
     act(() => { result.current.openHoverPreview(makeEvent(), "NoMatch"); });
     await act(async () => { await vi.advanceTimersByTimeAsync(200); });
@@ -152,7 +152,7 @@ describe("useHoverPreview", () => {
   it("fetchPreviewSnippet shows Empty note for empty content", async () => {
     mockApiFetch
       .mockResolvedValueOnce([{ id: "d1", title: "Empty" }])
-      .mockResolvedValueOnce({ document: { title: "Empty", content: "", summary: "" } });
+      .mockResolvedValueOnce({ document: { title: "Empty", content: "" } });
     const { result } = renderHook(() => useHoverPreview(true));
     act(() => { result.current.openHoverPreview(makeEvent(), "Empty"); });
     await act(async () => { await vi.advanceTimersByTimeAsync(200); });
@@ -160,7 +160,7 @@ describe("useHoverPreview", () => {
   });
 
   it("resolveTargetId uses href with query/hash stripped", async () => {
-    mockApiFetch.mockResolvedValue({ document: { title: "Doc", content: "C", summary: "" } });
+    mockApiFetch.mockResolvedValue({ document: { title: "Doc", content: "C" } });
     const { result } = renderHook(() => useHoverPreview(true));
     act(() => { result.current.openHoverPreview(makeEvent(), "Doc", "/docs/d1?tab=1#section"); });
     await act(async () => { await vi.advanceTimersByTimeAsync(200); });
@@ -174,7 +174,7 @@ describe("useHoverPreview", () => {
   });
 
   it("caches by href when provided", async () => {
-    mockApiFetch.mockResolvedValue({ document: { title: "D", content: "Data", summary: "" } });
+    mockApiFetch.mockResolvedValue({ document: { title: "D", content: "Data" } });
     const { result } = renderHook(() => useHoverPreview(true));
     act(() => { result.current.openHoverPreview(makeEvent(), "D", "/docs/d1"); });
     await act(async () => { await vi.advanceTimersByTimeAsync(200); });
@@ -188,7 +188,7 @@ describe("useHoverPreview", () => {
   it("resolveTargetId with /docs/ href with empty id falls through to title", async () => {
     mockApiFetch
       .mockResolvedValueOnce([{ id: "d1", title: "Test" }])
-      .mockResolvedValueOnce({ document: { title: "Test", content: "Found", summary: "" } });
+      .mockResolvedValueOnce({ document: { title: "Test", content: "Found" } });
     const { result } = renderHook(() => useHoverPreview(true));
     act(() => { result.current.openHoverPreview(makeEvent(), "Test", "/docs/"); });
     await act(async () => { await vi.advanceTimersByTimeAsync(200); });
@@ -229,19 +229,19 @@ describe("resolveTargetId", () => {
 
 describe("fetchPreviewSnippet", () => {
   it("uses linkTitle when document title is empty", async () => {
-    mockApiFetch.mockResolvedValue({ document: { title: "", content: "Some content", summary: "" } });
+    mockApiFetch.mockResolvedValue({ document: { title: "", content: "Some content" } });
     const result = await fetchPreviewSnippet("d1", "Fallback Title");
     expect(result.title).toBe("Fallback Title");
   });
 
   it("uses Untitled when both title and linkTitle are empty", async () => {
-    mockApiFetch.mockResolvedValue({ document: { title: "", content: "Some content", summary: "" } });
+    mockApiFetch.mockResolvedValue({ document: { title: "", content: "Some content" } });
     const result = await fetchPreviewSnippet("d1", "");
     expect(result.title).toBe("Untitled");
   });
 
-  it("returns Empty note when content and summary are empty", async () => {
-    mockApiFetch.mockResolvedValue({ document: { title: "T", content: "", summary: "" } });
+  it("returns Empty note when content is empty", async () => {
+    mockApiFetch.mockResolvedValue({ document: { title: "T", content: "" } });
     const result = await fetchPreviewSnippet("d1", "T");
     expect(result.content).toBe("Empty note");
   });

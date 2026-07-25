@@ -59,4 +59,5 @@ func TestDocumentResponseKeepsEditorConcurrencyContract(t *testing.T) {
 	assert.Equal(t, "hash", item["content_hash"])
 	assert.Equal(t, float64(12), item["content_mtime"])
 	assert.Equal(t, float64(3), item["content_revision"])
+	assert.NotContains(t, item, "summary")
 }

@@ -157,11 +157,7 @@ function EditorPane({ p }: { p: EditorShellFlatContract }) {
           p.ec.handleRedo();
         }}
         executeCommand={p.ec.executeCommand}
-        handleAiPolish={() => void p.ai.handleAiPolish(p.contentRef.current)}
-        handleAiGenerateOpen={p.ai.handleAiGenerateOpen}
-        handleAiTags={() => void p.ai.handleAiTags(p.contentRef.current)}
         handlePreviewOpen={() => p.setShowPreviewModal(true)}
-        aiBusy={p.ai.aiLoading}
         activePopover={p.popover.activePopover}
         setActivePopover={p.popover.setActivePopover}
         colorButtonRef={p.popover.colorButtonRef}
@@ -174,10 +170,6 @@ function EditorPane({ p }: { p: EditorShellFlatContract }) {
         onUndo={p.ec.handleUndo}
         onRedo={p.ec.handleRedo}
         executeCommand={p.ec.executeCommand}
-        onAiPolish={() => void p.ai.handleAiPolish(p.contentRef.current)}
-        onAiGenerate={p.ai.handleAiGenerateOpen}
-        onAiTags={() => void p.ai.handleAiTags(p.contentRef.current)}
-        aiBusy={p.ai.aiLoading}
         onColor={p.popover.handleColor}
         onSize={p.popover.handleSize}
         onInsertEmoji={p.ec.insertTextAtCursor}

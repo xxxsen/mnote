@@ -171,7 +171,7 @@ export default function DocsPage() {
     toast,
   });
   const ie = useImportExport({
-    fetchSummary: data.fetchSummary,
+    fetchOverview: data.fetchOverview,
     fetchTags,
     fetchSidebarTags: sidebar.fetchSidebarTags,
     tagSearch: sidebar.tagSearch,
@@ -196,8 +196,8 @@ export default function DocsPage() {
     if (initialFetchRef.current) return;
     initialFetchRef.current = true;
     void fetchTags("");
-    void data.fetchSummary();
-    void data.fetchSharedSummary();
+    void data.fetchOverview();
+    void data.fetchSharedCount();
   }, [data, fetchTags]);
 
   useEffect(() => {

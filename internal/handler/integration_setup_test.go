@@ -46,7 +46,6 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	db, cleanup := testutil.OpenTestDB(t)
 	userRepo := repo.NewUserRepo(db)
 	docRepo := repo.NewDocumentRepo(db)
-	summaryRepo := repo.NewDocumentSummaryRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
 	oauthRepo := repo.NewOAuthRepo(db)
 	emailCodeRepo := repo.NewEmailVerificationRepo(db)
@@ -67,11 +66,11 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 	)
 	assetService := service.NewAssetService(assetRepo, documentAssetRepo, runtime)
 	documentService := service.NewDocumentService(
-		runtime, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo,
+		runtime, docRepo, versionRepo, docTagRepo, shareRepo,
 		tagRepo, userRepo, nil, 10, assetService,
 	)
 	tagService := service.NewTagService(runtime, tagRepo, docTagRepo)
-	exportService := service.NewExportService(docRepo, summaryRepo, versionRepo, tagRepo, docTagRepo)
+	exportService := service.NewExportService(docRepo, versionRepo, tagRepo, docTagRepo)
 	templateService := service.NewTemplateService(templateRepo, documentService, tagRepo, runtime)
 
 	tmpDir, err := os.MkdirTemp("", "mnote-upload-*")
@@ -95,7 +94,7 @@ func setupRouter(t *testing.T) (http.Handler, func(), func(email, code string) e
 		Tags:            handler.NewTagHandler(tagService),
 		Export:          handler.NewExportHandler(exportService),
 		Files:           handler.NewFileHandler(store, 20*1024*1024),
-		AI:              handler.NewAIHandler(nil, documentService, tagService),
+		SemanticSearch:  handler.NewSemanticSearchHandler(documentService),
 		Import:          handler.NewImportHandler(nil, 20*1024*1024, service.SaveTempFile),
 		Templates:       handler.NewTemplateHandler(templateService),
 		Assets:          handler.NewAssetHandler(assetService),

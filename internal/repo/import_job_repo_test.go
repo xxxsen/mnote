@@ -201,7 +201,7 @@ func TestImportJobNoteRepo_InsertBatch_Empty(t *testing.T) {
 }
 
 var noteCols = []string{
-	"id", "job_id", "user_id", "position", "title", "content", "summary", "tags_json", "source", "ctime",
+	"id", "job_id", "user_id", "position", "title", "content", "tags_json", "source", "ctime",
 }
 
 func TestImportJobNoteRepo_ListByJob(t *testing.T) {
@@ -211,7 +211,7 @@ func TestImportJobNoteRepo_ListByJob(t *testing.T) {
 
 	r := NewImportJobNoteRepo(db)
 	rows := sqlmock.NewRows(noteCols).
-		AddRow("n1", "j1", "u1", 0, "Title1", "Content1", "Sum1", `["go"]`, "hedgedoc", int64(1000))
+		AddRow("n1", "j1", "u1", 0, "Title1", "Content1", `["go"]`, "hedgedoc", int64(1000))
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
 	notes, err := r.ListByJob(context.Background(), "u1", "j1")
@@ -228,7 +228,7 @@ func TestImportJobNoteRepo_ListByJobLimit(t *testing.T) {
 
 	r := NewImportJobNoteRepo(db)
 	rows := sqlmock.NewRows(noteCols).
-		AddRow("n1", "j1", "u1", 0, "Title1", "C1", "S1", `[]`, "zip", int64(1000))
+		AddRow("n1", "j1", "u1", 0, "Title1", "C1", `[]`, "zip", int64(1000))
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
 	notes, err := r.ListByJobLimit(context.Background(), "u1", "j1", 5)
@@ -487,9 +487,9 @@ func TestImportJobNoteRepo_ListByJob_RowsErr(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	r := NewImportJobNoteRepo(db)
-	noteCols := []string{"id", "job_id", "user_id", "position", "title", "content", "summary", "tags_json", "source", "ctime"}
+	noteCols := []string{"id", "job_id", "user_id", "position", "title", "content", "tags_json", "source", "ctime"}
 	rows := sqlmock.NewRows(noteCols).
-		AddRow("n1", "j1", "u1", 0, "title", "content", "sum", "[]", "file.md", int64(1000)).
+		AddRow("n1", "j1", "u1", 0, "title", "content", "[]", "file.md", int64(1000)).
 		RowError(0, errDB)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 	_, err = r.ListByJob(context.Background(), "u1", "j1")
@@ -502,9 +502,9 @@ func TestImportJobNoteRepo_ListByJobLimit_RowsErr(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	r := NewImportJobNoteRepo(db)
-	noteCols := []string{"id", "job_id", "user_id", "position", "title", "content", "summary", "tags_json", "source", "ctime"}
+	noteCols := []string{"id", "job_id", "user_id", "position", "title", "content", "tags_json", "source", "ctime"}
 	rows := sqlmock.NewRows(noteCols).
-		AddRow("n1", "j1", "u1", 0, "title", "content", "sum", "[]", "file.md", int64(1000)).
+		AddRow("n1", "j1", "u1", 0, "title", "content", "[]", "file.md", int64(1000)).
 		RowError(0, errDB)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 	_, err = r.ListByJobLimit(context.Background(), "u1", "j1", 5)

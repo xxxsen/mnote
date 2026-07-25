@@ -2,19 +2,13 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"database/sql"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
 
-	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/xxxsen/common/logutil"
 	"go.uber.org/zap"
 
@@ -26,57 +20,49 @@ import (
 	"github.com/xxxsen/mnote/internal/repo"
 )
 
-var (
-	ErrAIUnavailable  = ai.ErrUnavailable
-	errInputTextEmpty = errors.New("input text to generate")
-	// errEmbeddingStale flags a SyncEmbedding attempt that hit the
-	// CompleteEmbeddingIfCurrent stale branch. The document has already
-	// been re-queued under its current hash, so the worker treats this
-	// as a clean skip rather than a failure that would consume a retry
-	// budget.
-	errEmbeddingStale = errors.New("embedding stale: document content advanced before worker finished")
-)
+// errEmbeddingStale flags a SyncEmbedding attempt that hit the
+// CompleteEmbeddingIfCurrent stale branch. The document has already
+// been re-queued under its current hash, so the worker treats this
+// as a clean skip rather than a failure that would consume a retry
+// budget.
+var errEmbeddingStale = errors.New("embedding stale: document content advanced before worker finished")
 
-type AIService struct {
-	db         *sql.DB
-	manager    aiManager
+type EmbeddingService struct {
+	embedder   ai.IEmbedder
 	embeddings embeddingRepo
-	chunker    aiChunker
-	cache      *expirable.LRU[string, string]
+	chunker    embeddingChunker
 }
 
-func NewAIService(db *sql.DB, manager *ai.Manager, embeddings embeddingRepo) *AIService {
-	cache := expirable.NewLRU[string, string](10000, nil, 2*time.Hour)
-	return &AIService{
-		db:         db,
-		manager:    manager,
+func NewEmbeddingService(embedder ai.IEmbedder, embeddings embeddingRepo) *EmbeddingService {
+	return &EmbeddingService{
+		embedder:   embedder,
 		embeddings: embeddings,
-		chunker:    ai.NewChunker(manager),
-		cache:      cache,
+		chunker:    ai.NewChunker(),
 	}
 }
 
-func newAIServiceFromInterfaces(
-	manager aiManager, embeddings embeddingRepo, chunker aiChunker,
-) *AIService {
-	cache := expirable.NewLRU[string, string](10000, nil, 2*time.Hour)
-	return &AIService{
-		manager:    manager,
+func newEmbeddingServiceFromInterfaces(
+	embedder ai.IEmbedder, embeddings embeddingRepo, chunker embeddingChunker,
+) *EmbeddingService {
+	return &EmbeddingService{
+		embedder:   embedder,
 		embeddings: embeddings,
 		chunker:    chunker,
-		cache:      cache,
 	}
 }
 
-func (s *AIService) Embed(ctx context.Context, text, taskType string) ([]float32, error) {
-	v0, err := s.manager.Embed(ctx, text, taskType)
+func (s *EmbeddingService) Embed(ctx context.Context, text, taskType string) ([]float32, error) {
+	if s == nil || s.embedder == nil {
+		return nil, ai.ErrNotConfigured
+	}
+	v0, err := s.embedder.Embed(ctx, text, taskType)
 	if err != nil {
 		return nil, fmt.Errorf("embed: %w", err)
 	}
 	return v0, nil
 }
 
-func (s *AIService) SemanticSearch(
+func (s *EmbeddingService) SemanticSearch(
 	ctx context.Context, userID, query string, topK int, excludeID string,
 ) ([]string, []float32, error) {
 	query = strings.TrimSpace(query)
@@ -200,7 +186,7 @@ const (
 // transaction. It is a thin wrapper so the document service does not need to
 // know the table layout. When the embeddings repo is unconfigured (tests) it
 // is a no-op.
-func (s *AIService) MarkEmbeddingPending(
+func (s *EmbeddingService) MarkEmbeddingPending(
 	ctx context.Context, userID, docID, contentHash string, contentMtime int64,
 ) error {
 	if s == nil || s.embeddings == nil {
@@ -222,12 +208,12 @@ func (s *AIService) MarkEmbeddingPending(
 // chunks are discarded — returning errEmbeddingStale so the worker loop
 // treats it as a clean skip rather than a retry-consuming failure.
 //
-// Generating chunk vectors involves remote AI calls and cannot live
+// Generating chunk vectors involves remote Embedding calls and cannot live
 // inside the documents-row lock; we pay for that by validating against
 // the locked hash at completion time instead of trusting the pre-claim
 // snapshot. Without that validation a slow worker could silently
 // overwrite a freshly-saved body with the previous one's vectors.
-func (s *AIService) SyncEmbedding(ctx context.Context, userID, docID, title, content string) error {
+func (s *EmbeddingService) SyncEmbedding(ctx context.Context, userID, docID, title, content string) error {
 	if s == nil || s.embeddings == nil {
 		return nil
 	}
@@ -291,7 +277,7 @@ func computeEmbeddingHash(title, content string) string {
 // lease, and dispatches them to SyncEmbedding. Rate-limit errors trigger a
 // cool-down without consuming the retry budget; other failures consume an
 // attempt and schedule the next retry with exponential backoff.
-func (s *AIService) ProcessPendingEmbeddings(ctx context.Context, _ int64) error {
+func (s *EmbeddingService) ProcessPendingEmbeddings(ctx context.Context, _ int64) error {
 	if s == nil || s.embeddings == nil {
 		return nil
 	}
@@ -319,7 +305,7 @@ func (s *AIService) ProcessPendingEmbeddings(ctx context.Context, _ int64) error
 			claimed++
 		}
 	}
-	logger.Info("embedding queue summary", zap.Int("claimed", claimed))
+	logger.Info("embedding queue batch finished", zap.Int("claimed", claimed))
 	return nil
 }
 
@@ -327,7 +313,7 @@ func (s *AIService) ProcessPendingEmbeddings(ctx context.Context, _ int64) error
 // sync → success or failure bookkeeping. It returns (true, nil) when the
 // worker actually held the claim through completion so callers can report
 // throughput accurately.
-func (s *AIService) processOneEmbedding(ctx context.Context, doc model.Document) (bool, error) {
+func (s *EmbeddingService) processOneEmbedding(ctx context.Context, doc model.Document) (bool, error) {
 	logger := logutil.GetLogger(ctx).With(zap.String("doc_id", doc.ID))
 	now := timeutil.NowUnix()
 	claimed, err := s.claimEmbedding(ctx, doc, now)
@@ -354,7 +340,7 @@ func (s *AIService) processOneEmbedding(ctx context.Context, doc model.Document)
 		return false, waitCtx(ctx, 100*time.Millisecond)
 	}
 	if isRateLimitErr(syncErr) {
-		logger.Warn("ai rate limit triggered, cooling down...", zap.Error(syncErr))
+		logger.Warn("embedding provider rate limit triggered, cooling down...", zap.Error(syncErr))
 		// Revert the row to its prior eligible state by zeroing the lease
 		// without consuming a retry attempt. Use a targeted reset so the
 		// row's content_hash / mtime are preserved (UpsertPending would
@@ -388,7 +374,7 @@ func (s *AIService) processOneEmbedding(ctx context.Context, doc model.Document)
 // succeeded row whose content_hash no longer matches documents. When the
 // document has no embedding row yet we seed a pending row first so the
 // row-targeted Claim has something to update atomically.
-func (s *AIService) claimEmbedding(ctx context.Context, doc model.Document, now int64) (bool, error) {
+func (s *EmbeddingService) claimEmbedding(ctx context.Context, doc model.Document, now int64) (bool, error) {
 	logger := logutil.GetLogger(ctx).With(zap.String("doc_id", doc.ID))
 	if _, err := s.embeddings.GetByDocID(ctx, doc.ID); err != nil {
 		if !errors.Is(err, appErr.ErrNotFound) {
@@ -479,94 +465,4 @@ func waitCtx(ctx context.Context, d time.Duration) error {
 	case <-time.After(d):
 		return nil
 	}
-}
-
-func (s *AIService) Polish(ctx context.Context, input string) (string, error) {
-	text := s.cleanInput(input)
-	cacheKey := s.cacheKey("polish", text)
-	if cached, ok := s.cache.Get(cacheKey); ok {
-		return cached, nil
-	}
-	if len(text) == 0 {
-		return "", nil
-	}
-	res, err := s.manager.Polish(ctx, text)
-	if err != nil {
-		return "", fmt.Errorf("polish: %w", err)
-	}
-	s.cache.Add(cacheKey, res)
-	return res, nil
-}
-
-func (s *AIService) Generate(ctx context.Context, prompt string) (string, error) {
-	text := s.cleanInput(prompt)
-	cacheKey := s.cacheKey("generate", text)
-	if cached, ok := s.cache.Get(cacheKey); ok {
-		return cached, nil
-	}
-	if len(text) == 0 {
-		return "", errInputTextEmpty
-	}
-	res, err := s.manager.Generate(ctx, text)
-	if err != nil {
-		return "", fmt.Errorf("generate: %w", err)
-	}
-	s.cache.Add(cacheKey, res)
-	return res, nil
-}
-
-func (s *AIService) ExtractTags(ctx context.Context, input string, maxTags int) ([]string, error) {
-	text := s.cleanInput(input)
-	cacheKey := s.cacheKey("tags", text)
-	if cached, ok := s.cache.Get(cacheKey); ok {
-		var tags []string
-		if err := json.Unmarshal([]byte(cached), &tags); err == nil {
-			return tags, nil
-		}
-	}
-	if len(text) == 0 {
-		return []string{}, nil
-	}
-	res, err := s.manager.ExtractTags(ctx, text, maxTags)
-	if err != nil {
-		return nil, fmt.Errorf("extract tags: %w", err)
-	}
-	if data, err := json.Marshal(res); err == nil {
-		s.cache.Add(cacheKey, string(data))
-	}
-	return res, nil
-}
-
-func (s *AIService) Summarize(ctx context.Context, input string) (string, error) {
-	text := s.cleanInput(input)
-	cacheKey := s.cacheKey("summary", text)
-	if cached, ok := s.cache.Get(cacheKey); ok {
-		return cached, nil
-	}
-	if len(text) == 0 {
-		return "", nil
-	}
-	res, err := s.manager.Summarize(ctx, text)
-	if err != nil {
-		return "", fmt.Errorf("summarize: %w", err)
-	}
-	s.cache.Add(cacheKey, res)
-	return res, nil
-}
-
-func (s *AIService) cleanInput(input string) string {
-	trimmed := strings.TrimSpace(input)
-	if trimmed == "" {
-		return ""
-	}
-	maxChars := s.manager.MaxInputChars()
-	if maxChars > 0 && utf8.RuneCountInString(trimmed) > maxChars {
-		trimmed = string([]rune(trimmed)[:maxChars])
-	}
-	return trimmed
-}
-
-func (s *AIService) cacheKey(feature, text string) string {
-	hash := sha256.Sum256([]byte(text))
-	return feature + ":" + hex.EncodeToString(hash[:])
 }

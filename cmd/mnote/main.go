@@ -198,9 +198,9 @@ func initOAuthProviders(cfg *config.Config) (map[string]oauth.Provider, error) {
 	return providers, nil
 }
 
-func initAIProviders(cfg *config.Config) (map[string]ai.IProvider, error) {
+func initEmbeddingProviders(cfg *config.Config) (map[string]ai.IProvider, error) {
 	providers := make(map[string]ai.IProvider)
-	required := requiredAIProviders(cfg.AI)
+	required := requiredEmbeddingProviders(cfg.AI)
 	if len(required) == 0 {
 		return providers, nil
 	}
@@ -228,66 +228,51 @@ func initAIProviders(cfg *config.Config) (map[string]ai.IProvider, error) {
 	return providers, nil
 }
 
-func requiredAIProviders(cfg config.AIConfig) map[string]struct{} {
+func requiredEmbeddingProviders(cfg config.AIConfig) map[string]struct{} {
 	required := make(map[string]struct{})
-	features := []struct {
-		enabled bool
-		items   []config.AIFeatureConfig
-	}{
-		{cfg.IsPolishEnabled(), cfg.Polish},
-		{cfg.IsGenerateEnabled(), cfg.Generate},
-		{cfg.IsTaggingEnabled(), cfg.Tagging},
-		{cfg.IsSummaryEnabled(), cfg.Summary},
-		{cfg.IsEmbedEnabled(), cfg.Embed},
+	if !cfg.IsEnabled() {
+		return required
 	}
-	for _, feature := range features {
-		if !feature.enabled {
-			continue
-		}
-		for _, item := range normalizeFeatureList(feature.items, cfg) {
-			if item.Provider != "" {
-				required[item.Provider] = struct{}{}
-			}
+	for _, item := range normalizeEmbeddingList(cfg.Embed, cfg) {
+		if item.Provider != "" {
+			required[item.Provider] = struct{}{}
 		}
 	}
 	return required
 }
 
-func normalizeFeatureList(
-	list []config.AIFeatureConfig, defaults config.AIConfig,
-) []config.AIFeatureConfig {
+func normalizeEmbeddingList(
+	list []config.AIEmbeddingConfig, defaults config.AIConfig,
+) []config.AIEmbeddingConfig {
 	if len(list) == 0 {
-		return []config.AIFeatureConfig{{Provider: defaults.Provider, Model: defaults.Model}}
+		return []config.AIEmbeddingConfig{{Provider: defaults.Provider, Model: defaults.Model}}
 	}
-	result := make([]config.AIFeatureConfig, 0, len(list))
+	result := make([]config.AIEmbeddingConfig, 0, len(list))
 	for _, item := range list {
 		result = append(result, item.WithDefaults(defaults))
 	}
 	return result
 }
 
-func resolveAIFeature(
-	name string, list []config.AIFeatureConfig,
+func resolveEmbedding(
+	list []config.AIEmbeddingConfig,
 	defaults config.AIConfig, providers map[string]ai.IProvider,
 ) ([]ai.IProvider, []string, error) {
-	items := normalizeFeatureList(list, defaults)
+	items := normalizeEmbeddingList(list, defaults)
 	resolved := make([]ai.IProvider, 0, len(items))
 	models := make([]string, 0, len(items))
 	for _, f := range items {
 		if f.Provider == "" || f.Model == "" {
-			return nil, nil, fmt.Errorf(
-				"ai feature %s: provider or model not configured", name,
-			)
+			return nil, nil, errors.New("embedding: provider or model not configured")
 		}
 		p, ok := providers[f.Provider]
 		if !ok {
 			return nil, nil, fmt.Errorf(
-				"ai feature %s: provider %s not found", name, f.Provider,
+				"embedding: provider %s not found", f.Provider,
 			)
 		}
 		logutil.GetLogger(context.Background()).Info(
-			"ai feature init",
-			zap.String("feature", name),
+			"embedding provider init",
 			zap.String("provider", f.Provider),
 			zap.String("model", f.Model),
 		)
@@ -297,99 +282,43 @@ func resolveAIFeature(
 	return resolved, models, nil
 }
 
-func buildGenerator(
-	name string, list []config.AIFeatureConfig,
-	defaults config.AIConfig, providers map[string]ai.IProvider,
-) (ai.IGenerator, error) {
-	pp, models, err := resolveAIFeature(name, list, defaults, providers)
-	if err != nil {
-		return nil, err
-	}
-	entries := make([]ai.GeneratorEntry, 0, len(pp))
-	for i, p := range pp {
-		entries = append(entries, ai.GeneratorEntry{
-			Name:      fmt.Sprintf("%s/%s", name, models[i]),
-			Generator: ai.NewGenerator(p, models[i]),
-		})
-	}
-	return ai.NewGroupGenerator(entries), nil
-}
-
 func buildEmbedder(
-	name string, list []config.AIFeatureConfig,
+	list []config.AIEmbeddingConfig,
 	defaults config.AIConfig, providers map[string]ai.IProvider,
 ) (ai.IEmbedder, error) {
-	pp, models, err := resolveAIFeature(name, list, defaults, providers)
+	pp, models, err := resolveEmbedding(list, defaults, providers)
 	if err != nil {
 		return nil, err
 	}
 	entries := make([]ai.EmbedderEntry, 0, len(pp))
 	for i, p := range pp {
 		entries = append(entries, ai.EmbedderEntry{
-			Name:     fmt.Sprintf("%s/%s", name, models[i]),
+			Name:     fmt.Sprintf("embed/%s", models[i]),
 			Embedder: ai.NewEmbedder(p, models[i]),
 		})
 	}
 	return ai.NewGroupEmbedder(entries), nil
 }
 
-func initAIManager(
+func initAIEmbedder(
 	cfg *config.Config, providers map[string]ai.IProvider,
 	cacheRepo *repo.EmbeddingCacheRepo,
-) (*ai.Manager, error) {
-	gen := func(name string, list []config.AIFeatureConfig) (ai.IGenerator, error) {
-		return buildGenerator(name, list, cfg.AI, providers)
+) (ai.IEmbedder, error) {
+	if !cfg.AI.IsEnabled() {
+		return ai.NewGroupEmbedder(nil), nil
 	}
-	var (
-		polishGen ai.IGenerator
-		genGen    ai.IGenerator
-		tagGen    ai.IGenerator
-		sumGen    ai.IGenerator
-		err       error
-	)
-	if cfg.AI.IsPolishEnabled() {
-		polishGen, err = gen("polish", cfg.AI.Polish)
-		if err != nil {
-			return nil, fmt.Errorf("init polish generator: %w", err)
-		}
+	embedder, err := buildEmbedder(cfg.AI.Embed, cfg.AI, providers)
+	if err != nil {
+		return nil, fmt.Errorf("init embedder: %w", err)
 	}
-	if cfg.AI.IsGenerateEnabled() {
-		genGen, err = gen("generate", cfg.AI.Generate)
-		if err != nil {
-			return nil, fmt.Errorf("init text generator: %w", err)
-		}
-	}
-	if cfg.AI.IsTaggingEnabled() {
-		tagGen, err = gen("tagging", cfg.AI.Tagging)
-		if err != nil {
-			return nil, fmt.Errorf("init tag generator: %w", err)
-		}
-	}
-	if cfg.AI.IsSummaryEnabled() {
-		sumGen, err = gen("summary", cfg.AI.Summary)
-		if err != nil {
-			return nil, fmt.Errorf("init summary generator: %w", err)
-		}
-	}
-	var embGen ai.IEmbedder
-	if cfg.AI.IsEmbedEnabled() {
-		embGen, err = buildEmbedder("embed", cfg.AI.Embed, cfg.AI, providers)
-		if err != nil {
-			return nil, fmt.Errorf("init embedder: %w", err)
-		}
-	}
-	wrapped := embedcache.WrapDBCacheToEmbedder(embGen, cacheRepo)
+	wrapped := embedcache.WrapDBCacheToEmbedder(embedder, cacheRepo)
 	wrapped = embedcache.WrapLruCacheToEmbedder(wrapped, 20000, 2*time.Hour)
-	return ai.NewManager(polishGen, genGen, tagGen, sumGen, wrapped, ai.ManagerConfig{
-		Timeout:       cfg.AI.Timeout,
-		MaxInputChars: cfg.AI.MaxInputChars,
-	}), nil
+	return wrapped, nil
 }
 
 type serverRepos struct {
 	user           *repo.UserRepo
 	doc            *repo.DocumentRepo
-	summary        *repo.DocumentSummaryRepo
 	version        *repo.VersionRepo
 	oauth          *repo.OAuthRepo
 	emailCode      *repo.EmailVerificationRepo
@@ -410,7 +339,6 @@ func newServerRepos(db *sql.DB) serverRepos {
 	return serverRepos{
 		user:           repo.NewUserRepo(db),
 		doc:            repo.NewDocumentRepo(db),
-		summary:        repo.NewDocumentSummaryRepo(db),
 		version:        repo.NewVersionRepo(db),
 		oauth:          repo.NewOAuthRepo(db),
 		emailCode:      repo.NewEmailVerificationRepo(db),
@@ -449,8 +377,8 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		return err
 	}
 	deps, store, err := buildRouterDeps(
-		cfg, services.auth, services.oauth, services.documents, services.ai,
-		services.tags, services.assets, services.imports, r, services.runtime,
+		cfg, services.auth, services.oauth, services.documents, services.tags,
+		services.assets, services.imports, r, services.runtime,
 	)
 	if err != nil {
 		return err
@@ -475,7 +403,7 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 	}
 
 	return startServer(
-		cfg, db, engine, services.ai, services.documents,
+		cfg, db, engine, services.embedding,
 		[]mnoteapp.Worker{
 			service.NewImportWorker(services.imports, r.importJob, r.importJobNote),
 			service.NewAssetCleanupWorker(r.asset, store, services.runtime),
@@ -494,7 +422,7 @@ func responseCompression() gin.HandlerFunc {
 type serverServices struct {
 	auth      *service.AuthService
 	oauth     *service.OAuthService
-	ai        *service.AIService
+	embedding *service.EmbeddingService
 	documents *service.DocumentService
 	tags      *service.TagService
 	assets    *service.AssetService
@@ -509,11 +437,11 @@ func buildServerServices(
 	if err != nil {
 		return serverServices{}, err
 	}
-	aiProviders, err := initAIProviders(cfg)
+	embeddingProviders, err := initEmbeddingProviders(cfg)
 	if err != nil {
 		return serverServices{}, err
 	}
-	aiManager, err := initAIManager(cfg, aiProviders, repos.embeddingCache)
+	embedder, err := initAIEmbedder(cfg, embeddingProviders, repos.embeddingCache)
 	if err != nil {
 		return serverServices{}, err
 	}
@@ -536,15 +464,15 @@ func buildServerServices(
 		repos.user, repos.oauth, []byte(cfg.JWTSecret),
 		time.Hour*time.Duration(cfg.JWTTTLHours), oauthProviders, runtime,
 	)
-	aiService := service.NewAIService(database, aiManager, repos.embedding)
+	embeddingService := service.NewEmbeddingService(embedder, repos.embedding)
 	assets := service.NewAssetService(repos.asset, repos.documentAsset, runtime)
 	documents := service.NewDocumentService(
-		runtime, repos.doc, repos.summary, repos.version, repos.docTag, repos.share,
-		repos.tag, repos.user, aiService, cfg.VersionMaxKeep, assets,
+		runtime, repos.doc, repos.version, repos.docTag, repos.share,
+		repos.tag, repos.user, embeddingService, cfg.VersionMaxKeep, assets,
 	)
 	tags := service.NewTagService(runtime, repos.tag, repos.docTag)
 	return serverServices{
-		auth: auth, oauth: oauthService, ai: aiService,
+		auth: auth, oauth: oauthService, embedding: embeddingService,
 		documents: documents, tags: tags, assets: assets,
 		imports: service.NewImportService(
 			documents, tags, repos.importJob, repos.importJobNote, runtime,
@@ -566,8 +494,7 @@ func newMailSender(mail config.MailConfig) service.EmailSender {
 func buildRouterDeps(
 	cfg *config.Config,
 	authSvc *service.AuthService, oauthSvc *service.OAuthService,
-	docSvc *service.DocumentService, aiSvc *service.AIService,
-	tagSvc *service.TagService, assetSvc *service.AssetService,
+	docSvc *service.DocumentService, tagSvc *service.TagService, assetSvc *service.AssetService,
 	importSvc *service.ImportService, r serverRepos, runtime service.Runtime,
 ) (handler.RouterDeps, filestore.Store, error) {
 	store, err := filestore.New(filestore.Config{
@@ -602,11 +529,11 @@ func buildRouterDeps(
 		Shares:    handler.NewShareHandler(docSvc),
 		Tags:      handler.NewTagHandler(tagSvc),
 		Export: handler.NewExportHandler(
-			service.NewExportService(r.doc, r.summary, r.version, r.tag, r.docTag),
+			service.NewExportService(r.doc, r.version, r.tag, r.docTag),
 		),
-		Files:  fileHandler,
-		AI:     handler.NewAIHandler(aiSvc, docSvc, tagSvc),
-		Import: handler.NewImportHandler(importSvc, cfg.MaxUploadSize, service.SaveTempFile),
+		Files:          fileHandler,
+		SemanticSearch: handler.NewSemanticSearchHandler(docSvc),
+		Import:         handler.NewImportHandler(importSvc, cfg.MaxUploadSize, service.SaveTempFile),
 		Templates: handler.NewTemplateHandler(
 			service.NewTemplateService(r.template, docSvc, r.tag, runtime),
 		),
@@ -619,7 +546,7 @@ func buildRouterDeps(
 
 func startServer(
 	cfg *config.Config, database *sql.DB, engine webapi.IWebEngine,
-	aiSvc *service.AIService, docSvc *service.DocumentService,
+	embeddingSvc *service.EmbeddingService,
 	workers []mnoteapp.Worker,
 	r serverRepos,
 ) error {
@@ -631,7 +558,7 @@ func startServer(
 	defer stop()
 
 	scheduler := schedule.NewCronScheduler()
-	if err := addScheduledJobs(scheduler, cfg, aiSvc, docSvc, r); err != nil {
+	if err := addScheduledJobs(scheduler, cfg, embeddingSvc, r); err != nil {
 		return err
 	}
 	instance, err := mnoteapp.New(mnoteapp.Config{
@@ -649,7 +576,7 @@ func startServer(
 
 func addScheduledJobs(
 	s schedule.Scheduler, cfg *config.Config,
-	aiSvc *service.AIService, docSvc *service.DocumentService,
+	embeddingSvc *service.EmbeddingService,
 	r serverRepos,
 ) error {
 	type entry struct {
@@ -660,16 +587,10 @@ func addScheduledJobs(
 	jobs := []entry{
 		{job.NewImportCleanupJob(r.importJob, r.importJobNote, 24*time.Hour), "0 * * * *", "import_cleanup"},
 	}
-	if cfg.AI.IsEmbedEnabled() {
+	if cfg.AI.IsEnabled() {
 		jobs = append(jobs,
-			entry{job.NewAIEmbeddingJob(aiSvc, cfg.AIJob.EmbeddingDelaySeconds), "*/1 * * * *", "ai_embedding"},
+			entry{job.NewAIEmbeddingJob(embeddingSvc, cfg.AIJob.EmbeddingDelaySeconds), "*/1 * * * *", "ai_embedding"},
 			entry{job.NewEmbeddingCacheCleanupJob(r.embeddingCache, 30), "0 3 * * *", "embedding_cache_cleanup"},
-		)
-	}
-	if cfg.AI.IsSummaryEnabled() {
-		jobs = append(
-			jobs,
-			entry{job.NewAISummaryJob(docSvc, cfg.AIJob.SummaryDelaySeconds), "*/1 * * * *", "ai_summary"},
 		)
 	}
 	for _, e := range jobs {

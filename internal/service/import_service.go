@@ -76,7 +76,6 @@ func NewImportService(
 type notesImportPayload struct {
 	Title   string   `json:"title"`
 	Content string   `json:"content"`
-	Summary string   `json:"summary,omitempty"`
 	TagList []string `json:"tag_list,omitempty"`
 }
 
@@ -145,16 +144,15 @@ func (s *ImportService) CreateNotesJob(ctx context.Context, userID, filePath str
 			content = strings.TrimRight(content, "\n")
 		}
 		cleanTags := normalizeTags(payload.TagList)
-		summary := strings.TrimSpace(payload.Summary)
 		noteID, err := s.runtime.IDs.ID()
 		if err != nil {
 			return nil, fmt.Errorf("generate import note id: %w", err)
 		}
 		return &parsedNote{
-			note: model.ImportNote{Title: title, Content: content, Summary: summary, Tags: cleanTags, Source: file.Name},
+			note: model.ImportNote{Title: title, Content: content, Tags: cleanTags, Source: file.Name},
 			row: model.ImportJobNote{
 				ID: noteID, JobID: jobID, UserID: userID, Position: position,
-				Title: title, Content: content, Summary: summary, Tags: cleanTags, Source: file.Name, Ctime: now,
+				Title: title, Content: content, Tags: cleanTags, Source: file.Name, Ctime: now,
 			},
 		}, nil
 	}
@@ -291,7 +289,6 @@ func (s *ImportService) Preview(ctx context.Context, userID, jobID string) (*Imp
 		samples = append(samples, model.ImportNote{
 			Title:   note.Title,
 			Content: note.Content,
-			Summary: note.Summary,
 			Tags:    note.Tags,
 			Source:  note.Source,
 		})
@@ -479,7 +476,7 @@ func (s *ImportService) importNote(
 		finalTitle = s.appendSuffix(ctx, job.UserID, note.Title)
 	}
 	_, err = s.documents.Create(ctx, job.UserID, DocumentCreateInput{
-		Title: finalTitle, Content: note.Content, TagIDs: tagIDs, Summary: note.Summary,
+		Title: finalTitle, Content: note.Content, TagIDs: tagIDs,
 	})
 	if err != nil {
 		prog.recordFail(fmt.Sprintf("create failed: %s", finalTitle), finalTitle)
@@ -504,12 +501,8 @@ func (s *ImportService) overwriteNote(
 	ctx context.Context, job *model.ImportJob, existingID string,
 	note model.ImportJobNote, tagIDs []string, prog *importProgress,
 ) {
-	var summary *string
-	if note.Summary != "" {
-		summary = &note.Summary
-	}
 	err := s.documents.Update(ctx, job.UserID, existingID, DocumentUpdateInput{
-		Title: note.Title, Content: note.Content, TagIDs: tagIDs, Summary: summary,
+		Title: note.Title, Content: note.Content, TagIDs: tagIDs,
 	})
 	if err != nil {
 		prog.recordFail(fmt.Sprintf("overwrite failed: %s", note.Title), note.Title)

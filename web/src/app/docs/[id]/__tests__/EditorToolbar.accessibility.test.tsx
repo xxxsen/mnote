@@ -23,11 +23,7 @@ describe("EditorToolbar accessibility", () => {
         handleUndo={vi.fn()}
         handleRedo={vi.fn()}
         executeCommand={vi.fn()}
-        handleAiPolish={vi.fn()}
-        handleAiGenerateOpen={vi.fn()}
-        handleAiTags={vi.fn()}
         handlePreviewOpen={vi.fn()}
-        aiBusy={false}
         activePopover={null}
         setActivePopover={vi.fn()}
         colorButtonRef={createRef<HTMLButtonElement>()}
@@ -59,9 +55,6 @@ describe("EditorToolbar accessibility", () => {
       "Link",
       "Table",
       "Emoji",
-      "AI Polish",
-      "AI Generate",
-      "AI Tags",
       "Preview",
     ];
     for (const name of expectedButtons) {

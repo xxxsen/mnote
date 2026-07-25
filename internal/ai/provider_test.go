@@ -11,34 +11,14 @@ import (
 
 type stubProvider struct {
 	name     string
-	genText  string
-	genErr   error
 	embedVec []float32
 	embedErr error
 }
 
 func (s *stubProvider) Name() string { return s.name }
-func (s *stubProvider) Generate(_ context.Context, _, _ string) (string, error) {
-	return s.genText, s.genErr
-}
 
 func (s *stubProvider) Embed(_ context.Context, _, _, _ string) ([]float32, error) {
 	return s.embedVec, s.embedErr
-}
-
-func TestNewGenerator_Generate(t *testing.T) {
-	p := &stubProvider{genText: "polished text"}
-	gen := NewGenerator(p, "gpt-4")
-	result, err := gen.Generate(context.Background(), "test prompt")
-	require.NoError(t, err)
-	assert.Equal(t, "polished text", result)
-}
-
-func TestNewGenerator_GenerateError(t *testing.T) {
-	p := &stubProvider{genErr: errors.New("api error")}
-	gen := NewGenerator(p, "gpt-4")
-	_, err := gen.Generate(context.Background(), "test prompt")
-	assert.Error(t, err)
 }
 
 func TestNewEmbedder_Embed(t *testing.T) {

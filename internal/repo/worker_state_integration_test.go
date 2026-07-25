@@ -64,51 +64,6 @@ func TestImportJobClaimHasSingleConcurrentWinner(t *testing.T) {
 	require.Equal(t, 1, winners)
 }
 
-func TestSummaryCompletionDiscardsStaleContent(t *testing.T) {
-	database, cleanup := testutil.OpenTestDB(t)
-	defer cleanup()
-
-	ctx := context.Background()
-	documents := repo.NewDocumentRepo(database)
-	summaries := repo.NewDocumentSummaryRepo(database)
-	require.NoError(t, documents.Create(ctx, &model.Document{
-		ID: "doc-1", UserID: "user-1", Title: "title", Content: "old",
-		State: repo.DocumentStateNormal, ContentHash: "hash-old",
-		Ctime: 100, Mtime: 100, ContentMtime: 100,
-	}))
-	require.NoError(t, summaries.MarkPending(ctx, "user-1", "doc-1", "hash-old", 100))
-
-	task, err := summaries.Claim(ctx, 200, 200, 500)
-	require.NoError(t, err)
-	require.NotNil(t, task)
-	require.Equal(t, "hash-old", task.SourceContentHash)
-
-	_, err = database.ExecContext(
-		ctx,
-		`UPDATE documents
-		 SET content = $1, content_hash = $2, content_mtime = $3, mtime = $3
-		 WHERE id = $4`,
-		"new", "hash-new", 300, "doc-1",
-	)
-	require.NoError(t, err)
-
-	applied, err := summaries.CompleteIfCurrent(ctx, task, "stale summary", 301)
-	require.NoError(t, err)
-	require.False(t, applied)
-
-	var status model.SummaryStatus
-	var sourceHash, summary string
-	require.NoError(t, database.QueryRowContext(
-		ctx,
-		`SELECT status, source_content_hash, summary
-		 FROM document_summaries WHERE document_id = $1`,
-		"doc-1",
-	).Scan(&status, &sourceHash, &summary))
-	require.Equal(t, model.SummaryStatusPending, status)
-	require.Equal(t, "hash-new", sourceHash)
-	require.Empty(t, summary)
-}
-
 func TestAssetCleanupClaimExcludesReadyAndHasSingleWinner(t *testing.T) {
 	database, cleanup := testutil.OpenTestDB(t)
 	defer cleanup()

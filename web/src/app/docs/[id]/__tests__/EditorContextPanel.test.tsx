@@ -79,11 +79,6 @@ function ContextHarness({
       },
     },
     navigate: vi.fn(),
-    summary: "Summary body",
-    ai: {
-      aiLoading: false,
-      handleAiSummary: vi.fn(),
-    },
     contentRef: { current: "# Intro" },
     setShowDeleteConfirm: vi.fn(),
     handleExportMarkdown: vi.fn(),
@@ -151,7 +146,7 @@ describe("EditorContextPanel", () => {
     ).toBe("44px");
   });
 
-  it("moves focus from a collapsed Details shortcut to Summary", async () => {
+  it("moves focus from a collapsed Details shortcut to History", async () => {
     localStorage.setItem("mnote:editor-context-rail:collapsed:v1", "1");
     installMatchMedia(true);
     render(<ContextHarness docked />);
@@ -162,7 +157,7 @@ describe("EditorContextPanel", () => {
 
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        screen.getByRole("tab", { name: "Summary" }),
+        screen.getByRole("tab", { name: "History" }),
       ),
     );
   });
@@ -202,7 +197,7 @@ describe("EditorContextPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open details" }));
     expect(screen.getByText("Document details")).toBeTruthy();
-    for (const tabName of ["Summary", "History", "Share"]) {
+    for (const tabName of ["History", "Share"]) {
       expect(screen.getByRole("tab", { name: tabName })).toBeTruthy();
     }
     expect(
@@ -213,7 +208,7 @@ describe("EditorContextPanel", () => {
     expect(
       screen.getByRole("navigation", { name: "Note outline" }),
     ).toBeTruthy();
-    expect(screen.queryByRole("tab", { name: "Summary" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "History" })).toBeNull();
   });
 
   it("preserves Details tabs and loaded data while Outline is visible", async () => {
@@ -251,7 +246,7 @@ describe("EditorContextPanel", () => {
     await waitFor(() => expect(listVersions).toHaveBeenCalledTimes(2));
   });
 
-  it("resets Details to Summary after a document switch", async () => {
+  it("resets Details to History after a document switch", async () => {
     installMatchMedia(true);
     const listVersionsA = vi.fn().mockResolvedValue([]);
     const listVersionsB = vi.fn().mockResolvedValue([]);
@@ -260,8 +255,8 @@ describe("EditorContextPanel", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Open details" }));
-    fireEvent.click(screen.getByRole("tab", { name: "History" }));
     await waitFor(() => expect(listVersionsA).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("tab", { name: "Share" }));
 
     view.rerender(
       <ContextHarness docked docId="doc-b" listVersions={listVersionsB} />,
@@ -271,9 +266,8 @@ describe("EditorContextPanel", () => {
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open details" }));
     expect(
-      screen.getByRole("tab", { name: "Summary" }).getAttribute("aria-selected"),
+      screen.getByRole("tab", { name: "History" }).getAttribute("aria-selected"),
     ).toBe("true");
-    fireEvent.click(screen.getByRole("tab", { name: "History" }));
     await waitFor(() => expect(listVersionsB).toHaveBeenCalledTimes(1));
   });
 

@@ -10,7 +10,7 @@ import type {
 } from "../types";
 
 interface UseImportFlowDeps {
-  fetchSummary: () => Promise<void>;
+  fetchOverview: () => Promise<void>;
   fetchTags: (query: string) => Promise<void>;
   fetchSidebarTags: (offset: number, append: boolean, query: string) => Promise<void>;
   tagSearch: string;
@@ -77,7 +77,7 @@ async function pollImport({
 }
 
 export function useImportFlow(deps: UseImportFlowDeps) {
-  const { fetchSummary, fetchTags, fetchSidebarTags, tagSearch } = deps;
+  const { fetchOverview, fetchTags, fetchSidebarTags, tagSearch } = deps;
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<ImportStep>("upload");
   const [mode, setMode] = useState<ImportMode>("append");
@@ -191,7 +191,7 @@ export function useImportFlow(deps: UseImportFlowDeps) {
       if (requestId !== importRequestRef.current) return;
       setReport(nextReport);
       setStep("done");
-      void fetchSummary();
+      void fetchOverview();
       void fetchTags("");
       void fetchSidebarTags(0, false, tagSearch.trim());
     } catch (caught) {
@@ -204,7 +204,7 @@ export function useImportFlow(deps: UseImportFlowDeps) {
         importControllerRef.current = null;
       }
     }
-  }, [fetchSidebarTags, fetchSummary, fetchTags, jobId, mode, source, tagSearch]);
+  }, [fetchSidebarTags, fetchOverview, fetchTags, jobId, mode, source, tagSearch]);
 
   useEffect(() => () => {
     uploadRequestRef.current += 1;

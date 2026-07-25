@@ -2,7 +2,9 @@
 
 ## 1. 功能范围
 
-`/docs/[id]` 是文档的主编辑页面，提供 Markdown 源码编辑、实时预览、自动保存、本地草稿恢复、历史版本、标签、双链、文件粘贴、AI 辅助、分享、导出和文档关系浏览。
+`/docs/[id]` 是文档的主编辑页面，提供 Markdown 源码编辑、实时预览、自动保存、本地草稿恢复、历史
+版本、标签、双链、文件粘贴、分享、导出、相似文档和文档关系浏览。编辑器不提供内容生成、润色、摘要或
+标签建议。
 
 编辑器以“任何未经确认的本地内容都不能静默丢失，任何基于旧版本的写入都不能静默覆盖新版本”为最高约束。辅助功能失败时，正文编辑、本地草稿和手动重试仍应可用。
 
@@ -10,27 +12,28 @@
 
 编辑器实现位于 `web/src/app/docs/[id]`，核心边界如下：
 
-- `EditorPageClient`：页面级组合、路由、加载错误处理，以及 AI、标签、分享等独立功能接入。
+- `EditorPageClient`：页面级组合、路由、加载错误处理，以及标签、分享、相似文档等独立功能接入。
 - `useEditorSession`：组合正文缓冲区、保存队列、本地持久化、自动保存和冲突入口。
 - `useEditorBuffer`：维护正文快照、即时脏状态、实时标题、统计和预览快照。
 - `useEditorSaveQueue`：唯一的远端正文写入状态机。
 - `useEditorPersistence`：草稿写入、离页 flush 和本地存储故障提示。
 - `useAutosaveScheduler`：idle/max-wait 自动保存和恢复在线后的重试。
 - `EditorShell`：页面可见结构，只接收 `session`、`commands`、`ui` 三组显式契约。
-- `EditorOverlayHost`：AI、预览、快速打开、相似文档、文档上下文抽屉和格式弹层。
+- `EditorOverlayHost`：预览、快速打开、相似文档、文档上下文抽屉和格式弹层。
 - `EditorContextRail` / `EditorContextDrawer`：宽屏布局内右栏和窄屏抽屉的两种外壳，共用 Outline / Details 互斥内容结构。
 - `ReadingSurface`：Preview、全屏预览和模板/公开阅读页共享的阅读容器，只统一视觉与局部
   overflow，不合并业务状态。
 - `useEditorContextRail`：维护 Outline / Details 视图、Details tab、抽屉和折叠偏好；切换文档时重置视图与 tab。
-- `DetailsPanelContent` / `DetailsShareContent`：Summary、History、Share、导出和删除的纯内容组件，不自行创建定位外壳。
+- `DetailsPanelContent` / `DetailsShareContent`：History、Share、导出和删除的纯内容组件，不自行创建定位外壳。
 - `SplitPane`：桌面分栏比例、像素最小宽度和键盘/指针交互。
 - `editor-contracts.ts`：页面组合层与渲染层之间的显式接口，组件 Props 不依赖 Hook 推断返回类型。
 
-AI、标签、分享、相似文档继续使用独立 Hook，不进入编辑会话状态，避免光标或正文变化引起无关功能重算。
+标签、分享、相似文档继续使用独立 Hook，不进入编辑会话状态，避免光标或正文变化引起无关功能重算。
 
 ## 3. 正文真源和派生状态
 
-CodeMirror 文档是编辑器挂载后的交互真源。所有输入入口最终都必须通过 `publishContent` 发布当前正文，包括键盘输入、格式命令、双链、AI 应用、上传占位替换、撤销重做和版本恢复。
+CodeMirror 文档是编辑器挂载后的交互真源。所有输入入口最终都必须通过 `publishContent` 发布当前正文，
+包括键盘输入、格式命令、双链、上传占位替换、撤销重做和版本恢复。
 
 发布正文时同步更新：
 
@@ -204,8 +207,11 @@ Markdown 预览的 `h1-h6`、`p`、`li`、`pre`、`blockquote`、`table` 和 `hr
 
 - 视口不小于 `1280px` 时常驻最右侧；展开宽度为 `304px`，折叠图标栏宽度为 `52px`。
 - 默认视图为整栏 Outline，并默认展开；折叠偏好使用 `mnote:editor-context-rail:collapsed:v1` 持久化，当前视图和 Details tab 不跨文档持久化。
-- Mentions 和 Graph 当前不提供可见入口。顶部 Details 按钮把同一物理右栏切换为 Summary、History、Share，并隐藏 Outline；按钮随后变为 Show outline，点击后原位恢复 Outline。Details 切换不是折叠操作，右栏折叠由独立按钮控制。
-- 同一文档内切到 Outline 时保留 Details 组件实例、当前 tab 和已加载数据；再次打开 Details 不重复加载已保留的 History 或 Share。通过顶部 Details 从 Outline 进入时默认定位 Summary；切换文档时重置为 Outline / Summary。
+- Mentions 和 Graph 当前不提供可见入口。顶部 Details 按钮把同一物理右栏切换为 History、Share，并
+  隐藏 Outline；按钮随后变为 Show outline，点击后原位恢复 Outline。Details 切换不是折叠操作，右栏
+  折叠由独立按钮控制。
+- 同一文档内切到 Outline 时保留 Details 组件实例、当前 tab 和已加载数据；再次打开 Details 不重复加载
+  已保留的 History 或 Share。首次进入 Details 默认定位 History；切换文档时重置为 Outline / History。
 - `1024px–1279px` 使用最大宽度 `384px` 的右侧 Dialog drawer；小于 `1024px` 时同一 drawer 铺满可用宽度。窄屏顶部的 Outline 和 Details 入口打开同一个 drawer，内容仍互斥；Outline 选中章节后关闭 drawer。断点进入宽屏会关闭 drawer，退出宽屏不会自动弹出。
 
 Split 的静态比例边界为 30%～70%，编辑器和预览器的像素最小宽度均为 `420px`。`SplitPane` 从主工作区实测宽度扣除 `6px` 分隔条后收紧有效比例；视口变化只 clamp 本次展示值，不覆盖已保存比例，只有用户主动拖动或按键时才保存新比例。分隔条支持指针拖动、方向键、Home/End 和双击恢复 50%。
@@ -226,7 +232,8 @@ Split 的静态比例边界为 30%～70%，编辑器和预览器的像素最小�
 - 关闭后恢复触发点焦点；
 - 打开期间 body scroll lock。
 
-删除、预览、文档预览、快速打开、AI、移动 More、文档上下文 drawer、草稿恢复和冲突对话框使用同一实现。草稿恢复和冲突对话框禁止 Escape 与背景关闭，其余对话框允许关闭。
+删除、预览、文档预览、快速打开、移动 More、文档上下文 drawer、草稿恢复和冲突对话框使用同一实现。
+草稿恢复和冲突对话框禁止 Escape 与背景关闭，其余对话框允许关闭。
 
 Slash/Wikilink 菜单使用 listbox/option 语义，编辑器暴露 `aria-controls`、`aria-expanded` 和 `aria-activedescendant`。异步结果尚未加载或为空时，Enter 不执行选择。
 
@@ -238,8 +245,7 @@ Slash/Wikilink 菜单使用 listbox/option 语义，编辑器暴露 `aria-contro
 - `[[` 查询文档并通过 CodeMirror transaction 插入内部链接。
 - 正文保存事务重建出链、反向链接和资产引用。
 - 粘贴文件先插入唯一占位；上传完成后按占位内容替换，不依赖过期字符偏移。
-- AI 生成或润色的应用也经过统一正文发布入口。
-- AI、相似文档、摘要、分享、导出或关系查询失败时，不改变同步状态和本地草稿。
+- 相似文档、分享、导出或关系查询失败时，不改变同步状态和本地草稿。
 
 ## 13. 发布与回滚
 

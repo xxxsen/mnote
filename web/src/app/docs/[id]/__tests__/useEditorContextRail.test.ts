@@ -64,7 +64,7 @@ describe("useEditorContextRail", () => {
 
     expect(result.current.isDocked).toBe(true);
     expect(result.current.view).toBe("outline");
-    expect(result.current.detailsTab).toBe("summary");
+    expect(result.current.detailsTab).toBe("history");
     expect(result.current.outlineOpen).toBe(true);
     expect(result.current.detailsOpen).toBe(false);
 
@@ -90,13 +90,13 @@ describe("useEditorContextRail", () => {
     );
 
     act(() => {
-      result.current.openDetails("history");
+      result.current.openDetails("share");
       result.current.setCollapsed(true);
     });
     rerender({ docId: "doc-b" });
 
     expect(result.current.view).toBe("outline");
-    expect(result.current.detailsTab).toBe("summary");
+    expect(result.current.detailsTab).toBe("history");
     expect(result.current.drawerOpen).toBe(false);
     expect(result.current.collapsed).toBe(true);
   });
@@ -115,23 +115,23 @@ describe("useEditorContextRail", () => {
     expect(result.current.view).toBe("outline");
   });
 
-  it("makes the toolbar Details action switch with Outline and reopen at Summary", () => {
+  it("makes the toolbar Details action switch with Outline and reopen at History", () => {
     installMatchMedia(true);
     const { result } = renderHook(() => useEditorContextRail("doc-a"));
 
     act(() => result.current.toggleDetails());
     expect(result.current.view).toBe("details");
-    expect(result.current.detailsTab).toBe("summary");
+    expect(result.current.detailsTab).toBe("history");
     expect(result.current.detailsOpen).toBe(true);
 
-    act(() => result.current.setDetailsTab("history"));
+    act(() => result.current.setDetailsTab("share"));
     act(() => result.current.toggleDetails());
     expect(result.current.view).toBe("outline");
     expect(result.current.outlineOpen).toBe(true);
 
     act(() => result.current.toggleDetails());
     expect(result.current.view).toBe("details");
-    expect(result.current.detailsTab).toBe("summary");
+    expect(result.current.detailsTab).toBe("history");
     expect(result.current.detailsOpen).toBe(true);
   });
 

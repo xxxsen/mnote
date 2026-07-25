@@ -30,7 +30,6 @@ const currentDocument: Document = {
   user_id: "u1",
   title: "Current",
   content: "# Current",
-  summary: "",
   state: 1,
   pinned: 0,
   starred: 0,
