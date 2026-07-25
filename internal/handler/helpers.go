@@ -80,7 +80,8 @@ func handleError(c *gin.Context, err error) {
 	if err == nil {
 		return
 	}
-	if errors.Is(err, ai.ErrUnavailable) {
+	_, _, providerError := ai.ErrorDetails(err)
+	if errors.Is(err, ai.ErrUnavailable) || providerError {
 		response.Error(c, errcode.ErrAIUnavailable, "ai unavailable")
 		return
 	}

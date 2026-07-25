@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -152,6 +153,29 @@ func TestLoad_CustomDefaults(t *testing.T) {
 	assert.Equal(t, int64(20), cfg.AIJob.EmbeddingDelaySeconds)
 }
 
+func TestLoad_NormalizesEmbeddingIdentifiers(t *testing.T) {
+	j := `{
+		"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
+		"ai_provider": [
+			{"name": " openai ", "type": " openai ", "data": {"api_key": "key"}}
+		],
+		"ai": {
+			"enabled": true,
+			"provider": " openai ",
+			"model": " embedding-model ",
+			"embed": [{"provider": " openai ", "model": " embedding-model "}]
+		}
+	}`
+	cfg, err := Load(writeConfig(t, j))
+	require.NoError(t, err)
+	assert.Equal(t, "openai", cfg.AI.Provider)
+	assert.Equal(t, "embedding-model", cfg.AI.Model)
+	assert.Equal(t, "openai", cfg.AI.Embed[0].Provider)
+	assert.Equal(t, "embedding-model", cfg.AI.Embed[0].Model)
+	assert.Equal(t, "openai", cfg.AIProvider[0].Name)
+	assert.Equal(t, "openai", cfg.AIProvider[0].Type)
+}
+
 func TestAIEmbeddingConfig_WithDefaults(t *testing.T) {
 	ac := AIConfig{Provider: "openai", Model: "embedding-model"}
 
@@ -235,6 +259,196 @@ func TestLoad_AIEmbeddingValidation(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, cfg.AI.IsEnabled())
 	})
+}
+
+func TestLoad_AIV2ProfileDefaultsAndCompatibility(t *testing.T) {
+	base := `{
+		"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
+		"ai_provider": [{
+			"name": "primary", "type": "openai", "data": {"api_key": "key"}
+		}],
+		"ai": {
+			"enabled": true,
+			"profiles": [{
+				"id": "notes-v2",
+				"space_id": "space",
+				"model": "model",
+				"dimensions": 384,
+				"providers": ["primary"]
+			}]
+		}
+	}`
+	cfg, err := Load(writeConfig(t, base))
+	require.NoError(t, err)
+	require.True(t, cfg.AI.UsesV2())
+	require.Len(t, cfg.AI.Profiles, 1)
+	profile := cfg.AI.Profiles[0]
+	assert.Equal(t, "cosine", profile.Metric)
+	assert.Equal(t, 2, profile.ChunkerVersion)
+	assert.Equal(t, "RETRIEVAL_QUERY", profile.QueryTaskType)
+	assert.Equal(t, "RETRIEVAL_DOCUMENT", profile.DocumentTaskType)
+	assert.InDelta(t, 0.55, profile.ResolvedMinScore(), 0.0001)
+	assert.Equal(t, 30, cfg.AI.RequestTimeoutSeconds)
+	assert.Equal(t, 2, cfg.AI.WorkerConcurrency)
+	assert.Equal(t, 16, cfg.AI.BatchSize)
+	assert.Equal(t, int64(300), cfg.AI.ResolvedIndexDelaySeconds(cfg.AIJob))
+	assert.Len(t, profile.Fingerprint(), 64)
+}
+
+func TestLoad_LegacyEmbeddingConfigDefaultsToV2(t *testing.T) {
+	path := writeConfig(t, `{
+		"database": {"host": "localhost"},
+		"jwt_secret": "secret",
+		"port": 8080,
+		"ai_provider": [
+			{
+				"name": "primary",
+				"type": "gemini",
+				"data": {"api_key": "test"}
+			},
+			{
+				"name": "backup",
+				"type": "openai",
+				"data": {"api_key": "test"}
+			}
+		],
+		"ai": {
+			"provider": "primary",
+			"model": "text-embedding-004",
+			"embed": [
+				{"provider": "primary"},
+				{"provider": "backup"}
+			]
+		}
+	}`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.True(t, cfg.AI.UsesV2())
+	require.Len(t, cfg.AI.Profiles, 1)
+	profile := cfg.AI.Profiles[0]
+	assert.Equal(t, "default-v2", profile.ID)
+	assert.Equal(t, "text-embedding-004@mnote-v2-768", profile.SpaceID)
+	assert.Equal(t, "text-embedding-004", profile.Model)
+	assert.Equal(t, 768, profile.Dimensions)
+	assert.Equal(t, []string{"primary", "backup"}, profile.Providers)
+	assert.Equal(t, 30, cfg.AI.RequestTimeoutSeconds)
+	assert.Equal(t, 2, cfg.AI.WorkerConcurrency)
+}
+
+func TestLoad_ExplicitlyDisabledEmbeddingDoesNotDefaultToV2(t *testing.T) {
+	path := writeConfig(t, `{
+		"database": {"host": "localhost"},
+		"jwt_secret": "secret",
+		"port": 8080,
+		"ai_provider": [{
+			"name": "embedding",
+			"type": "gemini",
+			"data": {"api_key": "test"}
+		}],
+		"ai": {
+			"enabled": false,
+			"provider": "embedding",
+			"model": "text-embedding-004"
+		}
+	}`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.False(t, cfg.AI.IsEnabled())
+	assert.False(t, cfg.AI.UsesV2())
+	assert.Empty(t, cfg.AI.Profiles)
+}
+
+func TestDefaultEmbeddingDimensions(t *testing.T) {
+	assert.Equal(t, 768, defaultEmbeddingDimensions("gemini", "custom-model"))
+	assert.Equal(t, 768, defaultEmbeddingDimensions("openai", "text-embedding-004"))
+	assert.Equal(t, 1536, defaultEmbeddingDimensions("openai", "text-embedding-3-large"))
+	assert.Equal(t, 1536, defaultEmbeddingDimensions("openrouter", "custom-model"))
+	assert.Zero(t, defaultEmbeddingDimensions("unknown", "custom-model"))
+}
+
+func TestLoad_AIV2InheritsExplicitZeroLegacyDelay(t *testing.T) {
+	path := writeConfig(t, `{
+		"database": {"host": "localhost"},
+		"jwt_secret": "secret",
+		"port": 8080,
+		"file_store": {"type": "local", "data": {"dir": "/tmp"}},
+		"ai_provider": [{
+			"name": "embedding",
+			"type": "openai",
+			"data": {"api_key": "test"}
+		}],
+		"ai": {
+			"enabled": true,
+			"profiles": [{
+				"id": "notes",
+				"space_id": "space",
+				"model": "model",
+				"dimensions": 384,
+				"providers": ["embedding"]
+			}]
+		},
+		"ai_job": {"embedding_delay_seconds": 0}
+	}`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), cfg.AI.ResolvedIndexDelaySeconds(cfg.AIJob))
+}
+
+func TestLoad_AIV2RejectsAmbiguousOrUnsafeConfig(t *testing.T) {
+	validProfile := `{
+		"id": "notes-v2",
+		"space_id": "space",
+		"model": "model",
+		"dimensions": 384,
+		"providers": ["primary"]
+	}`
+	prefix := `{
+		"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
+		"ai_provider": [{
+			"name": "primary", "type": "openai", "data": {"api_key": "key"}
+		}],`
+	tests := []struct {
+		name    string
+		profile string
+		extraAI string
+		job     string
+	}{
+		{
+			name: "unknown provider",
+			profile: strings.Replace(
+				validProfile,
+				`["primary"]`,
+				`["missing"]`,
+				1,
+			),
+		},
+		{
+			name:    "unsupported dimensions",
+			profile: strings.Replace(validProfile, "384", "777", 1),
+		},
+		{
+			name:    "unsafe lease",
+			profile: validProfile,
+			extraAI: `, "request_timeout_seconds": 60, "lease_seconds": 100`,
+		},
+		{
+			name:    "conflicting delays",
+			profile: validProfile,
+			extraAI: `, "index_delay_seconds": 10`,
+			job:     `, "ai_job": {"embedding_delay_seconds": 20}`,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			value := prefix + `"ai": {"enabled": true, "profiles": [` +
+				testCase.profile + `]` + testCase.extraAI + `}` + testCase.job + `}`
+			_, err := Load(writeConfig(t, value))
+			assert.ErrorIs(t, err, errInvalidAIConfig)
+		})
+	}
 }
 
 func TestApplyOAuthDefaults_GithubScopes(t *testing.T) {

@@ -441,3 +441,40 @@ func (h *DocumentHandler) Backlinks(c *gin.Context) {
 
 	response.Success(c, items)
 }
+
+func (h *DocumentHandler) Similar(c *gin.Context) {
+	page, err := parsePage(c, 5, 20)
+	if err != nil || page.Offset != 0 {
+		response.Error(c, errcode.ErrInvalid, "invalid pagination")
+		return
+	}
+	result, err := h.documents.SimilarDocuments(
+		c.Request.Context(),
+		getUserID(c),
+		c.Param("id"),
+		page.Limit,
+	)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	type similarDocumentResponse struct {
+		documentResponse
+		Score float32 `json:"score"`
+	}
+	items := make([]similarDocumentResponse, 0, len(result.Documents))
+	for index, document := range result.Documents {
+		score := float32(0)
+		if index < len(result.Scores) {
+			score = result.Scores[index]
+		}
+		items = append(items, similarDocumentResponse{
+			documentResponse: toDocumentResponse(document),
+			Score:            score,
+		})
+	}
+	response.Success(c, gin.H{
+		"items":        items,
+		"index_status": result.IndexStatus,
+	})
+}

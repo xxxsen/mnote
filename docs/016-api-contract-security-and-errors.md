@@ -21,7 +21,7 @@
 - 文档、版本、标签和分享管理。
 - 文件上传、资产和引用。
 - 待办、模板、导入、导出。
-- Embedding 驱动的语义搜索。
+- Embedding 驱动的语义搜索和相似文档。
 
 鉴权中间件解析 Bearer JWT 并写入用户上下文。Handler 不接受请求体中的用户 ID 作为授权依据。
 
@@ -60,6 +60,15 @@ Service 把输入错误、未授权、未找到、冲突、限流、不可用和
 - Embedding 未配置或上游暂不可用；`/ai/search` 沿用已发布的 unavailable 业务码。
 
 内部日志保留请求 ID 和错误链，响应只给稳定消息。
+
+Embedding Provider 的错误归一为 `invalid_config`、`invalid_request`、`unauthorized`、`rate_limited`、
+`timeout`、`transport`、`upstream_5xx`、`invalid_response` 和 `canceled`。上游响应正文不得进入 API、
+持久化错误或日志；401/403 等永久错误不由备用端点掩盖。
+
+当存在 active V2 但远程 Embedding 被显式关闭、当前 Profile 客户端未配置或 Provider 暂不可用时，
+语义搜索返回既有 `ErrAIUnavailable` 业务码和 `ai unavailable` 稳定消息，不能静默回退到 V1 或其他
+Profile。相似文档不需要生成 query vector；显式关闭时返回成功空列表及 `index_status: disabled`，
+尚在构建、源文档未索引和可用状态分别返回 `building`、`pending` 和 `ready`。
 
 ## 5. JWT 和用户隔离
 
@@ -122,6 +131,10 @@ Handler 只完成协议层验证，跨实体约束由 Service 执行。正文保
 - 公开接口仍执行资源范围、输入和限流校验。
 - 非 JSON 响应明确设置内容类型、下载名和安全头。
 - 新接口必须纳入统一中间件、错误和日志体系。
+- 相似文档必须先校验源文档所有权；查询在 SQL 召回前按用户、normal 状态、active Generation 和当前
+  内容哈希过滤，要求对应 Job 为 succeeded 且 desired hash 与 index hash 一致，并排除源文档。
+- active Generation 在查询期间切换时完整重试一次；连续切换返回统一的 AI unavailable，不返回跨向量
+  空间混合结果。
 
 ## 12. 验证要点
 
@@ -132,3 +145,4 @@ Handler 只完成协议层验证，跨实体约束由 Service 执行。正文保
 - 上传、分页、文本和压缩包边界被后端执行。
 - 日志可定位请求但不包含敏感正文或凭据。
 - DTO 序列化测试确认密码摘要、规范化邮箱、资产内部状态、租约和内部错误不会进入响应。
+- 语义搜索和相似文档验证跨用户隔离、`exclude_id`、未索引/重建中状态、相关度阈值和响应字段兼容性。

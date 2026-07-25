@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/xxxsen/mnote/internal/ai"
 	"github.com/xxxsen/mnote/internal/model"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/repo"
@@ -154,6 +156,99 @@ func newTestEmbeddingService(mgr *mockEmbedder, emb *mockEmbeddingRepo, chunker 
 	return newEmbeddingServiceFromInterfaces(mgr, emb, chunker)
 }
 
+type fakeEmbeddingV2RuntimeRepo struct {
+	generation     *model.EmbeddingGeneration
+	profile        *model.EmbeddingProfile
+	activeErr      error
+	searchChunks   []model.SemanticChunkResult
+	searchErr      error
+	searchErrors   []error
+	searchCalls    int
+	searchExclude  string
+	searchRecall   int
+	similarResults []model.SimilarDocumentResult
+	similarIndexed bool
+	similarErrors  []error
+	similarCalls   int
+	enqueueCalls   int
+}
+
+func (repository *fakeEmbeddingV2RuntimeRepo) GetActiveGeneration(
+	context.Context,
+) (*model.EmbeddingGeneration, *model.EmbeddingProfile, error) {
+	if repository.activeErr != nil {
+		return nil, nil, repository.activeErr
+	}
+	return repository.generation, repository.profile, nil
+}
+
+func (repository *fakeEmbeddingV2RuntimeRepo) EnqueueContentChange(
+	context.Context,
+	string,
+	string,
+	string,
+	int64,
+	int64,
+	int64,
+) error {
+	repository.enqueueCalls++
+	return nil
+}
+
+func (*fakeEmbeddingV2RuntimeRepo) DeleteDocumentData(
+	context.Context,
+	string,
+	string,
+) error {
+	return nil
+}
+
+func (repository *fakeEmbeddingV2RuntimeRepo) SearchActiveChunks(
+	_ context.Context,
+	_, excludeID string,
+	_ []float32,
+	recallLimit int,
+) (
+	*model.EmbeddingGeneration,
+	*model.EmbeddingProfile,
+	[]model.SemanticChunkResult,
+	string,
+	error,
+) {
+	repository.searchCalls++
+	repository.searchExclude = excludeID
+	repository.searchRecall = recallLimit
+	path := "precise"
+	if len(repository.searchChunks) > 0 &&
+		repository.searchChunks[0].SearchPath != "" {
+		path = repository.searchChunks[0].SearchPath
+	}
+	searchErr := repository.searchErr
+	if repository.searchCalls <= len(repository.searchErrors) {
+		searchErr = repository.searchErrors[repository.searchCalls-1]
+	}
+	return repository.generation, repository.profile, repository.searchChunks, path, searchErr
+}
+
+func (repository *fakeEmbeddingV2RuntimeRepo) SimilarDocuments(
+	context.Context,
+	string,
+	string,
+	int,
+) (
+	*model.EmbeddingGeneration,
+	[]model.SimilarDocumentResult,
+	bool,
+	error,
+) {
+	repository.similarCalls++
+	var similarErr error
+	if repository.similarCalls <= len(repository.similarErrors) {
+		similarErr = repository.similarErrors[repository.similarCalls-1]
+	}
+	return repository.generation, repository.similarResults, repository.similarIndexed, similarErr
+}
+
 func TestEmbeddingService_Embed(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		mgr := &mockEmbedder{
@@ -177,6 +272,393 @@ func TestEmbeddingService_Embed(t *testing.T) {
 		_, err := svc.Embed(context.Background(), "test", "RETRIEVAL_QUERY")
 		assert.Error(t, err)
 	})
+}
+
+func TestEmbeddingService_SemanticSearchV2RanksAndClamps(t *testing.T) {
+	profile := &model.EmbeddingProfile{
+		ID:               "profile",
+		Fingerprint:      "fingerprint",
+		Dimensions:       2,
+		QueryTaskType:    "query",
+		DocumentTaskType: "document",
+	}
+	generation := &model.EmbeddingGeneration{
+		ID:        "generation",
+		ProfileID: profile.ID,
+		Status:    model.EmbeddingGenerationActive,
+	}
+	repository := &fakeEmbeddingV2RuntimeRepo{
+		generation: generation,
+		profile:    profile,
+		searchChunks: []model.SemanticChunkResult{
+			{DocumentID: "one", Score: 0.9, ChunkType: model.ChunkTypeTitle, MatchedText: "best title", SearchPath: "precise"},
+			{DocumentID: "one", Score: 0.8, ChunkType: model.ChunkTypeText, MatchedText: "body"},
+			{DocumentID: "one", Score: 0.7, ChunkType: model.ChunkTypeCode, MatchedText: "code"},
+			{DocumentID: "one", Score: 0.6, ChunkType: model.ChunkTypeText, MatchedText: "ignored fourth chunk"},
+			{DocumentID: "two", Score: 0.6, ChunkType: model.ChunkTypeText, MatchedText: "other body"},
+		},
+	}
+	embedder := &fakeWorkerProfileEmbedder{
+		profile: ai.ProfileIdentity{
+			ID:          profile.ID,
+			Fingerprint: profile.Fingerprint,
+			Dimensions:  profile.Dimensions,
+		},
+	}
+	service := NewEmbeddingService(nil, nil)
+	service.ConfigureV2(
+		repository,
+		0,
+		map[string]ai.ProfileEmbedder{profile.ID: embedder},
+		map[string]float32{profile.ID: 0.55},
+	)
+
+	matches, err := service.SemanticSearchMatches(
+		context.Background(),
+		"user",
+		"query",
+		2,
+		"excluded",
+	)
+	require.NoError(t, err)
+	require.Len(t, matches, 2)
+	assert.Equal(t, "one", matches[0].DocumentID)
+	assert.Equal(t, "best title", matches[0].MatchedExcerpt)
+	assert.Equal(t, string(model.ChunkTypeTitle), matches[0].MatchType)
+	for _, match := range matches {
+		assert.GreaterOrEqual(t, match.Score, float32(-1))
+		assert.LessOrEqual(t, match.Score, float32(1))
+	}
+	assert.Equal(t, "excluded", repository.searchExclude)
+	assert.Equal(t, 200, repository.searchRecall)
+}
+
+func TestEmbeddingService_SimilarDocumentStatuses(t *testing.T) {
+	service := NewEmbeddingService(nil, nil)
+	_, _, status, err := service.SimilarDocuments(
+		context.Background(),
+		"user",
+		"document",
+		5,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "disabled", status)
+
+	repository := &fakeEmbeddingV2RuntimeRepo{activeErr: sql.ErrNoRows}
+	service.ConfigureV2(repository, 0, nil, nil)
+	_, _, status, err = service.SimilarDocuments(
+		context.Background(),
+		"user",
+		"document",
+		5,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "building", status)
+
+	repository.activeErr = nil
+	repository.generation = &model.EmbeddingGeneration{
+		ID:        "generation",
+		ProfileID: "profile",
+		Status:    model.EmbeddingGenerationActive,
+	}
+	repository.profile = &model.EmbeddingProfile{ID: "profile"}
+	repository.similarIndexed = false
+	_, _, status, err = service.SimilarDocuments(
+		context.Background(),
+		"user",
+		"document",
+		5,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "pending", status)
+
+	repository.similarIndexed = true
+	repository.similarResults = []model.SimilarDocumentResult{{
+		DocumentID: "similar",
+		Score:      2,
+	}, {
+		DocumentID: "irrelevant",
+		Score:      0.2,
+	}}
+	ids, scores, status, err := service.SimilarDocuments(
+		context.Background(),
+		"user",
+		"document",
+		5,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "ready", status)
+	assert.Equal(t, []string{"similar"}, ids)
+	assert.Equal(t, []float32{1}, scores)
+}
+
+func TestEmbeddingService_RetriesActiveGenerationSwitchOnce(t *testing.T) {
+	profile := &model.EmbeddingProfile{
+		ID:            "profile",
+		Fingerprint:   "fingerprint",
+		Dimensions:    2,
+		QueryTaskType: "query",
+	}
+	generation := &model.EmbeddingGeneration{
+		ID:        "generation",
+		ProfileID: profile.ID,
+		Status:    model.EmbeddingGenerationActive,
+	}
+	repository := &fakeEmbeddingV2RuntimeRepo{
+		generation: generation,
+		profile:    profile,
+		searchErrors: []error{
+			repo.ErrEmbeddingActiveChanged,
+			nil,
+		},
+		searchChunks: []model.SemanticChunkResult{{
+			DocumentID: "match",
+			Score:      0.9,
+			ChunkType:  model.ChunkTypeText,
+		}},
+		similarErrors: []error{
+			repo.ErrEmbeddingActiveChanged,
+			nil,
+		},
+		similarIndexed: true,
+		similarResults: []model.SimilarDocumentResult{{
+			DocumentID: "similar",
+			Score:      0.8,
+		}},
+	}
+	embedder := &fakeWorkerProfileEmbedder{profile: ai.ProfileIdentity{
+		ID:          profile.ID,
+		Fingerprint: profile.Fingerprint,
+		Dimensions:  profile.Dimensions,
+	}}
+	service := NewEmbeddingService(nil, nil)
+	service.ConfigureV2(
+		repository,
+		0,
+		map[string]ai.ProfileEmbedder{profile.ID: embedder},
+		map[string]float32{profile.ID: 0.5},
+	)
+
+	matches, err := service.SemanticSearchMatches(
+		context.Background(),
+		"user",
+		"query",
+		5,
+		"",
+	)
+	require.NoError(t, err)
+	require.Len(t, matches, 1)
+	assert.Equal(t, 2, repository.searchCalls)
+
+	ids, _, status, err := service.SimilarDocuments(
+		context.Background(),
+		"user",
+		"document",
+		5,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "ready", status)
+	assert.Equal(t, []string{"similar"}, ids)
+	assert.Equal(t, 2, repository.similarCalls)
+}
+
+func TestEmbeddingService_RepeatedActiveGenerationSwitchIsUnavailable(t *testing.T) {
+	profile := &model.EmbeddingProfile{
+		ID:            "profile",
+		Fingerprint:   "fingerprint",
+		Dimensions:    2,
+		QueryTaskType: "query",
+	}
+	repository := &fakeEmbeddingV2RuntimeRepo{
+		generation: &model.EmbeddingGeneration{
+			ID:        "generation",
+			ProfileID: profile.ID,
+			Status:    model.EmbeddingGenerationActive,
+		},
+		profile: profile,
+		searchErrors: []error{
+			repo.ErrEmbeddingActiveChanged,
+			repo.ErrEmbeddingActiveChanged,
+		},
+		similarErrors: []error{
+			repo.ErrEmbeddingActiveChanged,
+			repo.ErrEmbeddingActiveChanged,
+		},
+	}
+	service := NewEmbeddingService(nil, nil)
+	service.ConfigureV2(
+		repository,
+		0,
+		map[string]ai.ProfileEmbedder{profile.ID: &fakeWorkerProfileEmbedder{
+			profile: ai.ProfileIdentity{
+				ID:          profile.ID,
+				Fingerprint: profile.Fingerprint,
+				Dimensions:  profile.Dimensions,
+			},
+		}},
+		nil,
+	)
+
+	_, err := service.SemanticSearchMatches(
+		context.Background(),
+		"user",
+		"query",
+		5,
+		"",
+	)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ai.ErrUnavailable)
+	assert.Equal(t, 2, repository.searchCalls)
+
+	similarIDs, similarScores, similarStatus, similarErr := service.SimilarDocuments(
+		context.Background(),
+		"user",
+		"document",
+		5,
+	)
+	require.Error(t, similarErr)
+	assert.ErrorIs(t, similarErr, ai.ErrUnavailable)
+	assert.Nil(t, similarIDs)
+	assert.Nil(t, similarScores)
+	assert.Empty(t, similarStatus)
+	assert.Equal(t, 2, repository.similarCalls)
+}
+
+func TestEmbeddingService_StopsLegacyWritesAfterV2Activation(t *testing.T) {
+	legacyWrites := 0
+	legacy := &mockEmbeddingRepo{
+		upsertPendingFn: func(
+			context.Context,
+			string,
+			string,
+			string,
+			int64,
+		) error {
+			legacyWrites++
+			return nil
+		},
+	}
+	profile := &model.EmbeddingProfile{ID: "profile"}
+	repository := &fakeEmbeddingV2RuntimeRepo{
+		generation: &model.EmbeddingGeneration{
+			ID:        "generation",
+			ProfileID: profile.ID,
+			Status:    model.EmbeddingGenerationActive,
+		},
+		profile: profile,
+	}
+	service := NewEmbeddingService(nil, legacy)
+	service.ConfigureV2(repository, 30, nil, nil)
+
+	require.NoError(t, service.EnqueueContentChange(
+		context.Background(),
+		"user",
+		"document",
+		"hash",
+		1,
+		100,
+	))
+	assert.Equal(t, 1, repository.enqueueCalls)
+	assert.Zero(t, legacyWrites)
+
+	repository.activeErr = sql.ErrNoRows
+	require.NoError(t, service.EnqueueContentChange(
+		context.Background(),
+		"user",
+		"document",
+		"next-hash",
+		2,
+		200,
+	))
+	assert.Equal(t, 2, repository.enqueueCalls)
+	assert.Equal(t, 1, legacyWrites)
+}
+
+func TestEmbeddingService_PureV2DoesNotCreateLegacyPendingRows(t *testing.T) {
+	legacyWrites := 0
+	legacy := &mockEmbeddingRepo{
+		upsertPendingFn: func(
+			context.Context,
+			string,
+			string,
+			string,
+			int64,
+		) error {
+			legacyWrites++
+			return nil
+		},
+	}
+	repository := &fakeEmbeddingV2RuntimeRepo{activeErr: sql.ErrNoRows}
+	service := NewEmbeddingService(nil, legacy)
+	service.DisableLegacyFallback()
+	service.ConfigureV2(repository, 30, nil, nil)
+
+	require.NoError(t, service.EnqueueContentChange(
+		context.Background(),
+		"user",
+		"document",
+		"hash",
+		1,
+		100,
+	))
+	assert.Equal(t, 1, repository.enqueueCalls)
+	assert.Zero(t, legacyWrites)
+}
+
+func TestEmbeddingService_DisabledV2KeepsQueueCurrentWithoutProviderCalls(t *testing.T) {
+	legacyWrites := 0
+	legacy := &mockEmbeddingRepo{
+		upsertPendingFn: func(
+			context.Context,
+			string,
+			string,
+			string,
+			int64,
+		) error {
+			legacyWrites++
+			return nil
+		},
+	}
+	profile := &model.EmbeddingProfile{ID: "profile", Fingerprint: "fingerprint"}
+	repository := &fakeEmbeddingV2RuntimeRepo{
+		generation: &model.EmbeddingGeneration{
+			ID:        "generation",
+			ProfileID: profile.ID,
+			Status:    model.EmbeddingGenerationActive,
+		},
+		profile: profile,
+	}
+	service := NewEmbeddingService(nil, legacy)
+	service.ConfigureV2Queue(repository, 30)
+
+	require.NoError(t, service.EnqueueContentChange(
+		context.Background(),
+		"user",
+		"document",
+		"hash",
+		1,
+		100,
+	))
+	assert.Equal(t, 1, repository.enqueueCalls)
+	assert.Zero(t, legacyWrites)
+
+	_, _, status, err := service.SimilarDocuments(
+		context.Background(),
+		"user",
+		"document",
+		5,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "disabled", status)
+	_, err = service.SemanticSearchMatches(
+		context.Background(),
+		"user",
+		"query",
+		5,
+		"",
+	)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ai.ErrUnavailable)
 }
 
 func TestEmbeddingService_SyncEmbedding(t *testing.T) {
@@ -381,6 +863,20 @@ func TestEmbeddingService_SyncEmbedding(t *testing.T) {
 }
 
 func TestEmbeddingService_SemanticSearch(t *testing.T) {
+	t.Run("non_positive_limit", func(t *testing.T) {
+		svc := newTestEmbeddingService(&mockEmbedder{}, nil, nil)
+		ids, scores, err := svc.SemanticSearch(
+			context.Background(),
+			"u1",
+			"query",
+			0,
+			"",
+		)
+		require.NoError(t, err)
+		assert.Empty(t, ids)
+		assert.Empty(t, scores)
+	})
+
 	t.Run("success", func(t *testing.T) {
 		mgr := &mockEmbedder{
 			embedFn: func(context.Context, string, string) ([]float32, error) {

@@ -2,6 +2,12 @@ package ai
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -59,6 +65,34 @@ func TestGeminiProvider_Embed_InvalidKey(t *testing.T) {
 func TestGeminiRegistered(t *testing.T) {
 	_, err := NewProvider("gemini", map[string]any{"api_key": ""})
 	require.NoError(t, err)
+}
+
+func TestBoundedResponseTransportRejectsOversizedBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		_ *http.Request,
+	) {
+		_, _ = io.WriteString(writer, strings.Repeat("x", 9))
+	}))
+	defer server.Close()
+
+	client := &http.Client{Transport: boundedResponseTransport{
+		base:     http.DefaultTransport,
+		maxBytes: 8,
+	}}
+	response, err := client.Get(server.URL)
+	require.NoError(t, err)
+	defer func() { _ = response.Body.Close() }()
+	_, err = io.ReadAll(response.Body)
+	assert.ErrorIs(t, err, errProviderResponseTooLarge)
+}
+
+func TestClassifyGeminiOversizedResponse(t *testing.T) {
+	err := classifyGeminiError(fmt.Errorf("sdk decode: %w", errProviderResponseTooLarge))
+	code, _, ok := ErrorDetails(err)
+	assert.True(t, ok)
+	assert.Equal(t, ErrorInvalidResponse, code)
+	assert.True(t, errors.Is(err, errProviderResponseTooLarge))
 }
 
 func TestDecodeConfig_NilArgs(t *testing.T) {

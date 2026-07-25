@@ -47,6 +47,33 @@ func TestHealthEndpoints(t *testing.T) {
 	assert.Equal(t, http.StatusOK, ready.Code)
 }
 
+func TestMetricsEndpointUsesDedicatedRootRoute(t *testing.T) {
+	db, _, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	instance, err := New(Config{
+		Address: "127.0.0.1:0",
+		Handler: http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			http.NotFound(writer, nil)
+		}),
+		DB: db,
+		MetricsHandler: http.HandlerFunc(
+			func(writer http.ResponseWriter, _ *http.Request) {
+				_, _ = writer.Write([]byte("metric 1\n"))
+			},
+		),
+	})
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	instance.Handler().ServeHTTP(
+		recorder,
+		httptest.NewRequest(http.MethodGet, "/metrics", nil),
+	)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "metric 1\n", recorder.Body.String())
+}
+
 func TestRunReturnsListenFailure(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

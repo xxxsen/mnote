@@ -166,6 +166,7 @@ export interface EditorTagContract {
 export interface EditorSimilarContract {
   similarDocs: SimilarDoc[];
   similarLoading: boolean;
+  similarIndexStatus: "ready" | "pending" | "building" | "disabled" | "unavailable";
   similarCollapsed: boolean;
   similarIconVisible: boolean;
   handleToggleSimilar: () => void;

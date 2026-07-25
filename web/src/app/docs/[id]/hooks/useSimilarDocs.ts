@@ -12,20 +12,22 @@ type UseSimilarDocsOptions = {
   title: string;
 };
 
-export function useSimilarDocs({ docId, title }: UseSimilarDocsOptions) {
+export type SimilarIndexStatus = "ready" | "pending" | "building" | "disabled" | "unavailable";
+
+export function useSimilarDocs({ docId }: UseSimilarDocsOptions) {
   const [similarDocs, setSimilarDocs] = useState<SimilarDoc[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
   const [similarCollapsed, setSimilarCollapsed] = useState(true);
-  const [similarIconVisible, setSimilarIconVisible] = useState(false);
+  const [similarIconVisible, setSimilarIconVisible] = useState(Boolean(docId));
+  const [similarIndexStatus, setSimilarIndexStatus] = useState<SimilarIndexStatus>("pending");
 
-  const similarTimerRef = useRef<number | null>(null);
-  const skipSimilarFetchRef = useRef(false);
   const fetchAbortRef = useRef<AbortController | null>(null);
 
   const fetchSimilar = useCallback(
-    async (query: string) => {
-      if (!query || query.length < 2) {
+    async () => {
+      if (!docId) {
         setSimilarDocs([]);
+        setSimilarIndexStatus("unavailable");
         return;
       }
       if (fetchAbortRef.current) fetchAbortRef.current.abort();
@@ -33,50 +35,37 @@ export function useSimilarDocs({ docId, title }: UseSimilarDocsOptions) {
       fetchAbortRef.current = controller;
       setSimilarLoading(true);
       try {
-        const res = await apiFetch<{ items: SimilarDoc[] }>(
-          `/ai/search?q=${encodeURIComponent(query)}&limit=5&exclude_id=${docId}`,
+        const res = await apiFetch<{ items: SimilarDoc[]; index_status?: SimilarIndexStatus }>(
+          `/documents/${encodeURIComponent(docId)}/similar?limit=5`,
           { signal: controller.signal },
         );
         /* v8 ignore next -- defensive abort guard: race between await resolve and controller.abort() */
         if (controller.signal.aborted) return;
         setSimilarDocs(res.items);
+        setSimilarIndexStatus(res.index_status || "ready");
       } catch (err) {
         if (isAbortError(err)) return;
         setSimilarDocs([]);
+        setSimilarIndexStatus("unavailable");
       } finally {
-        /* v8 ignore next -- defensive abort check in finally: aborted controllers skip setLoading */
-        if (!controller.signal.aborted) setSimilarLoading(false);
+        if (fetchAbortRef.current === controller) {
+          fetchAbortRef.current = null;
+          setSimilarLoading(false);
+        }
       }
     },
     [docId]
   );
 
   useEffect(() => {
-    if (similarTimerRef.current) {
-      window.clearTimeout(similarTimerRef.current);
-    }
-    if (!title || title.length < 2) {
-      setSimilarIconVisible(false);
-      return;
-    }
-    setSimilarIconVisible(true);
-
-    if (!similarCollapsed) {
-      if (skipSimilarFetchRef.current) {
-        skipSimilarFetchRef.current = false;
-        return;
-      }
-      similarTimerRef.current = window.setTimeout(() => {
-        void fetchSimilar(title);
-      }, 1000);
-    }
-
-    return () => {
-      if (similarTimerRef.current) {
-        window.clearTimeout(similarTimerRef.current);
-      }
-    };
-  }, [title, fetchSimilar, similarCollapsed]);
+    fetchAbortRef.current?.abort();
+    fetchAbortRef.current = null;
+    setSimilarDocs([]);
+    setSimilarLoading(false);
+    setSimilarCollapsed(true);
+    setSimilarIndexStatus("pending");
+    setSimilarIconVisible(Boolean(docId));
+  }, [docId]);
 
   useEffect(() => {
     return () => {
@@ -88,12 +77,11 @@ export function useSimilarDocs({ docId, title }: UseSimilarDocsOptions) {
   const handleToggleSimilar = useCallback(() => {
     if (similarCollapsed) {
       setSimilarCollapsed(false);
-      skipSimilarFetchRef.current = true;
-      void fetchSimilar(title);
+      void fetchSimilar();
       return;
     }
     setSimilarCollapsed(true);
-  }, [similarCollapsed, fetchSimilar, title]);
+  }, [similarCollapsed, fetchSimilar]);
 
   const handleCollapseSimilar = useCallback(() => {
     setSimilarCollapsed(true);
@@ -108,6 +96,7 @@ export function useSimilarDocs({ docId, title }: UseSimilarDocsOptions) {
   return {
     similarDocs,
     similarLoading,
+    similarIndexStatus,
     similarCollapsed,
     similarIconVisible,
     handleToggleSimilar,

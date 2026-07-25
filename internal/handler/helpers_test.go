@@ -45,6 +45,23 @@ func TestHandleError_AIUnavailable(t *testing.T) {
 	assert.Equal(t, "ai unavailable", resp["message"])
 }
 
+func TestHandleError_EmbeddingProviderError(t *testing.T) {
+	r := newTestRouter()
+	r.GET("/test", func(c *gin.Context) {
+		handleError(c, fmt.Errorf("semantic search: %w", &ai.ProviderError{
+			Code:    ai.ErrorTimeout,
+			Message: "request timed out",
+		}))
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/test", nil))
+
+	resp := parseResponseT(t, w)
+	assert.Equal(t, float64(errcode.ErrAIUnavailable), resp["code"])
+	assert.Equal(t, "ai unavailable", resp["message"])
+}
+
 func TestGetUserID_NoValue(t *testing.T) {
 	r := newTestRouter()
 	var result string

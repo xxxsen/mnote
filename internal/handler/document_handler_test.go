@@ -947,3 +947,74 @@ func TestDocumentHandler_Get_IncludeNonTags(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 }
+
+func TestDocumentHandler_Similar_Success(t *testing.T) {
+	mock := newDocMock()
+	mock.similarDocumentsFn = func(
+		_ context.Context,
+		userID, documentID string,
+		limit int,
+	) (*service.SimilarDocumentList, error) {
+		assert.Equal(t, "u1", userID)
+		assert.Equal(t, "source", documentID)
+		assert.Equal(t, 5, limit)
+		return &service.SimilarDocumentList{
+			Documents:   []model.Document{{ID: "related", Title: "Related"}},
+			Scores:      []float32{0.75},
+			IndexStatus: "ready",
+		}, nil
+	}
+	h := &DocumentHandler{documents: mock}
+	r := newTestRouter()
+	r.GET("/documents/:id/similar", withUserID("u1"), h.Similar)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(
+		w,
+		httptest.NewRequest("GET", "/documents/source/similar?limit=5", nil),
+	)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	payload := parseResponseT(t, w)
+	data := payload["data"].(map[string]any)
+	assert.Equal(t, "ready", data["index_status"])
+	items := data["items"].([]any)
+	require.Len(t, items, 1)
+	item := items[0].(map[string]any)
+	assert.Equal(t, "related", item["id"])
+	assert.Equal(t, 0.75, item["score"])
+}
+
+func TestDocumentHandler_Similar_PendingAndInvalidPagination(t *testing.T) {
+	mock := newDocMock()
+	mock.similarDocumentsFn = func(
+		context.Context,
+		string,
+		string,
+		int,
+	) (*service.SimilarDocumentList, error) {
+		return &service.SimilarDocumentList{
+			Documents:   []model.Document{},
+			Scores:      []float32{},
+			IndexStatus: "pending",
+		}, nil
+	}
+	h := &DocumentHandler{documents: mock}
+	r := newTestRouter()
+	r.GET("/documents/:id/similar", withUserID("u1"), h.Similar)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/documents/source/similar", nil))
+	payload := parseResponseT(t, w)
+	data := payload["data"].(map[string]any)
+	assert.Equal(t, "pending", data["index_status"])
+	assert.Empty(t, data["items"].([]any))
+
+	w = httptest.NewRecorder()
+	r.ServeHTTP(
+		w,
+		httptest.NewRequest("GET", "/documents/source/similar?offset=1", nil),
+	)
+	payload = parseResponseT(t, w)
+	assert.NotEqual(t, float64(0), payload["code"])
+}

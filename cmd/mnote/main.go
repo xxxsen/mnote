@@ -29,6 +29,7 @@ import (
 	"github.com/xxxsen/mnote/internal/filestore"
 	"github.com/xxxsen/mnote/internal/handler"
 	"github.com/xxxsen/mnote/internal/job"
+	"github.com/xxxsen/mnote/internal/metrics"
 	"github.com/xxxsen/mnote/internal/middleware"
 	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/oauth"
@@ -112,6 +113,7 @@ func main() {
 	configCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(newEmbeddingCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "startup error:", err)
@@ -198,7 +200,10 @@ func initOAuthProviders(cfg *config.Config) (map[string]oauth.Provider, error) {
 	return providers, nil
 }
 
-func initEmbeddingProviders(cfg *config.Config) (map[string]ai.IProvider, error) {
+func initEmbeddingProviders(
+	ctx context.Context,
+	cfg *config.Config,
+) (map[string]ai.IProvider, error) {
 	providers := make(map[string]ai.IProvider)
 	required := requiredEmbeddingProviders(cfg.AI)
 	if len(required) == 0 {
@@ -216,7 +221,7 @@ func initEmbeddingProviders(cfg *config.Config) (map[string]ai.IProvider, error)
 			return nil, fmt.Errorf("ai provider name duplicated: %s", pcfg.Name)
 		}
 		seen[pcfg.Name] = struct{}{}
-		logutil.GetLogger(context.Background()).Info(
+		logutil.GetLogger(ctx).Info(
 			"init ai provider", zap.String("name", pcfg.Name), zap.String("type", pcfg.Type),
 		)
 		p, err := ai.NewProvider(pcfg.Type, pcfg.Data)
@@ -238,6 +243,13 @@ func requiredEmbeddingProviders(cfg config.AIConfig) map[string]struct{} {
 			required[item.Provider] = struct{}{}
 		}
 	}
+	for _, profile := range cfg.Profiles {
+		for _, providerName := range profile.Providers {
+			if providerName != "" {
+				required[providerName] = struct{}{}
+			}
+		}
+	}
 	return required
 }
 
@@ -255,6 +267,7 @@ func normalizeEmbeddingList(
 }
 
 func resolveEmbedding(
+	ctx context.Context,
 	list []config.AIEmbeddingConfig,
 	defaults config.AIConfig, providers map[string]ai.IProvider,
 ) ([]ai.IProvider, []string, error) {
@@ -271,7 +284,7 @@ func resolveEmbedding(
 				"embedding: provider %s not found", f.Provider,
 			)
 		}
-		logutil.GetLogger(context.Background()).Info(
+		logutil.GetLogger(ctx).Info(
 			"embedding provider init",
 			zap.String("provider", f.Provider),
 			zap.String("model", f.Model),
@@ -283,10 +296,11 @@ func resolveEmbedding(
 }
 
 func buildEmbedder(
+	ctx context.Context,
 	list []config.AIEmbeddingConfig,
 	defaults config.AIConfig, providers map[string]ai.IProvider,
 ) (ai.IEmbedder, error) {
-	pp, models, err := resolveEmbedding(list, defaults, providers)
+	pp, models, err := resolveEmbedding(ctx, list, defaults, providers)
 	if err != nil {
 		return nil, err
 	}
@@ -301,13 +315,17 @@ func buildEmbedder(
 }
 
 func initAIEmbedder(
+	ctx context.Context,
 	cfg *config.Config, providers map[string]ai.IProvider,
 	cacheRepo *repo.EmbeddingCacheRepo,
 ) (ai.IEmbedder, error) {
 	if !cfg.AI.IsEnabled() {
 		return ai.NewGroupEmbedder(nil), nil
 	}
-	embedder, err := buildEmbedder(cfg.AI.Embed, cfg.AI, providers)
+	if cfg.AI.UsesV2() && !hasLegacyEmbeddingConfig(cfg.AI) {
+		return ai.NewGroupEmbedder(nil), nil
+	}
+	embedder, err := buildEmbedder(ctx, cfg.AI.Embed, cfg.AI, providers)
 	if err != nil {
 		return nil, fmt.Errorf("init embedder: %w", err)
 	}
@@ -316,43 +334,199 @@ func initAIEmbedder(
 	return wrapped, nil
 }
 
+func hasLegacyEmbeddingConfig(cfg config.AIConfig) bool {
+	return len(cfg.Embed) > 0 || cfg.Provider != "" || cfg.Model != ""
+}
+
+func initProfileEmbedders(
+	ctx context.Context,
+	cfg *config.Config,
+	providers map[string]ai.IProvider,
+	embeddingRepo *repo.EmbeddingV2Repo,
+	cacheRepo *repo.EmbeddingCacheV2Repo,
+) (map[string]ai.ProfileEmbedder, error) {
+	result := make(map[string]ai.ProfileEmbedder, len(cfg.AI.Profiles))
+	now := time.Now().Unix()
+	for _, profileConfig := range cfg.AI.Profiles {
+		profile := model.EmbeddingProfile{
+			ID:               profileConfig.ID,
+			Fingerprint:      profileConfig.Fingerprint(),
+			SpaceID:          profileConfig.SpaceID,
+			Model:            profileConfig.Model,
+			Dimensions:       profileConfig.Dimensions,
+			Metric:           profileConfig.Metric,
+			QueryTaskType:    profileConfig.QueryTaskType,
+			DocumentTaskType: profileConfig.DocumentTaskType,
+			ChunkerVersion:   profileConfig.ChunkerVersion,
+			Ctime:            now,
+		}
+		if err := embeddingRepo.EnsureProfile(ctx, profile); err != nil {
+			return nil, fmt.Errorf("ensure embedding profile %s: %w", profile.ID, err)
+		}
+		endpoints := make([]ai.ProfileProvider, 0, len(profileConfig.Providers))
+		for _, providerName := range profileConfig.Providers {
+			provider := providers[providerName]
+			if provider == nil {
+				return nil, fmt.Errorf(
+					"embedding profile %s provider %s not found",
+					profile.ID,
+					providerName,
+				)
+			}
+			endpoints = append(endpoints, ai.ProfileProvider{
+				Name:     providerName,
+				Provider: provider,
+			})
+		}
+		embedder, err := ai.NewProfileEmbedder(
+			ai.ProfileIdentity{
+				ID:               profile.ID,
+				Fingerprint:      profile.Fingerprint,
+				SpaceID:          profile.SpaceID,
+				Model:            profile.Model,
+				Dimensions:       profile.Dimensions,
+				QueryTaskType:    profile.QueryTaskType,
+				DocumentTaskType: profile.DocumentTaskType,
+			},
+			endpoints,
+			time.Duration(cfg.AI.RequestTimeoutSeconds)*time.Second,
+			cacheRepo,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("init embedding profile %s: %w", profile.ID, err)
+		}
+		result[profile.ID] = embedcache.NewCachedProfileEmbedder(
+			embedder,
+			cacheRepo,
+			20_000,
+			30*24*time.Hour,
+		)
+	}
+	return result, nil
+}
+
+func validateConfiguredEmbeddingGenerations(
+	generations []model.EmbeddingGeneration,
+	configuredProfiles map[string]struct{},
+) error {
+	for _, generation := range generations {
+		switch generation.Status {
+		case model.EmbeddingGenerationActive,
+			model.EmbeddingGenerationBuilding,
+			model.EmbeddingGenerationStandby:
+		case model.EmbeddingGenerationRetired,
+			model.EmbeddingGenerationFailed:
+			continue
+		}
+		if _, configured := configuredProfiles[generation.ProfileID]; !configured {
+			return fmt.Errorf(
+				"embedding generation %s is %s but profile %q is not in the current config",
+				generation.ID,
+				generation.Status,
+				generation.ProfileID,
+			)
+		}
+	}
+	return nil
+}
+
+func configuredEmbeddingProfiles(
+	profiles []config.AIProfileConfig,
+) map[string]struct{} {
+	result := make(map[string]struct{}, len(profiles))
+	for _, profile := range profiles {
+		result[profile.ID] = struct{}{}
+	}
+	return result
+}
+
+type embeddingProfileReader interface {
+	GetProfile(context.Context, string) (*model.EmbeddingProfile, error)
+}
+
+func validateStoredEmbeddingProfiles(
+	ctx context.Context,
+	generations []model.EmbeddingGeneration,
+	profiles []config.AIProfileConfig,
+	embeddingRepo embeddingProfileReader,
+) error {
+	fingerprints := make(map[string]string, len(profiles))
+	for _, profile := range profiles {
+		fingerprints[profile.ID] = profile.Fingerprint()
+	}
+	checked := make(map[string]struct{})
+	for _, generation := range generations {
+		if !generationAcceptsConfiguredProfile(generation.Status) {
+			continue
+		}
+		if _, exists := checked[generation.ProfileID]; exists {
+			continue
+		}
+		stored, err := embeddingRepo.GetProfile(ctx, generation.ProfileID)
+		if err != nil {
+			return fmt.Errorf("get embedding profile %s: %w", generation.ProfileID, err)
+		}
+		if stored == nil || stored.Fingerprint != fingerprints[generation.ProfileID] {
+			return fmt.Errorf(
+				"embedding generation %s profile %q fingerprint does not match the current config",
+				generation.ID,
+				generation.ProfileID,
+			)
+		}
+		checked[generation.ProfileID] = struct{}{}
+	}
+	return nil
+}
+
+func generationAcceptsConfiguredProfile(
+	status model.EmbeddingGenerationStatus,
+) bool {
+	return status == model.EmbeddingGenerationActive ||
+		status == model.EmbeddingGenerationBuilding ||
+		status == model.EmbeddingGenerationStandby
+}
+
 type serverRepos struct {
-	user           *repo.UserRepo
-	doc            *repo.DocumentRepo
-	version        *repo.VersionRepo
-	oauth          *repo.OAuthRepo
-	emailCode      *repo.EmailVerificationRepo
-	tag            *repo.TagRepo
-	docTag         *repo.DocumentTagRepo
-	share          *repo.ShareRepo
-	embedding      *repo.EmbeddingRepo
-	embeddingCache *repo.EmbeddingCacheRepo
-	importJob      *repo.ImportJobRepo
-	importJobNote  *repo.ImportJobNoteRepo
-	template       *repo.TemplateRepo
-	asset          *repo.AssetRepo
-	documentAsset  *repo.DocumentAssetRepo
-	todo           *repo.TodoRepo
+	user             *repo.UserRepo
+	doc              *repo.DocumentRepo
+	version          *repo.VersionRepo
+	oauth            *repo.OAuthRepo
+	emailCode        *repo.EmailVerificationRepo
+	tag              *repo.TagRepo
+	docTag           *repo.DocumentTagRepo
+	share            *repo.ShareRepo
+	embedding        *repo.EmbeddingRepo
+	embeddingCache   *repo.EmbeddingCacheRepo
+	embeddingV2      *repo.EmbeddingV2Repo
+	embeddingCacheV2 *repo.EmbeddingCacheV2Repo
+	importJob        *repo.ImportJobRepo
+	importJobNote    *repo.ImportJobNoteRepo
+	template         *repo.TemplateRepo
+	asset            *repo.AssetRepo
+	documentAsset    *repo.DocumentAssetRepo
+	todo             *repo.TodoRepo
 }
 
 func newServerRepos(db *sql.DB) serverRepos {
 	return serverRepos{
-		user:           repo.NewUserRepo(db),
-		doc:            repo.NewDocumentRepo(db),
-		version:        repo.NewVersionRepo(db),
-		oauth:          repo.NewOAuthRepo(db),
-		emailCode:      repo.NewEmailVerificationRepo(db),
-		tag:            repo.NewTagRepo(db),
-		docTag:         repo.NewDocumentTagRepo(db),
-		share:          repo.NewShareRepo(db),
-		embedding:      repo.NewEmbeddingRepo(db),
-		embeddingCache: repo.NewEmbeddingCacheRepo(db),
-		importJob:      repo.NewImportJobRepo(db),
-		importJobNote:  repo.NewImportJobNoteRepo(db),
-		template:       repo.NewTemplateRepo(db),
-		asset:          repo.NewAssetRepo(db),
-		documentAsset:  repo.NewDocumentAssetRepo(db),
-		todo:           repo.NewTodoRepo(db),
+		user:             repo.NewUserRepo(db),
+		doc:              repo.NewDocumentRepo(db),
+		version:          repo.NewVersionRepo(db),
+		oauth:            repo.NewOAuthRepo(db),
+		emailCode:        repo.NewEmailVerificationRepo(db),
+		tag:              repo.NewTagRepo(db),
+		docTag:           repo.NewDocumentTagRepo(db),
+		share:            repo.NewShareRepo(db),
+		embedding:        repo.NewEmbeddingRepo(db),
+		embeddingCache:   repo.NewEmbeddingCacheRepo(db),
+		embeddingV2:      repo.NewEmbeddingV2Repo(db),
+		embeddingCacheV2: repo.NewEmbeddingCacheV2Repo(db),
+		importJob:        repo.NewImportJobRepo(db),
+		importJobNote:    repo.NewImportJobNoteRepo(db),
+		template:         repo.NewTemplateRepo(db),
+		asset:            repo.NewAssetRepo(db),
+		documentAsset:    repo.NewDocumentAssetRepo(db),
+		todo:             repo.NewTodoRepo(db),
 	}
 }
 
@@ -402,12 +576,19 @@ func runServer(cfg *config.Config, db *sql.DB) error {
 		return fmt.Errorf("init web engine: %w", err)
 	}
 
+	workers := []mnoteapp.Worker{
+		service.NewImportWorker(services.imports, r.importJob, r.importJobNote),
+		service.NewAssetCleanupWorker(r.asset, store, services.runtime),
+	}
+	if services.embeddingV2Worker != nil {
+		workers = append(workers, services.embeddingV2Worker)
+	}
+	if services.embeddingV2BootstrapWorker != nil {
+		workers = append(workers, services.embeddingV2BootstrapWorker)
+	}
 	return startServer(
 		cfg, db, engine, services.embedding,
-		[]mnoteapp.Worker{
-			service.NewImportWorker(services.imports, r.importJob, r.importJobNote),
-			service.NewAssetCleanupWorker(r.asset, store, services.runtime),
-		},
+		workers,
 		r,
 	)
 }
@@ -420,14 +601,16 @@ func responseCompression() gin.HandlerFunc {
 }
 
 type serverServices struct {
-	auth      *service.AuthService
-	oauth     *service.OAuthService
-	embedding *service.EmbeddingService
-	documents *service.DocumentService
-	tags      *service.TagService
-	assets    *service.AssetService
-	imports   *service.ImportService
-	runtime   service.Runtime
+	auth                       *service.AuthService
+	oauth                      *service.OAuthService
+	embedding                  *service.EmbeddingService
+	embeddingV2Worker          *service.EmbeddingV2Worker
+	embeddingV2BootstrapWorker *service.EmbeddingV2BootstrapWorker
+	documents                  *service.DocumentService
+	tags                       *service.TagService
+	assets                     *service.AssetService
+	imports                    *service.ImportService
+	runtime                    service.Runtime
 }
 
 func buildServerServices(
@@ -437,11 +620,11 @@ func buildServerServices(
 	if err != nil {
 		return serverServices{}, err
 	}
-	embeddingProviders, err := initEmbeddingProviders(cfg)
-	if err != nil {
-		return serverServices{}, err
-	}
-	embedder, err := initAIEmbedder(cfg, embeddingProviders, repos.embeddingCache)
+	embeddingService, embeddingV2Setup, err := buildEmbeddingServices(
+		context.Background(),
+		cfg,
+		repos,
+	)
 	if err != nil {
 		return serverServices{}, err
 	}
@@ -464,7 +647,6 @@ func buildServerServices(
 		repos.user, repos.oauth, []byte(cfg.JWTSecret),
 		time.Hour*time.Duration(cfg.JWTTTLHours), oauthProviders, runtime,
 	)
-	embeddingService := service.NewEmbeddingService(embedder, repos.embedding)
 	assets := service.NewAssetService(repos.asset, repos.documentAsset, runtime)
 	documents := service.NewDocumentService(
 		runtime, repos.doc, repos.version, repos.docTag, repos.share,
@@ -473,12 +655,257 @@ func buildServerServices(
 	tags := service.NewTagService(runtime, repos.tag, repos.docTag)
 	return serverServices{
 		auth: auth, oauth: oauthService, embedding: embeddingService,
-		documents: documents, tags: tags, assets: assets,
+		embeddingV2Worker:          embeddingV2Setup.worker,
+		embeddingV2BootstrapWorker: embeddingV2Setup.bootstrapWorker,
+		documents:                  documents, tags: tags, assets: assets,
 		imports: service.NewImportService(
 			documents, tags, repos.importJob, repos.importJobNote, runtime,
 		),
 		runtime: runtime,
 	}, nil
+}
+
+func buildEmbeddingServices(
+	ctx context.Context,
+	cfg *config.Config,
+	repos serverRepos,
+) (*service.EmbeddingService, embeddingV2Setup, error) {
+	providers, err := initEmbeddingProviders(ctx, cfg)
+	if err != nil {
+		return nil, embeddingV2Setup{}, err
+	}
+	embedder, err := initAIEmbedder(ctx, cfg, providers, repos.embeddingCache)
+	if err != nil {
+		return nil, embeddingV2Setup{}, err
+	}
+	embeddingService := service.NewEmbeddingService(embedder, repos.embedding)
+	if !legacyEmbeddingEnabled(cfg.AI) {
+		embeddingService.DisableLegacyFallback()
+	}
+	setup, err := configureEmbeddingV2(
+		ctx,
+		cfg,
+		repos,
+		providers,
+		embeddingService,
+	)
+	if err != nil {
+		return nil, embeddingV2Setup{}, err
+	}
+	return embeddingService, setup, nil
+}
+
+func legacyEmbeddingEnabled(cfg config.AIConfig) bool {
+	return len(cfg.Profiles) == 0 || hasLegacyEmbeddingConfig(cfg)
+}
+
+type embeddingV2Setup struct {
+	worker          *service.EmbeddingV2Worker
+	bootstrapWorker *service.EmbeddingV2BootstrapWorker
+}
+
+type embeddingGenerationBootstrapRepo interface {
+	CreateBuildingGeneration(
+		context.Context,
+		string,
+		string,
+		bool,
+		int64,
+	) (*model.EmbeddingGeneration, error)
+}
+
+func configureEmbeddingV2(
+	ctx context.Context,
+	cfg *config.Config,
+	repos serverRepos,
+	providers map[string]ai.IProvider,
+	embeddingService *service.EmbeddingService,
+) (embeddingV2Setup, error) {
+	generations, err := repos.embeddingV2.ListGenerations(ctx)
+	if err != nil {
+		return embeddingV2Setup{}, fmt.Errorf("list embedding generations: %w", err)
+	}
+	if err := validateConfiguredEmbeddingGenerations(
+		generations,
+		configuredEmbeddingProfiles(cfg.AI.Profiles),
+	); err != nil {
+		return embeddingV2Setup{}, err
+	}
+	if err := validateStoredEmbeddingProfiles(
+		ctx,
+		generations,
+		cfg.AI.Profiles,
+		repos.embeddingV2,
+	); err != nil {
+		return embeddingV2Setup{}, err
+	}
+	if cfg.AI.UsesV2() {
+		return configureEnabledEmbeddingV2(
+			ctx,
+			cfg,
+			repos,
+			providers,
+			embeddingService,
+			generations,
+		)
+	}
+	if len(cfg.AI.Profiles) > 0 {
+		embeddingService.ConfigureV2Queue(
+			repos.embeddingV2,
+			cfg.AI.ResolvedIndexDelaySeconds(cfg.AIJob),
+		)
+	}
+	return embeddingV2Setup{}, nil
+}
+
+func configureEnabledEmbeddingV2(
+	ctx context.Context,
+	cfg *config.Config,
+	repos serverRepos,
+	providers map[string]ai.IProvider,
+	embeddingService *service.EmbeddingService,
+	generations []model.EmbeddingGeneration,
+) (embeddingV2Setup, error) {
+	profileEmbedders, err := initProfileEmbedders(
+		ctx,
+		cfg,
+		providers,
+		repos.embeddingV2,
+		repos.embeddingCacheV2,
+	)
+	if err != nil {
+		return embeddingV2Setup{}, err
+	}
+	bootstrapGenerationID, err := ensureInitialEmbeddingGeneration(
+		ctx,
+		generations,
+		cfg.AI.Profiles,
+		repos.embeddingV2,
+		time.Now().Unix(),
+	)
+	if err != nil {
+		return embeddingV2Setup{}, err
+	}
+	embeddingService.ConfigureV2(
+		repos.embeddingV2,
+		cfg.AI.ResolvedIndexDelaySeconds(cfg.AIJob),
+		profileEmbedders,
+		profileMinScores(cfg.AI.Profiles),
+	)
+	worker, err := newEmbeddingV2Worker(cfg, repos.embeddingV2, profileEmbedders)
+	if err != nil {
+		return embeddingV2Setup{}, err
+	}
+	setup := embeddingV2Setup{worker: worker}
+	if bootstrapGenerationID == "" {
+		return setup, nil
+	}
+	setup.bootstrapWorker, err = newEmbeddingV2BootstrapWorker(
+		cfg,
+		repos.embeddingV2,
+		profileEmbedders,
+		bootstrapGenerationID,
+	)
+	if err != nil {
+		return embeddingV2Setup{}, err
+	}
+	return setup, nil
+}
+
+func newEmbeddingV2Worker(
+	cfg *config.Config,
+	repository *repo.EmbeddingV2Repo,
+	embedders map[string]ai.ProfileEmbedder,
+) (*service.EmbeddingV2Worker, error) {
+	worker, err := service.NewEmbeddingV2Worker(
+		repository,
+		embedders,
+		service.EmbeddingV2WorkerConfig{
+			Concurrency:   cfg.AI.WorkerConcurrency,
+			BatchSize:     cfg.AI.BatchSize,
+			Lease:         time.Duration(cfg.AI.LeaseSeconds) * time.Second,
+			RenewInterval: time.Duration(cfg.AI.LeaseRenewSeconds) * time.Second,
+			MaxAttempts:   cfg.AI.MaxAttempts,
+			PollInterval:  500 * time.Millisecond,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("init embedding v2 worker: %w", err)
+	}
+	return worker, nil
+}
+
+func newEmbeddingV2BootstrapWorker(
+	cfg *config.Config,
+	repository *repo.EmbeddingV2Repo,
+	embedders map[string]ai.ProfileEmbedder,
+	generationID string,
+) (*service.EmbeddingV2BootstrapWorker, error) {
+	worker, err := service.NewEmbeddingV2BootstrapWorker(
+		repository,
+		embedders,
+		service.EmbeddingV2BootstrapWorkerConfig{
+			GenerationID:  generationID,
+			Standby:       time.Duration(cfg.AI.StandbyHours) * time.Hour,
+			PollInterval:  5 * time.Second,
+			RetryInterval: time.Minute,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("init embedding v2 bootstrap worker: %w", err)
+	}
+	return worker, nil
+}
+
+func ensureInitialEmbeddingGeneration(
+	ctx context.Context,
+	generations []model.EmbeddingGeneration,
+	profiles []config.AIProfileConfig,
+	repository embeddingGenerationBootstrapRepo,
+	now int64,
+) (string, error) {
+	for index := range generations {
+		generation := generations[index]
+		if generation.Status == model.EmbeddingGenerationBuilding &&
+			generation.Reason == "initial" {
+			resumed, err := repository.CreateBuildingGeneration(
+				ctx,
+				generation.ProfileID,
+				"initial",
+				false,
+				now,
+			)
+			if err != nil {
+				return "", fmt.Errorf(
+					"resume initial embedding generation: %w",
+					err,
+				)
+			}
+			return resumed.ID, nil
+		}
+	}
+	if len(generations) > 0 || len(profiles) == 0 {
+		return "", nil
+	}
+	generation, err := repository.CreateBuildingGeneration(
+		ctx,
+		profiles[0].ID,
+		"initial",
+		false,
+		now,
+	)
+	if err != nil {
+		return "", fmt.Errorf("create initial embedding generation: %w", err)
+	}
+	return generation.ID, nil
+}
+
+func profileMinScores(profiles []config.AIProfileConfig) map[string]float32 {
+	result := make(map[string]float32, len(profiles))
+	for _, profile := range profiles {
+		result[profile.ID] = profile.ResolvedMinScore()
+	}
+	return result
 }
 
 func newMailSender(mail config.MailConfig) service.EmailSender {
@@ -562,11 +989,12 @@ func startServer(
 		return err
 	}
 	instance, err := mnoteapp.New(mnoteapp.Config{
-		Address:   fmt.Sprintf("0.0.0.0:%d", cfg.Port),
-		Handler:   engine,
-		DB:        database,
-		Scheduler: scheduler,
-		Workers:   workers,
+		Address:        fmt.Sprintf("0.0.0.0:%d", cfg.Port),
+		Handler:        engine,
+		DB:             database,
+		Scheduler:      scheduler,
+		Workers:        workers,
+		MetricsHandler: metrics.Handler(),
 	})
 	if err != nil {
 		return fmt.Errorf("create application: %w", err)
@@ -587,11 +1015,18 @@ func addScheduledJobs(
 	jobs := []entry{
 		{job.NewImportCleanupJob(r.importJob, r.importJobNote, 24*time.Hour), "0 * * * *", "import_cleanup"},
 	}
-	if cfg.AI.IsEnabled() {
+	if cfg.AI.IsEnabled() && hasLegacyEmbeddingConfig(cfg.AI) {
 		jobs = append(jobs,
 			entry{job.NewAIEmbeddingJob(embeddingSvc, cfg.AIJob.EmbeddingDelaySeconds), "*/1 * * * *", "ai_embedding"},
 			entry{job.NewEmbeddingCacheCleanupJob(r.embeddingCache, 30), "0 3 * * *", "embedding_cache_cleanup"},
 		)
+	}
+	if cfg.AI.UsesV2() {
+		jobs = append(jobs, entry{
+			job.NewEmbeddingV2MaintenanceJob(r.embeddingV2, r.embeddingCacheV2),
+			"15 * * * *",
+			"embedding_v2_maintenance",
+		})
 	}
 	for _, e := range jobs {
 		if err := s.AddJob(e.job, e.cron); err != nil {

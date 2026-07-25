@@ -2103,10 +2103,35 @@ func (s *stubEmbeddingClient) MarkEmbeddingPending(context.Context, string, stri
 	return s.markErr
 }
 
+func (s *stubEmbeddingClient) EnqueueContentChange(
+	context.Context,
+	string,
+	string,
+	string,
+	int64,
+	int64,
+) error {
+	s.marked = true
+	return s.markErr
+}
+
+func (*stubEmbeddingClient) DeleteEmbeddingData(context.Context, string, string) error {
+	return nil
+}
+
 func (*stubEmbeddingClient) SemanticSearch(
 	context.Context, string, string, int, string,
 ) ([]string, []float32, error) {
 	return nil, nil, nil
+}
+
+func (*stubEmbeddingClient) SimilarDocuments(
+	context.Context,
+	string,
+	string,
+	int,
+) ([]string, []float32, string, error) {
+	return nil, nil, "disabled", nil
 }
 
 // TestDocumentService_Save_UpdateLinksError covers the UpdateLinks failure

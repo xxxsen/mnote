@@ -93,9 +93,15 @@ readiness 置为失败，再 graceful shutdown HTTP，撤销 Worker context、�
 `secret_id` 和 `secret_key`。发布流程应先运行 validate，再连接生产数据库。
 
 Embedding 是可选依赖。开发环境通过 `"ai": {"enabled": false}` 明确关闭；关闭后不初始化 Provider，
-也不注册 `ai_embedding` 和缓存清理任务。生产若启用，应配置默认 `provider`/`model` 或有序 `embed`
-列表，并保证 `ai_job.embedding_delay_seconds` 为正数。配置采用严格未知字段校验，旧版本的生成、
-润色、标签建议、摘要、feature flag、timeout 和摘要任务参数必须在升级前删除，否则进程拒绝启动。
+也不注册 Provider Worker；已配置 V2 Profile 时仍在文档事务中维护 desired Job，供重新启用后继续
+收敛。生产 Embedding 默认使用 V2：现有 `provider`/`model`/`embed` 单模型配置会自动解析为默认
+Profile，首次启动自动创建 initial Generation，并在覆盖率、队列、向量和 Provider 门禁全部通过后
+自动激活，不需要额外执行启用命令。构建期间继续使用已有 V1 查询，Provider 故障只延后 V2 切换。
+
+显式 `profiles` 用于非默认维度、多向量空间和后续模型升级；后续变更仍通过
+`mnote embedding rebuild/status/activate` 影子构建和切换。纯 V2 配置不要求旧
+`provider`/`model`/`embed`。配置采用严格未知字段校验，旧版本的生成、润色、标签建议、摘要、
+feature flag、timeout 和摘要任务参数必须在升级前删除，否则进程拒绝启动。
 
 迁移器只执行 `internal/db/migrations/*.sql`。账本 DDL 位于 `000_schema_migrations.sql`；Go 代码不得
 内联 DDL、探测 legacy 业务结构或补写未执行版本。未管理的非空 schema、checksum 不一致和数据库中
@@ -111,7 +117,9 @@ Embedding 是可选依赖。开发环境通过 `"ai": {"enabled": false}` 明确
 - 本地文件存储目录，若未使用 S3。
 - 必需配置和密钥。
 
-升级前备份数据库和文件。新版本先执行兼容迁移，再切换流量。不得在多个不兼容版本之间长期混跑。
+升级前备份数据库和文件。新版本启动时先执行兼容迁移，再自动在后台构建首个 V2 Generation；服务健康
+不代表 V2 已完成激活，应同时观察 embedding status 和指标。首次 V2 构建不阻塞普通业务流量。不得在
+多个不兼容版本之间长期混跑。
 
 ## 9. 反向代理
 

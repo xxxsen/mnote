@@ -11,6 +11,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -233,6 +234,120 @@ func TestApplyMigrationsIntegration_RemovesDocumentSummarySchema(t *testing.T) {
 	assert.Equal(t, 1, documentCount)
 	assert.Equal(t, 1, importNoteCount)
 	assert.Equal(t, 1, migrationCount)
+}
+
+func TestApplyMigrationsIntegration_Upgrades014ToEmbeddingV2(t *testing.T) {
+	schema := newIntegrationSchema(t)
+	files, err := loadMigrationFiles()
+	require.NoError(t, err)
+	baseline := make([]migrationFile, 0, len(files)-1)
+	for _, file := range files {
+		if file.Version != "015_embedding_index_v2" {
+			baseline = append(baseline, file)
+		}
+	}
+	conn, err := schema.database.Conn(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, applyMigrationsWithFiles(context.Background(), conn, baseline))
+	require.NoError(t, conn.Close())
+
+	_, err = schema.database.ExecContext(context.Background(), `
+		INSERT INTO users (
+			id, email, email_normalized, password_hash, ctime, mtime
+		) VALUES (
+			'embedding-user', 'embedding@example.test',
+			'embedding@example.test', 'hash', 1, 1
+		);
+		INSERT INTO documents (
+			id, user_id, title, content, state, pinned, starred,
+			ctime, mtime, content_hash, content_mtime, content_revision
+		) VALUES (
+			'embedding-doc', 'embedding-user', 'title', 'content',
+			1, 0, 0, 1, 1, 'legacy-hash', 1, 1
+		);
+		INSERT INTO document_embeddings (
+			document_id, user_id, content_hash, mtime,
+			embedding_status, attempts, next_retry_at, locked_until, last_error
+		) VALUES (
+			'embedding-doc', 'embedding-user', 'legacy-hash', 1,
+			'succeeded', 0, 0, 0, ''
+		);
+	`)
+	require.NoError(t, err)
+
+	require.NoError(t, ApplyMigrations(schema.database))
+
+	for _, table := range []string{
+		"embedding_profiles",
+		"embedding_generations",
+		"embedding_jobs",
+		"document_embedding_indexes",
+		"chunk_embeddings_v2",
+		"embedding_cache_v2",
+		"embedding_provider_cooldowns",
+	} {
+		var relation sql.NullString
+		require.NoError(t, schema.database.QueryRowContext(
+			context.Background(),
+			"SELECT to_regclass(current_schema() || '.' || $1)::text",
+			table,
+		).Scan(&relation))
+		assert.True(t, relation.Valid, table)
+	}
+	for _, index := range []string{
+		"idx_chunk_embeddings_v2_hnsw_384",
+		"idx_chunk_embeddings_v2_hnsw_768",
+		"idx_chunk_embeddings_v2_hnsw_1024",
+		"idx_chunk_embeddings_v2_hnsw_1536",
+		"idx_document_embedding_indexes_hnsw_384",
+		"idx_document_embedding_indexes_hnsw_768",
+		"idx_document_embedding_indexes_hnsw_1024",
+		"idx_document_embedding_indexes_hnsw_1536",
+	} {
+		var relation sql.NullString
+		require.NoError(t, schema.database.QueryRowContext(
+			context.Background(),
+			"SELECT to_regclass(current_schema() || '.' || $1)::text",
+			index,
+		).Scan(&relation))
+		assert.True(t, relation.Valid, index)
+	}
+	var legacyCount, generationCount, jobCount, migrationCount int
+	require.NoError(t, schema.database.QueryRowContext(
+		context.Background(),
+		"SELECT COUNT(*) FROM document_embeddings WHERE document_id = 'embedding-doc'",
+	).Scan(&legacyCount))
+	require.NoError(t, schema.database.QueryRowContext(
+		context.Background(),
+		"SELECT COUNT(*) FROM embedding_generations",
+	).Scan(&generationCount))
+	require.NoError(t, schema.database.QueryRowContext(
+		context.Background(),
+		"SELECT COUNT(*) FROM embedding_jobs",
+	).Scan(&jobCount))
+	require.NoError(t, schema.database.QueryRowContext(
+		context.Background(),
+		"SELECT COUNT(*) FROM schema_migrations WHERE version = '015_embedding_index_v2'",
+	).Scan(&migrationCount))
+	assert.Equal(t, 1, legacyCount)
+	assert.Zero(t, generationCount, "migration must not start a rebuild")
+	assert.Zero(t, jobCount, "migration must not enqueue documents")
+	assert.Equal(t, 1, migrationCount)
+}
+
+func TestAuditDBIntegration_RunsAgainstLatestSchema(t *testing.T) {
+	schema := newIntegrationSchema(t)
+	require.NoError(t, ApplyMigrations(schema.database))
+	content, err := os.ReadFile("../../scripts/audit-db.sql")
+	require.NoError(t, err)
+	query := strings.Replace(
+		string(content),
+		"\\set ON_ERROR_STOP on",
+		"",
+		1,
+	)
+	_, err = schema.database.ExecContext(context.Background(), query)
+	require.NoError(t, err)
 }
 
 func TestApplyMigrationsIntegration_CurrentProductionLedgerAddsOnlyBootstrap(t *testing.T) {

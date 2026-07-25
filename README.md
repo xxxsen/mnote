@@ -134,8 +134,9 @@ docker compose up -d
 }
 ```
 
-`enabled` 是 Embedding 总开关。`embed` 中每一项未指定的字段会继承顶层
-`provider` / `model`；列表顺序同时也是 Provider 故障切换顺序。关闭后不会初始化
+`enabled` 是 Embedding 总开关；未显式设置为 `false` 时，上述配置默认使用 V2。`embed` 中每一项
+未指定的字段会继承顶层 `provider` / `model`，列表顺序同时也是 Provider 故障切换顺序。首次启动会
+自动创建并构建 V2 索引，在完整性门禁通过后自动切换，不需要额外执行启用命令。关闭后不会初始化
 Embedding Provider，也不会注册向量同步后台任务。
 
 ### OAuth 配置

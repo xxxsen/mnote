@@ -68,6 +68,11 @@ func (s *DocumentService) Delete(ctx context.Context, userID, docID string) erro
 				return fmt.Errorf("remove document references: %w", err)
 			}
 		}
+		if s.embedding != nil {
+			if err := s.embedding.DeleteEmbeddingData(txCtx, userID, docID); err != nil {
+				return fmt.Errorf("delete embedding data: %w", err)
+			}
+		}
 		return nil
 	})
 }
@@ -200,7 +205,15 @@ func (
 	if err := s.applyTagChanges(ctx, userID, docID, input.TagIDs); err != nil {
 		return nil, err
 	}
-	if err := s.refreshReferences(ctx, userID, docID, input.Content, now, newHash); err != nil {
+	if err := s.refreshReferences(
+		ctx,
+		userID,
+		docID,
+		input.Content,
+		now,
+		newRevision,
+		newHash,
+	); err != nil {
 		return nil, err
 	}
 	return &model.SaveDocumentResult{
@@ -319,7 +332,7 @@ func (s *DocumentService) ValidateOwnedTagIDs(
 func (s *DocumentService) refreshReferences(
 	ctx context.Context,
 	userID, docID, content string,
-	now int64,
+	now, revision int64,
 	newHash string,
 ) error {
 	linkIDs, err := s.validateOwnedLinkIDs(ctx, userID, docID, extractLinkIDs(content))
@@ -335,7 +348,14 @@ func (s *DocumentService) refreshReferences(
 		}
 	}
 	if s.embedding != nil {
-		if err := s.embedding.MarkEmbeddingPending(ctx, userID, docID, newHash, now); err != nil {
+		if err := s.embedding.EnqueueContentChange(
+			ctx,
+			userID,
+			docID,
+			newHash,
+			revision,
+			now,
+		); err != nil {
 			return fmt.Errorf("mark embedding pending: %w", err)
 		}
 	}
@@ -435,6 +455,18 @@ func (s *DocumentService) createImpl(
 	if s.assets != nil {
 		if err := s.assets.SyncDocumentReferences(ctx, userID, doc.ID, input.Content); err != nil {
 			return fmt.Errorf("sync document references: %w", err)
+		}
+	}
+	if s.embedding != nil {
+		if err := s.embedding.EnqueueContentChange(
+			ctx,
+			userID,
+			doc.ID,
+			doc.ContentHash,
+			doc.ContentRevision,
+			doc.Mtime,
+		); err != nil {
+			return fmt.Errorf("mark embedding pending: %w", err)
 		}
 	}
 	return nil

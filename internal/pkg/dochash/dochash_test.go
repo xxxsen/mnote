@@ -29,3 +29,11 @@ func TestCompute_EmptyInputs(t *testing.T) {
 	assert.NotEqual(t, emptyAll, emptyBody, "empty body must not collide with an empty document")
 	assert.NotEqual(t, emptyTitle, emptyBody, "title and body inputs must not be interchangeable")
 }
+
+func TestCompute_TitleChangeInvalidatesEmbeddingIdentity(t *testing.T) {
+	assert.NotEqual(
+		t,
+		Compute("First title", "same body"),
+		Compute("Second title", "same body"),
+	)
+}

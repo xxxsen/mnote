@@ -12,22 +12,22 @@ const mockApiFetch = vi.mocked(apiFetch);
 beforeEach(() => { vi.clearAllMocks(); });
 
 describe("useSimilarDocs", () => {
-  it("initializes with empty state when title is short", () => {
+  it("shows the content-based entry point regardless of title length", () => {
     const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "" }));
     expect(result.current.similarDocs).toEqual([]);
     expect(result.current.similarLoading).toBe(false);
     expect(result.current.similarCollapsed).toBe(true);
-    expect(result.current.similarIconVisible).toBe(false);
+    expect(result.current.similarIconVisible).toBe(true);
   });
 
-  it("shows icon when title has >= 2 chars", async () => {
+  it("shows icon when a document id is available", async () => {
     const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "AB" }));
     await waitFor(() => { expect(result.current.similarIconVisible).toBe(true); });
   });
 
-  it("hides icon when title has < 2 chars", async () => {
+  it("does not hide icon for a short title", async () => {
     const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "A" }));
-    await waitFor(() => { expect(result.current.similarIconVisible).toBe(false); });
+    await waitFor(() => { expect(result.current.similarIconVisible).toBe(true); });
   });
 
   it("handleToggleSimilar expands and fetches", async () => {
@@ -83,34 +83,34 @@ describe("useSimilarDocs", () => {
     expect(mockApiFetch).not.toHaveBeenCalled();
   });
 
-  it("similarIconVisible toggles dynamically with title changes", () => {
+  it("title changes do not toggle the content-based entry point", () => {
     const { result, rerender } = renderHook(
       ({ title }) => useSimilarDocs({ docId: "d1", title }),
       { initialProps: { title: "" } }
     );
-    expect(result.current.similarIconVisible).toBe(false);
+    expect(result.current.similarIconVisible).toBe(true);
     rerender({ title: "Long enough title" });
     expect(result.current.similarIconVisible).toBe(true);
     rerender({ title: "X" });
-    expect(result.current.similarIconVisible).toBe(false);
+    expect(result.current.similarIconVisible).toBe(true);
   });
 
   it("fetchSimilar sends docId in API call", async () => {
     mockApiFetch.mockResolvedValue({ items: [] });
     const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "Test Doc" }));
     await act(async () => { result.current.handleToggleSimilar(); });
-    expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("exclude_id=d1"), expect.anything());
+    expect(mockApiFetch).toHaveBeenCalledWith("/documents/d1/similar?limit=5", expect.anything());
   });
 
-  it("fetchSimilar returns empty for short query", async () => {
+  it("fetches by document id even when the title is short", async () => {
     mockApiFetch.mockResolvedValue({ items: [{ id: "s1", title: "S1", score: 0.9 }] });
     const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "A" }));
     await act(async () => { result.current.handleToggleSimilar(); });
-    expect(result.current.similarDocs).toEqual([]);
-    expect(mockApiFetch).not.toHaveBeenCalled();
+    await waitFor(() => { expect(result.current.similarDocs).toHaveLength(1); });
+    expect(mockApiFetch).toHaveBeenCalledOnce();
   });
 
-  it("auto-fetches when expanded and title changes", async () => {
+  it("does not refetch when only the title changes", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mockApiFetch.mockResolvedValue({ items: [{ id: "s1", title: "S1", score: 0.8 }] });
     const { result, rerender } = renderHook(
@@ -123,7 +123,7 @@ describe("useSimilarDocs", () => {
     mockApiFetch.mockResolvedValue({ items: [{ id: "s2", title: "S2", score: 0.7 }] });
     rerender({ title: "Updated Title" });
     await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
-    await waitFor(() => { expect(mockApiFetch).toHaveBeenCalled(); });
+    expect(mockApiFetch).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
@@ -170,5 +170,31 @@ describe("useSimilarDocs", () => {
     unmount();
     await new Promise(r => setTimeout(r, 10));
     expect(aborted).toBe(true);
+  });
+
+  it("clears loading when the document changes during a pending fetch", async () => {
+    let aborted = false;
+    mockApiFetch.mockImplementationOnce(
+      <T = unknown>(_url: string, opts?: Parameters<typeof apiFetch>[1]): Promise<T> =>
+        new Promise<T>((_resolve, reject) => {
+          opts?.signal?.addEventListener("abort", () => {
+            aborted = true;
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        }),
+    );
+    const { result, rerender } = renderHook(
+      ({ docId }) => useSimilarDocs({ docId, title: "Test Doc" }),
+      { initialProps: { docId: "d1" } },
+    );
+    await act(async () => { result.current.handleToggleSimilar(); });
+    expect(result.current.similarLoading).toBe(true);
+
+    rerender({ docId: "d2" });
+
+    await waitFor(() => { expect(aborted).toBe(true); });
+    expect(result.current.similarLoading).toBe(false);
+    expect(result.current.similarCollapsed).toBe(true);
+    expect(result.current.similarDocs).toEqual([]);
   });
 });

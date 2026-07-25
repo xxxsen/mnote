@@ -5,6 +5,8 @@ export interface DocumentWithTags extends Document {
   tags?: Tag[];
   share_token?: string;
   score?: number;
+  matched_excerpt?: string;
+  match_type?: "title" | "text" | "code" | "mixed" | "";
 }
 
 export interface TagSummary {

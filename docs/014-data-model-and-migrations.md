@@ -57,11 +57,22 @@ Provider 混用语义。
 
 ### 2.6 向量
 
-- `document_embeddings` 保存每篇文档的内容哈希、处理状态、租约、重试和错误信息。
-- `chunk_embeddings` 保存文档分块、类型、文本、Token 估算和向量。
-- `embedding_cache` 使用模型、任务类型和输入哈希定位缓存向量。
+`document_embeddings`、`chunk_embeddings` 和 `embedding_cache` 是首次 V2 Generation 激活前保留的
+V1 数据面。V2 使用独立结构：
 
-向量维度是数据库列与 Provider 模型的共同契约。切换模型或维度必须提供迁移或全量重建方案。
+- `embedding_profiles` 保存不可变向量空间及 fingerprint；
+- `embedding_generations` 保存全量构建、active、standby 和退役状态；
+- `embedding_jobs` 保存每个 Generation/文档的目标哈希、领取 Token、租约和重试状态；
+- `document_embedding_indexes` 保存已经提交的内容哈希、修订、分块数和归一化 centroid；
+- `chunk_embeddings_v2` 保存带 Generation、用户、位置、类型和维度的分块向量；
+- `embedding_cache_v2` 按 Profile、任务类型和输入哈希隔离缓存；
+- `embedding_provider_cooldowns` 保存跨实例共享的 Provider 限流冷却时间。
+
+向量维度是 Profile、Provider 输出、数据库 CHECK 与部分 HNSW 表达式索引的共同契约。V2 chunk、
+centroid 和缓存向量还必须满足 `vector_norm(...) > 0`；空向量、零向量、错误维度和非有限值都不能落库。
+搜索使用 index 行前还要求关联 Job 为 succeeded、Job desired hash 等于 index hash，且 index hash 等于
+normal 文档的当前 hash。模型、维度、任务类型或分块规则变化时必须创建新 Profile 并全量重建，不能覆盖
+既有 Generation。
 
 ## 3. 标识与时间
 
@@ -96,6 +107,9 @@ Embedding 和对象存储调用不能放入长数据库事务；它们通过短�
 - `013_asset_upload_state.sql`：资产上传状态与清理索引。
 - `014_remove_document_summary.sql`：删除历史 `document_summaries` 表和
   `import_job_notes.summary` 暂存列；正文、版本、标签、分享、资产和向量数据不受影响。
+- `015_embedding_index_v2.sql`：创建不可变 Profile、可切换 Generation、fenced Job、V2 分块与 centroid、
+  Profile 隔离缓存、Provider cooldown，以及 384/768/1024/1536 四组部分 HNSW 表达式索引；V1 表在
+  首次 V2 切换中保留。
 
 已提交且已执行的 migration 不得修改、重命名或复用版本。历史迁移中的摘要结构必须原样保留，新库会
 先创建旧结构再由 014 删除。修改结构必须新增 migration。
@@ -140,6 +154,10 @@ Go 迁移器不得创建账本、拼接 DDL、维护业务表或列清单、检�
   实例、先备份并同步发布不再读写旧结构的新二进制，禁止新旧版本滚动混跑。
 - 状态列同时具备 Go 类型常量、数据库 CHECK、合法转换和未知值读路径错误。
 - 一次 DELETE/UPDATE 必须控制批量，避免长事务和全表锁。
+- Embedding 新向量空间必须采用 shadow Generation 全量构建和原子切换。首次上线不得直接修改 V1
+  表或删除 V1 回滚路径；退役 Generation 的派生数据必须经过保留期后分批删除。
+- 服务启动时必须校验所有 active/building/standby Generation 对应的配置 Profile 和数据库
+  fingerprint，即使远程 Embedding 被显式关闭也不能绕过现有索引身份校验。
 
 ## 9. 持续门禁
 
@@ -147,11 +165,15 @@ Go 迁移器不得创建账本、拼接 DDL、维护业务表或列清单、检�
 - `scripts/check-no-inline-ddl.sh` 扫描生产 Go、Shell、CI 和 Makefile，并拒绝 migrations 目录外的
   DDL 与未批准 SQL；唯一的运维审计 SQL 还会被单独检查为只读。
 - `scripts/audit-db.sql` 在迁移完成后执行只读一致性审计，列出迁移账本，并检查重复身份、重复有效
-  分享、孤儿关系和非法状态；除账本外的 `violations` 必须全部为零。
+  分享、孤儿关系、非法状态、Embedding Profile fingerprint、多 active/building、所有权、current
+  succeeded Job/hash、index chunk count、维度/范数、过期租约和超期 standby；除账本外的
+  `violations` 必须全部为零。
 - 空 schema、未管理非空 schema、空账本加业务表、checksum 不一致、未知版本、迁移事务回滚和双实例
   并发都使用真实 PostgreSQL 验证。
 - Repository/Service 集成测试覆盖关系所有权、事务回滚、Embedding 并发领取与过期结果、导入领取和
   资产清理互斥。审计脚本不得查询已经由 014 删除的表或列。
+- 向量查询使用 `EXPLAIN (ANALYZE, BUFFERS)` 验证大数据路径命中对应维度的 HNSW 表达式索引；小用户
+  路径验证精确扫描不会误用近似索引。
 
 ## 10. 发布、回滚与验证
 
