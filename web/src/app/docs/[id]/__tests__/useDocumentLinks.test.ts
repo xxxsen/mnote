@@ -55,7 +55,8 @@ function renderLinks(
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  getDocumentLinks.mockReset();
+  getDocumentLinks.mockResolvedValue(response());
 });
 
 afterEach(() => {
@@ -64,17 +65,19 @@ afterEach(() => {
 });
 
 describe("useDocumentLinks", () => {
-  it("loads lazily and reuses fresh cached data", async () => {
-    getDocumentLinks.mockResolvedValue(response());
+  it("loads on mount and reuses fresh cached data when opened", async () => {
     const { result } = renderLinks();
-    expect(getDocumentLinks).not.toHaveBeenCalled();
-
-    act(() => result.current.openPanel());
     await waitFor(() => expect(result.current.status).toBe("ready"));
     expect(result.current.counts?.unique).toBe(2);
     expect(result.current.incoming[0]?.id).toBe("incoming-1");
+    expect(getDocumentLinks).toHaveBeenCalledWith(
+      "doc-1",
+      { include: ["incoming", "outgoing"], limit: 20 },
+      expect.any(AbortSignal),
+    );
 
     act(() => {
+      result.current.openPanel();
       result.current.closePanel();
       result.current.openPanel();
     });
@@ -86,8 +89,8 @@ describe("useDocumentLinks", () => {
     vi.setSystemTime(1_000);
     getDocumentLinks.mockResolvedValueOnce(response());
     const { result } = renderLinks();
-    act(() => result.current.openPanel());
     await waitFor(() => expect(result.current.status).toBe("ready"));
+    act(() => result.current.openPanel());
 
     getDocumentLinks.mockRejectedValueOnce(new Error("offline"));
     vi.advanceTimersByTime(61_000);
@@ -105,7 +108,6 @@ describe("useDocumentLinks", () => {
       .mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValueOnce(response());
     const { result } = renderLinks();
-    act(() => result.current.openPanel());
     await waitFor(() => expect(result.current.status).toBe("error"));
 
     await act(async () => result.current.retry());
@@ -234,7 +236,6 @@ describe("useDocumentLinks", () => {
       )
       .mockResolvedValueOnce(response());
     const { result, rerender } = renderLinks();
-    act(() => result.current.openPanel());
     const firstSignal = getDocumentLinks.mock.calls[0]?.[2];
 
     rerender({
@@ -248,7 +249,6 @@ describe("useDocumentLinks", () => {
     act(() => resolveFirst?.(response()));
     expect(result.current.counts).toBeNull();
 
-    act(() => result.current.openPanel());
     await waitFor(() => expect(result.current.status).toBe("ready"));
     expect(getDocumentLinks).toHaveBeenLastCalledWith(
       "doc-2",
@@ -257,15 +257,15 @@ describe("useDocumentLinks", () => {
     );
   });
 
-  it("refreshes an open loaded panel after a saved revision changes", async () => {
+  it("refreshes the loaded count after a saved revision changes while closed", async () => {
     getDocumentLinks
       .mockResolvedValueOnce(response())
       .mockResolvedValueOnce(
         response({ counts: { incoming: 2, outgoing: 1, unique: 3 } }),
       );
     const { result, rerender } = renderLinks();
-    act(() => result.current.openPanel());
     await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.open).toBe(false);
 
     rerender({
       docId: "doc-1",
@@ -297,7 +297,6 @@ describe("useDocumentLinks", () => {
         }),
       );
     const { result, rerender } = renderLinks();
-    act(() => result.current.openPanel());
     const firstSignal = getDocumentLinks.mock.calls[0]?.[2];
 
     rerender({
@@ -351,7 +350,6 @@ describe("useDocumentLinks", () => {
     const { result } = renderLinks();
     expect(result.current.loaded).toBe(false);
     expect(result.current.counts).toBeNull();
-    act(() => result.current.openPanel());
     await waitFor(() => expect(result.current.loaded).toBe(true));
     expect(result.current.counts?.unique).toBe(0);
   });

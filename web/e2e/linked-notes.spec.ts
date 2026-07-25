@@ -25,11 +25,16 @@ test("shows saved incoming, outgoing, mutual, and draft relation states", async 
   try {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openEditor(page, source.id);
+    const linkedNotesTrigger = page.getByRole("button", {
+      name: "Open linked notes, 1 linked notes",
+    });
+    await expect(linkedNotesTrigger).toBeVisible();
+    await page.reload();
+    await expect(linkedNotesTrigger).toBeVisible();
+
     const editor = page.getByRole("region", { name: "Markdown editor" });
     const editorWidth = (await editor.boundingBox())?.width;
-    await page
-      .getByRole("button", { name: "Open linked notes", exact: true })
-      .click();
+    await linkedNotesTrigger.click();
     const popover = page.getByRole("dialog", { name: "Linked notes" });
     await expect(popover).toHaveAttribute("aria-modal", "false");
     await popover.getByRole("tab", { name: /Outgoing 1/ }).click();
@@ -52,7 +57,7 @@ test("shows saved incoming, outgoing, mutual, and draft relation states", async 
       .click();
     await expect(page).toHaveURL(new RegExp(`/docs/${target.id}$`));
     await page
-      .getByRole("button", { name: "Open linked notes", exact: true })
+      .getByRole("button", { name: /Open linked notes/ })
       .click();
     const targetPopover = page.getByRole("dialog", {
       name: "Linked notes",

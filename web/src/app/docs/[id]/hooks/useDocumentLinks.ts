@@ -388,7 +388,8 @@ function useDocumentLinksLifecycle(options: {
   useEffect(() => {
     abortAll();
     cacheMetaRef.current = createCacheMeta(docId);
-  }, [abortAll, cacheMetaRef, docId]);
+    void refresh();
+  }, [abortAll, cacheMetaRef, docId, refresh]);
 
   useEffect(() => {
     const previous = revisionRef.current;
@@ -396,9 +397,7 @@ function useDocumentLinksLifecycle(options: {
     if (previous.scopeKey !== docId) return;
     if (previous.revision === serverRevision) return;
     cacheMetaRef.current.stale = true;
-    if (stateRef.current.open) {
-      void refresh();
-    }
+    void refresh();
   }, [
     cacheMetaRef,
     docId,
