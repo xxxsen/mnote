@@ -134,6 +134,12 @@ type documentRelationRepo interface {
 	UpdateLinks(ctx context.Context, userID, sourceID string,
 		targetIDs []string, mtime int64) error
 	GetBacklinks(ctx context.Context, userID, targetID string) ([]model.Document, error)
+	ListLinks(
+		ctx context.Context,
+		userID string,
+		documentID string,
+		query model.DocumentLinksQuery,
+	) (*model.DocumentLinksResult, error)
 }
 
 type documentRepo interface {

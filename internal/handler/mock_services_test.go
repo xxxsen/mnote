@@ -149,6 +149,7 @@ type mockDocumentService struct {
 	deleteFn                         func(ctx context.Context, userID, docID string) error
 	overviewFn                       func(ctx context.Context, userID string, limit uint) (*service.DocumentOverview, error)
 	getBacklinksFn                   func(ctx context.Context, userID, docID string) ([]model.Document, error)
+	listLinksFn                      func(ctx context.Context, userID, documentID string, input service.DocumentLinksInput) (*model.DocumentLinksResult, error)
 	listTagIDsFn                     func(ctx context.Context, userID, docID string) ([]string, error)
 	listTagIDsByDocIDsFn             func(ctx context.Context, userID string, docIDs []string) (map[string][]string, error)
 	listTagsByIDsFn                  func(ctx context.Context, userID string, ids []string) ([]model.Tag, error)
@@ -292,6 +293,18 @@ func (m *mockDocumentService) GetBacklinks(ctx context.Context, userID, docID st
 		panic("mockDocumentService.GetBacklinks not configured")
 	}
 	return m.getBacklinksFn(ctx, userID, docID)
+}
+
+func (m *mockDocumentService) ListLinks(
+	ctx context.Context,
+	userID string,
+	documentID string,
+	input service.DocumentLinksInput,
+) (*model.DocumentLinksResult, error) {
+	if m.listLinksFn == nil {
+		panic("mockDocumentService.ListLinks not configured")
+	}
+	return m.listLinksFn(ctx, userID, documentID, input)
 }
 
 func (m *mockDocumentService) ListTagIDs(ctx context.Context, userID, docID string) ([]string, error) {

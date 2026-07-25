@@ -46,6 +46,12 @@ type documentLookupService interface {
 	Get(ctx context.Context, userID, docID string) (*model.Document, error)
 	Overview(ctx context.Context, userID string, limit uint) (*service.DocumentOverview, error)
 	GetBacklinks(ctx context.Context, userID, docID string) ([]model.Document, error)
+	ListLinks(
+		ctx context.Context,
+		userID string,
+		documentID string,
+		input service.DocumentLinksInput,
+	) (*model.DocumentLinksResult, error)
 }
 
 type documentTagQueryService interface {

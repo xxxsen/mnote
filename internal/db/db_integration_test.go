@@ -18,6 +18,10 @@ import (
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/xxxsen/mnote/internal/model"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
+	"github.com/xxxsen/mnote/internal/repo"
 )
 
 type integrationSchema struct {
@@ -164,6 +168,135 @@ func TestApplyMigrationsIntegration_EmptySchema(t *testing.T) {
 	).Scan(&usersTable, &savedViewsTable))
 	assert.True(t, usersTable.Valid)
 	assert.False(t, savedViewsTable.Valid)
+}
+
+func TestDocumentLinksIntegration(t *testing.T) {
+	schema := newIntegrationSchema(t)
+	require.NoError(t, ApplyMigrations(schema.database))
+
+	_, err := schema.database.ExecContext(context.Background(), `
+		INSERT INTO users (
+			id, email, email_normalized, password_hash, ctime, mtime
+		) VALUES
+			('user-1', 'links-1@example.test', 'links-1@example.test', 'hash', 1, 1),
+			('user-2', 'links-2@example.test', 'links-2@example.test', 'hash', 1, 1);
+
+		INSERT INTO documents (
+			id, user_id, title, content, state, pinned, starred, ctime, mtime
+		) VALUES
+			('a', 'user-1', 'A', '', 1, 0, 0, 1, 10),
+			('b', 'user-1', 'B', '', 1, 0, 0, 1, 20),
+			('c', 'user-1', 'C', '', 1, 0, 0, 1, 30),
+			('d', 'user-1', 'D', '', 1, 0, 0, 1, 40),
+			('e', 'user-1', 'E deleted', '', 2, 0, 0, 1, 50),
+			('sort-root', 'user-1', 'Sort root', '', 1, 0, 0, 1, 5),
+			('sort-a', 'user-1', 'Sort A', '', 1, 0, 0, 1, 80),
+			('sort-b', 'user-1', 'Sort B', '', 1, 0, 0, 1, 80),
+			('x', 'user-2', 'X', '', 1, 0, 0, 1, 60),
+			('y', 'user-2', 'Y', '', 1, 0, 0, 1, 70);
+
+		INSERT INTO document_links (source_id, target_id, user_id, ctime) VALUES
+			('a', 'b', 'user-1', 1),
+			('c', 'a', 'user-1', 1),
+			('a', 'd', 'user-1', 1),
+			('d', 'a', 'user-1', 1),
+			('a', 'e', 'user-1', 1),
+			('e', 'a', 'user-1', 1),
+			('a', 'a', 'user-1', 1),
+			('sort-root', 'sort-a', 'user-1', 1),
+			('sort-root', 'sort-b', 'user-1', 1),
+			('x', 'y', 'user-2', 1);
+	`)
+	require.NoError(t, err)
+
+	documents := repo.NewDocumentRepo(schema.database)
+	first, err := documents.ListLinks(
+		context.Background(),
+		"user-1",
+		"a",
+		model.DocumentLinksQuery{
+			IncludeIncoming: true,
+			IncludeOutgoing: true,
+			Limit:           1,
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, model.DocumentLinkCounts{
+		Incoming: 2,
+		Outgoing: 2,
+		Unique:   3,
+	}, first.Counts)
+	require.Len(t, first.Incoming.Items, 1)
+	require.Len(t, first.Outgoing.Items, 1)
+	assert.Equal(t, "d", first.Incoming.Items[0].ID)
+	assert.Equal(t, "d", first.Outgoing.Items[0].ID)
+	assert.True(t, first.Incoming.Items[0].Mutual)
+	assert.True(t, first.Outgoing.Items[0].Mutual)
+	assert.True(t, first.Incoming.HasMore)
+	assert.True(t, first.Outgoing.HasMore)
+
+	second, err := documents.ListLinks(
+		context.Background(),
+		"user-1",
+		"a",
+		model.DocumentLinksQuery{
+			IncludeIncoming: true,
+			IncludeOutgoing: true,
+			IncomingCursor: &model.DocumentLinkCursor{
+				Mtime: first.Incoming.Items[0].Mtime,
+				ID:    first.Incoming.Items[0].ID,
+			},
+			OutgoingCursor: &model.DocumentLinkCursor{
+				Mtime: first.Outgoing.Items[0].Mtime,
+				ID:    first.Outgoing.Items[0].ID,
+			},
+			Limit: 1,
+		},
+	)
+	require.NoError(t, err)
+	require.Len(t, second.Incoming.Items, 1)
+	require.Len(t, second.Outgoing.Items, 1)
+	assert.Equal(t, "c", second.Incoming.Items[0].ID)
+	assert.Equal(t, "b", second.Outgoing.Items[0].ID)
+	assert.False(t, second.Incoming.Items[0].Mutual)
+	assert.False(t, second.Outgoing.Items[0].Mutual)
+	assert.False(t, second.Incoming.HasMore)
+	assert.False(t, second.Outgoing.HasMore)
+
+	sameMtime, err := documents.ListLinks(
+		context.Background(),
+		"user-1",
+		"sort-root",
+		model.DocumentLinksQuery{IncludeOutgoing: true, Limit: 20},
+	)
+	require.NoError(t, err)
+	require.Len(t, sameMtime.Outgoing.Items, 2)
+	assert.Equal(t, "sort-b", sameMtime.Outgoing.Items[0].ID)
+	assert.Equal(t, "sort-a", sameMtime.Outgoing.Items[1].ID)
+
+	backlinks, err := documents.GetBacklinks(
+		context.Background(), "user-1", "b",
+	)
+	require.NoError(t, err)
+	require.Len(t, backlinks, 1)
+	assert.Equal(t, "a", backlinks[0].ID)
+
+	for _, test := range []struct {
+		userID     string
+		documentID string
+	}{
+		{userID: "user-1", documentID: "e"},
+		{userID: "user-2", documentID: "a"},
+		{userID: "user-1", documentID: "missing"},
+	} {
+		_, err := documents.ListLinks(
+			context.Background(),
+			test.userID,
+			test.documentID,
+			model.DocumentLinksQuery{IncludeIncoming: true, Limit: 20},
+		)
+		assert.ErrorIs(t, err, appErr.ErrNotFound)
+	}
 }
 
 func TestApplyMigrationsIntegration_RemovesDocumentSummarySchema(t *testing.T) {

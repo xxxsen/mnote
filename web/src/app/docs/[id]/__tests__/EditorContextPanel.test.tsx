@@ -69,15 +69,6 @@ function ContextHarness({
       scrollEditorToSourceLine: scrollEditor,
       scrollPreviewToHeading: scrollPreview,
     },
-    linkGraphHook: {
-      backlinks: [],
-      outboundLinks: [],
-      linkGraph: {
-        nodes: [],
-        edges: [],
-        positionByID: {},
-      },
-    },
     navigate: vi.fn(),
     contentRef: { current: "# Intro" },
     setShowDeleteConfirm: vi.fn(),

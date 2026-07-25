@@ -20,6 +20,8 @@
 - `useAutosaveScheduler`：idle/max-wait 自动保存和恢复在线后的重试。
 - `EditorShell`：页面可见结构，只接收 `session`、`commands`、`ui` 三组显式契约。
 - `EditorOverlayHost`：预览、快速打开、相似文档、文档上下文抽屉和格式弹层。
+- `useDocumentLinks`：关联文档的延迟加载、独立方向分页、缓存失效、请求取消和草稿链接差异状态。
+- `LinkedNotesOverlay` / `LinkedNotesContent`：桌面非模态 Popover、移动 Drawer 和共享的关联列表内容。
 - `EditorContextRail` / `EditorContextDrawer`：宽屏布局内右栏和窄屏抽屉的两种外壳，共用 Outline / Details 互斥内容结构。
 - `ReadingSurface`：Preview、全屏预览和模板/公开阅读页共享的阅读容器，只统一视觉与局部
   overflow，不合并业务状态。
@@ -247,6 +249,56 @@ Slash/Wikilink 菜单使用 listbox/option 语义，编辑器暴露 `aria-contro
 - 粘贴文件先插入唯一占位；上传完成后按占位内容替换，不依赖过期字符偏移。
 - 相似文档、分享、导出或关系查询失败时，不改变同步状态和本地草稿。
 
+### 12.1 关联笔记的数据语义
+
+关联笔记只展示已经由服务器保存到 `document_links` 的关系：
+
+- Incoming 表示其他 normal 文档链接当前文档，Outgoing 表示当前文档链接其他 normal 文档；
+- 同一文档同时出现在两个方向时，两侧记录均带 `mutual=true`；
+- 顶部数量分别表示完整 Incoming、Outgoing 和两方向按文档 ID 去重后的 Unique 数量，不是当前页长度；
+- 自引用、其他用户文档、已删除的当前文档或关系端点不进入结果；
+- 排序固定为 `mtime DESC, id DESC`，Incoming 和 Outgoing 使用各自游标，单方向翻页不覆盖另一方向；
+- 列表响应只包含 `id`、`title`、`mtime` 和 `mutual`，正文仅在用户选择 Preview 时单独读取。
+
+编辑器通过鉴权接口 `GET /api/v1/documents/{id}/links` 读取关系。默认
+`include=incoming,outgoing&limit=20`；允许只包含一个方向，单页上限为 50。服务端返回完整 counts，
+以及被 include 方向的 `{items,next_cursor}`；未 include 的方向字段省略，空页仍返回 `items: []` 和
+空字符串游标。游标是版本化、不透明的 URL-safe Base64 值，客户端不得解析或修改。
+
+### 12.2 关联笔记的加载和一致性
+
+页面加载时不请求关系。用户首次打开 Linked notes 才同时读取两个方向；成功结果缓存 60 秒。缓存
+未过期时重复开关不发请求；缓存过期或正文保存产生新的 `serverRevision` 时标记 stale。面板打开期间
+发生保存会保留旧列表并后台刷新；如果首次加载仍在途，则取消旧请求并按新 revision 重发，避免保存前
+快照清除 stale 标记。刷新失败继续展示旧数据和 Retry，不影响编辑或保存。
+
+关系请求具备 `AbortController` 和递增请求号。切换文档、重新刷新或组件卸载会取消旧请求，迟到响应
+不能写入新文档。Load more 每次只允许一个方向在途，按文档 ID 去重追加；失败只标记该方向并保留两侧
+既有列表。初次加载失败使用整面板错误态，刷新失败和翻页失败使用非破坏性局部错误态。
+
+预览正文与最后一次服务器确认正文中的 `/docs/{id}` 目标按集合比较。集合不同但正文尚未保存时显示
+`Save this note to update linked notes.`；列表仍保持服务器事实，不用草稿推测或乐观改写关系。链接
+顺序改变、重复同一目标或非链接正文改变不显示该提示。快速连续预览关联文档时，旧预览请求会被取消；
+关闭预览也会取消在途请求，避免迟到内容重新打开或覆盖新预览。
+
+### 12.3 入口、布局和键盘交互
+
+`>=1024px` 时，页头在视图模式控件之后、Outline/Details 之前提供唯一的链形图标入口。首次加载前
+不显示数量；已加载且 Unique 为 0 仍不显示 badge；正数显示数量，超过 99 显示 `99+`。桌面使用挂在
+`document.body` 的非模态 Popover，不改变编辑、预览、Split 或右侧上下文栏宽度。Popover 相对触发点
+定位并按视口收敛；存在 Outline/Details 栏时，其右边界不能进入该栏，底部为保存状态预留空间。
+
+`<1024px` 时不渲染独立链形入口，Linked notes 只出现在页头 More menu，选择后打开 `compact`
+右侧 Drawer。Popover 和 Drawer 通过媒体查询只挂载一个外壳，内部复用同一个内容组件。Incoming
+为默认 tab；方向键、Home、End 可切换 tab，两个 panel 保持挂载，因此切换方向保留各自滚动位置。
+行主体打开只读 Preview，独立 Open 按钮进入完整文档；超长标题截断且列表内部纵向滚动。
+
+桌面 Popover 支持 Escape、外部点击和关闭按钮，关闭后焦点回到链形入口；从最后一个控件正向 Tab
+关闭并进入下一个页头动作，反向 Tab 回到入口。移动 Drawer 使用标准 Dialog 焦点圈定和焦点恢复。
+打开 Outline、Details 或格式 Popover 会关闭 Linked notes；打开 Linked notes 会收起展开的 Similar
+notes，反向打开 Similar notes 也会关闭 Linked notes，避免同层面板重叠。关系面板不替换
+Outline/Details 内容。
+
 ## 13. 发布与回滚
 
 发布时先确保 Web 同时发送 `base_revision` 和 `save_seq`，再启用后端严格 base 校验。已打开的旧页面收到客户端升级错误后不会写库，本地草稿仍保留；刷新页面即可进入新协议。
@@ -278,6 +330,8 @@ Slash/Wikilink 菜单使用 listbox/option 语义，编辑器暴露 `aria-contro
 - 同一基准的双客户端保存、三种冲突动作和二次冲突；
 - 网络错误、Retry 和恢复在线；
 - 桌面三模式、420px 分栏边界、默认 Outline、Outline/Details 原位切换、常驻/折叠右栏、断点切换和移动 drawer；
+- Linked notes 延迟加载、Incoming/Outgoing/Mutual/Unique、独立游标分页、60 秒缓存、草稿提示、Retry、
+  快速切换文档、桌面不遮挡 Outline、移动唯一入口、预览竞态和 Similar notes 互斥；
 - 标题/列表互转、选区边界、撤销重做、输入法和双链菜单；
 - source-line 双向滚动、编辑区中线切章、预览区真实滚轮不回顶、关闭同步、无 `[toc]` 的默认 Outline、三种模式定位、当前章节高亮和 Outline 自身跟随；
 - 全键盘 Dialog/Menu 流程、焦点恢复和控件可访问名称；

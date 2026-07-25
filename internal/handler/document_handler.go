@@ -43,6 +43,30 @@ type documentListItem struct {
 	Tags   []tagResponse `json:"tags,omitempty"`
 }
 
+type linkedDocumentResponse struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Mtime  int64  `json:"mtime"`
+	Mutual bool   `json:"mutual"`
+}
+
+type documentLinkPageResponse struct {
+	Items      []linkedDocumentResponse `json:"items"`
+	NextCursor string                   `json:"next_cursor"`
+}
+
+type documentLinkCountsResponse struct {
+	Incoming int64 `json:"incoming"`
+	Outgoing int64 `json:"outgoing"`
+	Unique   int64 `json:"unique"`
+}
+
+type documentLinksResponse struct {
+	Counts   documentLinkCountsResponse `json:"counts"`
+	Incoming *documentLinkPageResponse  `json:"incoming,omitempty"`
+	Outgoing *documentLinkPageResponse  `json:"outgoing,omitempty"`
+}
+
 func (h *DocumentHandler) Create(c *gin.Context) {
 	var req documentRequest
 	if err := bindJSON(c, &req); err != nil {
@@ -440,6 +464,71 @@ func (h *DocumentHandler) Backlinks(c *gin.Context) {
 	}
 
 	response.Success(c, items)
+}
+
+func toDocumentLinkPageResponse(
+	page *model.DocumentLinkPage,
+) *documentLinkPageResponse {
+	if page == nil {
+		return nil
+	}
+	items := make([]linkedDocumentResponse, 0, len(page.Items))
+	for _, item := range page.Items {
+		items = append(items, linkedDocumentResponse{
+			ID: item.ID, Title: item.Title, Mtime: item.Mtime, Mutual: item.Mutual,
+		})
+	}
+	return &documentLinkPageResponse{
+		Items:      items,
+		NextCursor: page.NextCursor,
+	}
+}
+
+func (h *DocumentHandler) Links(c *gin.Context) {
+	if _, exists := c.GetQuery("offset"); exists {
+		response.Error(c, errcode.ErrInvalid, "invalid request")
+		return
+	}
+	include, includeProvided := c.GetQuery("include")
+	if includeProvided && strings.TrimSpace(include) == "" {
+		response.Error(c, errcode.ErrInvalid, "invalid request")
+		return
+	}
+	limit := service.DefaultDocumentLinksLimit
+	if raw, exists := c.GetQuery("limit"); exists {
+		value, err := strconv.Atoi(raw)
+		if err != nil ||
+			value < 1 ||
+			value > service.MaxDocumentLinksLimit {
+			response.Error(c, errcode.ErrInvalid, "invalid request")
+			return
+		}
+		limit = value
+	}
+	result, err := h.documents.ListLinks(
+		c.Request.Context(),
+		getUserID(c),
+		c.Param("id"),
+		service.DocumentLinksInput{
+			Include:        include,
+			Limit:          limit,
+			IncomingCursor: c.Query("incoming_cursor"),
+			OutgoingCursor: c.Query("outgoing_cursor"),
+		},
+	)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, documentLinksResponse{
+		Counts: documentLinkCountsResponse{
+			Incoming: result.Counts.Incoming,
+			Outgoing: result.Counts.Outgoing,
+			Unique:   result.Counts.Unique,
+		},
+		Incoming: toDocumentLinkPageResponse(result.Incoming),
+		Outgoing: toDocumentLinkPageResponse(result.Outgoing),
+	})
 }
 
 func (h *DocumentHandler) Similar(c *gin.Context) {

@@ -30,7 +30,6 @@ import { usePopover } from "../hooks/usePopover";
 import { useScrollSync } from "../hooks/useScrollSync";
 import { useShareLink } from "../hooks/useShareLink";
 import { useSimilarDocs } from "../hooks/useSimilarDocs";
-import { useLinkGraph } from "../hooks/useLinkGraph";
 import { useQuickOpen } from "../hooks/useQuickOpen";
 import { useTagState } from "../hooks/useTagState";
 
@@ -117,6 +116,47 @@ describe("usePreviewDoc", () => {
       await result.current.handleOpenPreview("d1");
     });
     expect(onError).toHaveBeenCalledWith(err);
+  });
+
+  it("aborts an obsolete preview and ignores its late response", async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    mockApiFetch
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        document: { id: "d2", title: "Second" },
+      });
+    const { result } = renderHook(() => usePreviewDoc());
+    let firstRequest!: Promise<void>;
+    act(() => {
+      firstRequest = result.current.handleOpenPreview("d1");
+    });
+    const firstSignal = mockApiFetch.mock.calls[0]?.[1]?.signal;
+
+    await act(async () => result.current.handleOpenPreview("d2"));
+    expect(firstSignal?.aborted).toBe(true);
+    expect(result.current.previewDoc?.id).toBe("d2");
+    await act(async () => {
+      resolveFirst?.({ document: { id: "d1", title: "First" } });
+      await firstRequest;
+    });
+    expect(result.current.previewDoc?.id).toBe("d2");
+  });
+
+  it("cancels preview loading when the modal closes", () => {
+    mockApiFetch.mockImplementation(() => new Promise(() => undefined));
+    const { result } = renderHook(() => usePreviewDoc());
+    act(() => {
+      void result.current.handleOpenPreview("d1");
+    });
+    const signal = mockApiFetch.mock.calls[0]?.[1]?.signal;
+    act(() => result.current.setPreviewDoc(null));
+    expect(signal?.aborted).toBe(true);
+    expect(result.current.previewLoading).toBe(false);
   });
 });
 
@@ -440,36 +480,6 @@ describe("useSimilarDocs", () => {
     const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "x" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(100); });
     expect(result.current.similarIconVisible).toBe(true);
-  });
-});
-
-describe("useLinkGraph", () => {
-  it("fetches backlinks on mount", async () => {
-    mockApiFetch.mockResolvedValue([]);
-    const { result } = renderHook(() => useLinkGraph({ docId: "d1", title: "T", previewContent: "" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
-    expect(result.current.backlinks).toEqual([]);
-  });
-
-  it("computes linkGraph with current node", async () => {
-    mockApiFetch.mockResolvedValue([]);
-    const { result } = renderHook(() => useLinkGraph({ docId: "d1", title: "My Doc", previewContent: "" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
-    expect(result.current.linkGraph.nodes).toEqual([
-      expect.objectContaining({ id: "d1", title: "My Doc", kind: "current" }),
-    ]);
-  });
-
-  it("includes backlinks as incoming nodes", async () => {
-    mockApiFetch.mockImplementation(async (url: string) => {
-      if (url.includes("/backlinks")) return [{ id: "b1", title: "Back" }];
-      return [];
-    });
-    const { result } = renderHook(() => useLinkGraph({ docId: "d1", title: "Doc", previewContent: "" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
-    expect(result.current.backlinks).toHaveLength(1);
-    expect(result.current.linkGraph.nodes).toHaveLength(2);
-    expect(result.current.linkGraph.edges).toContainEqual({ from: "b1", to: "d1" });
   });
 });
 

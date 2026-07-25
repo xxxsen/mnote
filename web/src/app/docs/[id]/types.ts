@@ -6,6 +6,32 @@ export type SimilarDoc = Document & {
   score?: number;
 };
 
+export type DocumentLinkDirection = "incoming" | "outgoing";
+
+export type LinkedDocument = {
+  id: string;
+  title: string;
+  mtime: number;
+  mutual: boolean;
+};
+
+export type DocumentLinkCounts = {
+  incoming: number;
+  outgoing: number;
+  unique: number;
+};
+
+export type DocumentLinkPage = {
+  items: LinkedDocument[];
+  next_cursor: string;
+};
+
+export type DocumentLinksResponse = {
+  counts: DocumentLinkCounts;
+  incoming?: DocumentLinkPage;
+  outgoing?: DocumentLinkPage;
+};
+
 export type SlashActionContext = {
   executeCommand: (command: MarkdownCommand) => void;
   handleFormat: (type: "wrap" | "line", prefix: string, suffix?: string) => void;

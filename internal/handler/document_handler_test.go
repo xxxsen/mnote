@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/xxxsen/mnote/internal/model"
+	"github.com/xxxsen/mnote/internal/pkg/errcode"
+	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
 	"github.com/xxxsen/mnote/internal/service"
 )
 
@@ -426,6 +428,151 @@ func TestDocumentHandler_Backlinks_Empty(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestDocumentHandlerLinksSuccess(t *testing.T) {
+	mock := newDocMock()
+	mock.listLinksFn = func(
+		_ context.Context,
+		userID string,
+		documentID string,
+		input service.DocumentLinksInput,
+	) (*model.DocumentLinksResult, error) {
+		assert.Equal(t, "u1", userID)
+		assert.Equal(t, "d1", documentID)
+		assert.Equal(t, "incoming", input.Include)
+		assert.Equal(t, 2, input.Limit)
+		assert.Equal(t, "cursor", input.IncomingCursor)
+		assert.Empty(t, input.OutgoingCursor)
+		return &model.DocumentLinksResult{
+			Counts: model.DocumentLinkCounts{
+				Incoming: 1, Outgoing: 2, Unique: 2,
+			},
+			Incoming: &model.DocumentLinkPage{
+				Items: []model.LinkedDocument{{
+					ID: "d2", Title: "Linked", Mtime: 123, Mutual: true,
+				}},
+				NextCursor: "next",
+			},
+		}, nil
+	}
+	handler := &DocumentHandler{documents: mock}
+	router := newTestRouter()
+	router.GET("/documents/:id/links", withUserID("u1"), handler.Links)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/documents/d1/links?include=incoming&limit=2&incoming_cursor=cursor",
+		nil,
+	)
+	router.ServeHTTP(recorder, request)
+
+	responseBody := parseResponseT(t, recorder)
+	assert.Equal(t, float64(0), responseBody["code"])
+	data := responseBody["data"].(map[string]any)
+	assert.NotContains(t, data, "outgoing")
+	counts := data["counts"].(map[string]any)
+	assert.Equal(t, float64(2), counts["unique"])
+	incoming := data["incoming"].(map[string]any)
+	assert.Equal(t, "next", incoming["next_cursor"])
+	items := incoming["items"].([]any)
+	require.Len(t, items, 1)
+	assert.Equal(t, "d2", items[0].(map[string]any)["id"])
+}
+
+func TestDocumentHandlerLinksEmpty(t *testing.T) {
+	mock := newDocMock()
+	mock.listLinksFn = func(
+		_ context.Context,
+		_ string,
+		_ string,
+		input service.DocumentLinksInput,
+	) (*model.DocumentLinksResult, error) {
+		assert.Equal(t, service.DefaultDocumentLinksLimit, input.Limit)
+		return &model.DocumentLinksResult{
+			Incoming: &model.DocumentLinkPage{
+				Items: make([]model.LinkedDocument, 0),
+			},
+			Outgoing: &model.DocumentLinkPage{
+				Items: make([]model.LinkedDocument, 0),
+			},
+		}, nil
+	}
+	handler := &DocumentHandler{documents: mock}
+	router := newTestRouter()
+	router.GET("/documents/:id/links", withUserID("u1"), handler.Links)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(
+		recorder,
+		httptest.NewRequest(http.MethodGet, "/documents/d1/links", nil),
+	)
+
+	data := parseResponseT(t, recorder)["data"].(map[string]any)
+	assert.Empty(t, data["incoming"].(map[string]any)["items"])
+	assert.Equal(t, "", data["outgoing"].(map[string]any)["next_cursor"])
+}
+
+func TestDocumentHandlerLinksRejectsInvalidQuery(t *testing.T) {
+	for _, query := range []string{
+		"?include=",
+		"?limit=0",
+		"?limit=51",
+		"?limit=bad",
+		"?offset=0",
+	} {
+		t.Run(query, func(t *testing.T) {
+			handler := &DocumentHandler{documents: newDocMock()}
+			router := newTestRouter()
+			router.GET(
+				"/documents/:id/links",
+				withUserID("u1"),
+				handler.Links,
+			)
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(
+				recorder,
+				httptest.NewRequest(
+					http.MethodGet, "/documents/d1/links"+query, nil,
+				),
+			)
+			responseBody := parseResponseT(t, recorder)
+			assert.Equal(t, float64(errcode.ErrInvalid), responseBody["code"])
+		})
+	}
+}
+
+func TestDocumentHandlerLinksServiceErrors(t *testing.T) {
+	for _, expected := range []error{appErr.ErrNotFound, errors.New("db failed")} {
+		t.Run(expected.Error(), func(t *testing.T) {
+			mock := newDocMock()
+			mock.listLinksFn = func(
+				context.Context,
+				string,
+				string,
+				service.DocumentLinksInput,
+			) (*model.DocumentLinksResult, error) {
+				return nil, expected
+			}
+			handler := &DocumentHandler{documents: mock}
+			router := newTestRouter()
+			router.GET(
+				"/documents/:id/links",
+				withUserID("u1"),
+				handler.Links,
+			)
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(
+				recorder,
+				httptest.NewRequest(
+					http.MethodGet, "/documents/d1/links", nil,
+				),
+			)
+			responseBody := parseResponseT(t, recorder)
+			assert.NotEqual(t, float64(0), responseBody["code"])
+		})
+	}
 }
 
 func TestDocumentHandler_Create_ServiceError(t *testing.T) {

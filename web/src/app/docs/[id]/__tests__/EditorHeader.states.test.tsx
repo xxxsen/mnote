@@ -26,6 +26,13 @@ function renderHeader(status: EditorSyncStatus, titleMissing = false) {
       setViewMode={vi.fn()}
       scrollSyncEnabled
       onToggleScrollSync={vi.fn()}
+      linkedNotesOpen={false}
+      linkedNotesLoaded={false}
+      linkedNotesCount={0}
+      onLinkedNotesTriggerElement={vi.fn()}
+      onMobileMenuTriggerElement={vi.fn()}
+      onToggleLinkedNotes={vi.fn()}
+      onOpenLinkedNotes={vi.fn()}
     />,
   );
 }
