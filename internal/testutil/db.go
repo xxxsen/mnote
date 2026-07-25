@@ -17,11 +17,44 @@ import (
 	"github.com/xxxsen/mnote/internal/db"
 )
 
+const integrationExtensionLockKey int64 = 6_202_607_251
+
 func envOrDefault(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
 		return value
 	}
 	return fallback
+}
+
+func ensureIntegrationExtensions(t *testing.T, admin *sql.DB) {
+	t.Helper()
+	ctx := context.Background()
+	connection, err := admin.Conn(ctx)
+	if err != nil {
+		t.Fatalf("open integration extension connection: %v", err)
+	}
+	defer func() { _ = connection.Close() }()
+
+	if _, err := connection.ExecContext(
+		ctx, "SELECT pg_advisory_lock($1)", integrationExtensionLockKey,
+	); err != nil {
+		t.Fatalf("lock integration extension setup: %v", err)
+	}
+	defer func() {
+		if _, err := connection.ExecContext(
+			ctx, "SELECT pg_advisory_unlock($1)", integrationExtensionLockKey,
+		); err != nil {
+			t.Errorf("unlock integration extension setup: %v", err)
+		}
+	}()
+
+	for _, extension := range []string{"vector", "pgcrypto"} {
+		query := "CREATE EXTENSION IF NOT EXISTS " +
+			pq.QuoteIdentifier(extension) + " WITH SCHEMA public"
+		if _, err := connection.ExecContext(ctx, query); err != nil {
+			t.Fatalf("install integration extension %s: %v", extension, err)
+		}
+	}
 }
 
 func OpenTestDB(t *testing.T) (*sql.DB, func()) {
@@ -46,6 +79,7 @@ func OpenTestDB(t *testing.T) (*sql.DB, func()) {
 	if err != nil {
 		t.Fatalf("open integration admin db: %v", err)
 	}
+	ensureIntegrationExtensions(t, admin)
 
 	random := make([]byte, 12)
 	if _, err := rand.Read(random); err != nil {

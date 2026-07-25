@@ -26,6 +26,34 @@ type integrationSchema struct {
 	name     string
 }
 
+const integrationExtensionLockKey int64 = 6_202_607_251
+
+func ensureIntegrationExtensions(t *testing.T, admin *sql.DB) {
+	t.Helper()
+	ctx := context.Background()
+	connection, err := admin.Conn(ctx)
+	require.NoError(t, err)
+	defer func() { _ = connection.Close() }()
+
+	_, err = connection.ExecContext(
+		ctx, "SELECT pg_advisory_lock($1)", integrationExtensionLockKey,
+	)
+	require.NoError(t, err)
+	defer func() {
+		_, unlockErr := connection.ExecContext(
+			ctx, "SELECT pg_advisory_unlock($1)", integrationExtensionLockKey,
+		)
+		assert.NoError(t, unlockErr)
+	}()
+
+	for _, extension := range []string{"vector", "pgcrypto"} {
+		query := "CREATE EXTENSION IF NOT EXISTS " +
+			pq.QuoteIdentifier(extension) + " WITH SCHEMA public"
+		_, err = connection.ExecContext(ctx, query)
+		require.NoError(t, err)
+	}
+}
+
 func integrationConfig(t *testing.T) Config {
 	t.Helper()
 	host := os.Getenv("TEST_DB_HOST")
@@ -62,6 +90,7 @@ func newIntegrationSchema(t *testing.T) *integrationSchema {
 	admin, err := Open(context.Background(), cfg)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
+	ensureIntegrationExtensions(t, admin)
 
 	random := make([]byte, 12)
 	_, err = rand.Read(random)
