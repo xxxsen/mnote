@@ -109,12 +109,14 @@ describe("useDocsData", () => {
     const { result } = renderHook(() => useDocsData(makeDeps()));
     await act(async () => { await result.current.fetchSemanticSearch("query"); });
     expect(result.current.semanticSearchDocs).toHaveLength(1);
+    expect(result.current.semanticSearchStatus).toBe("ready");
   });
 
   it("fetchSemanticSearch clears for empty query", async () => {
     const { result } = renderHook(() => useDocsData(makeDeps()));
     await act(async () => { await result.current.fetchSemanticSearch(""); });
     expect(result.current.semanticSearchDocs).toEqual([]);
+    expect(result.current.semanticSearchStatus).toBe("idle");
   });
 
   it("fetchSemanticSearch handles errors", async () => {
@@ -122,6 +124,7 @@ describe("useDocsData", () => {
     const { result } = renderHook(() => useDocsData(makeDeps()));
     await act(async () => { await result.current.fetchSemanticSearch("test"); });
     expect(result.current.semanticSearchDocs).toEqual([]);
+    expect(result.current.semanticSearchStatus).toBe("unavailable");
   });
 
   it("merges tags from fetched docs", async () => {
@@ -416,6 +419,7 @@ describe("useDocsData", () => {
     });
     expect(abortPromiseSettled).toBe(true);
     expect(result.current.semanticSearchDocs).toHaveLength(1);
+    expect(result.current.semanticSearchStatus).toBe("ready");
   });
 
   it("fetchDocs returns early when already in flight", async () => {

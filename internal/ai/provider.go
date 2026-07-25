@@ -11,6 +11,42 @@ type IProvider interface {
 	Embed(ctx context.Context, model, text, taskType string) ([]float32, error)
 }
 
+type IBatchProvider interface {
+	IProvider
+	EmbedBatch(
+		ctx context.Context,
+		model string,
+		dimensions int,
+		inputs []string,
+		taskType string,
+	) ([][]float32, error)
+}
+
+type ProfileIdentity struct {
+	ID               string
+	Fingerprint      string
+	SpaceID          string
+	Model            string
+	Dimensions       int
+	QueryTaskType    string
+	DocumentTaskType string
+}
+
+type EmbeddingRequest struct {
+	Inputs   []string
+	TaskType string
+}
+
+type EmbeddingResult struct {
+	Vectors      [][]float32
+	ProviderName string
+}
+
+type ProfileEmbedder interface {
+	Profile() ProfileIdentity
+	EmbedBatch(context.Context, EmbeddingRequest) (EmbeddingResult, error)
+}
+
 type IEmbedder interface {
 	Embed(ctx context.Context, text, taskType string) ([]float32, error)
 	ModelName() string

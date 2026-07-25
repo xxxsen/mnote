@@ -38,11 +38,12 @@ function SemanticSearchCard({
       >
         <div className="flex items-center gap-2 text-xs font-medium text-info">
           <Search className="h-4 w-4" aria-hidden="true" />
-          {Math.round((doc.score || 0) * 100)}% semantic match
+          Relevance {Math.round(Math.max(-1, Math.min(1, doc.score || 0)) * 100)}
+          {doc.match_type ? ` · ${doc.match_type}` : ""}
         </div>
         <h3 className="mt-3 line-clamp-2 text-base font-semibold">{doc.title || "Untitled"}</h3>
         <p className="mt-2 line-clamp-2 text-sm leading-5 text-muted-foreground">
-          {getDocumentExcerpt(doc) || "No preview available"}
+          {doc.matched_excerpt || getDocumentExcerpt(doc) || "No preview available"}
         </p>
         {docTags.length > 0 ? (
           <div className="mt-auto flex flex-wrap gap-1 pt-3">
@@ -195,6 +196,7 @@ export interface DocumentGridProps {
   docs: DocumentWithTags[];
   semanticSearchDocs: DocumentWithTags[];
   semanticSearching: boolean;
+  semanticSearchStatus: "idle" | "searching" | "ready" | "unavailable";
   loading: boolean;
   loadingMore: boolean;
   initialError: boolean;
@@ -268,13 +270,36 @@ function FilterStatus({
 function SemanticResults({
   docs,
   searching,
+  status,
   tagIndex,
 }: {
   docs: DocumentWithTags[];
   searching: boolean;
+  status: DocumentGridProps["semanticSearchStatus"];
   tagIndex: Partial<Record<string, Tag>>;
 }) {
-  if (docs.length === 0) return null;
+  if (status === "idle") return null;
+  if (status === "unavailable") {
+    return (
+      <p role="status" className="mb-6 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+        Semantic search is unavailable. Keyword results remain available.
+      </p>
+    );
+  }
+  if (status === "searching" && docs.length === 0) {
+    return (
+      <p role="status" className="mb-6 text-sm text-muted-foreground">
+        Searching indexed content…
+      </p>
+    );
+  }
+  if (status === "ready" && docs.length === 0) {
+    return (
+      <p role="status" className="mb-6 text-sm text-muted-foreground">
+        No semantic matches. Keyword results are shown below.
+      </p>
+    );
+  }
   return (
     <section aria-labelledby="semantic-results-heading" className="mb-8">
       <div className="mb-4 flex items-center gap-2">
@@ -304,7 +329,8 @@ function getEmptyTitle({
 
 type NotesContentProps = Omit<
   DocumentGridProps,
-  "semanticSearchDocs" | "semanticSearching" | "onClearSearch" | "onClearFilter"
+  "semanticSearchDocs" | "semanticSearching" | "semanticSearchStatus" |
+  "onClearSearch" | "onClearFilter"
 > & {
   hasFilter: boolean;
   emptyTitle: string;
@@ -397,6 +423,7 @@ export function DocumentGrid({
   docs,
   semanticSearchDocs,
   semanticSearching,
+  semanticSearchStatus,
   loading,
   loadingMore,
   initialError,
@@ -434,7 +461,12 @@ export function DocumentGrid({
         onClearSearch={onClearSearch}
         onClearFilter={onClearFilter}
       />
-      <SemanticResults docs={semanticSearchDocs} searching={semanticSearching} tagIndex={tagIndex} />
+      <SemanticResults
+        docs={semanticSearchDocs}
+        searching={semanticSearching}
+        status={semanticSearchStatus}
+        tagIndex={tagIndex}
+      />
       <NotesContent
         docs={docs}
         loading={loading}

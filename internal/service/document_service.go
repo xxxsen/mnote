@@ -24,9 +24,20 @@ type documentAssetSyncer interface {
 // EmbeddingService. It covers save-time bookkeeping and semantic search.
 type documentEmbeddingClient interface {
 	MarkEmbeddingPending(ctx context.Context, userID, docID, contentHash string, now int64) error
+	EnqueueContentChange(
+		ctx context.Context,
+		userID, docID, contentHash string,
+		revision, now int64,
+	) error
+	DeleteEmbeddingData(ctx context.Context, userID, docID string) error
 	SemanticSearch(
 		ctx context.Context, userID, query string, topK int, excludeID string,
 	) ([]string, []float32, error)
+	SimilarDocuments(
+		ctx context.Context,
+		userID, documentID string,
+		limit int,
+	) ([]string, []float32, string, error)
 }
 
 type DocumentService struct {
@@ -42,10 +53,6 @@ type DocumentService struct {
 	versionMaxKeep int
 	runtime        Runtime
 }
-
-const (
-	semanticSearchMinScore = 0.7
-)
 
 func NewDocumentService(
 	runtime Runtime,
@@ -150,10 +157,10 @@ func (s *DocumentService) SemanticSearch(
 	sortedDocs := make([]model.Document, 0, len(ids))
 	sortedScores := make([]float32, 0, len(ids))
 	for i, id := range ids {
+		if i >= len(scores) {
+			continue
+		}
 		if d, ok := idMap[id]; ok {
-			if scores[i] < semanticSearchMinScore {
-				continue
-			}
 			sortedDocs = append(sortedDocs, d)
 			sortedScores = append(sortedScores, scores[i])
 		}
@@ -176,6 +183,170 @@ func (s *DocumentService) Get(ctx context.Context, userID, docID string) (*model
 		return nil, fmt.Errorf("get by id: %w", err)
 	}
 	return doc, nil
+}
+
+type SimilarDocumentList struct {
+	Documents   []model.Document
+	Scores      []float32
+	IndexStatus string
+}
+
+type SemanticDocumentResult struct {
+	Document       model.Document
+	Score          float32
+	MatchedExcerpt string
+	MatchType      string
+}
+
+type documentEmbeddingDetailsClient interface {
+	SemanticSearchMatches(
+		ctx context.Context,
+		userID, query string,
+		topK int,
+		excludeID string,
+	) ([]model.SemanticSearchMatch, error)
+}
+
+func (s *DocumentService) SemanticSearchDetailed(
+	ctx context.Context,
+	userID, query string,
+	limit uint,
+	excludeID string,
+) ([]SemanticDocumentResult, error) {
+	query = strings.TrimSpace(query)
+	if utf8.RuneCountInString(query) > 200 {
+		return nil, appErr.ErrInvalid
+	}
+	if query == "" || s.embedding == nil {
+		return []SemanticDocumentResult{}, nil
+	}
+	detailed, ok := s.embedding.(documentEmbeddingDetailsClient)
+	if !ok {
+		documents, scores, err := s.SemanticSearch(
+			ctx,
+			userID,
+			query,
+			"",
+			nil,
+			limit,
+			0,
+			"",
+			excludeID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]SemanticDocumentResult, 0, len(documents))
+		for index, document := range documents {
+			score := float32(0)
+			if index < len(scores) {
+				score = scores[index]
+			}
+			result = append(result, SemanticDocumentResult{
+				Document: document,
+				Score:    score,
+			})
+		}
+		return result, nil
+	}
+	matches, err := detailed.SemanticSearchMatches(
+		ctx,
+		userID,
+		query,
+		safeconv.UintToInt(limit),
+		excludeID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("semantic search matches: %w", err)
+	}
+	ids := make([]string, 0, len(matches))
+	for _, match := range matches {
+		ids = append(ids, match.DocumentID)
+	}
+	documents, err := s.docs.ListByIDs(ctx, userID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list semantic documents: %w", err)
+	}
+	byID := make(map[string]model.Document, len(documents))
+	for _, document := range documents {
+		byID[document.ID] = document
+	}
+	result := make([]SemanticDocumentResult, 0, len(matches))
+	for _, match := range matches {
+		document, exists := byID[match.DocumentID]
+		if !exists {
+			continue
+		}
+		result = append(result, SemanticDocumentResult{
+			Document:       document,
+			Score:          match.Score,
+			MatchedExcerpt: match.MatchedExcerpt,
+			MatchType:      match.MatchType,
+		})
+	}
+	return result, nil
+}
+
+func (s *DocumentService) SimilarDocuments(
+	ctx context.Context,
+	userID, documentID string,
+	limit int,
+) (*SimilarDocumentList, error) {
+	if limit < 1 || limit > 20 {
+		return nil, appErr.ErrInvalid
+	}
+	if _, err := s.docs.GetByID(ctx, userID, documentID); err != nil {
+		return nil, fmt.Errorf("get source document: %w", err)
+	}
+	if s.embedding == nil {
+		return &SimilarDocumentList{
+			Documents:   []model.Document{},
+			Scores:      []float32{},
+			IndexStatus: "disabled",
+		}, nil
+	}
+	ids, scores, status, err := s.embedding.SimilarDocuments(
+		ctx,
+		userID,
+		documentID,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("similar documents: %w", err)
+	}
+	if len(ids) == 0 {
+		return &SimilarDocumentList{
+			Documents:   []model.Document{},
+			Scores:      []float32{},
+			IndexStatus: status,
+		}, nil
+	}
+	documents, err := s.docs.ListByIDs(ctx, userID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list similar documents: %w", err)
+	}
+	byID := make(map[string]model.Document, len(documents))
+	for _, document := range documents {
+		byID[document.ID] = document
+	}
+	result := &SimilarDocumentList{
+		Documents:   make([]model.Document, 0, len(documents)),
+		Scores:      make([]float32, 0, len(documents)),
+		IndexStatus: status,
+	}
+	for index, id := range ids {
+		document, ok := byID[id]
+		if !ok {
+			continue
+		}
+		result.Documents = append(result.Documents, document)
+		if index < len(scores) {
+			result.Scores = append(result.Scores, scores[index])
+		} else {
+			result.Scores = append(result.Scores, 0)
+		}
+	}
+	return result, nil
 }
 
 func (s *DocumentService) GetByTitle(ctx context.Context, userID, title string) (*model.Document, error) {

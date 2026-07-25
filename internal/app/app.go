@@ -28,6 +28,7 @@ type Config struct {
 	Workers         []Worker
 	ShutdownTimeout time.Duration
 	WorkerTimeout   time.Duration
+	MetricsHandler  http.Handler
 }
 
 type App struct {
@@ -69,6 +70,9 @@ func New(config Config) (*App, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", app.live)
 	mux.HandleFunc("GET /health/ready", app.readiness)
+	if config.MetricsHandler != nil {
+		mux.Handle("GET /metrics", config.MetricsHandler)
+	}
 	mux.Handle("/", config.Handler)
 	app.server = &http.Server{
 		Addr:              config.Address,

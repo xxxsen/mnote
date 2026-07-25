@@ -94,6 +94,59 @@ function useDocumentActions({
   };
 }
 
+type SemanticSearchStatus = "idle" | "searching" | "ready" | "unavailable";
+
+function useSemanticSearch() {
+  const [docs, setDocs] = useState<DocumentWithTags[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [status, setStatus] = useState<SemanticSearchStatus>("idle");
+  const abortRef = useRef<AbortController | null>(null);
+
+  const cancel = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  const reset = useCallback(() => {
+    cancel();
+    setDocs([]);
+    setStatus("idle");
+  }, [cancel]);
+
+  const fetchSearch = useCallback(async (query: string) => {
+    abortRef.current?.abort();
+    if (!query) {
+      setDocs([]);
+      setStatus("idle");
+      return;
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setSearching(true);
+    setStatus("searching");
+    try {
+      const res = await apiFetch<{ items: DocumentWithTags[] }>(
+        `/ai/search?q=${encodeURIComponent(query)}`,
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted) return;
+      setDocs(res.items);
+      setStatus("ready");
+    } catch (error) {
+      if (isAbortError(error)) return;
+      console.error(error);
+      setDocs([]);
+      setStatus("unavailable");
+    } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setSearching(false);
+      }
+    }
+  }, []);
+
+  return { docs, searching, status, fetchSearch, reset, cancel };
+}
+
 export function useDocsData(deps: UseDocsDataDeps) {
   const { search, selectedTag, showStarred, showShared, mergeTags, fetchTagsByIDs, tagIndexRef, toast } = deps;
   const [docs, setDocs] = useState<DocumentWithTags[]>([]);
@@ -107,36 +160,17 @@ export function useDocsData(deps: UseDocsDataDeps) {
   const [loadMoreError, setLoadMoreError] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [nextOffset, setNextOffset] = useState(0);
-  const [semanticSearchDocs, setSemanticSearchDocs] = useState<DocumentWithTags[]>([]);
-  const [semanticSearching, setSemanticSearching] = useState(false);
+  const {
+    docs: semanticSearchDocs,
+    searching: semanticSearching,
+    status: semanticSearchStatus,
+    fetchSearch: fetchSemanticSearch,
+    reset: resetSemanticSearch,
+    cancel: cancelSemanticSearch,
+  } = useSemanticSearch();
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const fetchInFlightRef = useRef(false);
   const fetchAbortRef = useRef<AbortController | null>(null);
-  const semanticSearchAbortRef = useRef<AbortController | null>(null);
-
-  const fetchSemanticSearch = useCallback(async (query: string) => {
-    semanticSearchAbortRef.current?.abort();
-    if (!query) { setSemanticSearchDocs([]); return; }
-    const controller = new AbortController();
-    semanticSearchAbortRef.current = controller;
-    setSemanticSearching(true);
-    try {
-      const res = await apiFetch<{ items: DocumentWithTags[] }>(
-        `/ai/search?q=${encodeURIComponent(query)}`,
-        { signal: controller.signal },
-      );
-      setSemanticSearchDocs(res.items);
-    } catch (e) {
-      if (isAbortError(e)) return;
-      console.error(e);
-      setSemanticSearchDocs([]);
-    } finally {
-      if (semanticSearchAbortRef.current === controller) {
-        semanticSearchAbortRef.current = null;
-        setSemanticSearching(false);
-      }
-    }
-  }, []);
 
   const fetchDocs = useCallback(async (offset: number, append: boolean) => {
     if (fetchInFlightRef.current) return;
@@ -279,21 +313,31 @@ export function useDocsData(deps: UseDocsDataDeps) {
       if (search && !search.startsWith("/") && !showStarred && !showShared && !selectedTag) {
         void fetchSemanticSearch(search);
       } else {
-        semanticSearchAbortRef.current?.abort();
-        setSemanticSearchDocs([]);
+        resetSemanticSearch();
       }
     }, 300);
     return () => {
       clearTimeout(timer);
       fetchAbortRef.current?.abort();
-      semanticSearchAbortRef.current?.abort();
+      cancelSemanticSearch();
     };
-  }, [fetchDocs, showStarred, showShared, selectedTag, search, fetchSemanticSearch]);
+  }, [
+    fetchDocs,
+    showStarred,
+    showShared,
+    selectedTag,
+    search,
+    fetchSemanticSearch,
+    resetSemanticSearch,
+    cancelSemanticSearch,
+  ]);
 
   return {
     docs, recentDocs, totalDocs, starredTotal, sharedTotal,
-    loading, loadingMore, initialError, loadMoreError, hasMore, semanticSearchDocs, semanticSearching, loadMoreRef,
-    fetchDocs, fetchOverview, fetchSharedCount, fetchSemanticSearch,
+    loading, loadingMore, initialError, loadMoreError, hasMore,
+    semanticSearchDocs, semanticSearching, semanticSearchStatus, loadMoreRef,
+    fetchDocs, fetchOverview, fetchSharedCount,
+    fetchSemanticSearch,
     retryInitial, retryLoadMore,
     ...actions,
   };

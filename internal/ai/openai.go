@@ -7,10 +7,21 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
-const defaultOpenAIBaseURL = "https://api.openai.com/v1"
+const (
+	defaultOpenAIBaseURL           = "https://api.openai.com/v1"
+	maxProviderResponseBytes int64 = 4 << 20
+)
+
+// The Profile layer owns the per-request timeout (5-120 seconds). Keep a
+// transport-level ceiling at the maximum accepted value so a shorter profile
+// deadline remains effective while configurations above 30 seconds are not
+// silently truncated by a shared client.
+var defaultEmbeddingHTTPClient = &http.Client{Timeout: 120 * time.Second}
 
 type openAIConfig struct {
 	APIKey  string `json:"api_key"`
@@ -20,6 +31,7 @@ type openAIConfig struct {
 type openAIProvider struct {
 	apiKey  string
 	baseURL string
+	client  *http.Client
 }
 
 func (p *openAIProvider) Name() string {
@@ -28,9 +40,30 @@ func (p *openAIProvider) Name() string {
 
 func (p *openAIProvider) Embed(ctx context.Context, model, text, _ string) ([]float32, error) {
 	if p.apiKey == "" {
-		return nil, ErrUnavailable
+		return nil, &ProviderError{
+			Code:    ErrorInvalidConfig,
+			Message: "API key is missing",
+			Cause:   ErrUnavailable,
+		}
 	}
 	return embedText(ctx, p, p.baseURL, model, text)
+}
+
+func (p *openAIProvider) EmbedBatch(
+	ctx context.Context,
+	model string,
+	dimensions int,
+	inputs []string,
+	_ string,
+) ([][]float32, error) {
+	if p.apiKey == "" {
+		return nil, &ProviderError{
+			Code:    ErrorInvalidConfig,
+			Message: "API key is missing",
+			Cause:   ErrUnavailable,
+		}
+	}
+	return embedTexts(ctx, p, p.baseURL, model, dimensions, inputs)
 }
 
 func (p *openAIProvider) doRequest(
@@ -48,7 +81,11 @@ func (p *openAIProvider) doRequest(
 	}
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	client := p.client
+	if client == nil {
+		client = defaultEmbeddingHTTPClient
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}
@@ -79,9 +116,25 @@ func checkHTTPStatus(resp *http.Response) error {
 		resp.StatusCode < http.StatusMultipleChoices {
 		return nil
 	}
-	body, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf(
-		"%w: %s: %s",
-		ErrRequestFailed, resp.Status, strings.TrimSpace(string(body)),
-	)
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"), time.Now())
+	return providerHTTPError(resp.StatusCode, retryAfter, ErrRequestFailed)
+}
+
+func parseRetryAfter(value string, now time.Time) time.Duration {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if seconds <= 0 {
+			return 0
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	when, err := http.ParseTime(value)
+	if err != nil || !when.After(now) {
+		return 0
+	}
+	return when.Sub(now)
 }

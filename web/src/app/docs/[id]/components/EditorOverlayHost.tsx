@@ -16,6 +16,7 @@ export function EditorOverlayHost({ p }: { p: EditorShellFlatContract }) {
         similarIconVisible={p.sim.similarIconVisible}
         similarCollapsed={p.sim.similarCollapsed}
         similarLoading={p.sim.similarLoading}
+        similarIndexStatus={p.sim.similarIndexStatus}
         similarDocs={p.sim.similarDocs}
         onToggle={p.sim.handleToggleSimilar}
         onCollapse={p.sim.handleCollapseSimilar}

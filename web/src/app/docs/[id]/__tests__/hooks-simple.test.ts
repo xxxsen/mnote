@@ -436,10 +436,10 @@ describe("useSimilarDocs", () => {
     expect(result.current.similarIconVisible).toBe(true);
   });
 
-  it("hides icon when title is too short", async () => {
+  it("keeps the content-based icon visible when title is short", async () => {
     const { result } = renderHook(() => useSimilarDocs({ docId: "d1", title: "x" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-    expect(result.current.similarIconVisible).toBe(false);
+    expect(result.current.similarIconVisible).toBe(true);
   });
 });
 

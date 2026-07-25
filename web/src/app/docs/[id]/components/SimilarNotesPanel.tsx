@@ -1,11 +1,13 @@
 import { Sparkles, ChevronRight, RefreshCw, X } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
 import type { SimilarDoc } from "../types";
+import type { SimilarIndexStatus } from "../hooks/useSimilarDocs";
 
 type SimilarNotesPanelProps = {
   similarIconVisible: boolean;
   similarCollapsed: boolean;
   similarLoading: boolean;
+  similarIndexStatus: SimilarIndexStatus;
   similarDocs: SimilarDoc[];
   onToggle: () => void;
   onCollapse: () => void;
@@ -15,7 +17,7 @@ type SimilarNotesPanelProps = {
 };
 
 export function SimilarNotesPanel(props: SimilarNotesPanelProps) {
-  const { similarIconVisible, similarCollapsed, similarLoading, similarDocs, onToggle, onCollapse, onClose, onOpenPreview, onNavigate } = props;
+  const { similarIconVisible, similarCollapsed, similarLoading, similarIndexStatus, similarDocs, onToggle, onCollapse, onClose, onOpenPreview, onNavigate } = props;
 
   if (!similarIconVisible) return null;
 
@@ -63,6 +65,14 @@ export function SimilarNotesPanel(props: SimilarNotesPanelProps) {
                 <RefreshCw className="h-5 w-5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
                 <span className="text-sm">Finding similar notes…</span>
               </div>
+            ) : similarIndexStatus === "disabled" ? (
+              <div className="py-10 text-center text-sm text-muted-foreground">Semantic indexing is disabled.</div>
+            ) : similarIndexStatus === "building" ? (
+              <div className="py-10 text-center text-sm text-muted-foreground">The semantic index is being built.</div>
+            ) : similarIndexStatus === "pending" ? (
+              <div className="py-10 text-center text-sm text-muted-foreground">This note is waiting to be indexed.</div>
+            ) : similarIndexStatus === "unavailable" ? (
+              <div className="py-10 text-center text-sm text-muted-foreground">Similar notes are temporarily unavailable.</div>
             ) : similarDocs.length === 0 ? (
               <div className="py-10 text-center text-sm text-muted-foreground">No similar notes found.</div>
             ) : similarDocs.map((doc) => (
@@ -74,7 +84,7 @@ export function SimilarNotesPanel(props: SimilarNotesPanelProps) {
                   aria-label={`Preview ${doc.title || "Untitled"}`}
                 >
                   <span className="block text-xs text-muted-foreground">
-                    {Math.round((doc.score || 0) * 100)}% match
+                    Relevance {Math.round(Math.max(-1, Math.min(1, doc.score || 0)) * 100)}
                   </span>
                   <span className="mt-1 block line-clamp-2 text-sm font-semibold leading-snug">
                     {doc.title || "Untitled"}
@@ -93,7 +103,7 @@ export function SimilarNotesPanel(props: SimilarNotesPanelProps) {
             ))}
           </div>
           <div className="border-t border-border bg-muted/10 px-3 py-2">
-            <p className="text-center text-xs text-muted-foreground">Based on the current title</p>
+            <p className="text-center text-xs text-muted-foreground">Based on indexed document content</p>
           </div>
         </>
       )}

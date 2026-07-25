@@ -23,6 +23,7 @@ type openrouterProvider struct {
 	baseURL     string
 	httpReferer string
 	xTitle      string
+	client      *http.Client
 }
 
 func (p *openrouterProvider) Name() string {
@@ -31,9 +32,30 @@ func (p *openrouterProvider) Name() string {
 
 func (p *openrouterProvider) Embed(ctx context.Context, model, text, _ string) ([]float32, error) {
 	if p.apiKey == "" {
-		return nil, ErrUnavailable
+		return nil, &ProviderError{
+			Code:    ErrorInvalidConfig,
+			Message: "API key is missing",
+			Cause:   ErrUnavailable,
+		}
 	}
 	return embedText(ctx, p, p.baseURL, model, text)
+}
+
+func (p *openrouterProvider) EmbedBatch(
+	ctx context.Context,
+	model string,
+	dimensions int,
+	inputs []string,
+	_ string,
+) ([][]float32, error) {
+	if p.apiKey == "" {
+		return nil, &ProviderError{
+			Code:    ErrorInvalidConfig,
+			Message: "API key is missing",
+			Cause:   ErrUnavailable,
+		}
+	}
+	return embedTexts(ctx, p, p.baseURL, model, dimensions, inputs)
 }
 
 func (p *openrouterProvider) doRequest(
@@ -57,7 +79,11 @@ func (p *openrouterProvider) doRequest(
 	if p.xTitle != "" {
 		req.Header.Set("X-Title", p.xTitle)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	client := p.client
+	if client == nil {
+		client = defaultEmbeddingHTTPClient
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"math"
@@ -13,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/xxxsen/mnote/internal/ai"
+	"github.com/xxxsen/mnote/internal/metrics"
 	"github.com/xxxsen/mnote/internal/model"
 	"github.com/xxxsen/mnote/internal/pkg/dochash"
 	appErr "github.com/xxxsen/mnote/internal/pkg/errors"
@@ -25,12 +27,61 @@ import (
 // been re-queued under its current hash, so the worker treats this
 // as a clean skip rather than a failure that would consume a retry
 // budget.
-var errEmbeddingStale = errors.New("embedding stale: document content advanced before worker finished")
+var (
+	errEmbeddingStale = errors.New(
+		"embedding stale: document content advanced before worker finished",
+	)
+	errEmbeddingQueryResultCount = errors.New(
+		"embedding semantic query returned an invalid result count",
+	)
+	errEmbeddingActiveGenerationChanged = errors.New(
+		"active embedding generation changed during search",
+	)
+)
 
 type EmbeddingService struct {
-	embedder   ai.IEmbedder
-	embeddings embeddingRepo
-	chunker    embeddingChunker
+	embedder    ai.IEmbedder
+	embeddings  embeddingRepo
+	chunker     embeddingChunker
+	v2          embeddingV2RuntimeRepo
+	indexDelay  int64
+	v2Embedders map[string]ai.ProfileEmbedder
+	v2MinScores map[string]float32
+	v2Enabled   bool
+}
+
+type embeddingV2RuntimeRepo interface {
+	GetActiveGeneration(
+		context.Context,
+	) (*model.EmbeddingGeneration, *model.EmbeddingProfile, error)
+	EnqueueContentChange(
+		ctx context.Context,
+		userID, documentID, contentHash string,
+		revision, now, delaySeconds int64,
+	) error
+	DeleteDocumentData(ctx context.Context, userID, documentID string) error
+	SearchActiveChunks(
+		ctx context.Context,
+		userID, excludeID string,
+		queryEmbedding []float32,
+		recallLimit int,
+	) (
+		*model.EmbeddingGeneration,
+		*model.EmbeddingProfile,
+		[]model.SemanticChunkResult,
+		string,
+		error,
+	)
+	SimilarDocuments(
+		ctx context.Context,
+		userID, documentID string,
+		limit int,
+	) (
+		*model.EmbeddingGeneration,
+		[]model.SimilarDocumentResult,
+		bool,
+		error,
+	)
 }
 
 func NewEmbeddingService(embedder ai.IEmbedder, embeddings embeddingRepo) *EmbeddingService {
@@ -39,6 +90,42 @@ func NewEmbeddingService(embedder ai.IEmbedder, embeddings embeddingRepo) *Embed
 		embeddings: embeddings,
 		chunker:    ai.NewChunker(),
 	}
+}
+
+// DisableLegacyFallback removes the V1 queue/search repository for pure V2
+// deployments. Keeping an interface that contains a typed nil would still be
+// non-nil in Go, so the assembly layer disables it explicitly.
+func (s *EmbeddingService) DisableLegacyFallback() {
+	if s != nil {
+		s.embeddings = nil
+	}
+}
+
+func (s *EmbeddingService) ConfigureV2(
+	repository embeddingV2RuntimeRepo,
+	indexDelaySeconds int64,
+	embedders map[string]ai.ProfileEmbedder,
+	minScores map[string]float32,
+) {
+	s.v2 = repository
+	s.indexDelay = clampDelay(indexDelaySeconds)
+	s.v2Embedders = embedders
+	s.v2MinScores = minScores
+	s.v2Enabled = true
+}
+
+// ConfigureV2Queue keeps current/building/standby jobs synchronized while
+// remote embedding work is disabled. This makes ordinary saves independent
+// from providers and lets the index converge after the feature is re-enabled.
+func (s *EmbeddingService) ConfigureV2Queue(
+	repository embeddingV2RuntimeRepo,
+	indexDelaySeconds int64,
+) {
+	s.v2 = repository
+	s.indexDelay = clampDelay(indexDelaySeconds)
+	s.v2Embedders = nil
+	s.v2MinScores = nil
+	s.v2Enabled = false
 }
 
 func newEmbeddingServiceFromInterfaces(
@@ -66,6 +153,19 @@ func (s *EmbeddingService) SemanticSearch(
 	ctx context.Context, userID, query string, topK int, excludeID string,
 ) ([]string, []float32, error) {
 	query = strings.TrimSpace(query)
+	if topK <= 0 {
+		return []string{}, []float32{}, nil
+	}
+	if s != nil && s.v2 != nil {
+		active, err := s.hasActiveV2(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if active {
+			return s.semanticSearchV2(ctx, userID, query, topK, excludeID)
+		}
+	}
+	legacySearchStarted := time.Now()
 	logger := logutil.GetLogger(ctx).With(
 		zap.String("user_id", userID),
 		zap.Int("query_length", len([]rune(query))),
@@ -83,6 +183,11 @@ func (s *EmbeddingService) SemanticSearch(
 		logger.Error("failed to search chunks", zap.Error(err))
 		return nil, nil, fmt.Errorf("search chunks: %w", err)
 	}
+	metrics.ObserveSemanticSearch(
+		"v1",
+		time.Since(legacySearchStarted),
+		len(chunkResults),
+	)
 	logger.Debug("vector recall finished", zap.Int("results", len(chunkResults)))
 
 	docMap := groupChunksByDoc(chunkResults, excludeID)
@@ -97,11 +202,346 @@ func (s *EmbeddingService) SemanticSearch(
 	ids := make([]string, 0, len(ranked))
 	scores := make([]float32, 0, len(ranked))
 	for _, res := range ranked {
+		if res.score < semanticSearchV1MinScore {
+			continue
+		}
 		ids = append(ids, res.docID)
 		scores = append(scores, res.score)
 	}
 	logger.Info("optimized semantic search performed", zap.Int("results", len(ids)))
 	return ids, scores, nil
+}
+
+const semanticSearchV1MinScore float32 = 0.7
+
+func (s *EmbeddingService) semanticSearchV2(
+	ctx context.Context,
+	userID, query string,
+	topK int,
+	excludeID string,
+) ([]string, []float32, error) {
+	matches, err := s.semanticSearchV2Matches(
+		ctx,
+		userID,
+		query,
+		topK,
+		excludeID,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	ids := make([]string, 0, len(matches))
+	scores := make([]float32, 0, len(matches))
+	for _, match := range matches {
+		ids = append(ids, match.DocumentID)
+		scores = append(scores, match.Score)
+	}
+	return ids, scores, nil
+}
+
+func (s *EmbeddingService) SemanticSearchMatches(
+	ctx context.Context,
+	userID, query string,
+	topK int,
+	excludeID string,
+) ([]model.SemanticSearchMatch, error) {
+	if s == nil || s.v2 == nil {
+		ids, scores, err := s.SemanticSearch(
+			ctx,
+			userID,
+			query,
+			topK,
+			excludeID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		return semanticMatchesFromLegacy(ids, scores), nil
+	}
+	active, err := s.hasActiveV2(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !active {
+		ids, scores, err := s.SemanticSearch(
+			ctx,
+			userID,
+			query,
+			topK,
+			excludeID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		return semanticMatchesFromLegacy(ids, scores), nil
+	}
+	return s.semanticSearchV2Matches(ctx, userID, query, topK, excludeID)
+}
+
+func (s *EmbeddingService) semanticSearchV2Matches(
+	ctx context.Context,
+	userID, query string,
+	topK int,
+	excludeID string,
+) ([]model.SemanticSearchMatch, error) {
+	startedAt := time.Now()
+	candidateCount := 0
+	searchPath := "v2_unknown"
+	defer func() {
+		metrics.ObserveSemanticSearch(
+			searchPath,
+			time.Since(startedAt),
+			candidateCount,
+		)
+	}()
+	if topK <= 0 {
+		return []model.SemanticSearchMatch{}, nil
+	}
+	var lastErr error
+	for range 2 {
+		matches, candidates, path, err := s.semanticSearchV2MatchesOnce(
+			ctx,
+			userID,
+			query,
+			topK,
+			excludeID,
+		)
+		candidateCount += candidates
+		if path != "" {
+			searchPath = path
+		}
+		if err == nil {
+			return matches, nil
+		}
+		if !activeEmbeddingSearchChanged(err) {
+			return nil, err
+		}
+		lastErr = err
+	}
+	return nil, fmt.Errorf(
+		"active embedding generation changed repeatedly: %w",
+		errors.Join(ai.ErrUnavailable, lastErr),
+	)
+}
+
+func (s *EmbeddingService) semanticSearchV2MatchesOnce(
+	ctx context.Context,
+	userID, query string,
+	topK int,
+	excludeID string,
+) ([]model.SemanticSearchMatch, int, string, error) {
+	generation, profile, queryVector, err := s.embedSemanticQueryV2(ctx, query)
+	if err != nil {
+		return nil, 0, "", err
+	}
+	searchedGeneration, searchedProfile, chunks, repositoryPath, err := s.v2.SearchActiveChunks(
+		ctx,
+		userID,
+		excludeID,
+		queryVector,
+		semanticRecallLimit(topK),
+	)
+	if err != nil {
+		return nil, 0, "", fmt.Errorf("search active embedding chunks: %w", err)
+	}
+	searchPath := ""
+	switch repositoryPath {
+	case "precise":
+		searchPath = "v2_precise"
+	case "hnsw":
+		searchPath = "v2_hnsw"
+	}
+	if searchedGeneration.ID != generation.ID ||
+		searchedProfile.Fingerprint != profile.Fingerprint ||
+		generation.ProfileID != profile.ID {
+		return nil, len(chunks), searchPath, errEmbeddingActiveGenerationChanged
+	}
+	return s.rankSemanticV2Matches(profile.ID, chunks, topK),
+		len(chunks),
+		searchPath,
+		nil
+}
+
+func activeEmbeddingSearchChanged(err error) bool {
+	return errors.Is(err, errEmbeddingActiveGenerationChanged) ||
+		errors.Is(err, repo.ErrEmbeddingActiveChanged)
+}
+
+func (s *EmbeddingService) embedSemanticQueryV2(
+	ctx context.Context,
+	query string,
+) (*model.EmbeddingGeneration, *model.EmbeddingProfile, []float32, error) {
+	generation, profile, err := s.v2.GetActiveGeneration(ctx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf(
+			"get active embedding generation: %w",
+			err,
+		)
+	}
+	embedder := s.v2Embedders[profile.ID]
+	if embedder == nil ||
+		embedder.Profile().Fingerprint != profile.Fingerprint {
+		return nil, nil, nil, fmt.Errorf(
+			"active embedding profile is not configured: %w",
+			ai.ErrUnavailable,
+		)
+	}
+	result, err := embedder.EmbedBatch(ctx, ai.EmbeddingRequest{
+		Inputs:   []string{query},
+		TaskType: profile.QueryTaskType,
+	})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("embed semantic query: %w", err)
+	}
+	if len(result.Vectors) != 1 {
+		return nil, nil, nil, errEmbeddingQueryResultCount
+	}
+	return generation, profile, result.Vectors[0], nil
+}
+
+func semanticRecallLimit(topK int) int {
+	recallLimit := topK * 20
+	if recallLimit < 200 {
+		return 200
+	}
+	if recallLimit > 1000 {
+		return 1000
+	}
+	return recallLimit
+}
+
+func (s *EmbeddingService) rankSemanticV2Matches(
+	profileID string,
+	chunks []model.SemanticChunkResult,
+	topK int,
+) []model.SemanticSearchMatch {
+	ranked := rankV2Documents(chunks)
+	sort.Slice(ranked, func(left, right int) bool {
+		if ranked[left].score == ranked[right].score {
+			return ranked[left].docID < ranked[right].docID
+		}
+		return ranked[left].score > ranked[right].score
+	})
+	minScore, configured := s.v2MinScores[profileID]
+	if !configured {
+		minScore = 0.55
+	}
+	matches := make([]model.SemanticSearchMatch, 0, topK)
+	for _, item := range ranked {
+		score := clampSemanticScore(item.score)
+		if score < minScore {
+			continue
+		}
+		matches = append(matches, model.SemanticSearchMatch{
+			DocumentID:     item.docID,
+			Score:          score,
+			MatchedExcerpt: truncateSemanticExcerpt(item.excerpt),
+			MatchType:      string(item.chunkType),
+		})
+		if len(matches) == topK {
+			break
+		}
+	}
+	return matches
+}
+
+type rankedV2Document struct {
+	rankedDoc
+	excerpt   string
+	chunkType model.ChunkType
+}
+
+func rankV2Documents(chunks []model.SemanticChunkResult) []rankedV2Document {
+	groups := make(map[string][]model.SemanticChunkResult)
+	for _, chunk := range chunks {
+		if len(groups[chunk.DocumentID]) >= 3 {
+			continue
+		}
+		groups[chunk.DocumentID] = append(groups[chunk.DocumentID], chunk)
+	}
+	result := make([]rankedV2Document, 0, len(groups))
+	for documentID, items := range groups {
+		var weightedScore float64
+		var totalWeight float64
+		for _, item := range items {
+			typeWeight := chunkScoreWeight(item.ChunkType)
+			weight := math.Exp(scoreAlpha*float64(item.Score)) * typeWeight
+			weightedScore += weight * float64(item.Score)
+			totalWeight += weight
+		}
+		if totalWeight == 0 {
+			continue
+		}
+		score := weightedScore / totalWeight
+		score *= 1 + 0.07*math.Log1p(float64(len(items)))
+		best := items[0]
+		for _, item := range items[1:] {
+			if item.Score > best.Score {
+				best = item
+			}
+		}
+		result = append(result, rankedV2Document{
+			rankedDoc: rankedDoc{
+				docID: documentID,
+				score: clampSemanticScore(float32(score)),
+			},
+			excerpt:   best.MatchedText,
+			chunkType: best.ChunkType,
+		})
+	}
+	return result
+}
+
+func semanticMatchesFromLegacy(
+	ids []string,
+	scores []float32,
+) []model.SemanticSearchMatch {
+	result := make([]model.SemanticSearchMatch, 0, len(ids))
+	for index, id := range ids {
+		score := float32(0)
+		if index < len(scores) {
+			score = clampSemanticScore(scores[index])
+		}
+		result = append(result, model.SemanticSearchMatch{
+			DocumentID: id,
+			Score:      score,
+		})
+	}
+	return result
+}
+
+func truncateSemanticExcerpt(value string) string {
+	const limit = 240
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	return string(runes[:limit]) + "…"
+}
+
+func chunkScoreWeight(chunkType model.ChunkType) float64 {
+	switch chunkType {
+	case model.ChunkTypeTitle:
+		return 1.2
+	case model.ChunkTypeText:
+		return 1
+	case model.ChunkTypeMixed:
+		return 0.9
+	case model.ChunkTypeCode:
+		return 0.7
+	default:
+		return 0.7
+	}
+}
+
+func clampSemanticScore(score float32) float32 {
+	if score < -1 {
+		return -1
+	}
+	if score > 1 {
+		return 1
+	}
+	return score
 }
 
 type docScoreGroup struct {
@@ -198,6 +638,146 @@ func (s *EmbeddingService) MarkEmbeddingPending(
 	return nil
 }
 
+func (s *EmbeddingService) EnqueueContentChange(
+	ctx context.Context,
+	userID, docID, contentHash string,
+	revision, now int64,
+) error {
+	if s == nil {
+		return nil
+	}
+	if s.v2 != nil {
+		if err := s.v2.EnqueueContentChange(
+			ctx,
+			userID,
+			docID,
+			contentHash,
+			revision,
+			now,
+			s.indexDelay,
+		); err != nil {
+			return fmt.Errorf("enqueue embedding v2: %w", err)
+		}
+		active, err := s.hasActiveV2(ctx)
+		if err != nil {
+			return err
+		}
+		if active {
+			return nil
+		}
+	}
+	return s.MarkEmbeddingPending(ctx, userID, docID, contentHash, now)
+}
+
+func (s *EmbeddingService) DeleteEmbeddingData(
+	ctx context.Context,
+	userID, docID string,
+) error {
+	if s == nil || s.v2 == nil {
+		return nil
+	}
+	if err := s.v2.DeleteDocumentData(ctx, userID, docID); err != nil {
+		return fmt.Errorf("delete embedding v2 data: %w", err)
+	}
+	return nil
+}
+
+func (s *EmbeddingService) hasActiveV2(ctx context.Context) (bool, error) {
+	if s == nil || s.v2 == nil {
+		return false, nil
+	}
+	_, _, err := s.v2.GetActiveGeneration(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("get active embedding generation: %w", err)
+	}
+	return true, nil
+}
+
+func (s *EmbeddingService) SimilarDocuments(
+	ctx context.Context,
+	userID, documentID string,
+	limit int,
+) ([]string, []float32, string, error) {
+	if s == nil || s.v2 == nil {
+		return []string{}, []float32{}, "disabled", nil
+	}
+	if !s.v2Enabled {
+		return []string{}, []float32{}, "disabled", nil
+	}
+	active, err := s.hasActiveV2(ctx)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if !active {
+		return []string{}, []float32{}, "building", nil
+	}
+	generation, results, indexed, err := s.similarDocumentsV2(
+		ctx,
+		userID,
+		documentID,
+		limit,
+	)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("search similar documents: %w", err)
+	}
+	if !indexed {
+		return []string{}, []float32{}, "pending", nil
+	}
+	ids := make([]string, 0, len(results))
+	scores := make([]float32, 0, len(results))
+	minScore, configured := s.v2MinScores[generation.ProfileID]
+	if !configured {
+		minScore = 0.55
+	}
+	for _, result := range results {
+		score := clampSemanticScore(result.Score)
+		if score < minScore {
+			continue
+		}
+		ids = append(ids, result.DocumentID)
+		scores = append(scores, score)
+	}
+	return ids, scores, "ready", nil
+}
+
+func (s *EmbeddingService) similarDocumentsV2(
+	ctx context.Context,
+	userID, documentID string,
+	limit int,
+) (
+	*model.EmbeddingGeneration,
+	[]model.SimilarDocumentResult,
+	bool,
+	error,
+) {
+	var lastErr error
+	for range 2 {
+		generation, results, indexed, err := s.v2.SimilarDocuments(
+			ctx,
+			userID,
+			documentID,
+			limit,
+		)
+		if err == nil {
+			return generation, results, indexed, nil
+		}
+		if !errors.Is(err, repo.ErrEmbeddingActiveChanged) {
+			return nil, nil, false, fmt.Errorf(
+				"query similar documents: %w",
+				err,
+			)
+		}
+		lastErr = err
+	}
+	return nil, nil, false, fmt.Errorf(
+		"active embedding generation changed repeatedly: %w",
+		errors.Join(ai.ErrUnavailable, lastErr),
+	)
+}
+
 // SyncEmbedding chunks the snapshot (title,content) the worker captured at
 // scan time, embeds the chunks, and hands the result to
 // CompleteEmbeddingIfCurrent. The completion call runs SELECT FOR UPDATE on
@@ -261,7 +841,7 @@ func (s *EmbeddingService) SyncEmbedding(ctx context.Context, userID, docID, tit
 		return errEmbeddingStale
 	}
 
-	logger.Info("embedding chunks synced", zap.String("title", title), zap.Int("chunks", len(chunks)))
+	logger.Info("embedding chunks synced", zap.Int("chunks", len(chunks)))
 	return nil
 }
 
@@ -279,6 +859,13 @@ func computeEmbeddingHash(title, content string) string {
 // attempt and schedule the next retry with exponential backoff.
 func (s *EmbeddingService) ProcessPendingEmbeddings(ctx context.Context, _ int64) error {
 	if s == nil || s.embeddings == nil {
+		return nil
+	}
+	active, err := s.hasActiveV2(ctx)
+	if err != nil {
+		return err
+	}
+	if active {
 		return nil
 	}
 	logger := logutil.GetLogger(ctx)

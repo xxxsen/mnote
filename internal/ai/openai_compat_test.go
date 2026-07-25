@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,6 +43,7 @@ func TestEmbedText_Success(t *testing.T) {
 		resp := embedResponse{
 			Data: []struct {
 				Embedding []float32 `json:"embedding"`
+				Index     *int      `json:"index,omitempty"`
 			}{{Embedding: []float32{0.1, 0.2, 0.3}}},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -71,6 +73,89 @@ func TestEmbedText_NoEmbeddings(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNoEmbeddings)
 }
 
+func TestEmbedTexts_RejectsOversizedSuccessResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(
+			w,
+			`{"data":[{"embedding":[1]}]}`+
+				strings.Repeat(" ", int(maxProviderResponseBytes)),
+		)
+	}))
+	defer srv.Close()
+
+	doer := newFakeDoer()
+	defer doer.close()
+
+	_, err := embedTexts(
+		context.Background(),
+		doer,
+		srv.URL,
+		"model",
+		1,
+		[]string{"text"},
+	)
+	require.Error(t, err)
+	code, _, ok := ErrorDetails(err)
+	assert.True(t, ok)
+	assert.Equal(t, ErrorInvalidResponse, code)
+	assert.Contains(t, err.Error(), "size limit")
+}
+
+func TestEmbedTexts_ReordersIndexedBatchResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(
+			w,
+			`{"data":[{"index":1,"embedding":[2]},{"index":0,"embedding":[1]}]}`,
+		)
+	}))
+	defer srv.Close()
+
+	doer := newFakeDoer()
+	defer doer.close()
+
+	vectors, err := embedTexts(
+		context.Background(),
+		doer,
+		srv.URL,
+		"model",
+		1,
+		[]string{"first", "second"},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, [][]float32{{1}, {2}}, vectors)
+}
+
+func TestEmbedTexts_RejectsInvalidBatchIndexes(t *testing.T) {
+	for _, response := range []string{
+		`{"data":[{"index":0,"embedding":[1]},{"index":0,"embedding":[2]}]}`,
+		`{"data":[{"index":0,"embedding":[1]},{"embedding":[2]}]}`,
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, response)
+		}))
+
+		doer := newFakeDoer()
+		_, err := embedTexts(
+			context.Background(),
+			doer,
+			srv.URL,
+			"model",
+			1,
+			[]string{"first", "second"},
+		)
+		doer.close()
+		srv.Close()
+
+		require.Error(t, err)
+		code, _, ok := ErrorDetails(err)
+		assert.True(t, ok)
+		assert.Equal(t, ErrorInvalidResponse, code)
+	}
+}
+
 func TestCheckHTTPStatus_OK(t *testing.T) {
 	resp := &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(""))}
 	assert.NoError(t, checkHTTPStatus(resp))
@@ -81,9 +166,34 @@ func TestCheckHTTPStatus_Error(t *testing.T) {
 		StatusCode: 429,
 		Status:     "429 Too Many Requests",
 		Body:       io.NopCloser(strings.NewReader("rate limited")),
+		Header:     http.Header{"Retry-After": []string{"60"}},
 	}
 	err := checkHTTPStatus(resp)
 	assert.ErrorIs(t, err, ErrRequestFailed)
+	code, retryAfter, ok := ErrorDetails(err)
+	assert.True(t, ok)
+	assert.Equal(t, ErrorRateLimited, code)
+	assert.Equal(t, time.Minute, retryAfter)
+	assert.NotContains(t, err.Error(), "rate limited")
+}
+
+func TestProviderHTTPErrorClassification(t *testing.T) {
+	for _, testCase := range []struct {
+		status int
+		code   ErrorCode
+	}{
+		{status: http.StatusBadRequest, code: ErrorInvalidRequest},
+		{status: http.StatusUnauthorized, code: ErrorUnauthorized},
+		{status: http.StatusForbidden, code: ErrorUnauthorized},
+		{status: http.StatusRequestTimeout, code: ErrorTimeout},
+		{status: http.StatusTooManyRequests, code: ErrorRateLimited},
+		{status: http.StatusInternalServerError, code: ErrorUpstream5xx},
+	} {
+		err := providerHTTPError(testCase.status, 0, ErrRequestFailed)
+		code, _, ok := ErrorDetails(err)
+		assert.True(t, ok)
+		assert.Equal(t, testCase.code, code)
+	}
 }
 
 func TestOpenAIProvider_Factory(t *testing.T) {
@@ -193,6 +303,7 @@ func TestOpenAIProvider_Embed_WithServer(t *testing.T) {
 		resp := embedResponse{
 			Data: []struct {
 				Embedding []float32 `json:"embedding"`
+				Index     *int      `json:"index,omitempty"`
 			}{{Embedding: []float32{0.5}}},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -240,6 +351,7 @@ func TestOpenRouterProvider_Embed_WithServer(t *testing.T) {
 		resp := embedResponse{
 			Data: []struct {
 				Embedding []float32 `json:"embedding"`
+				Index     *int      `json:"index,omitempty"`
 			}{{Embedding: []float32{0.5}}},
 		}
 		w.Header().Set("Content-Type", "application/json")

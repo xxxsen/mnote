@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/xxxsen/mnote/internal/pkg/errcode"
@@ -17,7 +19,7 @@ func NewSemanticSearchHandler(documents ISemanticSearchHandlerService) *Semantic
 }
 
 func (h *SemanticSearchHandler) Search(c *gin.Context) {
-	query := c.Query("q")
+	query := strings.TrimSpace(c.Query("q"))
 	if query == "" {
 		response.Error(c, errcode.ErrInvalid, "query required")
 		return
@@ -28,34 +30,37 @@ func (h *SemanticSearchHandler) Search(c *gin.Context) {
 		return
 	}
 
-	docs, scores, err := h.documents.SemanticSearch(
-		c.Request.Context(), getUserID(c), query, "", nil,
-		safeconv.IntToUint(page.Limit), 0, "", c.Query("exclude_id"),
+	results, err := h.documents.SemanticSearchDetailed(
+		c.Request.Context(),
+		getUserID(c),
+		query,
+		safeconv.IntToUint(page.Limit),
+		c.Query("exclude_id"),
 	)
 	if err != nil {
 		handleError(c, err)
 		return
 	}
-	if len(docs) == 0 {
+	if len(results) == 0 {
 		response.Success(c, gin.H{"items": []any{}})
 		return
 	}
 
 	type documentWithScore struct {
 		documentResponse
-		Score float32 `json:"score"`
+		Score          float32 `json:"score"`
+		MatchedExcerpt string  `json:"matched_excerpt"`
+		MatchType      string  `json:"match_type"`
 	}
 
-	results := make([]documentWithScore, 0, len(docs))
-	for i, doc := range docs {
-		score := float32(0)
-		if i < len(scores) {
-			score = scores[i]
-		}
-		results = append(results, documentWithScore{
-			documentResponse: toDocumentResponse(doc),
-			Score:            score,
+	items := make([]documentWithScore, 0, len(results))
+	for _, result := range results {
+		items = append(items, documentWithScore{
+			documentResponse: toDocumentResponse(result.Document),
+			Score:            result.Score,
+			MatchedExcerpt:   result.MatchedExcerpt,
+			MatchType:        result.MatchType,
 		})
 	}
-	response.Success(c, gin.H{"items": results})
+	response.Success(c, gin.H{"items": items})
 }

@@ -72,6 +72,11 @@ type IDocumentService interface {
 	documentTagQueryService
 	documentContentWriteService
 	documentMetadataWriteService
+	SimilarDocuments(
+		ctx context.Context,
+		userID, documentID string,
+		limit int,
+	) (*service.SimilarDocumentList, error)
 }
 
 type IVersionHandlerService interface {
@@ -105,6 +110,12 @@ type ISemanticSearchHandlerService interface {
 	SemanticSearch(ctx context.Context, userID, query, tagID string,
 		starred *int, limit, offset uint, orderBy, excludeID string,
 	) ([]model.Document, []float32, error)
+	SemanticSearchDetailed(
+		ctx context.Context,
+		userID, query string,
+		limit uint,
+		excludeID string,
+	) ([]service.SemanticDocumentResult, error)
 	ListTagIDs(ctx context.Context, userID, docID string) ([]string, error)
 }
 

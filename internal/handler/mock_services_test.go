@@ -164,6 +164,45 @@ type mockDocumentService struct {
 	createShareCommentByTokenFn      func(ctx context.Context, input service.CreateShareCommentInput) (*model.ShareComment, error)
 	listSharedDocumentsFn            func(ctx context.Context, userID, query string) ([]service.SharedDocumentListItem, error)
 	semanticSearchFn                 func(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy, excludeID string) ([]model.Document, []float32, error)
+	semanticSearchDetailedFn         func(ctx context.Context, userID, query string, limit uint, excludeID string) ([]service.SemanticDocumentResult, error)
+	similarDocumentsFn               func(ctx context.Context, userID, documentID string, limit int) (*service.SimilarDocumentList, error)
+}
+
+func (m *mockDocumentService) SemanticSearchDetailed(
+	ctx context.Context,
+	userID, query string,
+	limit uint,
+	excludeID string,
+) ([]service.SemanticDocumentResult, error) {
+	if m.semanticSearchDetailedFn != nil {
+		return m.semanticSearchDetailedFn(ctx, userID, query, limit, excludeID)
+	}
+	documents, scores, err := m.SemanticSearch(
+		ctx,
+		userID,
+		query,
+		"",
+		nil,
+		limit,
+		0,
+		"",
+		excludeID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]service.SemanticDocumentResult, 0, len(documents))
+	for index, document := range documents {
+		score := float32(0)
+		if index < len(scores) {
+			score = scores[index]
+		}
+		result = append(result, service.SemanticDocumentResult{
+			Document: document,
+			Score:    score,
+		})
+	}
+	return result, nil
 }
 
 func (m *mockDocumentService) Create(ctx context.Context, userID string, input service.DocumentCreateInput) (*model.Document, error) {
@@ -368,6 +407,17 @@ func (m *mockDocumentService) SemanticSearch(
 		panic("mockDocumentService.SemanticSearch not configured")
 	}
 	return m.semanticSearchFn(ctx, userID, query, tagID, starred, limit, offset, orderBy, excludeID)
+}
+
+func (m *mockDocumentService) SimilarDocuments(
+	ctx context.Context,
+	userID, documentID string,
+	limit int,
+) (*service.SimilarDocumentList, error) {
+	if m.similarDocumentsFn == nil {
+		panic("mockDocumentService.SimilarDocuments not configured")
+	}
+	return m.similarDocumentsFn(ctx, userID, documentID, limit)
 }
 
 // --- ITagService mock ---
