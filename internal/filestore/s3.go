@@ -67,7 +67,7 @@ func createS3Store(args any) (Store, error) {
 		return nil, errS3ConfigRequired
 	}
 	if cfg.Region == "" {
-		cfg.Region = "cn"
+		cfg.Region = "us-east-1"
 	}
 	endpoint := strings.TrimSpace(cfg.Endpoint)
 	if endpoint != "" && !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
