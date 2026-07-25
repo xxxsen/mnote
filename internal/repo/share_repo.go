@@ -177,14 +177,14 @@ func (r *ShareRepo) GetActiveByDocument(ctx context.Context, userID, docID strin
 }
 
 type SharedDocument struct {
-	ID            string
-	Title         string
-	Summary       string
-	Mtime         int64
-	Token         string
-	ExpiresAt     int64
-	Permission    int
-	AllowDownload int
+	ID             string
+	Title          string
+	ContentPreview string
+	Mtime          int64
+	Token          string
+	ExpiresAt      int64
+	Permission     int
+	AllowDownload  int
 }
 
 // ListActiveDocuments returns the documents the user currently has shared.
@@ -199,11 +199,10 @@ func (r *ShareRepo) ListActiveDocuments(
 	ctx context.Context, userID, query string, now int64,
 ) ([]SharedDocument, error) {
 	sqlStr := `
-		SELECT d.id, d.title, COALESCE(ds.summary,
-			'') AS summary, d.mtime, s.token, s.expires_at, s.permission, s.allow_download
+		SELECT d.id, d.title, LEFT(d.content, 1000) AS content_preview,
+			d.mtime, s.token, s.expires_at, s.permission, s.allow_download
 		FROM shares s
 		JOIN documents d ON d.id = s.document_id AND d.user_id = s.user_id
-		LEFT JOIN document_summaries ds ON ds.document_id = d.id AND ds.user_id = d.user_id
 		WHERE s.user_id = ? AND s.state = ? AND d.state = ?
 		  AND (s.expires_at = 0 OR s.expires_at >= ?)
 	`
@@ -224,7 +223,7 @@ func (r *ShareRepo) ListActiveDocuments(
 	items := make([]SharedDocument, 0)
 	for rows.Next() {
 		var item SharedDocument
-		if err := rows.Scan(&item.ID, &item.Title, &item.Summary, &item.Mtime, &item.Token, &item.ExpiresAt,
+		if err := rows.Scan(&item.ID, &item.Title, &item.ContentPreview, &item.Mtime, &item.Token, &item.ExpiresAt,
 			&item.Permission, &item.AllowDownload); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}

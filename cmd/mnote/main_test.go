@@ -49,7 +49,7 @@ func TestResponseCompression_LeavesFileBytesAndLengthUntouched(t *testing.T) {
 	}
 }
 
-func TestInitAIProviders_DisabledSkipsProviderInitialization(t *testing.T) {
+func TestInitEmbeddingProviders_DisabledSkipsProviderInitialization(t *testing.T) {
 	cfg := &config.Config{
 		AI: config.AIConfig{Enabled: boolPointer(false)},
 		AIProvider: []config.AIProviderConfig{{
@@ -58,14 +58,15 @@ func TestInitAIProviders_DisabledSkipsProviderInitialization(t *testing.T) {
 		}},
 	}
 
-	providers, err := initAIProviders(cfg)
+	providers, err := initEmbeddingProviders(cfg)
 	require.NoError(t, err)
 	assert.Empty(t, providers)
 
-	manager, err := initAIManager(cfg, providers, nil)
+	embedder, err := initAIEmbedder(cfg, providers, nil)
 	require.NoError(t, err)
-	_, err = manager.Generate(context.Background(), "text")
-	assert.ErrorIs(t, err, ai.ErrUnavailable)
+	require.NotNil(t, embedder)
+	_, err = embedder.Embed(context.Background(), "text", "search")
+	assert.ErrorIs(t, err, ai.ErrNotConfigured)
 }
 
 func TestValidateRuntimeConfig_ValidatesFileStore(t *testing.T) {
@@ -96,38 +97,29 @@ func TestValidateRuntimeConfig_ValidatesFileStore(t *testing.T) {
 	})
 }
 
-func TestInitAIProviders_OnlyInitializesEnabledFeatureProviders(t *testing.T) {
+func TestInitEmbeddingProviders_OnlyInitializesConfiguredProviders(t *testing.T) {
 	cfg := &config.Config{
 		AI: config.AIConfig{
-			Enabled:         boolPointer(true),
-			GenerateEnabled: boolPointer(true),
-			SummaryEnabled:  boolPointer(false),
-			Generate: []config.AIFeatureConfig{{
-				Provider: "generation",
-				Model:    "model",
-			}},
-			Summary: []config.AIFeatureConfig{{
-				Provider: "missing-and-disabled",
+			Enabled: boolPointer(true),
+			Embed: []config.AIEmbeddingConfig{{
+				Provider: "embedding",
 				Model:    "model",
 			}},
 		},
 		AIProvider: []config.AIProviderConfig{
-			{Name: "generation", Type: "openai", Data: map[string]any{}},
+			{Name: "embedding", Type: "openai", Data: map[string]any{}},
 			{Name: "unused-invalid", Type: "not-a-provider"},
 		},
 	}
 
-	providers, err := initAIProviders(cfg)
+	providers, err := initEmbeddingProviders(cfg)
 	require.NoError(t, err)
-	assert.Contains(t, providers, "generation")
+	assert.Contains(t, providers, "embedding")
 	assert.NotContains(t, providers, "unused-invalid")
 
-	manager, err := initAIManager(cfg, providers, nil)
+	embedder, err := initAIEmbedder(cfg, providers, nil)
 	require.NoError(t, err)
-	_, err = manager.Summarize(context.Background(), "text")
-	assert.ErrorIs(t, err, ai.ErrUnavailable)
-	_, err = manager.Embed(context.Background(), "text", "query")
-	assert.ErrorIs(t, err, ai.ErrUnavailable)
+	assert.NotNil(t, embedder)
 }
 
 type recordingScheduler struct {
@@ -142,32 +134,29 @@ func (s *recordingScheduler) AddJob(job schedule.Job, _ string) error {
 func (*recordingScheduler) Start(context.Context) {}
 func (*recordingScheduler) Stop()                 {}
 
-func TestAddScheduledJobs_RespectsAIFeatureSwitches(t *testing.T) {
-	t.Run("AI disabled", func(t *testing.T) {
+func TestAddScheduledJobs_RespectsEmbeddingSwitch(t *testing.T) {
+	t.Run("embedding disabled", func(t *testing.T) {
 		scheduler := &recordingScheduler{}
 		cfg := &config.Config{AI: config.AIConfig{Enabled: boolPointer(false)}}
 
-		require.NoError(t, addScheduledJobs(scheduler, cfg, nil, nil, serverRepos{}))
+		require.NoError(t, addScheduledJobs(scheduler, cfg, nil, serverRepos{}))
 		assert.Equal(t, []string{"import_cleanup"}, scheduler.names)
 	})
 
-	t.Run("embedding enabled without summary", func(t *testing.T) {
+	t.Run("embedding enabled", func(t *testing.T) {
 		scheduler := &recordingScheduler{}
 		cfg := &config.Config{
 			AI: config.AIConfig{
-				Enabled:        boolPointer(true),
-				EmbedEnabled:   boolPointer(true),
-				SummaryEnabled: boolPointer(false),
+				Enabled: boolPointer(true),
 			},
 			AIJob: config.AIJobConfig{EmbeddingDelaySeconds: 30},
 		}
 
-		require.NoError(t, addScheduledJobs(scheduler, cfg, nil, nil, serverRepos{}))
+		require.NoError(t, addScheduledJobs(scheduler, cfg, nil, serverRepos{}))
 		assert.ElementsMatch(
 			t,
 			[]string{"import_cleanup", "ai_embedding", "embedding_cache_cleanup"},
 			scheduler.names,
 		)
-		assert.NotContains(t, scheduler.names, "ai_summary")
 	})
 }

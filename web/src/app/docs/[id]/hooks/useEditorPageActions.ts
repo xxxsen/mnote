@@ -32,8 +32,6 @@ type Options = {
     retry: (snapshot?: { title: string; content: string }) => void;
   };
   documentActions: { deleteDocument: () => Promise<unknown> };
-  ai: { aiResultText: string; closeAiModal: () => void };
-  applyContent: (content: string) => void;
 };
 
 export function useEditorPageActions(opts: Options) {
@@ -141,11 +139,6 @@ export function useEditorPageActions(opts: Options) {
     }
   }, [opts]);
 
-  const handleApplyAiText = useCallback(() => {
-    if (opts.ai.aiResultText) opts.applyContent(opts.ai.aiResultText);
-    opts.ai.closeAiModal();
-  }, [opts]);
-
   const handleRevert = useCallback(
     (version: DocumentVersionSummary) => {
       opts.navigate(`/docs/${opts.docId}/revert?version=${version.version}`);
@@ -161,7 +154,6 @@ export function useEditorPageActions(opts: Options) {
     handleStarToggle,
     handleExportMarkdown,
     handleExportConfluenceHTML,
-    handleApplyAiText,
     handleRevert,
   };
 }

@@ -28,7 +28,7 @@ export type UseEditorSessionOptions = {
 
 /**
  * Owns the editor's correctness-critical session state. Page-level features
- * such as AI, tags, sharing and routing stay outside this boundary.
+ * such as tags, sharing and routing stay outside this boundary.
  */
 export function useEditorSession({
   enabled,

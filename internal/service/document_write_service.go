@@ -76,7 +76,6 @@ type DocumentCreateInput struct {
 	Title   string
 	Content string
 	TagIDs  []string
-	Summary string
 }
 
 // DocumentUpdateInput is shared by HTTP editor saves and trusted internal
@@ -86,7 +85,6 @@ type DocumentUpdateInput struct {
 	Title        string
 	Content      string
 	TagIDs       []string
-	Summary      *string
 	BaseRevision int64
 	// SaveSeq remains for rolling compatibility with pre-base-revision callers.
 	// BaseRevision-aware HTTP requests never use it for conflict detection.
@@ -243,9 +241,7 @@ func (s *DocumentService) persistDocument(
 	if err := s.docs.Update(ctx, doc); err != nil {
 		return fmt.Errorf("update: %w", err)
 	}
-	return s.persistSummaryState(
-		ctx, userID, docID, input.Summary, newHash, now,
-	)
+	return nil
 }
 
 func (s *DocumentService) recordVersion(
@@ -338,8 +334,8 @@ func (s *DocumentService) refreshReferences(
 			return fmt.Errorf("sync document references: %w", err)
 		}
 	}
-	if s.ai != nil {
-		if err := s.ai.MarkEmbeddingPending(ctx, userID, docID, newHash, now); err != nil {
+	if s.embedding != nil {
+		if err := s.embedding.MarkEmbeddingPending(ctx, userID, docID, newHash, now); err != nil {
 			return fmt.Errorf("mark embedding pending: %w", err)
 		}
 	}
@@ -411,16 +407,6 @@ func (s *DocumentService) createImpl(
 ) error {
 	if err := s.docs.Create(ctx, doc); err != nil {
 		return fmt.Errorf("create document: %w", err)
-	}
-	var summary *string
-	if input.Summary != "" {
-		summary = &input.Summary
-		doc.Summary = input.Summary
-	}
-	if err := s.persistSummaryState(
-		ctx, userID, doc.ID, summary, doc.ContentHash, doc.Mtime,
-	); err != nil {
-		return err
 	}
 	versionID, err := s.runtime.IDs.ID()
 	if err != nil {

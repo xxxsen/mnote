@@ -26,13 +26,6 @@ func (p *openAIProvider) Name() string {
 	return "openai"
 }
 
-func (p *openAIProvider) Generate(ctx context.Context, model, prompt string) (string, error) {
-	if p.apiKey == "" {
-		return "", ErrUnavailable
-	}
-	return chatGenerate(ctx, p, p.baseURL, model, prompt)
-}
-
 func (p *openAIProvider) Embed(ctx context.Context, model, text, _ string) ([]float32, error) {
 	if p.apiKey == "" {
 		return nil, ErrUnavailable

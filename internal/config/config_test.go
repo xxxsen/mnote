@@ -41,9 +41,6 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, int64(20*1024*1024), cfg.MaxUploadSize)
 	assert.Equal(t, "info", cfg.LogConfig.Level)
 	assert.Equal(t, "local", cfg.FileStore.Type)
-	assert.Equal(t, 30, cfg.AI.Timeout)
-	assert.Equal(t, 64*1024, cfg.AI.MaxInputChars)
-	assert.Equal(t, int64(300), cfg.AIJob.SummaryDelaySeconds)
 	assert.Equal(t, int64(300), cfg.AIJob.EmbeddingDelaySeconds)
 }
 
@@ -57,6 +54,57 @@ func TestLoad_InvalidJSON(t *testing.T) {
 	_, err := Load(writeConfig(t, "not-json"))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "decode config")
+}
+
+func TestLoad_RejectsRemovedAIConfiguration(t *testing.T) {
+	removedAIFields := []struct {
+		name  string
+		field string
+	}{
+		{name: "polish_enabled", field: `"polish_enabled": true`},
+		{name: "generate_enabled", field: `"generate_enabled": true`},
+		{name: "tagging_enabled", field: `"tagging_enabled": true`},
+		{name: "summary_enabled", field: `"summary_enabled": true`},
+		{name: "embed_enabled", field: `"embed_enabled": true`},
+		{name: "polish", field: `"polish": []`},
+		{name: "generate", field: `"generate": []`},
+		{name: "tagging", field: `"tagging": []`},
+		{name: "summary", field: `"summary": []`},
+		{name: "timeout", field: `"timeout": 30`},
+		{name: "max_input_chars", field: `"max_input_chars": 1000`},
+	}
+	for _, testCase := range removedAIFields {
+		t.Run(testCase.name, func(t *testing.T) {
+			configJSON := `{
+				"database": {"host": "localhost"},
+				"jwt_secret": "secret",
+				"port": 8080,
+				"ai": {` + testCase.field + `}
+			}`
+			_, err := Load(writeConfig(t, configJSON))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unknown field")
+		})
+	}
+
+	t.Run("summary_delay_seconds", func(t *testing.T) {
+		configJSON := `{
+			"database": {"host": "localhost"},
+			"jwt_secret": "secret",
+			"port": 8080,
+			"ai_job": {"summary_delay_seconds": 60}
+		}`
+		_, err := Load(writeConfig(t, configJSON))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unknown field")
+	})
+}
+
+func TestLoad_DockerExampleConfig(t *testing.T) {
+	cfg, err := Load("../../docker/mnote/config.json")
+	require.NoError(t, err)
+	assert.Equal(t, "mnote-db", cfg.Database.Host)
+	assert.True(t, cfg.AI.IsEnabled())
 }
 
 func TestLoad_MissingDatabaseHost(t *testing.T) {
@@ -90,8 +138,8 @@ func TestLoad_CustomDefaults(t *testing.T) {
 		"max_upload_size": 100,
 		"log_config": {"level": "debug"},
 		"file_store": {"type": "s3"},
-		"ai": {"timeout": 60, "max_input_chars": 1024},
-		"ai_job": {"summary_delay_seconds": 10, "embedding_delay_seconds": 20}
+		"ai": {"enabled": true, "provider": "openai", "model": "embedding-model"},
+		"ai_job": {"embedding_delay_seconds": 20}
 	}`
 	cfg, err := Load(writeConfig(t, j))
 	require.NoError(t, err)
@@ -100,106 +148,92 @@ func TestLoad_CustomDefaults(t *testing.T) {
 	assert.Equal(t, int64(100), cfg.MaxUploadSize)
 	assert.Equal(t, "debug", cfg.LogConfig.Level)
 	assert.Equal(t, "s3", cfg.FileStore.Type)
-	assert.Equal(t, 60, cfg.AI.Timeout)
-	assert.Equal(t, 1024, cfg.AI.MaxInputChars)
-	assert.Equal(t, int64(10), cfg.AIJob.SummaryDelaySeconds)
+	assert.True(t, cfg.AI.IsEnabled())
 	assert.Equal(t, int64(20), cfg.AIJob.EmbeddingDelaySeconds)
 }
 
-func TestAIFeatureConfig_WithDefaults(t *testing.T) {
-	ac := AIConfig{Provider: "openai", Model: "gpt-4"}
+func TestAIEmbeddingConfig_WithDefaults(t *testing.T) {
+	ac := AIConfig{Provider: "openai", Model: "embedding-model"}
 
-	f := AIFeatureConfig{}
+	f := AIEmbeddingConfig{}
 	f = f.WithDefaults(ac)
 	assert.Equal(t, "openai", f.Provider)
-	assert.Equal(t, "gpt-4", f.Model)
+	assert.Equal(t, "embedding-model", f.Model)
 
-	f2 := AIFeatureConfig{Provider: "gemini", Model: "pro"}
+	f2 := AIEmbeddingConfig{Provider: "gemini", Model: "embed-v2"}
 	f2 = f2.WithDefaults(ac)
 	assert.Equal(t, "gemini", f2.Provider)
-	assert.Equal(t, "pro", f2.Model)
+	assert.Equal(t, "embed-v2", f2.Model)
 }
 
-func TestAIConfigFeatureSwitches(t *testing.T) {
-	t.Run("no configuration disables AI", func(t *testing.T) {
+func TestAIConfigEmbeddingSwitch(t *testing.T) {
+	t.Run("no configuration disables embedding", func(t *testing.T) {
 		cfg := AIConfig{}
 		assert.False(t, cfg.IsEnabled())
-		assert.False(t, cfg.IsGenerateEnabled())
-		assert.False(t, cfg.IsEmbedEnabled())
 	})
 
-	t.Run("legacy configuration keeps all features enabled", func(t *testing.T) {
-		cfg := AIConfig{Provider: "openai", Model: "model"}
+	t.Run("default provider and model enable embedding", func(t *testing.T) {
+		cfg := AIConfig{Provider: "openai", Model: "embedding-model"}
 		assert.True(t, cfg.IsEnabled())
-		assert.True(t, cfg.IsPolishEnabled())
-		assert.True(t, cfg.IsGenerateEnabled())
-		assert.True(t, cfg.IsTaggingEnabled())
-		assert.True(t, cfg.IsSummaryEnabled())
-		assert.True(t, cfg.IsEmbedEnabled())
 	})
 
-	t.Run("explicit global disable overrides feature flags", func(t *testing.T) {
+	t.Run("explicit disable overrides configured embeddings", func(t *testing.T) {
 		enabled := false
-		generate := true
-		cfg := AIConfig{Enabled: &enabled, GenerateEnabled: &generate}
+		cfg := AIConfig{
+			Enabled: &enabled,
+			Embed:   []AIEmbeddingConfig{{Provider: "openai", Model: "embedding-model"}},
+		}
 		assert.False(t, cfg.IsEnabled())
-		assert.False(t, cfg.IsGenerateEnabled())
 	})
 
-	t.Run("any feature switch makes unspecified features disabled", func(t *testing.T) {
+	t.Run("explicit enable is authoritative", func(t *testing.T) {
 		enabled := true
-		generate := true
-		cfg := AIConfig{
-			Enabled:         &enabled,
-			GenerateEnabled: &generate,
-			Provider:        "openai",
-			Model:           "model",
-		}
-		assert.True(t, cfg.IsGenerateEnabled())
-		assert.False(t, cfg.IsPolishEnabled())
-		assert.False(t, cfg.IsTaggingEnabled())
-		assert.False(t, cfg.IsSummaryEnabled())
-		assert.False(t, cfg.IsEmbedEnabled())
+		assert.True(t, (AIConfig{Enabled: &enabled}).IsEnabled())
 	})
 }
 
-func TestLoad_AIValidationOnlyForEnabledFeatures(t *testing.T) {
-	t.Run("disabled AI ignores AI-only limits", func(t *testing.T) {
+func TestLoad_AIEmbeddingValidation(t *testing.T) {
+	t.Run("disabled embedding ignores job delay", func(t *testing.T) {
 		j := `{
 			"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
-			"ai": {"enabled": false, "timeout": -1, "max_input_chars": -1},
-			"ai_job": {"summary_delay_seconds": -1, "embedding_delay_seconds": -1}
+			"ai": {"enabled": false},
+			"ai_job": {"embedding_delay_seconds": -1}
 		}`
 		cfg, err := Load(writeConfig(t, j))
 		require.NoError(t, err)
 		assert.False(t, cfg.AI.IsEnabled())
 	})
 
-	t.Run("disabled summary does not validate summary delay", func(t *testing.T) {
+	t.Run("enabled embedding requires provider and model", func(t *testing.T) {
 		j := `{
 			"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
-			"ai": {
-				"enabled": true, "provider": "p", "model": "m",
-				"generate_enabled": true
-			},
-			"ai_job": {"summary_delay_seconds": -1}
-		}`
-		cfg, err := Load(writeConfig(t, j))
-		require.NoError(t, err)
-		assert.True(t, cfg.AI.IsGenerateEnabled())
-		assert.False(t, cfg.AI.IsSummaryEnabled())
-	})
-
-	t.Run("enabled feature validates shared limits", func(t *testing.T) {
-		j := `{
-			"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
-			"ai": {
-				"enabled": true, "provider": "p", "model": "m",
-				"generate_enabled": true, "timeout": -1
-			}
+			"ai": {"enabled": true}
 		}`
 		_, err := Load(writeConfig(t, j))
 		assert.ErrorIs(t, err, errInvalidAIConfig)
+	})
+
+	t.Run("enabled embedding validates job delay", func(t *testing.T) {
+		j := `{
+			"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
+			"ai": {"enabled": true, "provider": "p", "model": "m"},
+			"ai_job": {"embedding_delay_seconds": -1}
+		}`
+		_, err := Load(writeConfig(t, j))
+		assert.ErrorIs(t, err, errInvalidAIConfig)
+	})
+
+	t.Run("embedding entries inherit defaults", func(t *testing.T) {
+		j := `{
+			"database": {"host":"h"}, "jwt_secret": "s", "port": 80,
+			"ai": {
+				"enabled": true, "provider": "p", "model": "m",
+				"embed": [{"provider": "fallback"}]
+			}
+		}`
+		cfg, err := Load(writeConfig(t, j))
+		require.NoError(t, err)
+		assert.True(t, cfg.AI.IsEnabled())
 	})
 }
 

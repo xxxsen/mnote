@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { FileText, History, Share2 } from "lucide-react";
+import { History, Share2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
@@ -13,9 +13,6 @@ export type DetailsPanelContentProps = {
   active: boolean;
   activeTab: EditorDetailsTab;
   onTabChange: (tab: EditorDetailsTab) => void;
-  summary: string;
-  aiLoading: boolean;
-  onGenerateSummary: () => void;
   onShowDeleteConfirm: () => void;
   onExportMarkdown: () => void;
   onExportConfluenceHTML: () => void;
@@ -73,11 +70,6 @@ export function DetailsPanelContent(props: DetailsPanelContentProps) {
 
   const tabs = [
     {
-      id: "summary" as const,
-      label: "Summary",
-      icon: <FileText aria-hidden="true" className="h-3 w-3" />,
-    },
-    {
       id: "history" as const,
       label: "History",
       icon: <History aria-hidden="true" className="h-3 w-3" />,
@@ -94,7 +86,7 @@ export function DetailsPanelContent(props: DetailsPanelContentProps) {
       <div
         role="tablist"
         aria-label="Document details"
-        className="grid grid-cols-3 border-b border-border bg-muted/20"
+        className="grid grid-cols-2 border-b border-border bg-muted/20"
       >
         {tabs.map((tab) => (
           <button
@@ -125,13 +117,6 @@ export function DetailsPanelContent(props: DetailsPanelContentProps) {
         aria-labelledby={`${tabsId}-${props.activeTab}-tab`}
         className="min-h-0 flex-1 overflow-y-auto p-3"
       >
-        {props.activeTab === "summary" ? (
-          <SummaryContent
-            summary={props.summary}
-            aiLoading={props.aiLoading}
-            onGenerateSummary={props.onGenerateSummary}
-          />
-        ) : null}
         {props.activeTab === "history" ? (
           <HistoryContent versions={versions} onRevert={props.onRevert} />
         ) : null}
@@ -149,36 +134,6 @@ export function DetailsPanelContent(props: DetailsPanelContentProps) {
           onShowDeleteConfirm={props.onShowDeleteConfirm}
         />
       </div>
-    </div>
-  );
-}
-
-function SummaryContent(props: {
-  summary: string;
-  aiLoading: boolean;
-  onGenerateSummary: () => void;
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="text-xs font-semibold text-muted-foreground">
-        AI summary
-      </div>
-      {props.summary ? (
-        <div className="whitespace-pre-wrap rounded-xl border border-border bg-muted/20 p-3 text-sm leading-relaxed">
-          {props.summary}
-        </div>
-      ) : (
-        <div className="text-sm text-muted-foreground">No summary yet</div>
-      )}
-      <Button
-        variant="outline"
-        size="sm"
-        className="w-full rounded-xl text-xs"
-        onClick={props.onGenerateSummary}
-        disabled={props.aiLoading}
-      >
-        Generate summary
-      </Button>
     </div>
   );
 }

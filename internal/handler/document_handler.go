@@ -27,7 +27,6 @@ type documentRequest struct {
 	Title   string    `json:"title"`
 	Content string    `json:"content"`
 	TagIDs  *[]string `json:"tag_ids"`
-	Summary *string   `json:"summary"`
 	// BaseRevision is the optimistic-lock precondition. SaveSeq is retained
 	// during rolling upgrades but does not decide conflicts on this HTTP path.
 	BaseRevision *int64 `json:"base_revision,omitempty"`
@@ -38,9 +37,6 @@ type tagUpdateRequest struct {
 	TagIDs *[]string `json:"tag_ids"`
 }
 
-type summaryUpdateRequest struct {
-	Summary *string `json:"summary"`
-}
 type documentListItem struct {
 	documentResponse
 	TagIDs []string      `json:"tag_ids"`
@@ -58,18 +54,13 @@ func (h *DocumentHandler) Create(c *gin.Context) {
 		return
 	}
 	var tagIDs []string
-	summary := ""
 	if req.TagIDs != nil {
 		tagIDs = *req.TagIDs
-	}
-	if req.Summary != nil {
-		summary = *req.Summary
 	}
 	doc, err := h.documents.Create(c.Request.Context(), getUserID(c), service.DocumentCreateInput{
 		Title:   req.Title,
 		Content: req.Content,
 		TagIDs:  tagIDs,
-		Summary: summary,
 	})
 	if err != nil {
 		handleError(c, err)
@@ -280,7 +271,6 @@ func (h *DocumentHandler) Update(c *gin.Context) {
 			Title:        req.Title,
 			Content:      req.Content,
 			TagIDs:       tagIDs,
-			Summary:      req.Summary,
 			BaseRevision: *req.BaseRevision,
 			SaveSeq:      *req.SaveSeq,
 		},
@@ -314,23 +304,6 @@ func (h *DocumentHandler) UpdateTags(c *gin.Context) {
 		return
 	}
 	if err := h.documents.UpdateTags(c.Request.Context(), getUserID(c), c.Param("id"), *req.TagIDs); err != nil {
-		handleError(c, err)
-		return
-	}
-	response.Success(c, gin.H{"ok": true})
-}
-
-func (h *DocumentHandler) UpdateSummary(c *gin.Context) {
-	var req summaryUpdateRequest
-	if err := bindJSON(c, &req); err != nil {
-		response.Error(c, errcode.ErrInvalid, "invalid request")
-		return
-	}
-	if req.Summary == nil {
-		response.Error(c, errcode.ErrInvalid, "summary required")
-		return
-	}
-	if err := h.documents.UpdateSummary(c.Request.Context(), getUserID(c), c.Param("id"), *req.Summary); err != nil {
 		handleError(c, err)
 		return
 	}
@@ -393,7 +366,7 @@ func (h *DocumentHandler) Summary(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalid, "invalid pagination")
 		return
 	}
-	result, err := h.documents.Summary(
+	result, err := h.documents.Overview(
 		c.Request.Context(), getUserID(c), safeconv.IntToUint(page.Limit),
 	)
 	if err != nil {

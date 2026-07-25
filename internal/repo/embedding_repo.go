@@ -362,7 +362,7 @@ func (r *EmbeddingRepo) GetByDocID(ctx context.Context, docID string) (*model.Do
 //     now) nor ClaimDrift (status != 'succeeded') would match, leaving
 //     the worker in a candidate-but-cannot-process spin loop.
 //
-// Metadata-only updates (summary / tag / pin / star) never call
+// Metadata-only updates (tag / pin / star) never call
 // UpsertPending and never touch content_hash, so they cannot trigger any
 // of these branches and remain correctly excluded.
 //

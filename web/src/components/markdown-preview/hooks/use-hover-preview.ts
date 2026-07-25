@@ -31,9 +31,8 @@ export async function resolveTargetId(linkTitle: string, linkHref?: string): Pro
 }
 
 export async function fetchPreviewSnippet(targetID: string, linkTitle: string) {
-  const detail = await apiFetch<{ document: { title: string; content: string; summary?: string } }>(`/documents/${targetID}`);
-  const summary = (detail.document.summary || "").trim();
-  const source = summary || detail.document.content || "";
+  const detail = await apiFetch<{ document: { title: string; content: string } }>(`/documents/${targetID}`);
+  const source = detail.document.content || "";
   const normalized = source.replace(/[#>*_`[\]\-]/g, " ").replace(/\s+/g, " ").trim();
   const snippet = normalized.length > 180 ? `${normalized.slice(0, 180)}...` : normalized;
   return {

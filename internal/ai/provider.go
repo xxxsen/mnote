@@ -8,34 +8,12 @@ import (
 
 type IProvider interface {
 	Name() string
-	Generate(ctx context.Context, model, prompt string) (string, error)
 	Embed(ctx context.Context, model, text, taskType string) ([]float32, error)
-}
-
-type IGenerator interface {
-	Generate(ctx context.Context, prompt string) (string, error)
 }
 
 type IEmbedder interface {
 	Embed(ctx context.Context, text, taskType string) ([]float32, error)
 	ModelName() string
-}
-
-type generator struct {
-	provider IProvider
-	model    string
-}
-
-func NewGenerator(p IProvider, model string) IGenerator {
-	return &generator{provider: p, model: model}
-}
-
-func (g *generator) Generate(ctx context.Context, prompt string) (string, error) {
-	res, err := g.provider.Generate(ctx, g.model, prompt)
-	if err != nil {
-		return "", fmt.Errorf("generate: %w", err)
-	}
-	return res, nil
 }
 
 type embedder struct {

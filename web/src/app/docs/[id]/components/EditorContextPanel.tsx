@@ -156,11 +156,6 @@ function EditorContextContent(props: {
           active={detailsActive}
           activeTab={p.contextRail.detailsTab}
           onTabChange={p.contextRail.setDetailsTab}
-          summary={p.summary}
-          aiLoading={p.ai.aiLoading}
-          onGenerateSummary={() =>
-            void p.ai.handleAiSummary(p.contentRef.current)
-          }
           onShowDeleteConfirm={() => p.setShowDeleteConfirm(true)}
           onExportMarkdown={p.handleExportMarkdown}
           onExportConfluenceHTML={() => void p.handleExportConfluenceHTML()}

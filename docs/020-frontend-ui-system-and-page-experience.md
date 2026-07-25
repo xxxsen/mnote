@@ -60,7 +60,7 @@ Login、Register 和 OAuth callback 使用 `AuthShell` 或同一认证状态结�
 | `destructive` | 删除、断开连接和不可逆动作 |
 | `success` | 保存完成、创建成功和已连接 |
 | `warning` | 本地草稿、需要注意和即将失效 |
-| `info` | AI、处理中和信息提示 |
+| `info` | 处理中和普通信息提示 |
 | `border` / `input` / `ring` | 边框、输入和焦点环 |
 
 状态不能只靠颜色表达，还要使用文本、图标、形状或 ARIA 状态。Markdown 语法高亮、代码主题、第三方品牌图标和图表节点可以使用领域颜色，不应反向污染页面控件。
@@ -244,7 +244,8 @@ Docs、Tags、Tasks、Templates、Assets 和 Settings 的 layout 复用 `Authent
 - 桌面保留常驻侧栏，移动和平板通过 Drawer 获得完整导航。
 - 移动顶栏只保留导航、可伸缩搜索、New 和用户菜单；Assets 位于导航中。
 - 文档卡片主体是 Link，Star、Pin 和分享复制是同级 Button，不存在交互嵌套。
-- 卡片显示标题、最多两行摘要或正文摘录、更新时间和标签。
+- 卡片显示标题、最多两行正文摘录、更新时间和标签；普通卡片读取 `content`，分享卡片读取
+  `content_preview`，两者使用同一 Markdown 清理逻辑。
 - 搜索、标签、Starred、Shared 和语义结果拥有独立状态；切换条件时旧响应不得覆盖。
 - 首次错误、追加错误、空列表和筛选无结果分别显示可恢复状态。
 - 页面级标题随 All notes、Starred、Shared 和 Tag 筛选变化。
@@ -305,7 +306,8 @@ Docs、Tags、Tasks、Templates、Assets 和 Settings 的 layout 复用 `Authent
 - 保留 Edit、Split、Preview、滚动同步、Outline/Details 互斥右栏和既有保存协议。
 - Preview 使用 ReadingSurface；Scroll sync 位于预览工具区，不遮挡正文。
 - `<1280px` 的 Outline/Details 使用同一 Drawer，宽屏使用主工作区 flex sibling rail。
-- Mentions 和 Graph 不提供可见入口；Details 在同一右栏显示 Summary、History 和 Share。
+- Mentions 和 Graph 不提供可见入口；Details 在同一右栏只显示 History 和 Share，首次打开默认
+  History。
 - 移动 Edit/Preview 使用 SegmentedControl，低频工具进入 More。
 - Outline 当前章节由编辑器中线或预览激活线确定，不要求标题起点滚到页面顶部。
 - 页面标题在加载时为稳定 Editor，加载后为 `<Document title> · Micro Note`。
@@ -322,7 +324,7 @@ Docs、Tags、Tasks、Templates、Assets 和 Settings 的 layout 复用 `Authent
 
 ### 8.10 Share
 
-- 页面保留面向阅读的作者、权限、过期信息、Summary、TOC 和 Comments 层级。
+- 页面保留面向阅读的作者、权限、过期信息、正文、TOC 和 Comments 层级，不显示独立摘要区块。
 - 正文使用 ReadingSurface，反馈使用全局 Toast。
 - 密码输入有可见 label、`current-password` autocomplete 和 alert 错误。
 - 复制、下载、目录、回顶部和评论图标按钮都有可访问名称。

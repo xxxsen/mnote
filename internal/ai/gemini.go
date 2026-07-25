@@ -22,30 +22,6 @@ func (p *geminiProvider) Name() string {
 	return "gemini"
 }
 
-func (p *geminiProvider) Generate(
-	ctx context.Context, model, prompt string,
-) (string, error) {
-	if p.apiKey == "" {
-		return "", ErrUnavailable
-	}
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:  p.apiKey,
-		Backend: genai.BackendGeminiAPI,
-	})
-	if err != nil {
-		return "", fmt.Errorf("create gemini client: %w", err)
-	}
-	resp, err := client.Models.GenerateContent(
-		ctx, model,
-		[]*genai.Content{{Parts: []*genai.Part{{Text: prompt}}}},
-		nil,
-	)
-	if err != nil {
-		return "", fmt.Errorf("gemini generate: %w", err)
-	}
-	return strings.TrimSpace(resp.Text()), nil
-}
-
 func (p *geminiProvider) Embed(
 	ctx context.Context, model, text, taskType string,
 ) ([]float32, error) {

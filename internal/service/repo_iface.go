@@ -143,13 +143,6 @@ type documentRepo interface {
 	documentRelationRepo
 }
 
-type documentSummaryRepo interface {
-	Upsert(ctx context.Context, userID, docID, summary string, now int64) error
-	GetByDocID(ctx context.Context, userID, docID string) (string, error)
-	ListByDocIDs(ctx context.Context, userID string, docIDs []string) (map[string]string, error)
-	ListPendingDocuments(ctx context.Context, limit int, maxMtime int64) ([]model.Document, error)
-}
-
 type versionRepo interface {
 	Create(ctx context.Context, version *model.DocumentVersion) error
 	GetByVersion(ctx context.Context, userID, docID string, version int) (*model.DocumentVersion, error)
@@ -269,19 +262,6 @@ type importJobNoteRepo interface {
 	ListTitles(ctx context.Context, userID, jobID string) ([]string, error)
 }
 
-type aiTextManager interface {
-	Polish(ctx context.Context, text string) (string, error)
-	Generate(ctx context.Context, description string) (string, error)
-	ExtractTags(ctx context.Context, text string, maxTags int) ([]string, error)
-	Summarize(ctx context.Context, text string) (string, error)
-}
-
-type aiManager interface {
-	aiTextManager
-	Embed(ctx context.Context, text, taskType string) ([]float32, error)
-	MaxInputChars() int
-}
-
-type aiChunker interface {
+type embeddingChunker interface {
 	Chunk(ctx context.Context, markdown string) ([]*model.ChunkEmbedding, error)
 }

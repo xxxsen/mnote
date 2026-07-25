@@ -2,14 +2,6 @@ import type { ReactNode } from "react";
 import type { MarkdownCommand } from "./commands/markdown-commands";
 import type { Document, Tag } from "@/types";
 
-export type AIAction = "polish" | "generate" | "tags" | "summary";
-
-export type DiffLine = {
-  type: "equal" | "add" | "remove";
-  left?: string;
-  right?: string;
-};
-
 export type SimilarDoc = Document & {
   score?: number;
 };

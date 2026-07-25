@@ -2,7 +2,7 @@
 
 ## 1. 功能范围
 
-PostgreSQL 是账户、文档、关系、分享、导入、摘要、资产状态和向量索引的事实源。数据库结构和一次性
+PostgreSQL 是账户、文档、关系、分享、导入、资产状态和向量索引的事实源。数据库结构和一次性
 数据演进只允许由 `internal/db/migrations/*.sql` 定义；后端 Go 代码只负责发现、排序、校验并执行
 这些 SQL，不包含 DDL 字符串、业务表探测或历史数据库特判。
 
@@ -23,7 +23,6 @@ PostgreSQL 是账户、文档、关系、分享、导入、摘要、资产状态
 
 - `documents` 保存标题、正文、状态、置顶、收藏、内容修订号、内容哈希和内容更新时间。
 - `document_versions` 保存每次被接受正文的版本快照。
-- `document_summaries` 保存摘要、源正文哈希、`pending|running|succeeded|failed` 状态、租约和退避信息。
 - `document_links` 保存同一用户下源文档与目标文档关系。
 - `tags` 和 `document_tags` 保存用户标签及文档标签关系。
 
@@ -77,12 +76,12 @@ Provider 混用语义。
 
 - 注册时消费验证码并创建用户。
 - OAuth 创建用户、绑定、解绑和一次性凭据消费。
-- 文档正文、版本、标签、链接、摘要状态和资产引用。
+- 文档正文、版本、标签、链接、资产引用和 Embedding pending 状态。
 - 创建或替换活动分享。
 - 导入 staging 创建与每条正式文档写入。
 
 并发写入使用行锁、条件更新、唯一约束、`FOR UPDATE SKIP LOCKED` 租约或内容哈希 CAS。外部 Mail、
-AI 和对象存储调用不能放入长数据库事务；它们通过短事务状态机或明确补偿与数据库收敛。
+Embedding 和对象存储调用不能放入长数据库事务；它们通过短事务状态机或明确补偿与数据库收敛。
 
 ## 5. 迁移清单与演进
 
@@ -92,10 +91,14 @@ AI 和对象存储调用不能放入长数据库事务；它们通过短事务�
 - `009_integrity_guardrails.sql`：所有权、孤儿关系、状态和活动分享数据审计与约束。
 - `010_account_identity_and_one_time_tokens.sql`：规范化邮箱、验证码状态和 OAuth 一次性凭据。
 - `011_import_worker_state.sql`：导入租约、重试、模式和 Note 终态。
-- `012_summary_worker_state.sql`：摘要源哈希、状态、租约、退避以及既有文档待处理回填。
+- `012_summary_worker_state.sql`：历史版本曾引入文档摘要 Worker 状态；文件因迁移校验和保留，不代表
+  当前运行时能力。
 - `013_asset_upload_state.sql`：资产上传状态与清理索引。
+- `014_remove_document_summary.sql`：删除历史 `document_summaries` 表和
+  `import_job_notes.summary` 暂存列；正文、版本、标签、分享、资产和向量数据不受影响。
 
-已提交且已执行的 migration 不得修改、重命名或复用版本。修改结构必须新增 migration。
+已提交且已执行的 migration 不得修改、重命名或复用版本。历史迁移中的摘要结构必须原样保留，新库会
+先创建旧结构再由 014 删除。修改结构必须新增 migration。
 
 ## 6. SQL-only 迁移器
 
@@ -133,7 +136,8 @@ Go 迁移器不得创建账本、拼接 DDL、维护业务表或列清单、检�
 - 增加 CHECK、外键或唯一约束前先用 SQL 审计旧数据；脏数据必须明确归档、修复或使迁移失败。
 - 大表索引评估锁时间；需要 `CREATE INDEX CONCURRENTLY` 时不能放在普通 migration 事务中，必须设计
   单独且可验证的发布步骤。
-- 删除列或表采用 expand/contract：先发布停止读写的代码，观察后再新增删除 migration。
+- 删除列或表通常采用 expand/contract。若像 014 一样在同一维护窗口完成破坏性收缩，必须停止全部旧
+  实例、先备份并同步发布不再读写旧结构的新二进制，禁止新旧版本滚动混跑。
 - 状态列同时具备 Go 类型常量、数据库 CHECK、合法转换和未知值读路径错误。
 - 一次 DELETE/UPDATE 必须控制批量，避免长事务和全表锁。
 
@@ -146,7 +150,8 @@ Go 迁移器不得创建账本、拼接 DDL、维护业务表或列清单、检�
   分享、孤儿关系和非法状态；除账本外的 `violations` 必须全部为零。
 - 空 schema、未管理非空 schema、空账本加业务表、checksum 不一致、未知版本、迁移事务回滚和双实例
   并发都使用真实 PostgreSQL 验证。
-- Repository/Service 集成测试覆盖关系所有权、事务回滚、并发领取、摘要过期结果和资产清理互斥。
+- Repository/Service 集成测试覆盖关系所有权、事务回滚、Embedding 并发领取与过期结果、导入领取和
+  资产清理互斥。审计脚本不得查询已经由 014 删除的表或列。
 
 ## 10. 发布、回滚与验证
 

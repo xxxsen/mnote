@@ -57,7 +57,7 @@ test("desktop context is a non-modal layout rail at 1280px", async ({
       dock.getByRole("navigation", { name: "Note outline" }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Show details" }).click();
-    for (const tabName of ["Summary", "History", "Share"]) {
+    for (const tabName of ["History", "Share"]) {
       await expect(dock.getByRole("tab", { name: tabName })).toBeVisible();
     }
     await expect(
@@ -69,7 +69,7 @@ test("desktop context is a non-modal layout rail at 1280px", async ({
     await expect(
       dock.getByRole("navigation", { name: "Note outline" }),
     ).toBeVisible();
-    await expect(dock.getByRole("tab", { name: "Summary" })).toBeHidden();
+    await expect(dock.getByRole("tab", { name: "History" })).toBeHidden();
     await page
       .getByRole("button", { name: "Collapse document context rail" })
       .click();

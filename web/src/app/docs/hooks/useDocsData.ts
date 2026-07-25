@@ -22,7 +22,7 @@ const isAbortError = (e: unknown): boolean =>
 function mapSharedItem(item: SharedItem): DocumentWithTags {
   return {
     id: item.id, user_id: "", title: item.title,
-    content: item.summary || "", summary: item.summary || "",
+    content: item.content_preview,
     state: 1, pinned: 0, starred: 0,
     ctime: item.mtime, mtime: item.mtime,
     // Shared-document listings do not surface content_hash/revision because
@@ -107,33 +107,33 @@ export function useDocsData(deps: UseDocsDataDeps) {
   const [loadMoreError, setLoadMoreError] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [nextOffset, setNextOffset] = useState(0);
-  const [aiSearchDocs, setAiSearchDocs] = useState<DocumentWithTags[]>([]);
-  const [aiSearching, setAiSearching] = useState(false);
+  const [semanticSearchDocs, setSemanticSearchDocs] = useState<DocumentWithTags[]>([]);
+  const [semanticSearching, setSemanticSearching] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const fetchInFlightRef = useRef(false);
   const fetchAbortRef = useRef<AbortController | null>(null);
-  const aiSearchAbortRef = useRef<AbortController | null>(null);
+  const semanticSearchAbortRef = useRef<AbortController | null>(null);
 
-  const fetchAiSearch = useCallback(async (query: string) => {
-    aiSearchAbortRef.current?.abort();
-    if (!query) { setAiSearchDocs([]); return; }
+  const fetchSemanticSearch = useCallback(async (query: string) => {
+    semanticSearchAbortRef.current?.abort();
+    if (!query) { setSemanticSearchDocs([]); return; }
     const controller = new AbortController();
-    aiSearchAbortRef.current = controller;
-    setAiSearching(true);
+    semanticSearchAbortRef.current = controller;
+    setSemanticSearching(true);
     try {
       const res = await apiFetch<{ items: DocumentWithTags[] }>(
         `/ai/search?q=${encodeURIComponent(query)}`,
         { signal: controller.signal },
       );
-      setAiSearchDocs(res.items);
+      setSemanticSearchDocs(res.items);
     } catch (e) {
       if (isAbortError(e)) return;
       console.error(e);
-      setAiSearchDocs([]);
+      setSemanticSearchDocs([]);
     } finally {
-      if (aiSearchAbortRef.current === controller) {
-        aiSearchAbortRef.current = null;
-        setAiSearching(false);
+      if (semanticSearchAbortRef.current === controller) {
+        semanticSearchAbortRef.current = null;
+        setSemanticSearching(false);
       }
     }
   }, []);
@@ -214,7 +214,7 @@ export function useDocsData(deps: UseDocsDataDeps) {
     }
   }, [fetchTagsByIDs, mergeTags, search, selectedTag, showStarred, showShared, tagIndexRef]);
 
-  const fetchSummary = useCallback(async () => {
+  const fetchOverview = useCallback(async () => {
     try {
       const res = await apiFetch<{ recent: DocumentWithTags[]; tag_counts: Record<string, number>; total: number; starred_total: number }>("/documents/summary?limit=5");
       setRecentDocs(sortRecentDocs(res.recent));
@@ -225,7 +225,7 @@ export function useDocsData(deps: UseDocsDataDeps) {
     }
   }, []);
 
-  const fetchSharedSummary = useCallback(async () => {
+  const fetchSharedCount = useCallback(async () => {
     try {
       const shared = await apiFetch<{ items: SharedItem[] }>("/shares");
       setSharedTotal(shared.items.length);
@@ -236,7 +236,7 @@ export function useDocsData(deps: UseDocsDataDeps) {
 
   const actions = useDocumentActions({
     setDocs,
-    onStarredChange: fetchSummary,
+    onStarredChange: fetchOverview,
     toast,
   });
 
@@ -277,23 +277,23 @@ export function useDocsData(deps: UseDocsDataDeps) {
       fetchInFlightRef.current = false;
       void fetchDocs(0, false);
       if (search && !search.startsWith("/") && !showStarred && !showShared && !selectedTag) {
-        void fetchAiSearch(search);
+        void fetchSemanticSearch(search);
       } else {
-        aiSearchAbortRef.current?.abort();
-        setAiSearchDocs([]);
+        semanticSearchAbortRef.current?.abort();
+        setSemanticSearchDocs([]);
       }
     }, 300);
     return () => {
       clearTimeout(timer);
       fetchAbortRef.current?.abort();
-      aiSearchAbortRef.current?.abort();
+      semanticSearchAbortRef.current?.abort();
     };
-  }, [fetchDocs, showStarred, showShared, selectedTag, search, fetchAiSearch]);
+  }, [fetchDocs, showStarred, showShared, selectedTag, search, fetchSemanticSearch]);
 
   return {
     docs, recentDocs, totalDocs, starredTotal, sharedTotal,
-    loading, loadingMore, initialError, loadMoreError, hasMore, aiSearchDocs, aiSearching, loadMoreRef,
-    fetchDocs, fetchSummary, fetchSharedSummary, fetchAiSearch,
+    loading, loadingMore, initialError, loadMoreError, hasMore, semanticSearchDocs, semanticSearching, loadMoreRef,
+    fetchDocs, fetchOverview, fetchSharedCount, fetchSemanticSearch,
     retryInitial, retryLoadMore,
     ...actions,
   };

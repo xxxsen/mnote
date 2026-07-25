@@ -62,12 +62,12 @@ type AIProviderConfig struct {
 	Data any    `json:"data"`
 }
 
-type AIFeatureConfig struct {
+type AIEmbeddingConfig struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
 }
 
-func (f AIFeatureConfig) WithDefaults(c AIConfig) AIFeatureConfig {
+func (f AIEmbeddingConfig) WithDefaults(c AIConfig) AIEmbeddingConfig {
 	if f.Provider == "" {
 		f.Provider = c.Provider
 	}
@@ -78,73 +78,20 @@ func (f AIFeatureConfig) WithDefaults(c AIConfig) AIFeatureConfig {
 }
 
 type AIConfig struct {
-	Enabled         *bool             `json:"enabled"`
-	PolishEnabled   *bool             `json:"polish_enabled"`
-	GenerateEnabled *bool             `json:"generate_enabled"`
-	TaggingEnabled  *bool             `json:"tagging_enabled"`
-	SummaryEnabled  *bool             `json:"summary_enabled"`
-	EmbedEnabled    *bool             `json:"embed_enabled"`
-	Provider        string            `json:"provider"`
-	Model           string            `json:"model"`
-	Polish          []AIFeatureConfig `json:"polish"`
-	Generate        []AIFeatureConfig `json:"generate"`
-	Tagging         []AIFeatureConfig `json:"tagging"`
-	Summary         []AIFeatureConfig `json:"summary"`
-	Embed           []AIFeatureConfig `json:"embed"`
-	Timeout         int               `json:"timeout"`
-	MaxInputChars   int               `json:"max_input_chars"`
+	Enabled  *bool               `json:"enabled"`
+	Provider string              `json:"provider"`
+	Model    string              `json:"model"`
+	Embed    []AIEmbeddingConfig `json:"embed"`
 }
 
 func (c AIConfig) IsEnabled() bool {
 	if c.Enabled != nil {
 		return *c.Enabled
 	}
-	return c.Provider != "" || c.Model != "" ||
-		len(c.Polish) > 0 || len(c.Generate) > 0 ||
-		len(c.Tagging) > 0 || len(c.Summary) > 0 || len(c.Embed) > 0
-}
-
-func (c AIConfig) IsPolishEnabled() bool {
-	return c.featureEnabled(c.PolishEnabled)
-}
-
-func (c AIConfig) IsGenerateEnabled() bool {
-	return c.featureEnabled(c.GenerateEnabled)
-}
-
-func (c AIConfig) IsTaggingEnabled() bool {
-	return c.featureEnabled(c.TaggingEnabled)
-}
-
-func (c AIConfig) IsSummaryEnabled() bool {
-	return c.featureEnabled(c.SummaryEnabled)
-}
-
-func (c AIConfig) IsEmbedEnabled() bool {
-	return c.featureEnabled(c.EmbedEnabled)
-}
-
-func (c AIConfig) featureEnabled(flag *bool) bool {
-	if !c.IsEnabled() {
-		return false
-	}
-	if c.hasExplicitFeatureFlags() {
-		return flag != nil && *flag
-	}
-	// Backward compatibility: configurations created before feature
-	// switches existed enabled every AI feature through the shared
-	// provider/model defaults.
-	return true
-}
-
-func (c AIConfig) hasExplicitFeatureFlags() bool {
-	return c.PolishEnabled != nil || c.GenerateEnabled != nil ||
-		c.TaggingEnabled != nil || c.SummaryEnabled != nil ||
-		c.EmbedEnabled != nil
+	return c.Provider != "" || c.Model != "" || len(c.Embed) > 0
 }
 
 type AIJobConfig struct {
-	SummaryDelaySeconds   int64 `json:"summary_delay_seconds"`
 	EmbeddingDelaySeconds int64 `json:"embedding_delay_seconds"`
 }
 
@@ -190,7 +137,7 @@ var (
 	errTrailingConfig        = errors.New("config must contain exactly one JSON object")
 	errInvalidLimits         = errors.New("TTL, upload, and text limits must be positive")
 	errInvalidDatabasePool   = errors.New("invalid database pool configuration")
-	errInvalidAIConfig       = errors.New("invalid AI timeout or job delay")
+	errInvalidAIConfig       = errors.New("invalid embedding configuration")
 	errIncompleteMailConfig  = errors.New("mail host, port, and from are required when email registration is enabled")
 	errIncompleteOAuthConfig = errors.New("oauth client id, secret, and redirect URL are required")
 )
@@ -274,14 +221,18 @@ func (c *Config) validateAI() error {
 	if !c.AI.IsEnabled() {
 		return nil
 	}
-	if c.AI.Timeout <= 0 || c.AI.MaxInputChars <= 0 {
+	if c.AIJob.EmbeddingDelaySeconds <= 0 {
 		return errInvalidAIConfig
 	}
-	if c.AI.IsSummaryEnabled() && c.AIJob.SummaryDelaySeconds <= 0 {
-		return errInvalidAIConfig
+	embeddings := c.AI.Embed
+	if len(embeddings) == 0 {
+		embeddings = []AIEmbeddingConfig{{}}
 	}
-	if c.AI.IsEmbedEnabled() && c.AIJob.EmbeddingDelaySeconds <= 0 {
-		return errInvalidAIConfig
+	for _, embedding := range embeddings {
+		resolved := embedding.WithDefaults(c.AI)
+		if strings.TrimSpace(resolved.Provider) == "" || strings.TrimSpace(resolved.Model) == "" {
+			return errInvalidAIConfig
+		}
 	}
 	return nil
 }
@@ -358,15 +309,6 @@ func (c *Config) applyDefaults() {
 }
 
 func (c *Config) applyAIDefaults() {
-	if c.AI.Timeout == 0 {
-		c.AI.Timeout = 30
-	}
-	if c.AI.MaxInputChars == 0 {
-		c.AI.MaxInputChars = 64 * 1024
-	}
-	if c.AIJob.SummaryDelaySeconds == 0 {
-		c.AIJob.SummaryDelaySeconds = 300
-	}
 	if c.AIJob.EmbeddingDelaySeconds == 0 {
 		c.AIJob.EmbeddingDelaySeconds = 300
 	}

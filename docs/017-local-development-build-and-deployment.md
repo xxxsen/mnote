@@ -36,7 +36,7 @@
 - 使用独立 PostgreSQL 数据。
 - 提供可重复使用的本地测试账户或注册路径。
 - 文件使用本地存储目录。
-- AI 默认可关闭，避免启动依赖外部密钥。
+- Embedding 默认关闭，避免启动依赖外部密钥。
 - 日志输出到当前终端，便于定位前后端启动失败。
 
 脚本先等待数据库通过 `pg_isready`，再启动 `go run ./cmd/mnote`。只有后端端口开始接受连接后才启动 Next.js，避免页面已可访问但 API 尚未就绪。后端在就绪前退出或超过等待期限时，启动脚本直接失败。任一关键进程退出时 `wait -n` 结束主脚本，退出 trap 清理本轮记录的前后端进程并停止开发数据库。
@@ -75,7 +75,7 @@ Next.js 开发服务器读取公开 API 环境变量。变量值会进入浏览�
 
 ## 7. 后端开发与构建
 
-Go 服务从配置文件和环境读取数据库、JWT、邮件、存储、AI、CORS 和任务配置。启动顺序为：
+Go 服务从配置文件和环境读取数据库、JWT、邮件、存储、Embedding、CORS 和任务配置。启动顺序为：
 
 1. 解析并校验配置。
 2. 连接数据库并执行迁移。
@@ -92,10 +92,10 @@ readiness 置为失败，再 graceful shutdown HTTP，撤销 Worker context、�
 存储的 `data` 同样拒绝未知字段；local 必须配置 `dir`，S3 必须配置 endpoint、bucket、
 `secret_id` 和 `secret_key`。发布流程应先运行 validate，再连接生产数据库。
 
-AI 是可选依赖。开发环境通过 `"ai": {"enabled": false}` 明确关闭；关闭后不初始化 Provider，也不
-注册 AI 定时任务。生产若启用 AI，应同时显式设置所需的 `polish_enabled`、
-`generate_enabled`、`tagging_enabled`、`summary_enabled` 和 `embed_enabled`，未启用功能的配置
-错误不影响启动。旧配置没有这些开关时仅按兼容规则推断，发布时应补齐显式开关。
+Embedding 是可选依赖。开发环境通过 `"ai": {"enabled": false}` 明确关闭；关闭后不初始化 Provider，
+也不注册 `ai_embedding` 和缓存清理任务。生产若启用，应配置默认 `provider`/`model` 或有序 `embed`
+列表，并保证 `ai_job.embedding_delay_seconds` 为正数。配置采用严格未知字段校验，旧版本的生成、
+润色、标签建议、摘要、feature flag、timeout 和摘要任务参数必须在升级前删除，否则进程拒绝启动。
 
 迁移器只执行 `internal/db/migrations/*.sql`。账本 DDL 位于 `000_schema_migrations.sql`；Go 代码不得
 内联 DDL、探测 legacy 业务结构或补写未执行版本。未管理的非空 schema、checksum 不一致和数据库中

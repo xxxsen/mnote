@@ -27,10 +27,6 @@ type Props = {
   onUndo: () => void;
   onRedo: () => void;
   executeCommand: (command: MarkdownCommand) => void;
-  onAiPolish: () => void;
-  onAiGenerate: () => void;
-  onAiTags: () => void;
-  aiBusy: boolean;
   onColor: (color: string) => void;
   onSize: (size: string) => void;
   onInsertEmoji: (emoji: string) => void;
@@ -72,7 +68,7 @@ export function MobileEditorToolbar(props: Props) {
       <Dialog
         open={moreOpen}
         title="More formatting"
-        description="Additional Markdown, AI, and appearance tools."
+        description="Additional Markdown and appearance tools."
         variant="sheet"
         onClose={closeSheet}
       >
@@ -95,14 +91,6 @@ export function MobileEditorToolbar(props: Props) {
             ["Code block", { kind: "insert", item: "codeBlock" }],
             ["Table", { kind: "insert", item: "table" }],
           ]} run={run} />
-          <section>
-            <h3 className="mb-2 text-xs font-semibold text-muted-foreground">AI</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <Button className="min-h-11" variant="outline" disabled={props.aiBusy} onClick={() => { props.onAiPolish(); closeSheet(); }}>Polish</Button>
-              <Button className="min-h-11" variant="outline" disabled={props.aiBusy} onClick={() => { props.onAiGenerate(); closeSheet(); }}>Generate</Button>
-              <Button className="min-h-11" variant="outline" disabled={props.aiBusy} onClick={() => { props.onAiTags(); closeSheet(); }}>Suggest tags</Button>
-            </div>
-          </section>
           <section>
             <h3 className="mb-2 text-xs font-semibold text-muted-foreground">Appearance</h3>
             <div className="grid grid-cols-2 gap-2">

@@ -14,7 +14,7 @@ import { useImportExport } from "../hooks/useImportExport";
 const mockApiFetch = vi.mocked(apiFetch);
 
 const makeDeps = () => ({
-  fetchSummary: vi.fn().mockResolvedValue(undefined),
+  fetchOverview: vi.fn().mockResolvedValue(undefined),
   fetchTags: vi.fn().mockResolvedValue(undefined),
   fetchSidebarTags: vi.fn().mockResolvedValue(undefined),
   tagSearch: "", toast: vi.fn(),
@@ -406,7 +406,7 @@ describe("useImportExport", () => {
     await act(async () => { await result.current.handleImportFile(file); });
     await act(async () => { await result.current.handleImportConfirm(); });
     expect(result.current.importStep).toBe("done");
-    expect(deps.fetchSummary).toHaveBeenCalled();
+    expect(deps.fetchOverview).toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 

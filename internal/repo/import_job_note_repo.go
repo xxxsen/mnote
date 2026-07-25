@@ -44,7 +44,6 @@ func (r *ImportJobNoteRepo) InsertBatch(ctx context.Context, notes []model.Impor
 			"position":  note.Position,
 			"title":     note.Title,
 			"content":   note.Content,
-			"summary":   note.Summary,
 			"tags_json": string(tagsJSON),
 			"source":    note.Source,
 			"status":    model.ImportNoteStatusPending,
@@ -67,7 +66,7 @@ func (r *ImportJobNoteRepo) NextPending(
 	ctx context.Context, userID, jobID string,
 ) (*model.ImportJobNote, error) {
 	const query = `
-		SELECT id, job_id, user_id, position, title, content, summary,
+		SELECT id, job_id, user_id, position, title, content,
 			tags_json, source, status, target_document_id, result_action,
 			last_error, ctime, mtime
 		FROM import_job_notes
@@ -171,7 +170,7 @@ func scanImportJobNote(scanner interface{ Scan(...any) error }) (*model.ImportJo
 	var targetDocumentID, resultAction sql.NullString
 	if err := scanner.Scan(
 		&note.ID, &note.JobID, &note.UserID, &note.Position,
-		&note.Title, &note.Content, &note.Summary, &tagsJSON, &note.Source,
+		&note.Title, &note.Content, &tagsJSON, &note.Source,
 		&note.Status, &targetDocumentID, &resultAction, &note.LastError,
 		&note.Ctime, &note.Mtime,
 	); err != nil {
@@ -192,7 +191,7 @@ func scanImportJobNote(scanner interface{ Scan(...any) error }) (*model.ImportJo
 
 func (r *ImportJobNoteRepo) ListByJob(ctx context.Context, userID, jobID string) ([]model.ImportJobNote, error) {
 	const query = `
-		SELECT id, job_id, user_id, position, title, content, summary, tags_json, source, ctime
+		SELECT id, job_id, user_id, position, title, content, tags_json, source, ctime
 		FROM import_job_notes
 		WHERE job_id = $1 AND user_id = $2
 		ORDER BY position ASC
@@ -213,7 +212,6 @@ func (r *ImportJobNoteRepo) ListByJob(ctx context.Context, userID, jobID string)
 			&note.Position,
 			&note.Title,
 			&note.Content,
-			&note.Summary,
 			&tagsJSON,
 			&note.Source,
 			&note.Ctime,
@@ -243,7 +241,7 @@ func (
 	error,
 ) {
 	const query = `
-		SELECT id, job_id, user_id, position, title, content, summary, tags_json, source, ctime
+		SELECT id, job_id, user_id, position, title, content, tags_json, source, ctime
 		FROM import_job_notes
 		WHERE job_id = $1 AND user_id = $2
 		ORDER BY position ASC
@@ -265,7 +263,6 @@ func (
 			&note.Position,
 			&note.Title,
 			&note.Content,
-			&note.Summary,
 			&tagsJSON,
 			&note.Source,
 			&note.Ctime,

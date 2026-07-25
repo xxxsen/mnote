@@ -69,13 +69,6 @@ WHERE NOT EXISTS (
     WHERE doc.user_id = rel.user_id AND doc.id = rel.document_id
 )
 UNION ALL
-SELECT 'orphan_summary', COUNT(*)
-FROM document_summaries rel
-WHERE NOT EXISTS (
-    SELECT 1 FROM documents doc
-    WHERE doc.user_id = rel.user_id AND doc.id = rel.document_id
-)
-UNION ALL
 SELECT 'orphan_embedding', COUNT(*)
 FROM document_embeddings rel
 WHERE NOT EXISTS (
@@ -119,10 +112,6 @@ UNION ALL
 SELECT 'invalid_import_note_status', COUNT(*)
 FROM import_job_notes
 WHERE status NOT IN ('pending', 'done', 'failed', 'skipped')
-UNION ALL
-SELECT 'invalid_summary_status', COUNT(*)
-FROM document_summaries
-WHERE status NOT IN ('pending', 'running', 'succeeded', 'failed')
 UNION ALL
 SELECT 'invalid_asset_status', COUNT(*)
 FROM assets

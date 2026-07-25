@@ -173,21 +173,12 @@ generate_config() {
       "dir": "$DEV_DATA_DIR/uploads"
     }
   },
-  "ai_provider": [
-    {
-      "name": "dev-disabled",
-      "type": "openai",
-      "data": {}
-    }
-  ],
   "ai": {
-    "provider": "dev-disabled",
-    "model": "dev-disabled",
-    "polish": [],
-    "generate": [],
-    "tagging": [],
-    "summary": [],
+    "enabled": false,
     "embed": []
+  },
+  "ai_job": {
+    "embedding_delay_seconds": 300
   },
   "oauth": {
     "github": {},

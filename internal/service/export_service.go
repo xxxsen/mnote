@@ -24,37 +24,31 @@ type ExportPayload struct {
 }
 
 type ExportService struct {
-	docs      documentRepo
-	summaries documentSummaryRepo
-	versions  versionRepo
-	tags      tagRepo
-	docTags   documentTagRepo
+	docs     documentRepo
+	versions versionRepo
+	tags     tagRepo
+	docTags  documentTagRepo
 }
 
 type NotesExportItem struct {
 	Title   string   `json:"title"`
 	Content string   `json:"content"`
-	Summary string   `json:"summary,omitempty"`
 	TagList []string `json:"tag_list,omitempty"`
 }
 
 func NewExportService(
 	docs documentRepo,
-	summaries documentSummaryRepo,
 	versions versionRepo,
 	tags tagRepo,
 	docTags documentTagRepo,
 ) *ExportService {
-	return &ExportService{docs: docs, summaries: summaries, versions: versions, tags: tags, docTags: docTags}
+	return &ExportService{docs: docs, versions: versions, tags: tags, docTags: docTags}
 }
 
 func (s *ExportService) Export(ctx context.Context, userID string) (*ExportPayload, error) {
 	docs, err := s.docs.ListAllByUser(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list documents: %w", err)
-	}
-	if err := s.attachSummaries(ctx, userID, docs); err != nil {
-		return nil, fmt.Errorf("attach summaries: %w", err)
 	}
 	versions, err := s.versions.ListByUser(ctx, userID)
 	if err != nil {
@@ -75,9 +69,6 @@ func (s *ExportService) ExportNotesZip(ctx context.Context, userID string) (stri
 	docs, err := s.docs.ListAllByUser(ctx, userID)
 	if err != nil {
 		return "", fmt.Errorf("list documents: %w", err)
-	}
-	if err := s.attachSummaries(ctx, userID, docs); err != nil {
-		return "", fmt.Errorf("attach summaries: %w", err)
 	}
 	tags, err := s.tags.List(ctx, userID)
 	if err != nil {
@@ -151,7 +142,7 @@ func writeExportEntry(
 	}
 	payload := NotesExportItem{
 		Title: doc.Title, Content: doc.Content,
-		Summary: strings.TrimSpace(doc.Summary), TagList: tagList,
+		TagList: tagList,
 	}
 	content, err := json.Marshal(payload)
 	if err != nil {
@@ -165,8 +156,4 @@ func writeExportEntry(
 		return fmt.Errorf("write: %w", err)
 	}
 	return nil
-}
-
-func (s *ExportService) attachSummaries(ctx context.Context, userID string, docs []model.Document) error {
-	return populateDocSummaries(ctx, s.summaries, userID, docs)
 }

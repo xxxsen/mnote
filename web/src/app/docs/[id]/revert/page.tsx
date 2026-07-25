@@ -61,14 +61,14 @@ function useRevertData(
               { signal: controller.signal },
             ),
           ]);
-          const summary = summaries.find((item) => item.id === versionID);
-          if (!summary) {
+          const versionMeta = summaries.find((item) => item.id === versionID);
+          if (!versionMeta) {
             routerRef.current.push(`/docs/${id}`);
             return;
           }
           currentDoc = docResponse.document;
           version = await apiFetch<DocumentVersion>(
-            `/documents/${id}/versions/${summary.version}`,
+            `/documents/${id}/versions/${versionMeta.version}`,
             { signal: controller.signal },
           );
         } else if (versionNumber) {

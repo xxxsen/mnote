@@ -29,7 +29,6 @@ type documentResponse struct {
 	UserID          string `json:"user_id"`
 	Title           string `json:"title"`
 	Content         string `json:"content"`
-	Summary         string `json:"summary"`
 	State           int    `json:"state"`
 	Pinned          int    `json:"pinned"`
 	Starred         int    `json:"starred"`
@@ -46,7 +45,6 @@ func toDocumentResponse(doc model.Document) documentResponse {
 		UserID:          doc.UserID,
 		Title:           doc.Title,
 		Content:         doc.Content,
-		Summary:         doc.Summary,
 		State:           doc.State,
 		Pinned:          doc.Pinned,
 		Starred:         doc.Starred,

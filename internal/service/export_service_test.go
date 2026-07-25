@@ -1,8 +1,11 @@
 package service
 
 import (
+	"archive/zip"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"testing"
 
@@ -14,12 +17,11 @@ import (
 
 func newExportSvc(
 	docs documentRepo,
-	summaries documentSummaryRepo,
 	versions versionRepo,
 	tags tagRepo,
 	docTags documentTagRepo,
 ) *ExportService {
-	return NewExportService(docs, summaries, versions, tags, docTags)
+	return NewExportService(docs, versions, tags, docTags)
 }
 
 func TestExportService_Export(t *testing.T) {
@@ -27,11 +29,6 @@ func TestExportService_Export(t *testing.T) {
 		docs := &mockDocumentRepo{
 			listFn: func(context.Context, string, *int, uint, uint, string) ([]model.Document, error) {
 				return []model.Document{{ID: "d1", Title: "Note"}}, nil
-			},
-		}
-		summaries := &mockDocumentSummaryRepo{
-			listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
-				return map[string]string{"d1": "summary"}, nil
 			},
 		}
 		versions := &mockVersionRepo{
@@ -49,11 +46,10 @@ func TestExportService_Export(t *testing.T) {
 				return []model.DocumentTag{{DocumentID: "d1", TagID: "t1"}}, nil
 			},
 		}
-		svc := newExportSvc(docs, summaries, versions, tags, docTags)
+		svc := newExportSvc(docs, versions, tags, docTags)
 		payload, err := svc.Export(context.Background(), "u1")
 		require.NoError(t, err)
 		assert.Len(t, payload.Documents, 1)
-		assert.Equal(t, "summary", payload.Documents[0].Summary)
 		assert.Len(t, payload.Versions, 1)
 		assert.Len(t, payload.Tags, 1)
 		assert.Len(t, payload.DocTags, 1)
@@ -65,7 +61,7 @@ func TestExportService_Export(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := newExportSvc(docs, nil, nil, nil, nil)
+		svc := newExportSvc(docs, nil, nil, nil)
 		_, err := svc.Export(context.Background(), "u1")
 		assert.Error(t, err)
 	})
@@ -76,17 +72,12 @@ func TestExportService_Export(t *testing.T) {
 				return nil, nil
 			},
 		}
-		summaries := &mockDocumentSummaryRepo{
-			listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
-				return nil, nil
-			},
-		}
 		versions := &mockVersionRepo{
 			listByUserFn: func(context.Context, string) ([]model.DocumentVersion, error) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := newExportSvc(docs, summaries, versions, nil, nil)
+		svc := newExportSvc(docs, versions, nil, nil)
 		_, err := svc.Export(context.Background(), "u1")
 		assert.Error(t, err)
 	})
@@ -94,11 +85,6 @@ func TestExportService_Export(t *testing.T) {
 	t.Run("tags_error", func(t *testing.T) {
 		docs := &mockDocumentRepo{
 			listFn: func(context.Context, string, *int, uint, uint, string) ([]model.Document, error) {
-				return nil, nil
-			},
-		}
-		summaries := &mockDocumentSummaryRepo{
-			listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
 				return nil, nil
 			},
 		}
@@ -112,7 +98,7 @@ func TestExportService_Export(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := newExportSvc(docs, summaries, versions, tags, nil)
+		svc := newExportSvc(docs, versions, tags, nil)
 		_, err := svc.Export(context.Background(), "u1")
 		assert.Error(t, err)
 	})
@@ -128,11 +114,6 @@ func TestExportService_ExportNotesZip(t *testing.T) {
 				}, nil
 			},
 		}
-		summaries := &mockDocumentSummaryRepo{
-			listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
-				return map[string]string{"d1": "s1"}, nil
-			},
-		}
 		tags := &mockTagRepo{
 			listFn: func(context.Context, string) ([]model.Tag, error) {
 				return []model.Tag{{ID: "t1", Name: "go"}}, nil
@@ -143,7 +124,7 @@ func TestExportService_ExportNotesZip(t *testing.T) {
 				return map[string][]string{"d1": {"t1"}}, nil
 			},
 		}
-		svc := newExportSvc(docs, summaries, nil, tags, docTags)
+		svc := newExportSvc(docs, nil, tags, docTags)
 		path, err := svc.ExportNotesZip(context.Background(), "u1")
 		require.NoError(t, err)
 		assert.NotEmpty(t, path)
@@ -152,6 +133,19 @@ func TestExportService_ExportNotesZip(t *testing.T) {
 		info, statErr := os.Stat(path)
 		require.NoError(t, statErr)
 		assert.True(t, info.Size() > 0)
+
+		archive, openErr := zip.OpenReader(path)
+		require.NoError(t, openErr)
+		defer func() { _ = archive.Close() }()
+		require.NotEmpty(t, archive.File)
+		exported, openFileErr := archive.File[0].Open()
+		require.NoError(t, openFileErr)
+		payloadBytes, readErr := io.ReadAll(exported)
+		require.NoError(t, readErr)
+		require.NoError(t, exported.Close())
+		var payload map[string]any
+		require.NoError(t, json.Unmarshal(payloadBytes, &payload))
+		assert.NotContains(t, payload, "summary")
 	})
 
 	t.Run("list_error", func(t *testing.T) {
@@ -160,23 +154,7 @@ func TestExportService_ExportNotesZip(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := newExportSvc(docs, nil, nil, nil, nil)
-		_, err := svc.ExportNotesZip(context.Background(), "u1")
-		assert.Error(t, err)
-	})
-
-	t.Run("summaries_error", func(t *testing.T) {
-		docs := &mockDocumentRepo{
-			listFn: func(context.Context, string, *int, uint, uint, string) ([]model.Document, error) {
-				return []model.Document{{ID: "d1"}}, nil
-			},
-		}
-		summaries := &mockDocumentSummaryRepo{
-			listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
-				return nil, errors.New("db error")
-			},
-		}
-		svc := newExportSvc(docs, summaries, nil, nil, nil)
+		svc := newExportSvc(docs, nil, nil, nil)
 		_, err := svc.ExportNotesZip(context.Background(), "u1")
 		assert.Error(t, err)
 	})
@@ -187,17 +165,12 @@ func TestExportService_ExportNotesZip(t *testing.T) {
 				return nil, nil
 			},
 		}
-		summaries := &mockDocumentSummaryRepo{
-			listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
-				return nil, nil
-			},
-		}
 		tags := &mockTagRepo{
 			listFn: func(context.Context, string) ([]model.Tag, error) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := newExportSvc(docs, summaries, nil, tags, nil)
+		svc := newExportSvc(docs, nil, tags, nil)
 		_, err := svc.ExportNotesZip(context.Background(), "u1")
 		assert.Error(t, err)
 	})
@@ -208,11 +181,6 @@ func TestExportService_ExportNotesZip(t *testing.T) {
 				return []model.Document{{ID: "d1"}}, nil
 			},
 		}
-		summaries := &mockDocumentSummaryRepo{
-			listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
-				return nil, nil
-			},
-		}
 		tags := &mockTagRepo{
 			listFn: func(context.Context, string) ([]model.Tag, error) { return nil, nil },
 		}
@@ -221,7 +189,7 @@ func TestExportService_ExportNotesZip(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		svc := newExportSvc(docs, summaries, nil, tags, docTags)
+		svc := newExportSvc(docs, nil, tags, docTags)
 		_, err := svc.ExportNotesZip(context.Background(), "u1")
 		assert.Error(t, err)
 	})
@@ -235,18 +203,13 @@ func TestExportService_ExportNotesZip(t *testing.T) {
 				}, nil
 			},
 		}
-		summaries := &mockDocumentSummaryRepo{
-			listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
-				return nil, nil
-			},
-		}
 		tags := &mockTagRepo{listFn: func(context.Context, string) ([]model.Tag, error) { return nil, nil }}
 		docTags := &mockDocumentTagRepo{
 			listTagIDsByDocIDsFn: func(context.Context, string, []string) (map[string][]string, error) {
 				return nil, nil
 			},
 		}
-		svc := newExportSvc(docs, summaries, nil, tags, docTags)
+		svc := newExportSvc(docs, nil, tags, docTags)
 		path, err := svc.ExportNotesZip(context.Background(), "u1")
 		require.NoError(t, err)
 		assert.NotEmpty(t, path)
@@ -259,18 +222,13 @@ func TestExportService_ExportNotesZip(t *testing.T) {
 				return []model.Document{{ID: "d1", Title: "", Content: "C"}}, nil
 			},
 		}
-		summaries := &mockDocumentSummaryRepo{
-			listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
-				return nil, nil
-			},
-		}
 		tags := &mockTagRepo{listFn: func(context.Context, string) ([]model.Tag, error) { return nil, nil }}
 		docTags := &mockDocumentTagRepo{
 			listTagIDsByDocIDsFn: func(context.Context, string, []string) (map[string][]string, error) {
 				return nil, nil
 			},
 		}
-		svc := newExportSvc(docs, summaries, nil, tags, docTags)
+		svc := newExportSvc(docs, nil, tags, docTags)
 		path, err := svc.ExportNotesZip(context.Background(), "u1")
 		require.NoError(t, err)
 		assert.NotEmpty(t, path)
@@ -281,11 +239,6 @@ func TestExportService_ExportNotesZip(t *testing.T) {
 func TestExportService_Export_DocTagsError(t *testing.T) {
 	docs := &mockDocumentRepo{
 		listFn: func(context.Context, string, *int, uint, uint, string) ([]model.Document, error) {
-			return nil, nil
-		},
-	}
-	summaries := &mockDocumentSummaryRepo{
-		listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
 			return nil, nil
 		},
 	}
@@ -300,23 +253,7 @@ func TestExportService_Export_DocTagsError(t *testing.T) {
 			return nil, errors.New("db error")
 		},
 	}
-	svc := newExportSvc(docs, summaries, versions, tags, docTags)
-	_, err := svc.Export(context.Background(), "u1")
-	assert.Error(t, err)
-}
-
-func TestExportService_Export_SummaryError(t *testing.T) {
-	docs := &mockDocumentRepo{
-		listFn: func(context.Context, string, *int, uint, uint, string) ([]model.Document, error) {
-			return []model.Document{{ID: "d1"}}, nil
-		},
-	}
-	summaries := &mockDocumentSummaryRepo{
-		listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
-			return nil, errors.New("db error")
-		},
-	}
-	svc := newExportSvc(docs, summaries, nil, nil, nil)
+	svc := newExportSvc(docs, versions, tags, docTags)
 	_, err := svc.Export(context.Background(), "u1")
 	assert.Error(t, err)
 }
@@ -328,7 +265,7 @@ func TestExportService_ConvertMarkdownToConfluenceHTML(t *testing.T) {
 				return &model.Document{ID: "d1", Content: "# Hello\n\nWorld"}, nil
 			},
 		}
-		svc := newExportSvc(docs, nil, nil, nil, nil)
+		svc := newExportSvc(docs, nil, nil, nil)
 		html, err := svc.ConvertMarkdownToConfluenceHTML(context.Background(), "u1", "d1")
 		require.NoError(t, err)
 		assert.Contains(t, html, "Hello")
@@ -340,7 +277,7 @@ func TestExportService_ConvertMarkdownToConfluenceHTML(t *testing.T) {
 				return nil, errors.New("not found")
 			},
 		}
-		svc := newExportSvc(docs, nil, nil, nil, nil)
+		svc := newExportSvc(docs, nil, nil, nil)
 		_, err := svc.ConvertMarkdownToConfluenceHTML(context.Background(), "u1", "d1")
 		assert.Error(t, err)
 	})

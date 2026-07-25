@@ -137,7 +137,7 @@ func TestImportService_Preview(t *testing.T) {
 				return nil, appErr.ErrNotFound
 			},
 		}
-		docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+		docSvc := newDocSvc(docRepo, nil, nil, nil)
 		jobRepo := &mockImportJobRepo{
 			getFn: func(context.Context, string, string) (*model.ImportJob, error) {
 				return &model.ImportJob{
@@ -173,7 +173,7 @@ func TestImportService_Preview(t *testing.T) {
 				return nil, appErr.ErrNotFound
 			},
 		}
-		docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+		docSvc := newDocSvc(docRepo, nil, nil, nil)
 		jobRepo := &mockImportJobRepo{
 			getFn: func(context.Context, string, string) (*model.ImportJob, error) {
 				return &model.ImportJob{ID: "j1", Total: 2, Tags: []string{"go"}}, nil
@@ -247,7 +247,7 @@ func TestImportService_Confirm(t *testing.T) {
 			},
 		}
 		docRepo := &mockDocumentRepo{}
-		docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+		docSvc := newDocSvc(docRepo, nil, nil, nil)
 		svc := NewImportService(docSvc, nil, jobRepo, noteRepo, testRuntime())
 		err := svc.Confirm(context.Background(), "u1", "j1", "")
 		require.NoError(t, err)
@@ -336,7 +336,7 @@ func TestImportService_AppendSuffix(t *testing.T) {
 			return nil, appErr.ErrNotFound
 		},
 	}
-	docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+	docSvc := newDocSvc(docRepo, nil, nil, nil)
 	svc := &ImportService{documents: docSvc}
 	result := svc.appendSuffix(context.Background(), "u1", "Note")
 	assert.Equal(t, "Note (3)", result)
@@ -348,7 +348,7 @@ func TestImportService_AppendSuffix_Empty(t *testing.T) {
 			return nil, appErr.ErrNotFound
 		},
 	}
-	docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+	docSvc := newDocSvc(docRepo, nil, nil, nil)
 	svc := &ImportService{documents: docSvc}
 	result := svc.appendSuffix(context.Background(), "u1", "")
 	assert.Equal(t, "Untitled (2)", result)
@@ -361,7 +361,7 @@ func TestImportService_LookupByTitle(t *testing.T) {
 				return &model.Document{ID: "d1"}, nil
 			},
 		}
-		docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+		docSvc := newDocSvc(docRepo, nil, nil, nil)
 		svc := &ImportService{documents: docSvc}
 		id, found, err := svc.lookupByTitle(context.Background(), "u1", "Note")
 		require.NoError(t, err)
@@ -375,7 +375,7 @@ func TestImportService_LookupByTitle(t *testing.T) {
 				return nil, appErr.ErrNotFound
 			},
 		}
-		docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+		docSvc := newDocSvc(docRepo, nil, nil, nil)
 		svc := &ImportService{documents: docSvc}
 		_, found, err := svc.lookupByTitle(context.Background(), "u1", "Note")
 		require.NoError(t, err)
@@ -388,7 +388,7 @@ func TestImportService_LookupByTitle(t *testing.T) {
 				return nil, errors.New("db error")
 			},
 		}
-		docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+		docSvc := newDocSvc(docRepo, nil, nil, nil)
 		svc := &ImportService{documents: docSvc}
 		_, _, err := svc.lookupByTitle(context.Background(), "u1", "Note")
 		assert.Error(t, err)
@@ -402,7 +402,7 @@ func TestImportService_ResolveExisting(t *testing.T) {
 				return nil, appErr.ErrNotFound
 			},
 		}
-		docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+		docSvc := newDocSvc(docRepo, nil, nil, nil)
 		svc := &ImportService{documents: docSvc}
 		id, exists, err := svc.resolveExisting(context.Background(), "u1", "Note", "append")
 		require.NoError(t, err)
@@ -416,7 +416,7 @@ func TestImportService_ResolveExisting(t *testing.T) {
 				return &model.Document{ID: "d1"}, nil
 			},
 		}
-		docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+		docSvc := newDocSvc(docRepo, nil, nil, nil)
 		svc := &ImportService{documents: docSvc}
 		id, exists, err := svc.resolveExisting(context.Background(), "u1", "Note", "skip")
 		require.NoError(t, err)
@@ -511,7 +511,7 @@ func TestImportService_CreateNotesJob(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		zipPath := createTestZipWithJSON(t, map[string]notesImportPayload{
 			"note1.json": {Title: "Note 1", Content: "Hello", TagList: []string{"go"}},
-			"note2.json": {Title: "Note 2", Content: "World", Summary: "A note"},
+			"note2.json": {Title: "Note 2", Content: "World"},
 		})
 		defer func() { _ = os.Remove(zipPath) }()
 
@@ -531,6 +531,38 @@ func TestImportService_CreateNotesJob(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, model.ImportStatusReady, job.Status)
 		assert.Equal(t, 2, job.Total)
+	})
+
+	t.Run("legacy_summary_field_is_ignored", func(t *testing.T) {
+		zipPath := createTestZipWithMD(t, map[string]string{
+			"legacy.json": `{
+				"title": "Legacy note",
+				"content": "Body remains intact",
+				"summary": "must not be imported",
+				"tag_list": ["go"]
+			}`,
+		})
+		defer func() { _ = os.Remove(zipPath) }()
+
+		jobRepo := &mockImportJobRepo{
+			createFn:        func(context.Context, *model.ImportJob) error { return nil },
+			updateSummaryFn: func(context.Context, *model.ImportJob) error { return nil },
+			deleteFn:        func(context.Context, string, string) error { return nil },
+		}
+		noteRepo := &mockImportJobNoteRepo{
+			insertBatchFn: func(_ context.Context, notes []model.ImportJobNote) error {
+				require.Len(t, notes, 1)
+				assert.Equal(t, "Legacy note", notes[0].Title)
+				assert.Equal(t, "Body remains intact", notes[0].Content)
+				assert.Equal(t, []string{"go"}, notes[0].Tags)
+				return nil
+			},
+		}
+
+		svc := NewImportService(nil, nil, jobRepo, noteRepo, testRuntime())
+		job, err := svc.CreateNotesJob(context.Background(), "u1", zipPath)
+		require.NoError(t, err)
+		assert.Equal(t, model.ImportStatusReady, job.Status)
 	})
 
 	t.Run("invalid_json", func(t *testing.T) {
@@ -566,15 +598,6 @@ func TestImportService_RunImport(t *testing.T) {
 				return nil, appErr.ErrNotFound
 			},
 		}
-		summaries := &mockDocumentSummaryRepo{
-			upsertFn: func(context.Context, string, string, string, int64) error { return nil },
-			getByDocIDFn: func(context.Context, string, string) (string, error) {
-				return "", appErr.ErrNotFound
-			},
-			listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
-				return nil, nil
-			},
-		}
 		versions := &mockVersionRepo{
 			createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
 			deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
@@ -583,7 +606,7 @@ func TestImportService_RunImport(t *testing.T) {
 			deleteByDocFn: func(context.Context, string, string) error { return nil },
 			addFn:         func(context.Context, *model.DocumentTag) error { return nil },
 		}
-		docSvc := newDocSvc(docRepo, summaries, versions, tags, nil)
+		docSvc := newDocSvc(docRepo, versions, tags, nil)
 
 		var finalStatus string
 		jobRepo := &mockImportJobRepo{
@@ -615,7 +638,7 @@ func TestImportService_RunImport(t *testing.T) {
 				return &model.Document{ID: "d1"}, nil
 			},
 		}
-		docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+		docSvc := newDocSvc(docRepo, nil, nil, nil)
 
 		var report *model.ImportReport
 		jobRepo := &mockImportJobRepo{
@@ -678,15 +701,6 @@ func TestImportService_OverwriteNote(t *testing.T) {
 			updateFn:      func(context.Context, *model.Document) error { return nil },
 			updateLinksFn: func(context.Context, string, string, []string, int64) error { return nil },
 		}
-		summaries := &mockDocumentSummaryRepo{
-			upsertFn: func(context.Context, string, string, string, int64) error { return nil },
-			getByDocIDFn: func(context.Context, string, string) (string, error) {
-				return "", appErr.ErrNotFound
-			},
-			listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) {
-				return nil, nil
-			},
-		}
 		versions := &mockVersionRepo{
 			createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
 			deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
@@ -695,11 +709,11 @@ func TestImportService_OverwriteNote(t *testing.T) {
 			deleteByDocFn: func(context.Context, string, string) error { return nil },
 			addFn:         func(context.Context, *model.DocumentTag) error { return nil },
 		}
-		docSvc := newDocSvc(docRepo, summaries, versions, dtags, nil)
+		docSvc := newDocSvc(docRepo, versions, dtags, nil)
 		svc := &ImportService{documents: docSvc}
 
 		prog := &importProgress{report: &model.ImportReport{}, job: &model.ImportJob{UserID: "u1"}}
-		note := model.ImportJobNote{Title: "Note", Content: "updated", Summary: "sum"}
+		note := model.ImportJobNote{Title: "Note", Content: "updated"}
 		svc.overwriteNote(context.Background(), prog.job, "d1", note, []string{"t1"}, prog)
 		assert.Equal(t, 1, prog.report.Updated)
 	})
@@ -708,7 +722,7 @@ func TestImportService_OverwriteNote(t *testing.T) {
 		docRepo := &mockDocumentRepo{
 			updateFn: func(context.Context, *model.Document) error { return errors.New("db fail") },
 		}
-		docSvc := newDocSvc(docRepo, nil, nil, nil, nil)
+		docSvc := newDocSvc(docRepo, nil, nil, nil)
 		svc := &ImportService{documents: docSvc}
 
 		prog := &importProgress{report: &model.ImportReport{}, job: &model.ImportJob{UserID: "u1"}}
@@ -726,11 +740,6 @@ func TestImportService_ImportNote_Overwrite(t *testing.T) {
 		updateFn:      func(context.Context, *model.Document) error { return nil },
 		updateLinksFn: func(context.Context, string, string, []string, int64) error { return nil },
 	}
-	summaries := &mockDocumentSummaryRepo{
-		upsertFn:       func(context.Context, string, string, string, int64) error { return nil },
-		getByDocIDFn:   func(context.Context, string, string) (string, error) { return "", appErr.ErrNotFound },
-		listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) { return nil, nil },
-	}
 	versions := &mockVersionRepo{
 		createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
 		deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
@@ -739,7 +748,7 @@ func TestImportService_ImportNote_Overwrite(t *testing.T) {
 		deleteByDocFn: func(context.Context, string, string) error { return nil },
 		addFn:         func(context.Context, *model.DocumentTag) error { return nil },
 	}
-	docSvc := newDocSvc(docRepo, summaries, versions, dtags, nil)
+	docSvc := newDocSvc(docRepo, versions, dtags, nil)
 
 	tagRepo := &mockTagRepo{
 		listByNamesFn: func(context.Context, string, []string) ([]model.Tag, error) {
@@ -822,7 +831,7 @@ func TestImportService_Preview_Errors(t *testing.T) {
 				return nil, appErr.ErrNotFound
 			},
 		}
-		docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+		docSvc := newDocSvc(docRepo, nil, nil, nil)
 		jobRepo := &mockImportJobRepo{
 			getFn: func(context.Context, string, string) (*model.ImportJob, error) {
 				return &model.ImportJob{ID: "j1", Total: 1, Tags: []string{"go"}}, nil
@@ -847,7 +856,7 @@ func TestImportService_Preview_Errors(t *testing.T) {
 				return nil, appErr.ErrNotFound
 			},
 		}
-		docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+		docSvc := newDocSvc(docRepo, nil, nil, nil)
 		jobRepo := &mockImportJobRepo{
 			getFn: func(context.Context, string, string) (*model.ImportJob, error) {
 				return &model.ImportJob{ID: "j1", Total: 1, Tags: []string{}}, nil
@@ -943,11 +952,6 @@ func TestImportService_ImportNote_AppendExisting(t *testing.T) {
 		createFn:      func(context.Context, *model.Document) error { return nil },
 		updateLinksFn: func(context.Context, string, string, []string, int64) error { return nil },
 	}
-	summaries := &mockDocumentSummaryRepo{
-		upsertFn:       func(context.Context, string, string, string, int64) error { return nil },
-		getByDocIDFn:   func(context.Context, string, string) (string, error) { return "", appErr.ErrNotFound },
-		listByDocIDsFn: func(context.Context, string, []string) (map[string]string, error) { return nil, nil },
-	}
 	versions := &mockVersionRepo{
 		createFn:            func(context.Context, *model.DocumentVersion) error { return nil },
 		deleteOldVersionsFn: func(context.Context, string, string, int) error { return nil },
@@ -955,7 +959,7 @@ func TestImportService_ImportNote_AppendExisting(t *testing.T) {
 	dtags := &mockDocumentTagRepo{
 		deleteByDocFn: func(context.Context, string, string) error { return nil },
 	}
-	docSvc := newDocSvc(docRepo, summaries, versions, dtags, nil)
+	docSvc := newDocSvc(docRepo, versions, dtags, nil)
 	tagSvc := NewTagService(testRuntime(), &mockTagRepo{
 		listByNamesFn: func(context.Context, string, []string) ([]model.Tag, error) { return nil, nil },
 		createBatchFn: func(_ context.Context, tags []model.Tag) error {
@@ -983,7 +987,7 @@ func TestImportService_ImportNote_LookupError(t *testing.T) {
 			return nil, errors.New("db error")
 		},
 	}
-	docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+	docSvc := newDocSvc(docRepo, nil, nil, nil)
 	svc := NewImportService(docSvc, nil, nil, nil, testRuntime())
 	prog := &importProgress{
 		report:  &model.ImportReport{},
@@ -1002,7 +1006,7 @@ func TestImportService_ImportNote_CreateError(t *testing.T) {
 		},
 		createFn: func(context.Context, *model.Document) error { return errors.New("fail") },
 	}
-	docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+	docSvc := newDocSvc(docRepo, nil, nil, nil)
 	tagSvc := NewTagService(testRuntime(), &mockTagRepo{
 		listByNamesFn: func(context.Context, string, []string) ([]model.Tag, error) { return nil, nil },
 		createBatchFn: func(context.Context, []model.Tag) error { return nil },
@@ -1024,7 +1028,7 @@ func TestImportService_ImportNote_EnsureTagsError(t *testing.T) {
 			return nil, appErr.ErrNotFound
 		},
 	}
-	docSvc := newDocSvc(docRepo, noopSummaryRepo(), nil, nil, nil)
+	docSvc := newDocSvc(docRepo, nil, nil, nil)
 	tagSvc := NewTagService(testRuntime(), &mockTagRepo{
 		listByNamesFn: func(context.Context, string, []string) ([]model.Tag, error) {
 			return nil, errors.New("db error")

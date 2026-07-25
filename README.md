@@ -1,6 +1,6 @@
 # MNote
 
-MNote 是一个 AI 增强的现代化 Markdown 笔记系统，采用 Go + Next.js 构建。除了完备的笔记管理能力外，它集成了语义搜索、内容润色、自动摘要等 AI 功能，让写作与知识管理更加高效。
+MNote 是一个现代化 Markdown 笔记系统，采用 Go + Next.js 构建。除了完备的笔记管理能力外，它通过 Embedding 提供语义搜索和相似笔记发现，让知识检索更加高效。
 
 ---
 
@@ -16,14 +16,11 @@ MNote 是一个 AI 增强的现代化 Markdown 笔记系统，采用 Go + Next.j
 - 版本控制：自动记录变更历史，支持查看与回滚任意版本
 - 快速跳转 (Quick Open)：全局搜索并快速切换笔记
 
-### AI 能力
+### Embedding 与语义检索
 
 - **语义搜索**：基于 `pgvector` 向量索引，支持跨语言的上下文意图搜索
-- **内容润色**：一键优化文章表达质量
-- **自动摘要与标签推荐**：后台异步生成，编辑后自动触发
-- **内容生成**：基于 Prompt 的续写与创作
 - **相似笔记推荐**：基于向量相似度自动推荐关联内容
-- **多模型支持**：原生集成 Gemini、OpenRouter、OpenAI 兼容接口，可按功能独立配置模型
+- **多 Provider 支持**：原生集成 Gemini、OpenRouter、OpenAI 兼容接口，可配置 Embedding 模型故障切换
 
 ### 分享与协作
 
@@ -61,7 +58,7 @@ MNote 是一个 AI 增强的现代化 Markdown 笔记系统，采用 Go + Next.j
 |------|------|
 | 后端 | Go 1.24, Gin, PostgreSQL + pgvector, sqlx, JWT, Uber-zap |
 | 前端 | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, CodeMirror |
-| AI | Gemini SDK, OpenRouter, OpenAI 兼容接口 |
+| Embedding | Gemini SDK, OpenRouter, OpenAI 兼容接口 |
 | 测试 | Go testing + sqlmock（后端覆盖率 >= 80%），Vitest + Testing Library（Web 覆盖率 >= 30%，聚焦关键路径） |
 | CI/CD | GitHub Actions (lint / build / test, Docker 镜像自动发布) |
 | 部署 | Docker, Docker Compose, Nginx 反向代理 |
@@ -89,7 +86,7 @@ cd mnote
 cd docker/mnote
 # 修改 config.json，至少更新以下字段：
 #   - jwt_secret: 替换为你自己的密钥
-#   - ai_provider: 填入对应的 API Key 以启用 AI 功能
+#   - ai_provider: 填入对应的 API Key 以启用 Embedding 与语义检索
 #   - mail: 如需邮箱注册，配置 SMTP 信息
 ```
 
@@ -115,9 +112,9 @@ docker compose up -d
 
 ## 配置说明
 
-### AI 配置
+### Embedding 配置
 
-`ai_provider` 数组定义可用的 AI 供应商，`ai` 对象按功能指定使用哪个供应商和模型：
+`ai_provider` 数组定义可用的 Embedding 供应商，`ai` 对象指定默认供应商、模型和故障切换顺序：
 
 ```json
 {
@@ -128,20 +125,18 @@ docker compose up -d
   "ai": {
     "enabled": true,
     "provider": "gemini",
-    "model": "gemini-1.5-flash",
-    "polish_enabled": true,
-    "generate_enabled": true,
-    "embed_enabled": true,
-    "polish": [{ "provider": "openrouter", "model": "anthropic/claude-3.5-sonnet" }],
+    "model": "text-embedding-004",
     "embed": [{ "provider": "gemini", "model": "text-embedding-004" }]
+  },
+  "ai_job": {
+    "embedding_delay_seconds": 300
   }
 }
 ```
 
-`enabled` 可整体关闭 AI；任意一个 `*_enabled` 开关出现后，仅显式设为 `true`
-的功能会启用。各 AI 功能 (polish / generate / tagging / summary / embed) 均可独立
-配置供应商与模型，未指定时使用顶层默认配置。未启用的功能不会初始化 Provider，
-也不会注册对应的后台任务。
+`enabled` 是 Embedding 总开关。`embed` 中每一项未指定的字段会继承顶层
+`provider` / `model`；列表顺序同时也是 Provider 故障切换顺序。关闭后不会初始化
+Embedding Provider，也不会注册向量同步后台任务。
 
 ### OAuth 配置
 
@@ -192,7 +187,7 @@ make dev
 可通过 `MNOTE_DEV_WEB_PORT`、`MNOTE_DEV_BACKEND_PORT`、`MNOTE_DEV_DB_PORT` 覆盖端口；
 通过 `make dev CONFIG=path/to/config.json` 使用自定义配置。自定义外部数据库时可设置
 `MNOTE_DEV_SKIP_DB=1`，需要退出后保留开发数据库进程时可设置
-`MNOTE_DEV_KEEP_DB=1`。自动生成的开发配置不启用真实 AI provider，AI 功能需要使用
+`MNOTE_DEV_KEEP_DB=1`。自动生成的开发配置不启用真实 Embedding Provider，语义检索需要使用
 自定义配置。
 
 ### 后端
@@ -252,7 +247,7 @@ cd web && npm run lint && npx tsc --noEmit && npm run test:coverage
 mnote/
   cmd/mnote/             后端服务入口
   internal/
-    ai/                  AI 供应商适配层 (Gemini / OpenRouter / OpenAI)
+    ai/                  Embedding 供应商适配层 (Gemini / OpenRouter / OpenAI)
     config/              配置加载与解析
     db/                  数据库初始化与迁移
     embedcache/          向量嵌入缓存

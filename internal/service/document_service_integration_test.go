@@ -18,7 +18,6 @@ func TestDocumentServiceVersioningAndDelete(t *testing.T) {
 	defer cleanup()
 
 	docRepo := repo.NewDocumentRepo(db)
-	summaryRepo := repo.NewDocumentSummaryRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
@@ -27,7 +26,7 @@ func TestDocumentServiceVersioningAndDelete(t *testing.T) {
 	runtime := service.NewRuntime(repo.NewTransactor(db))
 
 	docs := service.NewDocumentService(
-		runtime, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo,
+		runtime, docRepo, versionRepo, docTagRepo, shareRepo,
 		tagRepo, userRepo, nil, 10, nil)
 
 	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})
@@ -55,7 +54,6 @@ func TestDocumentServiceShareState(t *testing.T) {
 	defer cleanup()
 
 	docRepo := repo.NewDocumentRepo(db)
-	summaryRepo := repo.NewDocumentSummaryRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
@@ -64,7 +62,7 @@ func TestDocumentServiceShareState(t *testing.T) {
 	runtime := service.NewRuntime(repo.NewTransactor(db))
 
 	docs := service.NewDocumentService(
-		runtime, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo,
+		runtime, docRepo, versionRepo, docTagRepo, shareRepo,
 		tagRepo, userRepo, nil, 10, nil)
 
 	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})
@@ -89,7 +87,6 @@ func TestDocumentServiceShareComments(t *testing.T) {
 	defer cleanup()
 
 	docRepo := repo.NewDocumentRepo(db)
-	summaryRepo := repo.NewDocumentSummaryRepo(db)
 	versionRepo := repo.NewVersionRepo(db)
 	docTagRepo := repo.NewDocumentTagRepo(db)
 	shareRepo := repo.NewShareRepo(db)
@@ -98,7 +95,7 @@ func TestDocumentServiceShareComments(t *testing.T) {
 	runtime := service.NewRuntime(repo.NewTransactor(db))
 
 	docs := service.NewDocumentService(
-		runtime, docRepo, summaryRepo, versionRepo, docTagRepo, shareRepo,
+		runtime, docRepo, versionRepo, docTagRepo, shareRepo,
 		tagRepo, userRepo, nil, 10, nil)
 
 	doc, err := docs.Create(context.Background(), "user-1", service.DocumentCreateInput{Title: "t1", Content: "c1"})

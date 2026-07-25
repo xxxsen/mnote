@@ -16,17 +16,18 @@ MNote 是一个由 Go 后端和 Next.js 前端组成的自托管笔记系统。�
 
 ### 2.2 后端
 
-- `cmd/mnote` 是 HTTP 服务入口，负责加载配置、数据库、存储、AI Provider、定时任务和 Gin 路由。
+- `cmd/mnote` 是 HTTP 服务入口，负责加载配置、数据库、存储、Embedding Provider、定时任务和 Gin 路由。
 - `internal/handler` 负责 HTTP 入参、鉴权上下文、响应转换，不承载数据一致性规则。
 - `internal/service` 负责业务流程、事务边界、并发控制和跨仓储协调。
 - `internal/repo` 负责 PostgreSQL 查询，所有用户数据查询必须带用户范围。
 - `internal/model` 定义持久化和服务层使用的数据结构。
-- `internal/pkg` 提供 JWT、业务错误、邮件、文件存储、AI 客户端等基础能力。
+- `internal/pkg` 提供 JWT、业务错误、邮件和通用基础能力；Embedding Provider 位于 `internal/ai`。
 - `internal/db/migrations` 存放嵌入二进制的 SQL 迁移；服务启动时在迁移锁保护下执行。
 
 文档业务对外仍由一个 `DocumentService` 组合，但实现按用途拆分为 core 查询、
 `document_write_service.go`、`document_version_service.go`、`document_share_service.go` 和
-`document_summary_service.go`。Template、Import 和 Handler 只依赖各自使用的窄接口；禁止重新
+`document_overview_service.go`。Overview 只聚合首页所需的 recent、tag counts 和总量，不保存文档
+内容摘要。Template、Import 和 Handler 只依赖各自使用的窄接口；禁止重新
 引入运行期 setter、nil transaction fallback 或让一个 Handler 依赖全部文档能力。
 
 ### 2.3 数据与外部依赖
@@ -34,7 +35,8 @@ MNote 是一个由 Go 后端和 Next.js 前端组成的自托管笔记系统。�
 - PostgreSQL 是唯一业务事实源。
 - `pgvector` 保存文档分块向量，支持语义搜索；`pgcrypto` 支持数据库侧随机能力。
 - 文件可保存在本地目录或 S3 兼容对象存储中，数据库中的资产记录负责建立用户归属和文档引用关系。
-- AI 能力通过可配置 Provider 组提供。AI 不可用时，基础笔记功能仍应正常运行。
+- Embedding 通过可配置 Provider 组提供，只用于异步索引、语义搜索和相似文档。Provider 不可用时，
+  基础笔记功能仍应正常运行。
 - 前端开发服务器只负责页面和静态资源；业务请求直接访问配置的后端地址。
 
 ## 3. 页面与功能映射
@@ -46,7 +48,7 @@ MNote 是一个由 Go 后端和 Next.js 前端组成的自托管笔记系统。�
 | 注册 | `/register` | 邮箱验证码注册、注册开关约束 |
 | OAuth 回调 | `/oauth/callback` | Provider 回调码换取一次性交换码并完成登录 |
 | 文档库 | `/docs` | 文档分页、搜索、筛选、置顶、收藏、分享列表、创建、导入导出 |
-| 双栏编辑器 | `/docs/[id]` | Markdown 编辑、预览、保存、草稿、标签、AI、分享、关联文档 |
+| 双栏编辑器 | `/docs/[id]` | Markdown 编辑、预览、保存、草稿、标签、分享、语义相似文档、关联文档 |
 | 版本恢复 | `/docs/[id]/revert` | 历史版本对比、差异导航、恢复确认 |
 | 标签 | `/tags` | 标签汇总、搜索、分页和删除 |
 | 待办 | `/todos` | 无限月份日历、按日查看、待办增删改和完成状态 |
@@ -72,8 +74,8 @@ MNote 是一个由 Go 后端和 Next.js 前端组成的自托管笔记系统。�
 1. 编辑器维护本地内容、远端已确认内容和递增保存序号。
 2. 保存队列保证同一页面只有一个在途写入，并只保留最新待保存内容。
 3. 后端在事务内锁定文档，只有更大的保存序号可以更新内容。
-4. 同一事务写入文档版本、摘要或标签变更、文档链接、资产引用，并把向量状态标记为待处理。
-5. 后台任务异步生成分块和向量；保存成功不依赖 AI 完成。
+4. 同一事务写入文档版本、标签变更、文档链接、资产引用，并把向量状态标记为待处理。
+5. 后台任务异步生成原文分块和向量；保存成功不依赖 Embedding Provider 完成。
 
 ### 4.3 公开分享链路
 
@@ -86,7 +88,7 @@ MNote 是一个由 Go 后端和 Next.js 前端组成的自托管笔记系统。�
 
 - 用户资源隔离必须在后端查询条件中实现，不能依赖前端不展示其他用户数据。
 - 文档正文、版本、标签关系、链接关系、资产关系和向量待处理状态必须在一个事务中保持一致。
-- AI、邮件、对象存储等可选依赖不可阻断与它们无关的基础页面。
+- Embedding、邮件、对象存储等可选依赖不可阻断与它们无关的基础页面。
 - 公开分享接口不能复用需要登录的文档详情接口；分享 Token 是公开访问的唯一资源范围。
 - 前端对异步写入必须处理重复触发、过期响应、失败回滚或可恢复草稿。
 - 正式行为发生变化时，代码修改必须同步更新对应 `docs/` 文档。

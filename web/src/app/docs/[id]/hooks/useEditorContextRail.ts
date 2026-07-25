@@ -7,7 +7,7 @@ import { EDITOR_CONTEXT_RAIL_COLLAPSED_KEY } from "../constants";
 export const CONTEXT_RAIL_DOCK_MIN_WIDTH = 1280;
 
 export type EditorContextView = "outline" | "details";
-export type EditorDetailsTab = "summary" | "history" | "share";
+export type EditorDetailsTab = "history" | "share";
 
 type RailState = {
   scopeKey: string;
@@ -20,7 +20,7 @@ function createDefaultState(scopeKey: string): RailState {
   return {
     scopeKey,
     view: "outline",
-    detailsTab: "summary",
+    detailsTab: "history",
     drawerOpen: false,
   };
 }
@@ -109,7 +109,7 @@ export function useEditorContextRail(docId: string) {
       openOutline();
       return;
     }
-    openDetails("summary");
+    openDetails("history");
   }, [
     collapsed,
     current.drawerOpen,

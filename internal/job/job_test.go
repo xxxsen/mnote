@@ -22,18 +22,6 @@ func (m *mockEmbeddingProcessor) ProcessPendingEmbeddings(
 	return m.err
 }
 
-type mockSummaryProcessor struct {
-	err       error
-	callCount int
-}
-
-func (m *mockSummaryProcessor) ProcessPendingSummaries(
-	_ context.Context, _ int64,
-) error {
-	m.callCount++
-	return m.err
-}
-
 type mockExpiryCleaner struct {
 	deleted   int64
 	err       error
@@ -72,33 +60,6 @@ func TestAIEmbeddingJob_Run_Error(t *testing.T) {
 	err := j.Run(context.Background())
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "process pending embeddings")
-}
-
-// --- AISummaryJob ---
-
-func TestAISummaryJob_Name(t *testing.T) {
-	j := NewAISummaryJob(nil, 0)
-	assert.Equal(t, "ai_summary", j.Name())
-}
-
-func TestAISummaryJob_Run_NilDocuments(t *testing.T) {
-	j := NewAISummaryJob(nil, 60)
-	assert.NoError(t, j.Run(context.Background()))
-}
-
-func TestAISummaryJob_Run_Success(t *testing.T) {
-	m := &mockSummaryProcessor{}
-	j := NewAISummaryJob(m, 300)
-	require.NoError(t, j.Run(context.Background()))
-	assert.Equal(t, 1, m.callCount)
-}
-
-func TestAISummaryJob_Run_Error(t *testing.T) {
-	m := &mockSummaryProcessor{err: errors.New("summary fail")}
-	j := NewAISummaryJob(m, 300)
-	err := j.Run(context.Background())
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "process pending summaries")
 }
 
 // --- EmbeddingCacheCleanupJob ---

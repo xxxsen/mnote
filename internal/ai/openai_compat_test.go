@@ -37,58 +37,6 @@ func (f *fakeHTTPDoer) doRequest(ctx context.Context, endpoint string, body any)
 
 func (f *fakeHTTPDoer) close() { f.server.Close() }
 
-func TestChatGenerate_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		resp := chatResponse{
-			Choices: []struct {
-				Message struct {
-					Content string `json:"content"`
-				} `json:"message"`
-			}{{Message: struct {
-				Content string `json:"content"`
-			}{Content: "hello world"}}},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer srv.Close()
-
-	doer := newFakeDoer()
-	defer doer.close()
-
-	result, err := chatGenerate(context.Background(), doer, srv.URL, "model", "prompt")
-	require.NoError(t, err)
-	assert.Equal(t, "hello world", result)
-}
-
-func TestChatGenerate_NoChoices(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[]}`))
-	}))
-	defer srv.Close()
-
-	doer := newFakeDoer()
-	defer doer.close()
-
-	_, err := chatGenerate(context.Background(), doer, srv.URL, "model", "prompt")
-	assert.ErrorIs(t, err, ErrNoChoices)
-}
-
-func TestChatGenerate_HTTPError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("server error"))
-	}))
-	defer srv.Close()
-
-	doer := newFakeDoer()
-	defer doer.close()
-
-	_, err := chatGenerate(context.Background(), doer, srv.URL, "model", "prompt")
-	assert.ErrorIs(t, err, ErrRequestFailed)
-}
-
 func TestEmbedText_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		resp := embedResponse{
@@ -156,12 +104,6 @@ func TestOpenAIProvider_Factory_NilConfig(t *testing.T) {
 	assert.ErrorIs(t, err, ErrConfigRequired)
 }
 
-func TestOpenAIProvider_Generate_NoKey(t *testing.T) {
-	p := &openAIProvider{apiKey: "", baseURL: "http://localhost"}
-	_, err := p.Generate(context.Background(), "model", "prompt")
-	assert.ErrorIs(t, err, ErrUnavailable)
-}
-
 func TestOpenAIProvider_Embed_NoKey(t *testing.T) {
 	p := &openAIProvider{apiKey: "", baseURL: "http://localhost"}
 	_, err := p.Embed(context.Background(), "model", "text", "search")
@@ -200,12 +142,6 @@ func TestOpenRouterProvider_Factory_CustomBaseURL(t *testing.T) {
 	assert.Equal(t, "https://custom.endpoint", or.baseURL)
 }
 
-func TestOpenRouterProvider_Generate_NoKey(t *testing.T) {
-	p := &openrouterProvider{apiKey: ""}
-	_, err := p.Generate(context.Background(), "model", "prompt")
-	assert.ErrorIs(t, err, ErrUnavailable)
-}
-
 func TestOpenRouterProvider_Embed_NoKey(t *testing.T) {
 	p := &openrouterProvider{apiKey: ""}
 	_, err := p.Embed(context.Background(), "model", "text", "search")
@@ -221,12 +157,6 @@ func TestGeminiProvider_Factory(t *testing.T) {
 func TestGeminiProvider_Factory_NilConfig(t *testing.T) {
 	_, err := createGeminiFactory(nil)
 	assert.ErrorIs(t, err, ErrConfigRequired)
-}
-
-func TestGeminiProvider_Generate_NoKey(t *testing.T) {
-	p := &geminiProvider{apiKey: ""}
-	_, err := p.Generate(context.Background(), "model", "prompt")
-	assert.ErrorIs(t, err, ErrUnavailable)
 }
 
 func TestGeminiProvider_Embed_NoKey(t *testing.T) {
@@ -258,28 +188,6 @@ func TestNewProvider_Registered(t *testing.T) {
 	assert.Equal(t, "openai", p.Name())
 }
 
-func TestOpenAIProvider_Generate_WithServer(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		resp := chatResponse{
-			Choices: []struct {
-				Message struct {
-					Content string `json:"content"`
-				} `json:"message"`
-			}{{Message: struct {
-				Content string `json:"content"`
-			}{Content: "result"}}},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer srv.Close()
-
-	p := &openAIProvider{apiKey: "test-key", baseURL: srv.URL}
-	result, err := p.Generate(context.Background(), "model", "prompt")
-	require.NoError(t, err)
-	assert.Equal(t, "result", result)
-}
-
 func TestOpenAIProvider_Embed_WithServer(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		resp := embedResponse{
@@ -296,21 +204,6 @@ func TestOpenAIProvider_Embed_WithServer(t *testing.T) {
 	result, err := p.Embed(context.Background(), "model", "text", "search")
 	require.NoError(t, err)
 	assert.Equal(t, []float32{0.5}, result)
-}
-
-func TestChatGenerate_DecodeError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`not json`))
-	}))
-	defer srv.Close()
-
-	doer := newFakeDoer()
-	defer doer.close()
-
-	_, err := chatGenerate(context.Background(), doer, srv.URL, "model", "prompt")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "decode")
 }
 
 func TestEmbedText_DecodeError(t *testing.T) {
@@ -414,31 +307,4 @@ func TestOpenRouterProvider_DoRequest_NoReferer(t *testing.T) {
 	resp, err := p.doRequest(context.Background(), srv.URL+"/test", map[string]string{})
 	require.NoError(t, err)
 	_ = resp.Body.Close()
-}
-
-func TestOpenRouterProvider_Generate_WithServer(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.NotEmpty(t, r.Header.Get("Http-Referer"))
-		assert.NotEmpty(t, r.Header.Get("X-Title"))
-		resp := chatResponse{
-			Choices: []struct {
-				Message struct {
-					Content string `json:"content"`
-				} `json:"message"`
-			}{{Message: struct {
-				Content string `json:"content"`
-			}{Content: "ok"}}},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer srv.Close()
-
-	p := &openrouterProvider{
-		apiKey: "test-key", baseURL: srv.URL,
-		httpReferer: "http://ref.com", xTitle: "Test",
-	}
-	result, err := p.Generate(context.Background(), "model", "prompt")
-	require.NoError(t, err)
-	assert.Equal(t, "ok", result)
 }

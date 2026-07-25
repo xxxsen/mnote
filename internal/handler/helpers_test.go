@@ -74,8 +74,8 @@ func TestGetUserID_WithValue(t *testing.T) {
 }
 
 func TestNewHandlerConstructors(t *testing.T) {
-	t.Run("NewAIHandler", func(t *testing.T) {
-		h := NewAIHandler(nil, nil, nil)
+	t.Run("NewSemanticSearchHandler", func(t *testing.T) {
+		h := NewSemanticSearchHandler(nil)
 		require.NotNil(t, h)
 	})
 	t.Run("NewDocumentHandler", func(t *testing.T) {

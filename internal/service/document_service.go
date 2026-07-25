@@ -20,75 +20,53 @@ type documentAssetSyncer interface {
 	RemoveDocumentReferences(ctx context.Context, userID, docID string) error
 }
 
-// documentAIClient is the surface DocumentService needs from AIService. It
-// covers save-time bookkeeping (MarkEmbeddingPending), semantic search, and
-// summarization so we can substitute a stub from tests. The concrete
-// *AIService satisfies all three methods.
-type documentAIClient interface {
+// documentEmbeddingClient is the surface DocumentService needs from
+// EmbeddingService. It covers save-time bookkeeping and semantic search.
+type documentEmbeddingClient interface {
 	MarkEmbeddingPending(ctx context.Context, userID, docID, contentHash string, now int64) error
 	SemanticSearch(
 		ctx context.Context, userID, query string, topK int, excludeID string,
 	) ([]string, []float32, error)
-	Summarize(ctx context.Context, input string) (string, error)
-}
-
-type summaryStateRepo interface {
-	MarkPending(ctx context.Context, userID, docID, sourceHash string, now int64) error
-	UpsertSucceeded(
-		ctx context.Context, userID, docID, summary, sourceHash string, now int64,
-	) error
-	Claim(
-		ctx context.Context, now, pendingBefore, lockedUntil int64,
-	) (*model.SummaryTask, error)
-	CompleteIfCurrent(
-		ctx context.Context, task *model.SummaryTask, summary string, now int64,
-	) (bool, error)
-	MarkFailed(
-		ctx context.Context, documentID, stableError string, nextRetryAt, now int64,
-	) error
 }
 
 type DocumentService struct {
 	transactor     Transactor
 	docs           documentRepo
-	summaries      documentSummaryRepo
 	versions       versionRepo
 	tags           documentTagRepo
 	shares         shareRepo
 	tagRepo        tagRepo
 	userRepo       userRepo
-	ai             documentAIClient
+	embedding      documentEmbeddingClient
 	assets         documentAssetSyncer
 	versionMaxKeep int
 	runtime        Runtime
 }
 
 const (
-	minSummaryChars        = 100
 	semanticSearchMinScore = 0.7
 )
 
 func NewDocumentService(
 	runtime Runtime,
 	docs documentRepo,
-	summaries documentSummaryRepo,
 	versions versionRepo,
 	tags documentTagRepo,
 	shares shareRepo,
 	tagRepo tagRepo,
 	userRepo userRepo,
-	ai documentAIClient,
+	embedding documentEmbeddingClient,
 	versionMaxKeep int,
 	assets documentAssetSyncer,
 ) *DocumentService {
 	runtime = prepareRuntime(runtime)
 	svc := &DocumentService{
 		transactor: runtime.Transactor,
-		docs:       docs, summaries: summaries, versions: versions,
+		docs:       docs, versions: versions,
 		tags: tags, shares: shares, tagRepo: tagRepo, userRepo: userRepo,
 		versionMaxKeep: versionMaxKeep,
 		runtime:        runtime,
-		ai:             ai,
+		embedding:      embedding,
 		assets:         assets,
 	}
 	return svc
@@ -129,13 +107,13 @@ func (
 		if err != nil {
 			return nil, fmt.Errorf("list documents: %w", err)
 		}
-		return s.attachSummaries(ctx, userID, docs)
+		return docs, nil
 	}
 	docs, err := s.docs.SearchLike(ctx, userID, query, tagID, starred, limit, offset, orderBy)
 	if err != nil {
 		return nil, fmt.Errorf("search documents: %w", err)
 	}
-	return s.attachSummaries(ctx, userID, docs)
+	return docs, nil
 }
 
 func (s *DocumentService) SemanticSearch(
@@ -149,11 +127,11 @@ func (s *DocumentService) SemanticSearch(
 	if utf8.RuneCountInString(query) > 200 {
 		return nil, nil, appErr.ErrInvalid
 	}
-	if query == "" || s.ai == nil {
+	if query == "" || s.embedding == nil {
 		return []model.Document{}, []float32{}, nil
 	}
 	topN := safeconv.UintToInt(limit + offset)
-	ids, scores, err := s.ai.SemanticSearch(ctx, userID, query, topN, excludeID)
+	ids, scores, err := s.embedding.SemanticSearch(ctx, userID, query, topN, excludeID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("semantic search: %w", err)
 	}
@@ -164,10 +142,6 @@ func (s *DocumentService) SemanticSearch(
 	docs, err := s.docs.ListByIDs(ctx, userID, ids)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list documents by ids: %w", err)
-	}
-	docs, err = s.attachSummaries(ctx, userID, docs)
-	if err != nil {
-		return nil, nil, fmt.Errorf("attach summaries: %w", err)
 	}
 	idMap := make(map[string]model.Document)
 	for _, d := range docs {
@@ -201,9 +175,6 @@ func (s *DocumentService) Get(ctx context.Context, userID, docID string) (*model
 	if err != nil {
 		return nil, fmt.Errorf("get by id: %w", err)
 	}
-	if err := s.attachSummary(ctx, userID, doc); err != nil {
-		return nil, fmt.Errorf("attach summary: %w", err)
-	}
 	return doc, nil
 }
 
@@ -211,9 +182,6 @@ func (s *DocumentService) GetByTitle(ctx context.Context, userID, title string) 
 	doc, err := s.docs.GetByTitle(ctx, userID, title)
 	if err != nil {
 		return nil, fmt.Errorf("get by title: %w", err)
-	}
-	if err := s.attachSummary(ctx, userID, doc); err != nil {
-		return nil, fmt.Errorf("attach summary: %w", err)
 	}
 	return doc, nil
 }
@@ -226,7 +194,7 @@ func (s *DocumentService) ListByIDs(ctx context.Context, userID string, docIDs [
 	if err != nil {
 		return nil, fmt.Errorf("list by ids: %w", err)
 	}
-	return s.attachSummaries(ctx, userID, docs)
+	return docs, nil
 }
 
 func (s *DocumentService) ListByTag(ctx context.Context, userID, tagID string) ([]model.Document, error) {
@@ -238,7 +206,7 @@ func (s *DocumentService) ListByTag(ctx context.Context, userID, tagID string) (
 	if err != nil {
 		return nil, fmt.Errorf("list by ids: %w", err)
 	}
-	return s.attachSummaries(ctx, userID, v0)
+	return v0, nil
 }
 
 func (s *DocumentService) ListTagIDs(ctx context.Context, userID, docID string) ([]string, error) {
@@ -278,5 +246,5 @@ func (s *DocumentService) GetBacklinks(ctx context.Context, userID, docID string
 	if err != nil {
 		return nil, fmt.Errorf("get backlinks: %w", err)
 	}
-	return s.attachSummaries(ctx, userID, docs)
+	return docs, nil
 }

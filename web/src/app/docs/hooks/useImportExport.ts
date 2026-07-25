@@ -4,7 +4,7 @@ import { useExportFlow } from "./useExportFlow";
 type ToastVariant = "default" | "success" | "error";
 
 interface UseImportExportDeps {
-  fetchSummary: () => Promise<void>;
+  fetchOverview: () => Promise<void>;
   fetchTags: (query: string) => Promise<void>;
   fetchSidebarTags: (offset: number, append: boolean, query: string) => Promise<void>;
   tagSearch: string;

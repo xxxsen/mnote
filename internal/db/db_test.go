@@ -274,6 +274,7 @@ func TestLoadMigrationFiles_ReturnsEmbeddedManifest(t *testing.T) {
 		"006_add_document_content_revision.sql",
 		"007_drop_saved_views.sql",
 		"008_backfill_document_content_hash.sql",
+		"014_remove_document_summary.sql",
 	}
 	byName := make(map[string]migrationFile, len(files))
 	for _, file := range files {

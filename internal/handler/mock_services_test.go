@@ -144,11 +144,10 @@ type mockDocumentService struct {
 	updateFn                         func(ctx context.Context, userID, docID string, input service.DocumentUpdateInput) error
 	saveFn                           func(ctx context.Context, userID, docID string, input service.DocumentUpdateInput) (*model.SaveDocumentResult, error)
 	updateTagsFn                     func(ctx context.Context, userID, docID string, tagIDs []string) error
-	updateSummaryFn                  func(ctx context.Context, userID, docID, summary string) error
 	updatePinnedFn                   func(ctx context.Context, userID, docID string, pinned int) error
 	updateStarredFn                  func(ctx context.Context, userID, docID string, starred int) error
 	deleteFn                         func(ctx context.Context, userID, docID string) error
-	summaryFn                        func(ctx context.Context, userID string, limit uint) (*service.DocumentSummary, error)
+	overviewFn                       func(ctx context.Context, userID string, limit uint) (*service.DocumentOverview, error)
 	getBacklinksFn                   func(ctx context.Context, userID, docID string) ([]model.Document, error)
 	listTagIDsFn                     func(ctx context.Context, userID, docID string) ([]string, error)
 	listTagIDsByDocIDsFn             func(ctx context.Context, userID string, docIDs []string) (map[string][]string, error)
@@ -163,7 +162,7 @@ type mockDocumentService struct {
 	listShareCommentsByTokenFn       func(ctx context.Context, token, password string, limit, offset int) (*service.ShareCommentListResult, error)
 	listShareCommentRepliesByTokenFn func(ctx context.Context, token, password, rootID string, limit, offset int) ([]model.ShareComment, error)
 	createShareCommentByTokenFn      func(ctx context.Context, input service.CreateShareCommentInput) (*model.ShareComment, error)
-	listSharedDocumentsFn            func(ctx context.Context, userID, query string) ([]service.SharedDocumentSummary, error)
+	listSharedDocumentsFn            func(ctx context.Context, userID, query string) ([]service.SharedDocumentListItem, error)
 	semanticSearchFn                 func(ctx context.Context, userID, query, tagID string, starred *int, limit, offset uint, orderBy, excludeID string) ([]model.Document, []float32, error)
 }
 
@@ -221,13 +220,6 @@ func (m *mockDocumentService) UpdateTags(ctx context.Context, userID, docID stri
 	return m.updateTagsFn(ctx, userID, docID, tagIDs)
 }
 
-func (m *mockDocumentService) UpdateSummary(ctx context.Context, userID, docID, summary string) error {
-	if m.updateSummaryFn == nil {
-		panic("mockDocumentService.UpdateSummary not configured")
-	}
-	return m.updateSummaryFn(ctx, userID, docID, summary)
-}
-
 func (m *mockDocumentService) UpdatePinned(ctx context.Context, userID, docID string, pinned int) error {
 	if m.updatePinnedFn == nil {
 		panic("mockDocumentService.UpdatePinned not configured")
@@ -249,11 +241,11 @@ func (m *mockDocumentService) Delete(ctx context.Context, userID, docID string) 
 	return m.deleteFn(ctx, userID, docID)
 }
 
-func (m *mockDocumentService) Summary(ctx context.Context, userID string, limit uint) (*service.DocumentSummary, error) {
-	if m.summaryFn == nil {
-		panic("mockDocumentService.Summary not configured")
+func (m *mockDocumentService) Overview(ctx context.Context, userID string, limit uint) (*service.DocumentOverview, error) {
+	if m.overviewFn == nil {
+		panic("mockDocumentService.Overview not configured")
 	}
-	return m.summaryFn(ctx, userID, limit)
+	return m.overviewFn(ctx, userID, limit)
 }
 
 func (m *mockDocumentService) GetBacklinks(ctx context.Context, userID, docID string) ([]model.Document, error) {
@@ -362,7 +354,7 @@ func (m *mockDocumentService) CreateShareCommentByToken(
 	return m.createShareCommentByTokenFn(ctx, input)
 }
 
-func (m *mockDocumentService) ListSharedDocuments(ctx context.Context, userID, query string) ([]service.SharedDocumentSummary, error) {
+func (m *mockDocumentService) ListSharedDocuments(ctx context.Context, userID, query string) ([]service.SharedDocumentListItem, error) {
 	if m.listSharedDocumentsFn == nil {
 		panic("mockDocumentService.ListSharedDocuments not configured")
 	}
@@ -474,43 +466,6 @@ func (m *mockExportService) ConvertMarkdownToConfluenceHTML(ctx context.Context,
 		panic("mockExportService.ConvertMarkdownToConfluenceHTML not configured")
 	}
 	return m.convertHTMLFn(ctx, userID, docID)
-}
-
-// --- IAIHandlerService mock ---
-
-type mockAIHandlerService struct {
-	polishFn      func(ctx context.Context, input string) (string, error)
-	generateFn    func(ctx context.Context, prompt string) (string, error)
-	summarizeFn   func(ctx context.Context, input string) (string, error)
-	extractTagsFn func(ctx context.Context, input string, maxTags int) ([]string, error)
-}
-
-func (m *mockAIHandlerService) Polish(ctx context.Context, input string) (string, error) {
-	if m.polishFn == nil {
-		panic("mockAIHandlerService.Polish not configured")
-	}
-	return m.polishFn(ctx, input)
-}
-
-func (m *mockAIHandlerService) Generate(ctx context.Context, prompt string) (string, error) {
-	if m.generateFn == nil {
-		panic("mockAIHandlerService.Generate not configured")
-	}
-	return m.generateFn(ctx, prompt)
-}
-
-func (m *mockAIHandlerService) Summarize(ctx context.Context, input string) (string, error) {
-	if m.summarizeFn == nil {
-		panic("mockAIHandlerService.Summarize not configured")
-	}
-	return m.summarizeFn(ctx, input)
-}
-
-func (m *mockAIHandlerService) ExtractTags(ctx context.Context, input string, maxTags int) ([]string, error) {
-	if m.extractTagsFn == nil {
-		panic("mockAIHandlerService.ExtractTags not configured")
-	}
-	return m.extractTagsFn(ctx, input, maxTags)
 }
 
 // --- IImportHandlerService mock ---

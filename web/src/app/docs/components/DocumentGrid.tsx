@@ -10,7 +10,7 @@ import type { DocumentWithTags } from "../types";
 import { formatRelativeTime } from "../utils";
 
 export function getDocumentExcerpt(doc: DocumentWithTags) {
-  const source = (doc.summary || doc.content || "")
+  const source = (doc.content || "")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
     .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
@@ -20,7 +20,7 @@ export function getDocumentExcerpt(doc: DocumentWithTags) {
   return source.length > 120 ? `${source.slice(0, 117).trimEnd()}…` : source;
 }
 
-function AiSearchCard({
+function SemanticSearchCard({
   doc,
   tagIndex,
 }: {
@@ -193,8 +193,8 @@ function DocumentCard({
 
 export interface DocumentGridProps {
   docs: DocumentWithTags[];
-  aiSearchDocs: DocumentWithTags[];
-  aiSearching: boolean;
+  semanticSearchDocs: DocumentWithTags[];
+  semanticSearching: boolean;
   loading: boolean;
   loadingMore: boolean;
   initialError: boolean;
@@ -283,7 +283,7 @@ function SemanticResults({
         {searching ? <span role="status" className="text-xs text-muted-foreground">Searching…</span> : null}
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {docs.map((doc) => <AiSearchCard key={`ai-${doc.id}`} doc={doc} tagIndex={tagIndex} />)}
+        {docs.map((doc) => <SemanticSearchCard key={`semantic-${doc.id}`} doc={doc} tagIndex={tagIndex} />)}
       </div>
     </section>
   );
@@ -304,7 +304,7 @@ function getEmptyTitle({
 
 type NotesContentProps = Omit<
   DocumentGridProps,
-  "aiSearchDocs" | "aiSearching" | "onClearSearch" | "onClearFilter"
+  "semanticSearchDocs" | "semanticSearching" | "onClearSearch" | "onClearFilter"
 > & {
   hasFilter: boolean;
   emptyTitle: string;
@@ -395,8 +395,8 @@ function NotesContent({
 
 export function DocumentGrid({
   docs,
-  aiSearchDocs,
-  aiSearching,
+  semanticSearchDocs,
+  semanticSearching,
   loading,
   loadingMore,
   initialError,
@@ -434,7 +434,7 @@ export function DocumentGrid({
         onClearSearch={onClearSearch}
         onClearFilter={onClearFilter}
       />
-      <SemanticResults docs={aiSearchDocs} searching={aiSearching} tagIndex={tagIndex} />
+      <SemanticResults docs={semanticSearchDocs} searching={semanticSearching} tagIndex={tagIndex} />
       <NotesContent
         docs={docs}
         loading={loading}

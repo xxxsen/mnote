@@ -150,9 +150,9 @@ func TestShareRepo_ListActiveDocuments(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	r := NewShareRepo(db)
-	sdCols := []string{"id", "title", "summary", "mtime", "token", "expires_at", "permission", "allow_download"}
+	sdCols := []string{"id", "title", "content_preview", "mtime", "token", "expires_at", "permission", "allow_download"}
 	rows := sqlmock.NewRows(sdCols).
-		AddRow("d1", "Doc1", "sum1", int64(1000), "tok1", int64(0), 1, 0)
+		AddRow("d1", "Doc1", "preview1", int64(1000), "tok1", int64(0), 1, 0)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 
 	docs, err := r.ListActiveDocuments(context.Background(), "u1", "", 0)
@@ -182,7 +182,7 @@ func TestShareRepo_ListActiveDocuments_ExpiryFilter(t *testing.T) {
 
 	r := NewShareRepo(db)
 	now := int64(2_000)
-	sdCols := []string{"id", "title", "summary", "mtime", "token", "expires_at", "permission", "allow_download"}
+	sdCols := []string{"id", "title", "content_preview", "mtime", "token", "expires_at", "permission", "allow_download"}
 	expectedFragment := regexp.QuoteMeta("(s.expires_at = 0 OR s.expires_at >=")
 	mock.ExpectQuery(expectedFragment).
 		WithArgs("u1", ShareStateActive, DocumentStateNormal, now).
@@ -469,8 +469,8 @@ func TestShareRepo_ListActiveDocuments_WithQuery(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	r := NewShareRepo(db)
-	sdCols := []string{"id", "title", "summary", "mtime", "token", "expires_at", "permission", "allow_download"}
-	rows := sqlmock.NewRows(sdCols).AddRow("d1", "Doc", "sum", int64(1000), "tok", int64(0), 1, 0)
+	sdCols := []string{"id", "title", "content_preview", "mtime", "token", "expires_at", "permission", "allow_download"}
+	rows := sqlmock.NewRows(sdCols).AddRow("d1", "Doc", "preview", int64(1000), "tok", int64(0), 1, 0)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 	docs, err := r.ListActiveDocuments(context.Background(), "u1", "Doc", 0)
 	require.NoError(t, err)
@@ -682,8 +682,8 @@ func TestShareRepo_ListActiveDocuments_RowsErr(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	r := NewShareRepo(db)
-	rows := sqlmock.NewRows([]string{"id", "title", "summary", "mtime", "token", "expires_at", "permission", "allow_download"}).
-		AddRow("d1", "Title", "Sum", int64(1000), "tok", int64(0), 1, 0).
+	rows := sqlmock.NewRows([]string{"id", "title", "content_preview", "mtime", "token", "expires_at", "permission", "allow_download"}).
+		AddRow("d1", "Title", "Preview", int64(1000), "tok", int64(0), 1, 0).
 		RowError(0, errDB)
 	mock.ExpectQuery("SELECT").WillReturnRows(rows)
 	_, err = r.ListActiveDocuments(context.Background(), "u1", "", 0)

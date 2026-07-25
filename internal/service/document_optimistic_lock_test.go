@@ -14,7 +14,6 @@ func TestDocumentServiceSaveRejectsRevisionConflictWithoutWrites(t *testing.T) {
 	var documentUpdated bool
 	var versionCreated bool
 	var linksUpdated bool
-	var summaryUpdated bool
 	var tagsDeleted bool
 	var tagAdded bool
 	docs := &mockDocumentRepo{
@@ -39,12 +38,6 @@ func TestDocumentServiceSaveRejectsRevisionConflictWithoutWrites(t *testing.T) {
 			return nil
 		},
 	}
-	summaries := &mockDocumentSummaryRepo{
-		upsertFn: func(context.Context, string, string, string, int64) error {
-			summaryUpdated = true
-			return nil
-		},
-	}
 	tags := &mockDocumentTagRepo{
 		deleteByDocFn: func(context.Context, string, string) error {
 			tagsDeleted = true
@@ -61,19 +54,17 @@ func TestDocumentServiceSaveRejectsRevisionConflictWithoutWrites(t *testing.T) {
 			return nil
 		},
 	}
-	svc := newDocSvc(docs, summaries, versions, tags, nil)
+	svc := newDocSvc(docs, versions, tags, nil)
 	assets := &stubAssetSyncer{}
-	ai := &stubAIClient{}
+	embeddingClient := &stubEmbeddingClient{}
 	svc.assets = assets
-	svc.ai = ai
+	svc.embedding = embeddingClient
 
-	summary := "Local summary"
 	result, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{
 		Title:        "Local",
 		Content:      "Local body",
 		BaseRevision: 8,
 		SaveSeq:      99,
-		Summary:      &summary,
 		TagIDs:       []string{"t1"},
 	})
 	require.NoError(t, err)
@@ -85,11 +76,10 @@ func TestDocumentServiceSaveRejectsRevisionConflictWithoutWrites(t *testing.T) {
 	assert.False(t, documentUpdated)
 	assert.False(t, versionCreated)
 	assert.False(t, linksUpdated)
-	assert.False(t, summaryUpdated)
 	assert.False(t, tagsDeleted)
 	assert.False(t, tagAdded)
 	assert.False(t, assets.synced)
-	assert.False(t, ai.marked)
+	assert.False(t, embeddingClient.marked)
 }
 
 func TestDocumentServiceSaveMatchingRevisionUsesServerNextRevision(t *testing.T) {
@@ -123,7 +113,7 @@ func TestDocumentServiceSaveMatchingRevisionUsesServerNextRevision(t *testing.T)
 			return nil
 		},
 	}
-	svc := newDocSvc(docs, nil, versions, nil, nil)
+	svc := newDocSvc(docs, versions, nil, nil)
 
 	result, err := svc.Save(context.Background(), "u1", "d1", DocumentUpdateInput{
 		Title:        "New",

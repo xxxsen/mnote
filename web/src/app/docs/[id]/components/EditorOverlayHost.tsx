@@ -1,4 +1,3 @@
-import { AiModal } from "./AiModal";
 import {
   DeleteConfirmDialog,
   DocPreviewModal,
@@ -35,49 +34,6 @@ export function EditorOverlayHost({ p }: { p: EditorShellFlatContract }) {
         title={p.title}
         content={p.contentRef.current || p.ec.previewContent}
         onClose={() => p.setShowPreviewModal(false)}
-      />
-      <AiModal
-        open={p.ai.aiModalOpen}
-        aiAction={p.ai.aiAction}
-        aiLoading={p.ai.aiLoading}
-        aiApplying={p.ai.aiApplying}
-        aiPrompt={p.ai.aiPrompt}
-        aiResultText={p.ai.aiResultText}
-        aiResultReady={p.ai.aiResultReady}
-        aiExistingTags={p.ai.aiExistingTags}
-        aiSuggestedTags={p.ai.aiSuggestedTags}
-        aiSelectedTags={p.ai.aiSelectedTags}
-        aiRemovedTagIDs={p.ai.aiRemovedTagIDs}
-        aiError={p.ai.aiError}
-        aiDiffLines={p.ai.aiDiffLines}
-        aiTitle={p.ai.aiTitle}
-        aiAvailableSlots={p.ai.aiAvailableSlots}
-        setAiPrompt={p.ai.setAiPrompt}
-        closeAiModal={p.ai.closeAiModal}
-        handleAiGenerate={p.ai.handleAiGenerate}
-        handleAiRetry={p.ai.handleAiRetry}
-        handleApplyAiText={p.handleApplyAiText}
-        handleApplyAiTags={() =>
-          void p.ai.handleApplyAiTags({
-            findExistingTagByName: p.tagState.findExistingTagByName,
-            mergeTags: p.tagState.mergeTags,
-            saveTagIDs: p.tagState.saveTagIDs,
-            onError: (message) =>
-              p.toast({ description: message, variant: "error" }),
-          })
-        }
-        handleApplyAiSummary={() =>
-          void p.ai.handleApplyAiSummary({
-            onApplied: (summaryText) => {
-              p.setSummary(summaryText);
-              p.setLastSavedAt(Math.floor(Date.now() / 1000));
-            },
-            onError: (message) =>
-              p.toast({ description: message, variant: "error" }),
-          })
-        }
-        toggleAiTag={p.ai.toggleAiTag}
-        toggleExistingTag={p.ai.toggleExistingTag}
       />
       <DeleteConfirmDialog
         show={p.showDeleteConfirm}

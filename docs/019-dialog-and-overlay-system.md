@@ -142,7 +142,12 @@ Header 和 Footer 不滚动，`DialogBody` 是窗体唯一主纵向滚动容器�
 
 待办日视图、创建和编辑使用 Modal；创建与编辑具备 Dirty guard；删除使用可堆叠的 Alert Dialog，成功后同步更新月视图和日视图，失败时保留确认目标。
 
-编辑器包含 Command Quick Open、Fullscreen 预览、显式草稿恢复和保存冲突、AI Modal、移动端 More Sheet、`1280px` 以下的文档上下文 Drawer 和删除 Alert Dialog。文档上下文 Drawer 使用 `compact` 语义宽度，并与宽屏布局内 Rail 共用 Outline / Details 互斥内容；默认显示 Outline，Details 在同一位置显示 Summary、History、Share，Mentions 和 Graph 不提供可见入口。两种外壳不得同时挂载；进入宽屏时关闭 Drawer，返回窄屏时不自动重开。AI 生成请求关闭时会真正中止网络请求，过期响应不能写回新会话；提示词变化会立即使旧结果失效，失败和结果态均提供重试或重新生成。应用摘要或标签属于写入阶段，期间统一禁用关闭与重复提交。
+编辑器包含 Command Quick Open、Fullscreen 预览、显式草稿恢复和保存冲突、移动端 More Sheet、
+`1280px` 以下的文档上下文 Drawer 和删除 Alert Dialog。文档上下文 Drawer 使用 `compact` 语义宽度，
+并与宽屏布局内 Rail 共用 Outline / Details 互斥内容；默认显示 Outline，Details 在同一位置只显示
+History 和 Share，Mentions 和 Graph 不提供可见入口。两种外壳不得同时挂载；进入宽屏时关闭 Drawer，
+返回窄屏时不自动重开。编辑器没有内容生成、润色、摘要或标签建议 Modal；相似文档是独立的只读检索
+弹层，关闭时取消请求且过期响应不能写回新会话。
 
 标签删除、Mermaid 全屏预览和公开分享页移动目录同样复用公共 Dialog。桌面文档上下文栏和桌面公开目录属于非阻断页面结构，不参与滚动锁。
 

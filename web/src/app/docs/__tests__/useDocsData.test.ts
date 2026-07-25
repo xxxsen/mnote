@@ -60,25 +60,25 @@ describe("useDocsData", () => {
     expect(mockApiFetch).toHaveBeenCalledWith(expect.stringContaining("tag_id=t1"), expect.anything());
   });
 
-  it("fetchSummary gets doc summary", async () => {
+  it("fetchOverview gets dashboard aggregates", async () => {
     mockApiFetch.mockResolvedValue({ recent: [], tag_counts: {}, total: 10, starred_total: 3 });
     const { result } = renderHook(() => useDocsData(makeDeps()));
-    await act(async () => { await result.current.fetchSummary(); });
+    await act(async () => { await result.current.fetchOverview(); });
     expect(result.current.totalDocs).toBe(10);
     expect(result.current.starredTotal).toBe(3);
   });
 
-  it("fetchSummary handles errors", async () => {
+  it("fetchOverview handles errors", async () => {
     mockApiFetch.mockRejectedValue(new Error("fail"));
     const { result } = renderHook(() => useDocsData(makeDeps()));
-    await act(async () => { await result.current.fetchSummary(); });
+    await act(async () => { await result.current.fetchOverview(); });
     expect(result.current.totalDocs).toBe(0);
   });
 
-  it("fetchSharedSummary counts shared items", async () => {
+  it("fetchSharedCount counts shared items", async () => {
     mockApiFetch.mockResolvedValue({ items: [{ id: "1" }, { id: "2" }] });
     const { result } = renderHook(() => useDocsData(makeDeps()));
-    await act(async () => { await result.current.fetchSharedSummary(); });
+    await act(async () => { await result.current.fetchSharedCount(); });
     expect(result.current.sharedTotal).toBe(2);
   });
 
@@ -104,24 +104,24 @@ describe("useDocsData", () => {
     expect(mockApiFetch).toHaveBeenCalledWith("/documents/d1/star", expect.objectContaining({ method: "PUT" }));
   });
 
-  it("fetchAiSearch fetches AI results", async () => {
-    mockApiFetch.mockResolvedValue({ items: [{ id: "a1", title: "AI result" }] });
+  it("fetchSemanticSearch fetches semantic results", async () => {
+    mockApiFetch.mockResolvedValue({ items: [{ id: "a1", title: "semantic result" }] });
     const { result } = renderHook(() => useDocsData(makeDeps()));
-    await act(async () => { await result.current.fetchAiSearch("query"); });
-    expect(result.current.aiSearchDocs).toHaveLength(1);
+    await act(async () => { await result.current.fetchSemanticSearch("query"); });
+    expect(result.current.semanticSearchDocs).toHaveLength(1);
   });
 
-  it("fetchAiSearch clears for empty query", async () => {
+  it("fetchSemanticSearch clears for empty query", async () => {
     const { result } = renderHook(() => useDocsData(makeDeps()));
-    await act(async () => { await result.current.fetchAiSearch(""); });
-    expect(result.current.aiSearchDocs).toEqual([]);
+    await act(async () => { await result.current.fetchSemanticSearch(""); });
+    expect(result.current.semanticSearchDocs).toEqual([]);
   });
 
-  it("fetchAiSearch handles errors", async () => {
+  it("fetchSemanticSearch handles errors", async () => {
     mockApiFetch.mockRejectedValue(new Error("fail"));
     const { result } = renderHook(() => useDocsData(makeDeps()));
-    await act(async () => { await result.current.fetchAiSearch("test"); });
-    expect(result.current.aiSearchDocs).toEqual([]);
+    await act(async () => { await result.current.fetchSemanticSearch("test"); });
+    expect(result.current.semanticSearchDocs).toEqual([]);
   });
 
   it("merges tags from fetched docs", async () => {
@@ -147,10 +147,10 @@ describe("useDocsData", () => {
     expect(result.current.loading).toBe(false);
   });
 
-  it("fetchSharedSummary handles error", async () => {
+  it("fetchSharedCount handles error", async () => {
     mockApiFetch.mockRejectedValue(new Error("fail"));
     const { result } = renderHook(() => useDocsData(makeDeps()));
-    await act(async () => { await result.current.fetchSharedSummary(); });
+    await act(async () => { await result.current.fetchSharedCount(); });
     expect(result.current.sharedTotal).toBe(0);
   });
 
@@ -190,21 +190,21 @@ describe("useDocsData", () => {
     expect(fetchTagsByIDs).toHaveBeenCalledWith(expect.arrayContaining(["t1", "t2"]));
   });
 
-  it("search triggers aiSearch for non-command queries", async () => {
+  it("search triggers semantic search for non-command queries", async () => {
     mockApiFetch.mockImplementation(((url: string) => {
       if (url.startsWith("/ai/search")) return Promise.resolve({ items: [{ id: "a1" }] });
       return Promise.resolve([]);
     }));
     const { result } = renderHook(() => useDocsData(makeDeps({ search: "hello" })));
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
-    expect(result.current.aiSearchDocs).toHaveLength(1);
+    expect(result.current.semanticSearchDocs).toHaveLength(1);
   });
 
-  it("search starting with / does not trigger aiSearch", async () => {
+  it("search starting with / does not trigger semantic search", async () => {
     mockApiFetch.mockResolvedValue([]);
     const { result } = renderHook(() => useDocsData(makeDeps({ search: "/command" })));
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
-    expect(result.current.aiSearchDocs).toEqual([]);
+    expect(result.current.semanticSearchDocs).toEqual([]);
   });
 
   it("fetchDocs append deduplicates existing docs", async () => {
@@ -275,18 +275,18 @@ describe("useDocsData", () => {
     expect(fetchTagsByIDs).toHaveBeenCalledWith([]);
   });
 
-  it("search with starred filter does not trigger aiSearch", async () => {
+  it("search with starred filter does not trigger semantic search", async () => {
     mockApiFetch.mockResolvedValue([]);
     const { result } = renderHook(() => useDocsData(makeDeps({ search: "test", showStarred: true })));
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
-    expect(result.current.aiSearchDocs).toEqual([]);
+    expect(result.current.semanticSearchDocs).toEqual([]);
   });
 
-  it("search with selectedTag does not trigger aiSearch", async () => {
+  it("search with selectedTag does not trigger semantic search", async () => {
     mockApiFetch.mockResolvedValue([]);
     const { result } = renderHook(() => useDocsData(makeDeps({ search: "test", selectedTag: "t1" })));
     await act(async () => { await vi.advanceTimersByTimeAsync(400); });
-    expect(result.current.aiSearchDocs).toEqual([]);
+    expect(result.current.semanticSearchDocs).toEqual([]);
   });
 
   it("shared items with search query", async () => {
@@ -398,7 +398,7 @@ describe("useDocsData", () => {
     expect(result.current.loading).toBe(false);
   });
 
-  it("fetchAiSearch ignores AbortError when query changes mid-flight", async () => {
+  it("fetchSemanticSearch ignores AbortError when query changes mid-flight", async () => {
     let abortPromiseSettled = false;
     mockApiFetch.mockImplementationOnce((_url, opts) => {
       return new Promise((_resolve, reject) => {
@@ -411,11 +411,11 @@ describe("useDocsData", () => {
     mockApiFetch.mockResolvedValueOnce({ items: [{ id: "ai-second" }] });
     const { result } = renderHook(() => useDocsData(makeDeps()));
     await act(async () => {
-      void result.current.fetchAiSearch("first");
-      await result.current.fetchAiSearch("second");
+      void result.current.fetchSemanticSearch("first");
+      await result.current.fetchSemanticSearch("second");
     });
     expect(abortPromiseSettled).toBe(true);
-    expect(result.current.aiSearchDocs).toHaveLength(1);
+    expect(result.current.semanticSearchDocs).toHaveLength(1);
   });
 
   it("fetchDocs returns early when already in flight", async () => {
