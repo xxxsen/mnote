@@ -11,6 +11,7 @@ import type {
 } from "@/types";
 import type { EmojiTab } from "./constants";
 import type { EditorContextRailController } from "./hooks/useEditorContextRail";
+import type { DocumentLinksController } from "./hooks/useDocumentLinks";
 import type { MarkdownCommand } from "./commands/markdown-commands";
 import type {
   EditorSyncStatus,
@@ -81,22 +82,6 @@ export interface EditorWikilinkMenuContract {
   wikilinkLoading: boolean;
   wikilinkIndex: number;
   handleWikilinkSelect: (title: string, id: string) => void;
-}
-
-export interface EditorLinkGraphContract {
-  backlinks: MnoteDocument[];
-  outboundLinks: MnoteDocument[];
-  linkGraph: {
-    nodes: Array<{
-      id: string;
-      title: string;
-      x: number;
-      y: number;
-      kind: "current" | "incoming" | "outgoing" | "both";
-    }>;
-    edges: Array<{ from: string; to: string }>;
-    positionByID: Partial<Record<string, { x: number; y: number }>>;
-  };
 }
 
 export interface EditorInlineTagContract {
@@ -204,7 +189,7 @@ export interface EditorCommandsContract {
 export interface EditorUiContract {
   navigate: (path: string) => void;
   toast: EditorToast;
-  linkGraphHook: EditorLinkGraphContract;
+  documentLinks: DocumentLinksController;
   outline: readonly OutlineEntry[];
   contextRail: EditorContextRailController;
   inlineTag: EditorInlineTagContract;

@@ -35,6 +35,7 @@ type MenuProps = {
   triggerVariant?: ButtonProps["variant"];
   triggerSize?: ButtonProps["size"];
   triggerClassName?: string;
+  onTriggerElement?: (element: HTMLButtonElement | null) => void;
   align?: "start" | "end";
   width?: number;
 };
@@ -46,6 +47,20 @@ let openMenu: { owner: symbol; close: () => void } | null = null;
 
 function usePortalReady() {
   return useSyncExternalStore(subscribeHydration, () => true, () => false);
+}
+
+function useTriggerElement(
+  onTriggerElement?: (element: HTMLButtonElement | null) => void,
+) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const setTriggerElement = useCallback(
+    (element: HTMLButtonElement | null) => {
+      triggerRef.current = element;
+      onTriggerElement?.(element);
+    },
+    [onTriggerElement],
+  );
+  return { triggerRef, setTriggerElement };
 }
 
 function enabledIndexes(entries: MenuEntry[]) {
@@ -163,13 +178,15 @@ export function Menu({
   triggerVariant = "ghost",
   triggerSize = "icon",
   triggerClassName,
+  onTriggerElement,
   align = "end",
   width = 224,
 }: MenuProps) {
   const id = useId();
   const panelID = `menu-${id.replaceAll(":", "")}`;
   const portalReady = usePortalReady();
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const { triggerRef, setTriggerElement } =
+    useTriggerElement(onTriggerElement);
   const panelRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const submenuRef = useRef<HTMLDivElement>(null);
@@ -181,13 +198,12 @@ export function Menu({
   const [submenuIndex, setSubmenuIndex] = useState<number | null>(null);
   const [submenuPositionValue, setSubmenuPositionValue] = useState<Position>({ left: 8, top: 8 });
   const owner = useRef(Symbol("menu")).current;
-
   const close = useCallback((restoreFocus = true) => {
     setOpen(false);
     setSubmenuIndex(null);
     if (openMenu?.owner === owner) openMenu = null;
     if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus());
-  }, [owner]);
+  }, [owner, triggerRef]);
 
   const focusItem = useCallback((index: number) => {
     if (index < 0) return;
@@ -204,7 +220,7 @@ export function Menu({
     const target = focus === "first" ? enabled[0] : enabled.at(-1);
     pendingItemFocus.current = target ?? null;
     setOpen(true);
-  }, [align, close, entries, owner, width]);
+  }, [align, close, entries, owner, triggerRef, width]);
 
   const showSubmenu = useCallback((index: number) => {
     const triggerElement = itemRefs.current[index];
@@ -237,7 +253,7 @@ export function Menu({
       window.removeEventListener("resize", reposition);
       window.removeEventListener("scroll", reposition, true);
     };
-  }, [align, open, width]);
+  }, [align, open, triggerRef, width]);
 
   useEffect(() => {
     if (!open) return;
@@ -253,7 +269,7 @@ export function Menu({
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [close, open]);
+  }, [close, open, triggerRef]);
 
   useEffect(() => () => {
     if (openMenu?.owner === owner) openMenu = null;
@@ -293,7 +309,7 @@ export function Menu({
   return (
     <>
       <Button
-        ref={triggerRef}
+        ref={setTriggerElement}
         type="button"
         variant={triggerVariant}
         size={triggerSize}

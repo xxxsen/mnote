@@ -47,6 +47,37 @@ Handler 使用显式 Response DTO 和逐字段 mapper，不直接序列化 Repos
 邮箱规范化值、密码摘要、资产内部状态、租约、重试错误等字段只存在持久化层。新增数据库列不会自动
 进入 API，新增响应字段必须同时修改 DTO、mapper、前端类型和契约测试。
 
+### 3.1 文档关联聚合
+
+`GET /api/v1/documents/{id}/links` 位于 JWT 鉴权路由，查询参数如下：
+
+- `include` 省略时同时包含 `incoming,outgoing`；可传一个方向或逗号分隔的两个方向，重复值允许，
+  空分段和未知值拒绝；
+- `limit` 默认为 20，合法范围为 1～50；
+- `incoming_cursor`、`outgoing_cursor` 分别只允许在 include 对应方向时出现；
+- `offset` 不受支持，出现即拒绝；
+- cursor 最长 512 字节，是包含版本、`mtime` 和文档 ID 的 URL-safe Base64 不透明值。坏 Base64、
+  未知字段、未知版本、非正时间或空 ID 都属于无效请求。
+
+成功 `data` 的稳定结构为：
+
+```json
+{
+  "counts": {"incoming": 2, "outgoing": 1, "unique": 2},
+  "incoming": {
+    "items": [
+      {"id": "doc-id", "title": "Title", "mtime": 1700000000, "mutual": true}
+    ],
+    "next_cursor": ""
+  },
+  "outgoing": {"items": [], "next_cursor": ""}
+}
+```
+
+counts 始终表示完整结果；被 include 的方向始终返回非 null 数组和字符串游标，未 include 的方向字段
+省略。当前文档不存在、属于其他用户或已删除统一按未找到处理。响应不包含正文、关系表内部字段或完整
+cursor 日志。历史 `GET /documents/{id}/backlinks` 保持原契约供旧客户端使用；新编辑器只使用聚合接口。
+
 ## 4. 错误模型
 
 Service 把输入错误、未授权、未找到、冲突、限流、不可用和内部错误转换为项目业务错误。Repository 的 SQL 文本、表名细节和驱动错误不得直接返回前端。
@@ -145,4 +176,6 @@ Handler 只完成协议层验证，跨实体约束由 Service 执行。正文保
 - 上传、分页、文本和压缩包边界被后端执行。
 - 日志可定位请求但不包含敏感正文或凭据。
 - DTO 序列化测试确认密码摘要、规范化邮箱、资产内部状态、租约和内部错误不会进入响应。
+- 文档关联接口验证 include/limit/cursor 边界、空数组、方向字段省略、稳定分页、自引用、软删除、
+  Mutual、跨用户隔离、未找到和旧 backlinks 兼容性。
 - 语义搜索和相似文档验证跨用户隔离、`exclude_id`、未索引/重建中状态、相关度阈值和响应字段兼容性。

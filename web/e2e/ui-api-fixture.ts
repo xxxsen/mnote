@@ -357,6 +357,13 @@ async function handleDocuments(route: Route, url: URL, method: string, state: Ui
     }]);
   }
   if (path.endsWith("/backlinks")) return ok(route, []);
+  if (path.endsWith("/links")) {
+    return ok(route, {
+      counts: { incoming: 0, outgoing: 0, unique: 0 },
+      incoming: { items: [], next_cursor: "" },
+      outgoing: { items: [], next_cursor: "" },
+    });
+  }
   if (path.endsWith("/similar")) return ok(route, { items: [] });
   if (path.endsWith("/share")) return ok(route, { share: null });
   if (path === "/api/v1/documents" && method === "GET") {

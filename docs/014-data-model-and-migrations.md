@@ -29,6 +29,13 @@ PostgreSQL 是账户、文档、关系、分享、导入、资产状态和向量
 关系写入不仅校验 ID 存在，还校验两端属于同一用户。数据库外键、唯一约束和 Service 事务共同保护
 关系完整性；标签已删除或属于其他用户时，模板和文档写入明确返回无效请求，不静默忽略。
 
+关联文档读取同样不能只校验当前文档。聚合查询必须在同一条参数化 SQL 语句中约束当前文档、
+`document_links.user_id`、source 文档和 target 文档属于请求用户且文档状态为 normal，并排除自引用。
+该语句同时计算完整 Incoming、Outgoing、按文档 ID 去重的 Unique 数量和双向 Mutual 标记，再按
+`mtime DESC, id DESC` 对两个方向独立执行 keyset 分页。这样 counts 和页面行来自同一个 PostgreSQL
+statement snapshot，也避免先读 backlinks、再逐个读取出链产生 N+1。关系表不需要为展示复制标题或
+正文；标题和更新时间始终从当前 `documents` 行读取。
+
 ### 2.3 分享与评论
 
 - `shares` 保存文档、随机 Token、状态、权限、密码摘要、有效期和下载开关。

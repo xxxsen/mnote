@@ -1,10 +1,43 @@
 import { apiFetch } from "@/lib/api";
 import type { DocumentVersionSummary, Share, Tag } from "@/types";
-import type { DocDetail, SaveDocumentPayload, SaveDocumentResult } from "../types";
+import type {
+  DocDetail,
+  DocumentLinkDirection,
+  DocumentLinksResponse,
+  SaveDocumentPayload,
+  SaveDocumentResult,
+} from "../types";
+
+export type DocumentLinksQuery = {
+  include: DocumentLinkDirection[];
+  limit?: number;
+  incomingCursor?: string;
+  outgoingCursor?: string;
+};
 
 export const docEditorService = {
   getDocument(docId: string): Promise<DocDetail> {
     return apiFetch<DocDetail>(`/documents/${docId}?include=tags`);
+  },
+
+  getDocumentLinks(
+    docId: string,
+    query: DocumentLinksQuery,
+    signal?: AbortSignal,
+  ): Promise<DocumentLinksResponse> {
+    const params = new URLSearchParams();
+    params.set("include", query.include.join(","));
+    params.set("limit", String(query.limit ?? 20));
+    if (query.incomingCursor) {
+      params.set("incoming_cursor", query.incomingCursor);
+    }
+    if (query.outgoingCursor) {
+      params.set("outgoing_cursor", query.outgoingCursor);
+    }
+    return apiFetch<DocumentLinksResponse>(
+      `/documents/${encodeURIComponent(docId)}/links?${params.toString()}`,
+      { signal },
+    );
   },
 
   saveDocument(docId: string, payload: SaveDocumentPayload): Promise<SaveDocumentResult> {

@@ -20,6 +20,29 @@ describe("docEditorService", () => {
     expect(result).toEqual({ id: "d1", title: "Test" });
   });
 
+  it("getDocumentLinks encodes independent cursors and forwards cancellation", async () => {
+    const controller = new AbortController();
+    mockApiFetch.mockResolvedValue({
+      counts: { incoming: 1, outgoing: 2, unique: 2 },
+      incoming: { items: [], next_cursor: "" },
+    });
+
+    await docEditorService.getDocumentLinks(
+      "doc/with space",
+      {
+        include: ["incoming"],
+        limit: 7,
+        incomingCursor: "cursor+/=",
+      },
+      controller.signal,
+    );
+
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      "/documents/doc%2Fwith%20space/links?include=incoming&limit=7&incoming_cursor=cursor%2B%2F%3D",
+      { signal: controller.signal },
+    );
+  });
+
   it("saveDocument sends PUT with payload including save_seq", async () => {
     mockApiFetch.mockResolvedValue({ id: "d1", accepted: true, content_revision: 4, version: 4, content_hash: "h", content_mtime: 1, mtime: 1 });
     const result = await docEditorService.saveDocument("d1", { title: "New", content: "body", base_revision: 3, save_seq: 4 });

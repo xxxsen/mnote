@@ -123,6 +123,7 @@ func registerDocumentRoutes(g *gin.RouterGroup, deps RouterDeps) {
 	g.PUT("/documents/:id/star", deps.Documents.Star)
 	g.DELETE("/documents/:id", deps.Documents.Delete)
 	g.GET("/documents/:id/backlinks", deps.Documents.Backlinks)
+	g.GET("/documents/:id/links", deps.Documents.Links)
 	g.GET("/documents/:id/similar", deps.Documents.Similar)
 	g.GET("/documents/:id/versions", deps.Versions.List)
 	g.GET("/documents/:id/versions/:version", deps.Versions.Get)

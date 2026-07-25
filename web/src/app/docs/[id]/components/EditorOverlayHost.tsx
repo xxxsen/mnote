@@ -7,6 +7,7 @@ import { EditorContextDrawer } from "./EditorContextPanel";
 import { PopoverPanels } from "./PopoverPanels";
 import { QuickOpenDialog } from "./QuickOpenDialog";
 import { SimilarNotesPanel } from "./SimilarNotesPanel";
+import { LinkedNotesOverlay } from "./LinkedNotesOverlay";
 import type { EditorShellFlatContract } from "../editor-contracts";
 
 export function EditorOverlayHost({ p }: { p: EditorShellFlatContract }) {
@@ -18,7 +19,12 @@ export function EditorOverlayHost({ p }: { p: EditorShellFlatContract }) {
         similarLoading={p.sim.similarLoading}
         similarIndexStatus={p.sim.similarIndexStatus}
         similarDocs={p.sim.similarDocs}
-        onToggle={p.sim.handleToggleSimilar}
+        onToggle={() => {
+          if (p.sim.similarCollapsed) {
+            p.documentLinks.closePanel();
+          }
+          p.sim.handleToggleSimilar();
+        }}
         onCollapse={p.sim.handleCollapseSimilar}
         onClose={p.sim.handleCloseSimilar}
         onOpenPreview={p.preview.handleOpenPreview}
@@ -54,6 +60,7 @@ export function EditorOverlayHost({ p }: { p: EditorShellFlatContract }) {
         onSelect={p.quickOpen.handleQuickOpenSelect}
         onClose={p.quickOpen.handleCloseQuickOpen}
       />
+      <LinkedNotesOverlay p={p} />
       <EditorContextDrawer p={p} />
       <PopoverPanels
         activePopover={p.popover.activePopover}

@@ -37,14 +37,39 @@ export function EditorShell({ session, commands, ui }: EditorShellProps) {
         onResolveConflict={p.handleResolveConflict}
         outlineOpen={p.contextRail.outlineOpen}
         detailsOpen={p.contextRail.detailsOpen}
-        onShowOutline={p.contextRail.openOutline}
-        onToggleDetails={p.contextRail.toggleDetails}
+        onShowOutline={() => {
+          p.documentLinks.closePanel();
+          p.contextRail.openOutline();
+        }}
+        onToggleDetails={() => {
+          p.documentLinks.closePanel();
+          p.contextRail.toggleDetails();
+        }}
         starred={p.starred}
         handleStarToggle={p.handleStarToggle}
         viewMode={p.viewMode}
         setViewMode={p.setViewMode}
         scrollSyncEnabled={p.scrollSyncEnabled}
         onToggleScrollSync={() => p.setScrollSyncEnabled(!p.scrollSyncEnabled)}
+        linkedNotesOpen={p.documentLinks.open}
+        linkedNotesLoaded={p.documentLinks.loaded}
+        linkedNotesCount={p.documentLinks.counts?.unique ?? 0}
+        onLinkedNotesTriggerElement={p.documentLinks.setTriggerElement}
+        onMobileMenuTriggerElement={p.documentLinks.setMobileTriggerElement}
+        onToggleLinkedNotes={() => {
+          if (p.documentLinks.open) {
+            p.documentLinks.closePanel();
+            return;
+          }
+          p.popover.setActivePopover(null);
+          p.sim.handleCollapseSimilar();
+          p.documentLinks.openPanel();
+        }}
+        onOpenLinkedNotes={() => {
+          p.popover.setActivePopover(null);
+          p.sim.handleCollapseSimilar();
+          p.documentLinks.openPanel();
+        }}
       />
       <MobileModeSwitch mode={p.viewMode} onChange={p.setViewMode} />
       {p.localBackupUnavailable && (
@@ -159,7 +184,10 @@ function EditorPane({ p }: { p: EditorShellFlatContract }) {
         executeCommand={p.ec.executeCommand}
         handlePreviewOpen={() => p.setShowPreviewModal(true)}
         activePopover={p.popover.activePopover}
-        setActivePopover={p.popover.setActivePopover}
+        setActivePopover={(value) => {
+          if (value) p.documentLinks.closePanel();
+          p.popover.setActivePopover(value);
+        }}
         colorButtonRef={p.popover.colorButtonRef}
         sizeButtonRef={p.popover.sizeButtonRef}
         emojiButtonRef={p.popover.emojiButtonRef}

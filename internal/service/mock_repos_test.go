@@ -24,6 +24,7 @@ type mockDocumentRepo struct {
 	updateStarredFn    func(ctx context.Context, userID, docID string, starred int) error
 	updateLinksFn      func(ctx context.Context, userID, sourceID string, targetIDs []string, mtime int64) error
 	getBacklinksFn     func(ctx context.Context, userID, targetID string) ([]model.Document, error)
+	listLinksFn        func(ctx context.Context, userID, documentID string, query model.DocumentLinksQuery) (*model.DocumentLinksResult, error)
 }
 
 func (m *mockDocumentRepo) Create(ctx context.Context, doc *model.Document) error {
@@ -106,6 +107,18 @@ func (m *mockDocumentRepo) UpdateLinks(ctx context.Context, userID, sourceID str
 
 func (m *mockDocumentRepo) GetBacklinks(ctx context.Context, userID, targetID string) ([]model.Document, error) {
 	return m.getBacklinksFn(ctx, userID, targetID)
+}
+
+func (m *mockDocumentRepo) ListLinks(
+	ctx context.Context,
+	userID string,
+	documentID string,
+	query model.DocumentLinksQuery,
+) (*model.DocumentLinksResult, error) {
+	if m.listLinksFn == nil {
+		return &model.DocumentLinksResult{}, nil
+	}
+	return m.listLinksFn(ctx, userID, documentID, query)
 }
 
 type mockVersionRepo struct {

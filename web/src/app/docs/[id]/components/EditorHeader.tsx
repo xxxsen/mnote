@@ -15,9 +15,12 @@ import {
   ShieldAlert,
   MoreHorizontal,
   Check,
+  Link2,
 } from "lucide-react";
 import type { EditorSyncStatus } from "../types";
 import type { EditorViewMode } from "../hooks/useEditorViewMode";
+import { useDesktopViewport } from "../hooks/useDesktopViewport";
+import { LinkedNotesTrigger } from "./LinkedNotesTrigger";
 
 type Props = {
   onBack: () => void;
@@ -37,9 +40,25 @@ type Props = {
   setViewMode: (mode: EditorViewMode) => void;
   scrollSyncEnabled: boolean;
   onToggleScrollSync: () => void;
+  linkedNotesOpen: boolean;
+  linkedNotesLoaded: boolean;
+  linkedNotesCount: number;
+  onLinkedNotesTriggerElement: (element: HTMLButtonElement | null) => void;
+  onMobileMenuTriggerElement: (element: HTMLButtonElement | null) => void;
+  onToggleLinkedNotes: () => void;
+  onOpenLinkedNotes: () => void;
 };
 
-function primaryState(props: Props) {
+function primaryState(
+  props: Pick<
+    Props,
+    | "syncStatus"
+    | "titleMissing"
+    | "onSave"
+    | "onRetry"
+    | "onResolveConflict"
+  >,
+) {
   const busy = props.syncStatus === "SAVING" || props.syncStatus === "QUEUED";
   if (props.syncStatus === "ERROR")
     return { busy, label: "Retry", action: props.onRetry, disabled: false };
@@ -78,7 +97,12 @@ function PrimaryStatusIcon({
   return <Save className="mr-1 h-4 w-4" />;
 }
 
-export function EditorHeader(props: Props) {
+export function EditorHeader({
+  onLinkedNotesTriggerElement,
+  onMobileMenuTriggerElement,
+  ...props
+}: Props) {
+  const isDesktop = useDesktopViewport();
   const primary = primaryState(props);
   const displayTitle = props.title || "Untitled";
   const starLabel = props.starred ? "Unstar note" : "Star note";
@@ -150,6 +174,15 @@ export function EditorHeader(props: Props) {
             <Eye />
           </ModeButton>
         </div>
+        {isDesktop ? (
+          <LinkedNotesTrigger
+            ref={onLinkedNotesTriggerElement}
+            open={props.linkedNotesOpen}
+            loaded={props.linkedNotesLoaded}
+            count={props.linkedNotesCount}
+            onClick={props.onToggleLinkedNotes}
+          />
+        ) : null}
         <Button
           variant="ghost"
           size="icon"
@@ -172,27 +205,43 @@ export function EditorHeader(props: Props) {
         >
           <Columns className="h-4 w-4 rotate-90" />
         </Button>
-        <div className="lg:hidden">
-          <Menu
-            label="More editor actions"
-            trigger={<MoreHorizontal className="h-4 w-4" aria-hidden="true" />}
-            entries={[
-              {
-                id: "scroll-sync",
-                label: `Scroll sync ${props.scrollSyncEnabled ? "on" : "off"}`,
-                icon: props.scrollSyncEnabled ? <Check className="h-4 w-4" /> : undefined,
-                onSelect: props.onToggleScrollSync,
-              },
-              {
-                id: "star",
-                label: starLabel,
-                icon: <Star className={`h-4 w-4 ${starIconClass}`} />,
-                onSelect: props.handleStarToggle,
-              },
-            ]}
-            triggerClassName="h-11 w-11 sm:h-10 sm:w-10"
-          />
-        </div>
+        {!isDesktop ? (
+          <div>
+            <Menu
+              label="More editor actions"
+              trigger={
+                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+              }
+              onTriggerElement={onMobileMenuTriggerElement}
+              entries={[
+                {
+                  id: "scroll-sync",
+                  label: `Scroll sync ${props.scrollSyncEnabled ? "on" : "off"}`,
+                  icon: props.scrollSyncEnabled ? (
+                    <Check className="h-4 w-4" />
+                  ) : undefined,
+                  onSelect: props.onToggleScrollSync,
+                },
+                {
+                  id: "linked-notes",
+                  label:
+                    props.linkedNotesLoaded && props.linkedNotesCount > 0
+                      ? `Linked notes (${props.linkedNotesCount})`
+                      : "Linked notes",
+                  icon: <Link2 className="h-4 w-4" />,
+                  onSelect: props.onOpenLinkedNotes,
+                },
+                {
+                  id: "star",
+                  label: starLabel,
+                  icon: <Star className={`h-4 w-4 ${starIconClass}`} />,
+                  onSelect: props.handleStarToggle,
+                },
+              ]}
+              triggerClassName="h-11 w-11 sm:h-10 sm:w-10"
+            />
+          </div>
+        ) : null}
       </div>
     </header>
   );

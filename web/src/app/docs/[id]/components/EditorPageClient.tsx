@@ -28,7 +28,7 @@ import { useSlashMenu } from "../hooks/useSlashMenu";
 import { useWikilinkMenu } from "../hooks/useWikilinkMenu";
 import { useInlineTag } from "../hooks/useInlineTag";
 import { useEditorContextRail } from "../hooks/useEditorContextRail";
-import { useLinkGraph } from "../hooks/useLinkGraph";
+import { useDocumentLinks } from "../hooks/useDocumentLinks";
 import { useEditorExtensions } from "../hooks/useEditorExtensions";
 import { usePopover } from "../hooks/usePopover";
 import { useTagState } from "../hooks/useTagState";
@@ -93,6 +93,12 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
   const viewPrefs = useEditorViewMode();
   const outline = useMemo(() => buildOutline(ec.previewContent), [ec.previewContent]);
   const contextRail = useEditorContextRail(docId);
+  const documentLinks = useDocumentLinks({
+    docId,
+    previewContent: ec.previewContent,
+    savedContent: saveQueue.lastSavedContent,
+    serverRevision: saveQueue.serverRevision,
+  });
   const scrollSync = useScrollSync({ loading, editorViewRef, enabled: viewPrefs.scrollSyncEnabled, outline, scopeKey: docId });
   const popover = usePopover({ handleFormat: ec.handleFormat });
   const filePaste = useFilePaste({ insertTextAtCursor: ec.insertTextAtCursor, replacePlaceholder: ec.replacePlaceholder, toast });
@@ -119,7 +125,6 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
 
   const slashMenu = useSlashMenu({ editorViewRef, handleFormat: ec.handleFormat, executeCommand: ec.executeCommand, handleInsertTable: ec.handleInsertTable, insertTextAtCursor: ec.insertTextAtCursor });
   const wikilinkMenu = useWikilinkMenu({ editorViewRef, contentRef, lastSavedContentRef, schedulePreviewUpdate: ec.schedulePreviewUpdate, setContent: ec.setContent, setPreviewContent: ec.setPreviewContent, setHasUnsavedChanges: ec.setHasUnsavedChanges });
-  const linkGraphHook = useLinkGraph({ docId, title, previewContent: ec.previewContent });
   const inlineTag = useInlineTag({ allTags: tagState.allTags, selectedTagIDs: tagState.selectedTagIDs, tagActions: tagActionsHook, mergeTags: tagState.mergeTags, saveTagIDs: tagState.saveTagIDs, findExistingTagByName: tagState.findExistingTagByName, toast });
   const editorExt = useEditorExtensions({ currentThemeId, updateCursorInfo: ec.updateCursorInfo, startTransition: ec.startTransition, setSlashMenu: slashMenu.setSlashMenu, setWikilinkMenu: wikilinkMenu.setWikilinkMenu });
 
@@ -219,7 +224,7 @@ export function EditorPageClient({ docId }: EditorPageClientProps) {
         handleRevert: pageActions.handleRevert, onCreateEditor,
       }}
       ui={{
-        navigate, toast, linkGraphHook, outline, contextRail, inlineTag, preview, share, quickOpen, tagState, sim, documentActions,
+        navigate, toast, documentLinks, outline, contextRail, inlineTag, preview, share, quickOpen, tagState, sim, documentActions,
         starred, currentThemeId,
         showDeleteConfirm, setShowDeleteConfirm, showPreviewModal, setShowPreviewModal,
         viewMode: viewPrefs.viewMode, setViewMode: viewPrefs.setViewMode,

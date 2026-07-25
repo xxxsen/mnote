@@ -74,6 +74,13 @@ describe("editor interaction primitives", () => {
       setViewMode: vi.fn(),
       scrollSyncEnabled: true,
       onToggleScrollSync: vi.fn(),
+      linkedNotesOpen: false,
+      linkedNotesLoaded: false,
+      linkedNotesCount: 0,
+      onLinkedNotesTriggerElement: vi.fn(),
+      onMobileMenuTriggerElement: vi.fn(),
+      onToggleLinkedNotes: vi.fn(),
+      onOpenLinkedNotes: vi.fn(),
     };
     const { rerender } = render(
       <EditorHeader {...common} syncStatus="ERROR" />,
