@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
+import {
+  NEW_NOTE_EDITOR_VIEW_MODE,
+  saveEditorViewModePreference,
+} from "@/lib/editor-view-mode";
 import type { Document, Template } from "@/types";
 import { VARIABLE_REGEX, normalizeTemplatePlaceholders, resolveSystemVariableClient } from "../utils";
 import { useTemplateCatalog } from "./useTemplateCatalog";
@@ -157,6 +161,7 @@ export function useTemplates() {
         body: JSON.stringify({ variables }),
       });
       setShowVariableModal(false);
+      saveEditorViewModePreference(NEW_NOTE_EDITOR_VIEW_MODE);
       router.push(`/docs/${doc.id}`);
     } catch (error) {
       toast({

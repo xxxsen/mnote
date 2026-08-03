@@ -12,6 +12,10 @@ import {
 } from "@/lib/api";
 import type { Document, Tag } from "@/types";
 import { copyToClipboard } from "@/lib/clipboard";
+import {
+  NEW_NOTE_EDITOR_VIEW_MODE,
+  saveEditorViewModePreference,
+} from "@/lib/editor-view-mode";
 
 import { DocsNavigationDrawer } from "./components/DocsNavigationDrawer";
 import { DocumentGrid } from "./components/DocumentGrid";
@@ -226,9 +230,9 @@ export default function DocsPage() {
         method: "POST",
         body: JSON.stringify({ title: "Untitled", content: "" }),
       });
+      saveEditorViewModePreference(NEW_NOTE_EDITOR_VIEW_MODE);
       router.push(`/docs/${doc.id}`);
-    } catch (error) {
-      console.error(error);
+    } catch {
       toast({ description: "Failed to create document.", variant: "error" });
     } finally {
       creatingRef.current = false;

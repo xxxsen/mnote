@@ -26,6 +26,8 @@
 - `ReadingSurface`：Preview、全屏预览和模板/公开阅读页共享的阅读容器，只统一视觉与局部
   overflow，不合并业务状态。
 - `useEditorContextRail`：维护 Outline / Details 视图、Details tab、抽屉和折叠偏好；切换文档时重置视图与 tab。
+- `editor-view-mode.ts`：集中维护编辑器模式类型、存储 key、合法值读取和新笔记的 Split 默认意图；
+  编辑器 Hook 与创建入口不得各自复制存储 key。
 - `DetailsPanelContent` / `DetailsShareContent`：History、Share、导出和删除的纯内容组件，不自行创建定位外壳。
 - `SplitPane`：桌面分栏比例、像素最小宽度和键盘/指针交互。
 - `editor-contracts.ts`：页面组合层与渲染层之间的显式接口，组件 Props 不依赖 Hook 推断返回类型。
@@ -207,11 +209,16 @@ Markdown 预览的 `h1-h6`、`p`、`li`、`pre`、`blockquote`、`table` 和 `hr
 
 桌面端支持 Edit、Split、Preview 三种模式。文档上下文是主工作区的 flex sibling，不使用 fixed、absolute 或补偿 margin：
 
+- 视图模式使用全局偏好 `mnote:editor-view-mode:v1`。打开已有笔记时沿用最后保存的合法模式；直接新建或
+  从模板创建成功后，在进入新笔记前同步写为 Split。创建失败不修改模式，Split 重置不修改分栏比例或
+  滚动同步偏好。小于 `1024px` 时保存的 Split 按既有响应式规则显示为可编辑的单栏 Edit。
 - 视口不小于 `1280px` 时常驻最右侧；展开宽度为 `304px`，折叠图标栏宽度为 `52px`。
 - 默认视图为整栏 Outline，并默认展开；折叠偏好使用 `mnote:editor-context-rail:collapsed:v1` 持久化，当前视图和 Details tab 不跨文档持久化。
 - Mentions 和 Graph 当前不提供可见入口。顶部 Details 按钮把同一物理右栏切换为 History、Share，并
   隐藏 Outline；按钮随后变为 Show outline，点击后原位恢复 Outline。Details 切换不是折叠操作，右栏
-  折叠由独立按钮控制。
+  折叠由独立按钮控制。若 Outline 原本折叠，Details 只在当前文档中临时展开，折叠 key 保持不变；关闭
+  Details 后立即恢复折叠图标栏。只有右栏折叠/展开按钮或折叠栏中的 Open outline 这类显式动作可以修改
+  持久化折叠偏好。
 - 同一文档内切到 Outline 时保留 Details 组件实例、当前 tab 和已加载数据；再次打开 Details 不重复加载
   已保留的 History 或 Share。首次进入 Details 默认定位 History；切换文档时重置为 Outline / History。
 - `1024px–1279px` 使用最大宽度 `384px` 的右侧 Dialog drawer；小于 `1024px` 时同一 drawer 铺满可用宽度。窄屏顶部的 Outline 和 Details 入口打开同一个 drawer，内容仍互斥；Outline 选中章节后关闭 drawer。断点进入宽屏会关闭 drawer，退出宽屏不会自动弹出。

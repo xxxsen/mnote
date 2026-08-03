@@ -19,6 +19,7 @@ const mockApiFetch = vi.mocked(apiFetch);
 beforeEach(() => {
   mockApiFetch.mockReset();
   stableToast.mockReset();
+  window.localStorage.clear();
 });
 
 describe("useTemplateTags", () => {
@@ -373,7 +374,9 @@ describe("useTemplates", () => {
   });
 
   it("createFromTemplate navigates on success", async () => {
-    const stablePush = vi.fn();
+    const stablePush = vi.fn(() => {
+      expect(window.localStorage.getItem("mnote:editor-view-mode:v1")).toBe("split");
+    });
     vi.mocked(await import("next/navigation")).useRouter = (() => ({ push: stablePush })) as never;
     mockApiFetch.mockImplementation(((url: string, opts?: RequestInit) => {
       if (url.startsWith("/templates/meta")) return Promise.resolve({ items: [metaItem("t1", "T1")], total: 1 });
@@ -382,13 +385,17 @@ describe("useTemplates", () => {
       if (url === "/tags/ids") return Promise.resolve([]);
       return Promise.resolve(undefined);
     }));
+    window.localStorage.setItem("mnote:editor-view-mode:v1", "preview");
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     await act(async () => { await result.current.createFromTemplate({ NAME: "Test" }); });
     expect(stablePush).toHaveBeenCalledWith("/docs/doc1");
+    expect(window.localStorage.getItem("mnote:editor-view-mode:v1")).toBe("split");
   });
 
   it("createFromTemplate error shows toast", async () => {
+    const stablePush = vi.fn();
+    vi.mocked(await import("next/navigation")).useRouter = (() => ({ push: stablePush })) as never;
     mockApiFetch.mockImplementation(((url: string, opts?: RequestInit) => {
       if (url.startsWith("/templates/meta")) return Promise.resolve({ items: [metaItem("t1", "T1")], total: 1 });
       if (url.endsWith("/create") && opts?.method === "POST") return Promise.reject(new Error("fail"));
@@ -396,10 +403,13 @@ describe("useTemplates", () => {
       if (url === "/tags/ids") return Promise.resolve([]);
       return Promise.resolve(undefined);
     }));
+    window.localStorage.setItem("mnote:editor-view-mode:v1", "preview");
     const { result } = renderHook(() => useTemplates());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     await act(async () => { await result.current.createFromTemplate({ NAME: "Test" }); });
     expect(stableToast).toHaveBeenCalledWith(expect.objectContaining({ variant: "error" }));
+    expect(stablePush).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem("mnote:editor-view-mode:v1")).toBe("preview");
   });
 
   it("previewContent resolves system variables", async () => {

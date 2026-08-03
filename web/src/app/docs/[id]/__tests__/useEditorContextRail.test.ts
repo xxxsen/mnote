@@ -135,6 +135,59 @@ describe("useEditorContextRail", () => {
     expect(result.current.detailsOpen).toBe(true);
   });
 
+  it("temporarily expands Details without replacing a collapsed preference", () => {
+    localStorage.setItem("mnote:editor-context-rail:collapsed:v1", "1");
+    installMatchMedia(true);
+    const { result } = renderHook(() => useEditorContextRail("doc-a"));
+
+    expect(result.current.collapsed).toBe(true);
+    act(() => result.current.toggleDetails());
+    expect(result.current.view).toBe("details");
+    expect(result.current.detailsOpen).toBe(true);
+    expect(result.current.collapsed).toBe(false);
+    expect(localStorage.getItem("mnote:editor-context-rail:collapsed:v1")).toBe(
+      "1",
+    );
+
+    act(() => result.current.toggleDetails());
+    expect(result.current.view).toBe("outline");
+    expect(result.current.collapsed).toBe(true);
+    expect(result.current.outlineOpen).toBe(false);
+    expect(localStorage.getItem("mnote:editor-context-rail:collapsed:v1")).toBe(
+      "1",
+    );
+  });
+
+  it("persists an explicit Outline expansion from the collapsed rail", () => {
+    localStorage.setItem("mnote:editor-context-rail:collapsed:v1", "1");
+    installMatchMedia(true);
+    const { result } = renderHook(() => useEditorContextRail("doc-a"));
+
+    act(() => result.current.openOutline());
+
+    expect(result.current.outlineOpen).toBe(true);
+    expect(result.current.collapsed).toBe(false);
+    expect(localStorage.getItem("mnote:editor-context-rail:collapsed:v1")).toBe(
+      "0",
+    );
+  });
+
+  it("lets an explicit collapse cancel a temporary Details expansion", () => {
+    localStorage.setItem("mnote:editor-context-rail:collapsed:v1", "1");
+    installMatchMedia(true);
+    const { result } = renderHook(() => useEditorContextRail("doc-a"));
+
+    act(() => result.current.openDetails());
+    expect(result.current.detailsOpen).toBe(true);
+    act(() => result.current.toggleCollapsed());
+
+    expect(result.current.collapsed).toBe(true);
+    expect(result.current.detailsOpen).toBe(false);
+    expect(localStorage.getItem("mnote:editor-context-rail:collapsed:v1")).toBe(
+      "1",
+    );
+  });
+
   it("preserves the active Details tab when opened from a collapsed shortcut", () => {
     installMatchMedia(true);
     const { result } = renderHook(() => useEditorContextRail("doc-a"));
@@ -145,6 +198,27 @@ describe("useEditorContextRail", () => {
 
     expect(result.current.detailsTab).toBe("share");
     expect(result.current.detailsOpen).toBe(true);
+  });
+
+  it("clears a temporary Details expansion when the document changes", () => {
+    localStorage.setItem("mnote:editor-context-rail:collapsed:v1", "1");
+    installMatchMedia(true);
+    const { result, rerender } = renderHook(
+      ({ docId }) => useEditorContextRail(docId),
+      { initialProps: { docId: "doc-a" } },
+    );
+
+    act(() => result.current.openDetails("share"));
+    expect(result.current.detailsOpen).toBe(true);
+    rerender({ docId: "doc-b" });
+
+    expect(result.current.view).toBe("outline");
+    expect(result.current.detailsTab).toBe("history");
+    expect(result.current.collapsed).toBe(true);
+    expect(result.current.outlineOpen).toBe(false);
+    expect(localStorage.getItem("mnote:editor-context-rail:collapsed:v1")).toBe(
+      "1",
+    );
   });
 
   it("switches an open mobile Details drawer directly to Outline", () => {

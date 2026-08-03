@@ -2,17 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-export type EditorViewMode = "edit" | "split" | "preview";
+import {
+  EDITOR_VIEW_MODE_STORAGE_KEY,
+  loadEditorViewModePreference,
+  saveEditorViewModePreference,
+  type EditorViewMode,
+} from "@/lib/editor-view-mode";
 
-const MODE_KEY = "mnote:editor-view-mode:v1";
 const RATIO_KEY = "mnote:editor-split-ratio:v1";
 const SCROLL_SYNC_KEY = "mnote:editor-scroll-sync:v1";
 
-function readMode(): EditorViewMode {
-  if (typeof window === "undefined") return "split";
-  const value = window.localStorage.getItem(MODE_KEY);
-  return value === "edit" || value === "preview" || value === "split" ? value : "split";
-}
+export type { EditorViewMode } from "@/lib/editor-view-mode";
 
 function readRatio(): number {
   if (typeof window === "undefined") return 50;
@@ -30,13 +30,15 @@ export function clampSplitRatio(value: number): number {
 }
 
 export function useEditorViewMode() {
-  const [viewMode, setViewModeState] = useState<EditorViewMode>(readMode);
+  const [viewMode, setViewModeState] = useState<EditorViewMode>(
+    loadEditorViewModePreference,
+  );
   const [splitRatio, setSplitRatioState] = useState(readRatio);
   const [scrollSyncEnabled, setScrollSyncEnabledState] = useState(readScrollSync);
 
   const setViewMode = useCallback((mode: EditorViewMode) => {
     setViewModeState(mode);
-    window.localStorage.setItem(MODE_KEY, mode);
+    saveEditorViewModePreference(mode);
   }, []);
   const setSplitRatio = useCallback((ratio: number) => {
     const next = clampSplitRatio(ratio);
@@ -50,7 +52,9 @@ export function useEditorViewMode() {
 
   useEffect(() => {
     const handler = (event: StorageEvent) => {
-      if (event.key === MODE_KEY) setViewModeState(readMode());
+      if (event.key === EDITOR_VIEW_MODE_STORAGE_KEY) {
+        setViewModeState(loadEditorViewModePreference());
+      }
       if (event.key === RATIO_KEY) setSplitRatioState(readRatio());
       if (event.key === SCROLL_SYNC_KEY) setScrollSyncEnabledState(readScrollSync());
     };

@@ -3,6 +3,7 @@ import { mkdir, open, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export type UiApiState = {
+  createDocumentFails: boolean;
   docsEmpty: boolean;
   loginFails: boolean;
   mockFiles: boolean;
@@ -370,6 +371,9 @@ async function handleDocuments(route: Route, url: URL, method: string, state: Ui
     return ok(route, state.docsEmpty ? [] : [documentFixture]);
   }
   if (path === "/api/v1/documents" && method === "POST") {
+    if (state.createDocumentFails) {
+      return apiError(route, 10000002, "Create document failed");
+    }
     return ok(route, documentFixture);
   }
   if (path === "/api/v1/documents/doc-1" && method === "PUT") {
@@ -457,6 +461,7 @@ async function handleApi(route: Route, state: UiApiState) {
 
 export async function installUiApi(page: Page, overrides: Partial<UiApiState> = {}) {
   const state: UiApiState = {
+    createDocumentFails: false,
     docsEmpty: false,
     loginFails: false,
     mockFiles: true,

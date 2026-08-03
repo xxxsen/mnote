@@ -97,6 +97,9 @@ function ContextHarness({
       <button type="button" onClick={() => contextRail.openDetails()}>
         Open details
       </button>
+      <button type="button" onClick={contextRail.toggleDetails}>
+        {contextRail.detailsOpen ? "Show outline" : "Show details"}
+      </button>
       {docked ? <EditorContextRail p={p} /> : <EditorContextDrawer p={p} />}
     </>
   );
@@ -150,6 +153,28 @@ describe("EditorContextPanel", () => {
       expect(document.activeElement).toBe(
         screen.getByRole("tab", { name: "History" }),
       ),
+    );
+  });
+
+  it("restores the collapsed rail after the page-level Details round trip", () => {
+    localStorage.setItem("mnote:editor-context-rail:collapsed:v1", "1");
+    installMatchMedia(true);
+    render(<ContextHarness docked />);
+
+    expect(screen.getByTestId("editor-context-rail-collapsed")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Show details" }));
+    expect(screen.getByText("Document details")).toBeTruthy();
+    expect(localStorage.getItem("mnote:editor-context-rail:collapsed:v1")).toBe(
+      "1",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Show outline" }));
+    expect(screen.getByTestId("editor-context-rail-collapsed")).toBeTruthy();
+    expect(
+      screen.queryByRole("navigation", { name: "Note outline" }),
+    ).toBeNull();
+    expect(localStorage.getItem("mnote:editor-context-rail:collapsed:v1")).toBe(
+      "1",
     );
   });
 

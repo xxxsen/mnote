@@ -14,6 +14,7 @@ type RailState = {
   view: EditorContextView;
   detailsTab: EditorDetailsTab;
   drawerOpen: boolean;
+  temporarilyExpandedForDetails: boolean;
 };
 
 function createDefaultState(scopeKey: string): RailState {
@@ -22,6 +23,7 @@ function createDefaultState(scopeKey: string): RailState {
     view: "outline",
     detailsTab: "history",
     drawerOpen: false,
+    temporarilyExpandedForDetails: false,
   };
 }
 
@@ -58,8 +60,12 @@ export function useEditorContextRail(docId: string) {
   const [state, setState] = useState<RailState>(() =>
     createDefaultState(docId),
   );
-  const [collapsed, setCollapsedState] = useState(readCollapsedPreference);
+  const [collapsePreference, setCollapsePreferenceState] = useState(
+    readCollapsedPreference,
+  );
   const current = state.scopeKey === docId ? state : createDefaultState(docId);
+  const collapsed =
+    collapsePreference && !current.temporarilyExpandedForDetails;
 
   const update = useCallback(
     (patch: Partial<Omit<RailState, "scopeKey">>) => {
@@ -72,16 +78,24 @@ export function useEditorContextRail(docId: string) {
     [docId],
   );
 
-  const setCollapsed = useCallback((next: boolean) => {
-    setCollapsedState(next);
-    window.localStorage.setItem(
-      EDITOR_CONTEXT_RAIL_COLLAPSED_KEY,
-      next ? "1" : "0",
-    );
-  }, []);
+  const setCollapsed = useCallback(
+    (next: boolean) => {
+      update({ temporarilyExpandedForDetails: false });
+      setCollapsePreferenceState(next);
+      window.localStorage.setItem(
+        EDITOR_CONTEXT_RAIL_COLLAPSED_KEY,
+        next ? "1" : "0",
+      );
+    },
+    [update],
+  );
 
   const openOutline = useCallback(() => {
-    update({ view: "outline", drawerOpen: !isDocked });
+    update({
+      view: "outline",
+      drawerOpen: !isDocked,
+      temporarilyExpandedForDetails: false,
+    });
     if (isDocked) setCollapsed(false);
   }, [isDocked, setCollapsed, update]);
 
@@ -91,10 +105,10 @@ export function useEditorContextRail(docId: string) {
         view: "details",
         ...(tab ? { detailsTab: tab } : {}),
         drawerOpen: !isDocked,
+        temporarilyExpandedForDetails: isDocked && collapsePreference,
       });
-      if (isDocked) setCollapsed(false);
     },
-    [isDocked, setCollapsed, update],
+    [collapsePreference, isDocked, update],
   );
 
   const closeDrawer = useCallback(() => {
@@ -106,7 +120,11 @@ export function useEditorContextRail(docId: string) {
       current.view === "details" &&
       (isDocked ? !collapsed : current.drawerOpen);
     if (detailsVisible) {
-      openOutline();
+      update({
+        view: "outline",
+        drawerOpen: !isDocked,
+        temporarilyExpandedForDetails: false,
+      });
       return;
     }
     openDetails("history");
@@ -116,7 +134,7 @@ export function useEditorContextRail(docId: string) {
     current.view,
     isDocked,
     openDetails,
-    openOutline,
+    update,
   ]);
 
   useEffect(() => {
