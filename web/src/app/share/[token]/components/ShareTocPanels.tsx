@@ -38,7 +38,7 @@ export function FloatingToc({
   return (
     <aside
       aria-label="Table of contents"
-      className="fixed right-8 top-24 z-30 hidden w-72 animate-in rounded-xl border border-border bg-popover/95 shadow-lg backdrop-blur-md duration-200 fade-in slide-in-from-right-4 motion-reduce:animate-none xl:block"
+      className="fixed left-[calc(50%+29rem)] top-24 z-30 hidden w-72 animate-in rounded-xl border border-border bg-popover/95 shadow-lg backdrop-blur-md duration-200 fade-in slide-in-from-right-4 motion-reduce:animate-none 2xl:block"
     >
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <div className="text-xs font-semibold text-muted-foreground">On this page</div>
