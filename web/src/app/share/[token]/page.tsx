@@ -59,7 +59,7 @@ export default function SharePage() {
         aria-labelledby="share-title"
         className="mx-auto w-full max-w-[1280px] px-4 py-12 md:px-8 md:py-20"
       >
-        <div className="mx-auto w-full max-w-4xl xl:ml-0">
+        <div className="mx-auto w-full max-w-4xl">
           <ShareHeader
             doc={share.doc}
             detail={share.detail}
@@ -235,7 +235,7 @@ function FloatingActionButtons({
             type="button"
             label="Open table of contents"
             variant="outline"
-            className="bg-background/95 shadow-md xl:hidden"
+            className="bg-background/95 shadow-md 2xl:hidden"
             onClick={onShowMobileToc}
           >
             <List className="h-4 w-4" aria-hidden="true" />

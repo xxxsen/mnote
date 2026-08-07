@@ -325,7 +325,8 @@ Docs、Tags、Tasks、Templates、Assets 和 Settings 的 layout 复用 `Authent
 ### 8.10 Share
 
 - 页面保留面向阅读的作者、权限、过期信息、正文、TOC 和 Comments 层级，不显示独立摘要区块。
-- 正文使用 ReadingSurface，反馈使用全局 Toast。
+- 正文使用 ReadingSurface，阅读列在所有响应式断点保持水平居中，反馈使用全局 Toast。
+- 浮动目录只在不遮挡阅读列的超宽屏展示，其他断点使用目录按钮和 Drawer。
 - 密码输入有可见 label、`current-password` autocomplete 和 alert 错误。
 - 复制、下载、目录、回顶部和评论图标按钮都有可访问名称。
 - 导航 Link 不包裹 Button。
