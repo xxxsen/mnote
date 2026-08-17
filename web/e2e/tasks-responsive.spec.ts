@@ -19,6 +19,8 @@ test("tasks switches from desktop calendar to complete mobile schedule", async (
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/todos");
   await expect(page.getByRole("heading", { name: "July 2026" }).first()).toBeVisible();
+  await expect(page.locator('[data-month-key="2026-07"]')).toBeInViewport();
+  await expect(page.getByText(/^(Open|Completed)$/, { exact: true })).toHaveCount(0);
   await expect(page).toHaveScreenshot("tasks-desktop-calendar.png", { animations: "disabled" });
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -42,5 +44,6 @@ test("day details expose independent checkbox, edit, and delete actions", async 
   await expect(dialog.getByRole("checkbox")).toHaveCount(2);
   await expect(dialog.getByRole("button", { name: /Edit Review the release/ })).toBeVisible();
   await expect(dialog.getByRole("button", { name: /Delete Review the release/ })).toBeVisible();
+  await expect(dialog.getByText(/^(Open|Completed)$/, { exact: true })).toHaveCount(0);
   await expect(page).toHaveScreenshot("tasks-day-details.png", { animations: "disabled" });
 });

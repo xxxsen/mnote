@@ -94,9 +94,6 @@ export function DayViewModal({
                   title={todo.content}
                 >
                   <span className="line-clamp-2">{todo.content}</span>
-                  <span className="mt-1 block text-xs font-medium no-underline">
-                    {todo.done === 1 ? "Completed" : "Open"}
-                  </span>
                 </button>
                 <button
                   type="button"

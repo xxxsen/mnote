@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { createElement } from "react";
 
 vi.mock("@/lib/api", () => ({ apiFetch: vi.fn(), getAuthToken: vi.fn().mockReturnValue("tok") }));
 vi.mock("@/lib/todo.service", () => ({
@@ -48,6 +49,36 @@ describe("useTodoCalendar", () => {
     const { result } = renderHook(() => useTodoCalendar());
     await waitFor(() => { expect(result.current.loading).toBe(false); });
     expect(mockTodoService.listByDateRange).toHaveBeenCalled();
+  });
+
+  it("scrolls to the current month after loading mounts the calendar", async () => {
+    mockTodoService.listByDateRange.mockResolvedValue([]);
+
+    function CalendarHarness() {
+      const calendar = useTodoCalendar();
+      if (calendar.loading) return null;
+
+      const currentMonthKey = `${calendar.visibleMonth.getFullYear()}-${String(
+        calendar.visibleMonth.getMonth() + 1,
+      ).padStart(2, "0")}`;
+
+      return createElement(
+        "div",
+        { ref: calendar.calendarRef, "data-testid": "calendar" },
+        createElement("section", {
+          "data-month-key": currentMonthKey,
+          ref: (node) => {
+            if (node) Object.defineProperty(node, "offsetTop", { configurable: true, value: 321 });
+          },
+        }),
+      );
+    }
+
+    render(createElement(CalendarHarness));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("calendar").scrollTop).toBe(321);
+    });
   });
 
   it("handleCreateTodo creates a todo", async () => {

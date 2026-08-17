@@ -125,9 +125,6 @@ export function CalendarCell({
                 title={todo.content}
               >
                 <span className="line-clamp-1">{todo.content}</span>
-                <span className="block text-xs font-medium no-underline">
-                  {todo.done === 1 ? "Completed" : "Open"}
-                </span>
               </button>
             </div>
           );

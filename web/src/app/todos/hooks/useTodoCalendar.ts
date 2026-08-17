@@ -293,6 +293,7 @@ export function useTodoCalendar() {
 
   /* v8 ignore start -- layout scroll adjustment requires a real DOM viewport */
   useLayoutEffect(() => {
+    if (loading) return;
     const container = calendarRef.current;
     if (!container) return;
     if (!initializedRef.current) {
@@ -314,7 +315,7 @@ export function useTodoCalendar() {
     }
     pendingAdjustRef.current = null;
     loadingMoreRef.current = false;
-  }, [months]);
+  }, [loading, months]);
   /* v8 ignore stop */
 
   const todosByDate = useMemo(() => groupTodosByDate(todos), [todos]);

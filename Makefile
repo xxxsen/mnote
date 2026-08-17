@@ -1,4 +1,4 @@
-.PHONY: build test test-unit test-integration test-coverage install-golangci-lint lint-go backend-build backend-test backend-check build-image build-web-image build-yaegi-wasm run-web run dev run-dev-docker web-install web-lint web-test web-build web-e2e web-e2e-update-snapshots
+.PHONY: build test test-unit test-integration test-coverage install-golangci-lint lint-go backend-build backend-test backend-check build-image build-web-image build-yaegi-wasm run-web run dev dev-postgres-setup dev-script-test run-dev-docker web-install web-lint web-test web-build web-e2e web-e2e-update-snapshots
 
 BIN ?= mnote
 GO_TEST_PKGS ?= ./cmd/... ./internal/...
@@ -54,6 +54,13 @@ run:
 
 dev:
 	MNOTE_DEV_CONFIG="$(CONFIG)" ./scripts/dev.sh
+
+dev-postgres-setup:
+	./scripts/setup-dev-postgres.sh
+
+dev-script-test:
+	./scripts/setup-dev-postgres-test.sh
+	./scripts/dev-script-test.sh
 
 run-dev-docker:
 	docker compose -f docker/docker-compose.yml up --build

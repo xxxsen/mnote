@@ -2,7 +2,7 @@
 
 ## 1. 功能范围
 
-工程提供 Makefile、开发启动脚本、Docker Compose、前后端构建命令和质量检查。开发环境与生产环境使用不同端口和配置，但前端 API 地址必须始终指向同一轮启动的后端。
+工程提供 Makefile、本地进程开发启动脚本、显式 Docker 部署入口、前后端构建命令和质量检查。开发环境与生产环境使用不同端口和配置，但前端 API 地址必须始终指向同一轮启动的后端。
 
 ## 2. `make dev`
 
@@ -12,7 +12,15 @@
 - 后端：`8850`。
 - PostgreSQL：`15432`。
 
-启动逻辑为当前工作区创建隔离的 Compose 项目和数据库数据目录，生成开发后端配置，启动数据库、Go 服务和 Next.js 开发服务器。脚本在退出时清理本轮子进程和容器，避免遗留端口占用。
+本地开发需要 Go 1.24+ 和 Node.js/npm。系统没有 PostgreSQL server tools 时，启动器从已配置的
+APT 软件源下载 PostgreSQL 17、客户端和对应的 pgvector 包，解包到已忽略的
+`.cache/mnote-dev-tools`；该过程不需要 root 权限，也不写系统目录。启动逻辑随后在
+`.dev-data/postgres` 创建当前工作区专用的 PostgreSQL cluster，
+生成开发后端配置，并按本地 PostgreSQL、Go 服务、Next.js 开发服务器的顺序启动宿主机进程。
+`make dev` 不调用 Docker 或 Compose；容器部署必须显式使用 `run-dev-docker`。脚本退出时只清理
+本轮本地进程，数据库文件和上传文件保留。数据库只监听环回地址，Unix socket 使用工作区内的
+`.dev-data/postgres-socket`，不依赖系统级 socket 目录或 root 权限；TCP 连接使用开发配置中的
+SCRAM 密码认证。
 
 前端通过环境变量得到 `http://localhost:8850/api/v1` 等后端基址，后端 CORS 同时允许 `http://localhost:3090`。端口覆盖时这两个值必须由同一组变量推导，不能只改变监听端口。
 
@@ -26,6 +34,12 @@
 - 后端 CORS 使用新前端端口。
 - 默认开发配置禁用 OAuth；使用自定义 OAuth 配置时，调用者必须把 Provider 回调地址与覆盖后的前端端口保持一致。
 - 数据库 DSN 使用新数据库端口。
+- `MNOTE_DEV_PG_BIN_DIR` 可指定包含 `pg_ctl`、`initdb`、`pg_isready`、`psql` 和 `createdb` 的目录；未指定时先查 `PATH`，再查 `pg_config --bindir`。
+- `MNOTE_DEV_TOOL_CACHE_DIR` 可覆盖工作区本地 PostgreSQL 工具缓存目录。
+- `MNOTE_DEV_AUTO_SETUP_POSTGRES=0` 可关闭缺少 PostgreSQL 工具时的自动准备；也可使用 `make dev-postgres-setup` 显式准备。
+- `MNOTE_DEV_PG_DATA_DIR` 可覆盖本地 cluster 目录；默认目录为 `.dev-data/postgres`。
+- `MNOTE_DEV_SKIP_DB=1` 不启动或检查内置本地 cluster，调用者必须通过自定义配置提供可用数据库。
+- `MNOTE_DEV_KEEP_DB=1` 在开发脚本退出后保留本地 PostgreSQL 进程；下次启动会先停止该工作区的旧进程再重新启动。
 
 不得把开发生成的凭据、数据目录或配置提交到版本库。
 
@@ -39,7 +53,15 @@
 - Embedding 默认关闭，避免启动依赖外部密钥。
 - 日志输出到当前终端，便于定位前后端启动失败。
 
-脚本先等待数据库通过 `pg_isready`，再启动 `go run ./cmd/mnote`。只有后端端口开始接受连接后才启动 Next.js，避免页面已可访问但 API 尚未就绪。后端在就绪前退出或超过等待期限时，启动脚本直接失败。任一关键进程退出时 `wait -n` 结束主脚本，退出 trap 清理本轮记录的前后端进程并停止开发数据库。
+首次启动使用 `initdb` 初始化只监听 `127.0.0.1` 的开发 cluster，创建 `mnote` 数据库，并在启动
+后端前确认 pgvector extension 可用。工作区工具准备只使用 APT 已校验的软件包索引，采用 staging
+目录完整解包并验证命令、扩展文件和动态库后再原子切换；失败不会留下半安装目录。脚本不修改系统包，
+也不自动删除不兼容数据。无法下载工具或缺少宿主机动态库时给出明确错误。迁移器若发现数据库包含当前源码未知的
+迁移版本，仍拒绝降级启动，开发者应切回匹配代码或显式选择另一个 `MNOTE_DEV_PG_DATA_DIR`。
+
+脚本等待数据库通过 `pg_isready` 后启动 `go run ./cmd/mnote`。只有后端端口开始接受连接后才启动
+Next.js，避免页面已可访问但 API 尚未就绪。后端在就绪前退出或超过等待期限时，启动脚本直接失败。
+任一关键进程退出时 `wait -n` 结束主脚本，退出 trap 清理本轮记录的前后端进程并停止本地数据库。
 
 ## 5. 常用检查
 
@@ -137,7 +159,8 @@ feature flag、timeout 和摘要任务参数必须在升级前删除，否则进
 
 - `make dev` 的前端 API 基址与本轮后端端口始终一致。
 - Next.js 只在后端完成初始化并开始监听后启动。
-- 开发实例使用隔离项目名和数据，退出时只清理自身资源。
+- `make dev` 只能启动宿主机本地进程，不得隐式调用容器运行时。
+- 开发实例使用工作区专用的本地数据目录，退出时只清理自身进程。
 - 公开前端环境变量不能包含服务端密钥。
 - 生产数据和文件使用持久卷或对象存储。
 - 数据库迁移成功前后端不能接收业务流量。
@@ -148,7 +171,7 @@ feature flag、timeout 和摘要任务参数必须在升级前删除，否则进
 
 - 默认执行 `make dev` 后，`3090` 页面可以请求 `8850` 后端。
 - 覆盖三个端口后，API、CORS、数据库和 OAuth 回调仍使用覆盖值。
-- 退出开发脚本后没有遗留进程、容器或端口。
+- 退出开发脚本后没有遗留本地进程或端口；显式设置 `MNOTE_DEV_KEEP_DB=1` 的数据库除外。
 - 空库和已有库均可启动。
 - 未管理非空 schema、被修改的 migration 和未知高版本明确拒绝启动；双实例只执行一次 migration。
 - SIGTERM、监听失败和数据库 readiness 失败具备可重复的进程级验证。

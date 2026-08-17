@@ -172,8 +172,15 @@ OAuth 回调地址：
 
 ### 快速启动
 
-首次安装前端依赖后，`make dev` 会启动一个独立的 pgvector 开发数据库和 Go 后端，
-确认后端端口就绪后再启动 Next.js 前端：
+本地开发需要 Go 1.24+ 和 Node.js/npm。`make dev` 不调用 Docker：系统未安装 PostgreSQL server
+tools 时，它会从当前 APT 软件源把 PostgreSQL 17、客户端和 pgvector 解包到已忽略的
+`.cache/mnote-dev-tools`，不使用 root 权限或修改系统目录；随后在 `.dev-data/postgres` 初始化独立
+数据库目录，依次启动本地 PostgreSQL、当前源码的 Go 后端和 Next.js 前端进程。
+
+```bash
+# 可选：希望使用系统 PostgreSQL 时（包名可能随发行版调整）
+sudo apt install golang-go postgresql-17 postgresql-17-pgvector
+```
 
 ```bash
 make web-install
@@ -181,11 +188,13 @@ make dev
 ```
 
 默认访问地址为 `http://localhost:3090`，后端为 `http://localhost:8850`，测试账号为
-`test@test.com / test`。按 `Ctrl+C` 会停止本次后端、前端和数据库进程；数据库卷和
-`.dev-data/` 中的上传文件会保留，便于下次快速启动。该命令使用独立的开发 Compose
-项目和数据卷，不会复用 `docker/docker-compose.yml` 的部署数据。
+`test@test.com / test`。按 `Ctrl+C` 会停止本次后端、前端和 PostgreSQL 进程；数据库目录和
+`.dev-data/` 中的上传文件会保留，便于下次快速启动。开发入口不会读取或修改 Docker 部署数据。
 
 可通过 `MNOTE_DEV_WEB_PORT`、`MNOTE_DEV_BACKEND_PORT`、`MNOTE_DEV_DB_PORT` 覆盖端口；
+PostgreSQL 工具不在 `PATH` 或 `pg_config --bindir` 时可通过 `MNOTE_DEV_PG_BIN_DIR` 指定；
+通过 `MNOTE_DEV_PG_DATA_DIR` 可以覆盖本地 cluster 目录。设置
+`MNOTE_DEV_AUTO_SETUP_POSTGRES=0` 可禁止缺少工具时的自动准备，`make dev-postgres-setup` 可显式执行准备。
 通过 `make dev CONFIG=path/to/config.json` 使用自定义配置。自定义外部数据库时可设置
 `MNOTE_DEV_SKIP_DB=1`，需要退出后保留开发数据库进程时可设置
 `MNOTE_DEV_KEEP_DB=1`。自动生成的开发配置不启用真实 Embedding Provider，语义检索需要使用

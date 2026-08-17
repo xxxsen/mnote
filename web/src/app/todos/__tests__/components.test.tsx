@@ -5,7 +5,7 @@ import type { Todo } from "@/types";
 
 import { CalendarCell } from "../components/CalendarCell";
 import { MobileSchedule } from "../components/MobileSchedule";
-import { CreateTodoModal } from "../components/TodoModals";
+import { CreateTodoModal, DayViewModal } from "../components/TodoModals";
 
 afterEach(cleanup);
 
@@ -54,6 +54,7 @@ describe("todo responsive views", () => {
     expect(onToggle).toHaveBeenCalledWith(todo);
     expect(onEdit).toHaveBeenCalledWith(todo);
     expect(screen.getByRole("button", { name: "View 1 more" })).toBeTruthy();
+    expect(screen.queryByText(/^(Open|Completed)$/)).toBeNull();
     expect(document.body.innerHTML).not.toContain("todo-marquee");
   });
 
@@ -78,10 +79,31 @@ describe("todo responsive views", () => {
     expect(screen.getByRole("button", { name: "Details" })).toBeTruthy();
     expect(screen.getByRole("button", { name: `Edit ${todo.content}` })).toBeTruthy();
     expect(screen.getByRole<HTMLButtonElement>("checkbox", { name: /Mark .* complete/i }).disabled).toBe(true);
+    expect(screen.queryByText(/^(Open|Completed)$/)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Details" }));
     fireEvent.click(screen.getByRole("button", { name: `Edit ${todo.content}` }));
     expect(onView).toHaveBeenCalledWith("2025-01-15");
+    expect(onEdit).toHaveBeenCalledWith(todo);
+  });
+
+  it("opens a todo from the day view without a redundant status action", () => {
+    const onEdit = vi.fn();
+
+    render(
+      <DayViewModal
+        dayViewDate={todo.due_date}
+        dayViewTodos={[todo]}
+        pendingToggleIDs={new Set()}
+        onClose={vi.fn()}
+        onToggleDone={vi.fn()}
+        onEdit={onEdit}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/^(Open|Completed)$/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: `Edit ${todo.content}` }));
     expect(onEdit).toHaveBeenCalledWith(todo);
   });
 
