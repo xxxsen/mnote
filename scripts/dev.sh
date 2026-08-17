@@ -110,7 +110,14 @@ postgres_tools_available() {
 
 proc_start_time() {
   local pid="$1"
-  awk '{print $22}' "/proc/$pid/stat" 2>/dev/null || true
+  local stat
+
+  [[ -r "/proc/$pid/stat" ]] || return 0
+  stat="$(<"/proc/$pid/stat")"
+  # Field 2 (comm) is parenthesized and may contain spaces. Strip through its
+  # final closing delimiter; starttime is field 20 of the remaining fields.
+  stat="${stat##*) }"
+  awk '{print $20}' <<<"$stat"
 }
 
 record_pid() {
@@ -146,12 +153,13 @@ wait_for_backend() {
 
 kill_tree() {
   local pid="$1"
+  local signal="${2:-TERM}"
   local child
   while read -r child; do
-    [[ -n "$child" ]] && kill_tree "$child"
+    [[ -n "$child" ]] && kill_tree "$child" "$signal"
   done < <(pgrep -P "$pid" 2>/dev/null || true)
   if kill -0 "$pid" 2>/dev/null; then
-    kill "$pid" 2>/dev/null || true
+    kill -s "$signal" "$pid" 2>/dev/null || true
   fi
 }
 
@@ -172,6 +180,20 @@ kill_recorded_pid() {
 
   echo "[mnote] stopping stale $label pid=$pid"
   kill_tree "$pid"
+  for _ in {1..30}; do
+    kill -0 "$pid" 2>/dev/null || return 0
+    current_start="$(proc_start_time "$pid")"
+    if [[ -n "$expected_start" && -n "$current_start" && "$current_start" != "$expected_start" ]]; then
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  current_start="$(proc_start_time "$pid")"
+  if [[ -z "$expected_start" || -z "$current_start" || "$current_start" == "$expected_start" ]]; then
+    echo "[mnote] force stopping stale $label pid=$pid"
+    kill_tree "$pid" KILL
+  fi
 }
 
 cleanup_previous() {

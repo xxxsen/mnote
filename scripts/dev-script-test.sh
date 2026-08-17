@@ -14,8 +14,18 @@ COMMAND_LOG="$STATE_DIR/commands.log"
 BACKEND_PORT="$((28000 + $$ % 1000))"
 WEB_PORT="$((30000 + $$ % 1000))"
 DB_PORT="$((32000 + $$ % 1000))"
+PID_FILE="$TEST_DIR/dev.pids"
+recovery_runner_pid=""
 
 cleanup() {
+  if [[ -n "$recovery_runner_pid" ]] && kill -0 "$recovery_runner_pid" 2>/dev/null; then
+    kill -KILL "$recovery_runner_pid" 2>/dev/null || true
+  fi
+  if [[ -f "$PID_FILE" ]]; then
+    while read -r pid _; do
+      kill -KILL "$pid" 2>/dev/null || true
+    done <"$PID_FILE"
+  fi
   if [[ -f "$STATE_DIR/postgres.pid" ]]; then
     kill "$(cat "$STATE_DIR/postgres.pid")" 2>/dev/null || true
   fi
@@ -110,21 +120,41 @@ printf 'go %s\n' "$*" >>"$MNOTE_DEV_TEST_COMMAND_LOG"
 exec python3 - "$MNOTE_DEV_BACKEND_PORT" <<'PYTHON'
 import socket
 import sys
+import time
 
 server = socket.socket()
 server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 server.bind(("127.0.0.1", int(sys.argv[1])))
 server.listen()
-while True:
-    connection, _ = server.accept()
-    connection.close()
+server.settimeout(0.1)
+deadline = time.monotonic() + float(__import__("os").environ.get("MNOTE_DEV_TEST_BACKEND_LIFETIME", "1.5"))
+while time.monotonic() < deadline:
+    try:
+        connection, _ = server.accept()
+        connection.close()
+    except TimeoutError:
+        pass
 PYTHON
 SCRIPT
 
 cat >"$FAKE_BIN/npm" <<'SCRIPT'
 #!/usr/bin/env bash
 printf 'npm %s\n' "$*" >>"$MNOTE_DEV_TEST_COMMAND_LOG"
-sleep 1
+exec python3 - "$MNOTE_DEV_WEB_PORT" <<'PYTHON'
+import ctypes
+import os
+import socket
+import sys
+import time
+
+libc = ctypes.CDLL(None)
+libc.prctl(15, b"npm run dev", 0, 0, 0)
+server = socket.socket()
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.bind(("127.0.0.1", int(sys.argv[1])))
+server.listen()
+time.sleep(float(os.environ.get("MNOTE_DEV_TEST_WEB_LIFETIME", "3")))
+PYTHON
 SCRIPT
 
 cat >"$FAKE_BIN/docker" <<'SCRIPT'
@@ -141,7 +171,7 @@ run_dev() {
     MNOTE_DEV_TEST_COMMAND_LOG="$COMMAND_LOG" \
     MNOTE_DEV_DATA_DIR="$DEV_DATA_DIR" \
     MNOTE_DEV_PG_BIN_DIR="$FAKE_BIN" \
-    MNOTE_DEV_PID_FILE="$TEST_DIR/dev.pids" \
+    MNOTE_DEV_PID_FILE="$PID_FILE" \
     MNOTE_DEV_BACKEND_PORT="$BACKEND_PORT" \
     MNOTE_DEV_WEB_PORT="$WEB_PORT" \
     MNOTE_DEV_DB_PORT="$DB_PORT" \
@@ -155,9 +185,11 @@ second_output="$(run_dev 2>&1)"
 [[ "$first_output" == *"starting local pgvector database"* ]]
 [[ "$first_output" == *"backend is ready"* ]]
 [[ "$first_output" == *"starting web"* ]]
+[[ "$first_output" != *"skip stale"* ]]
 [[ "$second_output" != *"initializing local PostgreSQL data"* ]]
 [[ "$second_output" != *"creating local development database"* ]]
 [[ "$second_output" == *"backend is ready"* ]]
+[[ "$second_output" != *"skip stale"* ]]
 [[ -f "$DEV_DATA_DIR/postgres/PG_VERSION" ]]
 [[ -f "$STATE_DIR/database-created" ]]
 [[ "$(grep -c '^initdb ' "$COMMAND_LOG")" == "1" ]]
@@ -168,5 +200,50 @@ grep -q -- '--auth-host=scram-sha-256' "$COMMAND_LOG"
 grep -q '^go run ./cmd/mnote run --config=' "$COMMAND_LOG"
 grep -q '^npm run dev -- --port ' "$COMMAND_LOG"
 [[ ! -e "$STATE_DIR/docker-called" ]]
+
+recovery_first_log="$TEST_DIR/recovery-first.log"
+PATH="$FAKE_BIN:$PATH" \
+  MNOTE_DEV_TEST_STATE="$STATE_DIR" \
+  MNOTE_DEV_TEST_COMMAND_LOG="$COMMAND_LOG" \
+  MNOTE_DEV_TEST_BACKEND_LIFETIME=30 \
+  MNOTE_DEV_TEST_WEB_LIFETIME=30 \
+  MNOTE_DEV_DATA_DIR="$DEV_DATA_DIR" \
+  MNOTE_DEV_PG_BIN_DIR="$FAKE_BIN" \
+  MNOTE_DEV_PID_FILE="$PID_FILE" \
+  MNOTE_DEV_BACKEND_PORT="$BACKEND_PORT" \
+  MNOTE_DEV_WEB_PORT="$WEB_PORT" \
+  MNOTE_DEV_DB_PORT="$DB_PORT" \
+  "$ROOT/scripts/dev.sh" >"$recovery_first_log" 2>&1 &
+recovery_runner_pid="$!"
+
+for _ in {1..100}; do
+  if (exec 3<>"/dev/tcp/127.0.0.1/$BACKEND_PORT") 2>/dev/null &&
+    (exec 3<>"/dev/tcp/127.0.0.1/$WEB_PORT") 2>/dev/null; then
+    break
+  fi
+  kill -0 "$recovery_runner_pid" 2>/dev/null || {
+    cat "$recovery_first_log"
+    exit 1
+  }
+  sleep 0.05
+done
+(exec 3<>"/dev/tcp/127.0.0.1/$BACKEND_PORT") 2>/dev/null
+(exec 3<>"/dev/tcp/127.0.0.1/$WEB_PORT") 2>/dev/null
+old_backend_pid="$(awk '$3 == "backend" { print $1 }' "$PID_FILE")"
+old_web_pid="$(awk '$3 == "web" { print $1 }' "$PID_FILE")"
+kill -KILL "$recovery_runner_pid"
+wait "$recovery_runner_pid" 2>/dev/null || true
+recovery_runner_pid=""
+kill -0 "$old_backend_pid"
+kill -0 "$old_web_pid"
+
+recovery_output="$(run_dev 2>&1)"
+[[ "$recovery_output" == *"cleaning previous dev processes"* ]]
+[[ "$recovery_output" == *"stopping stale backend"* ]]
+[[ "$recovery_output" == *"stopping stale web"* ]]
+[[ "$recovery_output" == *"stopping stale local database"* ]]
+[[ "$recovery_output" != *"skip stale"* ]]
+! kill -0 "$old_backend_pid" 2>/dev/null
+! kill -0 "$old_web_pid" 2>/dev/null
 
 echo "dev script local-process integration test passed"
