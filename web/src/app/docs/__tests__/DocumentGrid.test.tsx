@@ -81,3 +81,26 @@ describe("DocumentGrid semantic states", () => {
     expect(screen.getByText("Indexed matching passage")).toBeTruthy();
   });
 });
+
+describe("DocumentGrid empty states", () => {
+  it("shows only the message when a search has no results", () => {
+    render(<DocumentGrid {...makeProps({ docs: [], search: "missing note" })} />);
+
+    expect(screen.getByText("No notes match “missing note”")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+  });
+
+  it("keeps the existing actions for filter-only and unfiltered empty states", () => {
+    const { rerender } = render(<DocumentGrid {...makeProps({
+      docs: [],
+      search: "",
+      showStarred: true,
+    })} />);
+
+    expect(screen.getByRole("button", { name: "Clear filters" })).toBeTruthy();
+
+    rerender(<DocumentGrid {...makeProps({ docs: [], search: "" })} />);
+
+    expect(screen.getByRole("button", { name: "New note" })).toBeTruthy();
+  });
+});

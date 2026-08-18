@@ -54,7 +54,39 @@ describe("todo responsive views", () => {
     expect(onToggle).toHaveBeenCalledWith(todo);
     expect(onEdit).toHaveBeenCalledWith(todo);
     expect(screen.getByRole("button", { name: "View 1 more" })).toBeTruthy();
-    expect(document.body.innerHTML).not.toContain("todo-marquee");
+  });
+
+  it("prepares hover scrolling only when desktop todo content overflows", () => {
+    render(
+      <CalendarCell
+        day={new Date(2025, 0, 15)}
+        dayIndex={2}
+        todosByDate={() => [todo, { ...todo, id: "todo-2", content: "Short task" }]}
+        pendingToggleIDs={new Set()}
+        onCreatePanel={vi.fn()}
+        onDayView={vi.fn()}
+        onToggleDone={vi.fn().mockResolvedValue(undefined)}
+        onEditPanel={vi.fn()}
+      />,
+    );
+
+    const longContent = screen.getByText(todo.content);
+    const longViewport = longContent.parentElement as HTMLElement;
+    Object.defineProperty(longViewport, "clientWidth", { value: 80 });
+    Object.defineProperty(longContent, "scrollWidth", { value: 240 });
+    fireEvent.mouseEnter(longContent.closest(".todo-calendar-item") as HTMLElement);
+
+    expect(longViewport.dataset.scrollable).toBe("true");
+    expect(longViewport.style.getPropertyValue("--todo-scroll-distance")).toBe("-160px");
+    expect(longViewport.style.getPropertyValue("--todo-scroll-duration")).toBe("6.00s");
+
+    const shortContent = screen.getByText("Short task");
+    const shortViewport = shortContent.parentElement as HTMLElement;
+    Object.defineProperty(shortViewport, "clientWidth", { value: 120 });
+    Object.defineProperty(shortContent, "scrollWidth", { value: 80 });
+    fireEvent.mouseEnter(shortContent.closest(".todo-calendar-item") as HTMLElement);
+
+    expect(shortViewport.dataset.scrollable).toBe("false");
   });
 
   it("renders a complete mobile month schedule with discoverable day actions", () => {

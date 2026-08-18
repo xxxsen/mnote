@@ -323,6 +323,24 @@ describe("useTodoCalendar", () => {
     expect(result.current.todosByDate("2025-01-15")).toHaveLength(2);
   });
 
+  it("keeps unfinished todos above completed todos and reorders after a toggle", async () => {
+    const completed = makeTodo({ id: "done", content: "Done", done: 1 });
+    const target = makeTodo({ id: "target", content: "Target", done: 0 });
+    const openPeer = makeTodo({ id: "open-peer", content: "Open peer", done: 0 });
+    mockTodoService.listByDateRange.mockResolvedValue([completed, target, openPeer]);
+    mockTodoService.toggleDone.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useTodoCalendar());
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+
+    expect(result.current.todosByDate(target.due_date).map((item) => item.id))
+      .toEqual(["target", "open-peer", "done"]);
+
+    await act(async () => { await result.current.handleToggleDone(target); });
+
+    expect(result.current.todosByDate(target.due_date).map((item) => item.id))
+      .toEqual(["open-peer", "done", "target"]);
+  });
+
   it("todos without due_date are not in todosByDate", async () => {
     mockTodoService.listByDateRange.mockResolvedValue([makeTodo({ due_date: "" })]);
     const { result } = renderHook(() => useTodoCalendar());

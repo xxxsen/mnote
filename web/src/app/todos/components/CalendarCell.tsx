@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { CheckCircle2, Circle, Eye, Loader2, Plus } from "lucide-react";
 
 import type { Todo } from "@/types";
@@ -16,6 +17,86 @@ type CalendarCellProps = {
   onToggleDone: (todo: Todo) => Promise<void>;
   onEditPanel: (todo: Todo) => void;
 };
+
+type CalendarTodoItemProps = {
+  todo: Todo;
+  pending: boolean;
+  onToggleDone: (todo: Todo) => Promise<void>;
+  onEditPanel: (todo: Todo) => void;
+};
+
+function CalendarTodoItem({
+  todo,
+  pending,
+  onToggleDone,
+  onEditPanel,
+}: CalendarTodoItemProps) {
+  const contentViewportRef = useRef<HTMLSpanElement>(null);
+  const contentRef = useRef<HTMLSpanElement>(null);
+  const prepareContentScroll = () => {
+    const viewport = contentViewportRef.current;
+    const content = contentRef.current;
+    if (!viewport || !content) return;
+    const distance = Math.max(0, content.scrollWidth - viewport.clientWidth);
+    viewport.dataset.scrollable = distance > 1 ? "true" : "false";
+    viewport.style.setProperty("--todo-scroll-distance", `-${distance}px`);
+    const duration = Math.min(12, Math.max(4, distance / 40 + 2));
+    viewport.style.setProperty("--todo-scroll-duration", `${duration.toFixed(2)}s`);
+  };
+
+  return (
+    <div
+      onMouseEnter={prepareContentScroll}
+      onFocusCapture={prepareContentScroll}
+      className={`todo-calendar-item flex items-start gap-1 rounded-md border px-1 py-0.5 ${
+        todo.done === 1
+          ? "border-transparent bg-muted/60"
+          : "border-border bg-background"
+      }`}
+    >
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={todo.done === 1}
+        aria-label={todo.done === 1
+          ? `Mark ${todo.content} incomplete`
+          : `Mark ${todo.content} complete`}
+        aria-busy={pending || undefined}
+        disabled={pending}
+        onClick={() => void onToggleDone(todo)}
+        className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+      >
+        {pending ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+        ) : todo.done === 1 ? (
+          <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden="true" />
+        ) : (
+          <Circle className="h-3.5 w-3.5" aria-hidden="true" />
+        )}
+      </button>
+      <button
+        type="button"
+        aria-label={`Edit ${todo.content}`}
+        onClick={() => onEditPanel(todo)}
+        className={`min-h-7 min-w-0 flex-1 py-1 text-left text-xs leading-4 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          todo.done === 1 ? "text-muted-foreground line-through" : "text-foreground"
+        }`}
+        title={todo.content}
+      >
+        <span
+          ref={contentViewportRef}
+          data-scrollable="false"
+          className="todo-content-viewport"
+        >
+          <span ref={contentRef} className="todo-content-scroller">{todo.content}</span>
+        </span>
+        <span className="block text-xs font-medium no-underline">
+          {todo.done === 1 ? "Completed" : "Open"}
+        </span>
+      </button>
+    </div>
+  );
+}
 
 export function CalendarCell({
   day,
@@ -87,49 +168,13 @@ export function CalendarCell({
         {previewTodos.map((todo) => {
           const pending = pendingToggleIDs.has(todo.id);
           return (
-            <div
+            <CalendarTodoItem
               key={todo.id}
-              className={`flex items-start gap-1 rounded-md border px-1 py-0.5 ${
-                todo.done === 1
-                  ? "border-transparent bg-muted/60"
-                  : "border-border bg-background"
-              }`}
-            >
-              <button
-                type="button"
-                role="checkbox"
-                aria-checked={todo.done === 1}
-                aria-label={todo.done === 1
-                  ? `Mark ${todo.content} incomplete`
-                  : `Mark ${todo.content} complete`}
-                aria-busy={pending || undefined}
-                disabled={pending}
-                onClick={() => void onToggleDone(todo)}
-                className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
-              >
-                {pending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                ) : todo.done === 1 ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden="true" />
-                ) : (
-                  <Circle className="h-3.5 w-3.5" aria-hidden="true" />
-                )}
-              </button>
-              <button
-                type="button"
-                aria-label={`Edit ${todo.content}`}
-                onClick={() => onEditPanel(todo)}
-                className={`min-h-7 min-w-0 flex-1 py-1 text-left text-xs leading-4 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  todo.done === 1 ? "text-muted-foreground line-through" : "text-foreground"
-                }`}
-                title={todo.content}
-              >
-                <span className="line-clamp-1">{todo.content}</span>
-                <span className="block text-xs font-medium no-underline">
-                  {todo.done === 1 ? "Completed" : "Open"}
-                </span>
-              </button>
-            </div>
+              todo={todo}
+              pending={pending}
+              onToggleDone={onToggleDone}
+              onEditPanel={onEditPanel}
+            />
           );
         })}
       </div>

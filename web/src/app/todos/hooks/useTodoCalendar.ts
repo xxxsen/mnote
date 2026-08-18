@@ -17,6 +17,7 @@ import {
   isSameMonth,
   monthKey,
   shiftMonth,
+  sortTodosByCompletion,
   startOfMonth,
 } from "../utils";
 
@@ -74,6 +75,9 @@ function groupTodosByDate(todos: Todo[]) {
     if (existing) existing.push(todo);
     else grouped.set(todo.due_date, [todo]);
   }
+  grouped.forEach((items, date) => {
+    grouped.set(date, sortTodosByCompletion(items));
+  });
   return grouped;
 }
 

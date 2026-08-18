@@ -61,7 +61,7 @@ Portal readiness 使用服务端 snapshot 为 false 的 hydration-safe 外部存
 客户端 hydration 首帧都不创建 Portal，挂载完成后才渲染 Dialog。不得通过
 `suppressHydrationWarning` 隐藏首帧差异。
 
-每个打开的 Dialog 都向全局栈注册。只有栈顶响应 Escape 和遮罩操作。滚动锁使用引用计数：打开首个 Dialog 时保存并覆盖 `body.style.overflow`，关闭最后一个 Dialog 时恢复原值。关闭下层 Dialog 或关闭上层后仍有其他 Dialog 时，不得提前解锁背景。
+每个打开的 Dialog 都向全局栈注册。Dialog 的视觉层级同样从该栈派生：基础层级为 200，栈中每向上一层增加 1，确保最后打开的栈顶 Dialog 即使 Portal DOM 顺序较早也能覆盖下层。只有栈顶响应 Escape 和遮罩操作。滚动锁使用引用计数：打开首个 Dialog 时保存并覆盖 `body.style.overflow`，关闭最后一个 Dialog 时恢复原值。关闭下层 Dialog 或关闭上层后仍有其他 Dialog 时，不得提前解锁背景。
 
 遮罩只在事件目标就是遮罩自身时请求关闭；面板内部不依赖大范围 `stopPropagation()`。
 
@@ -113,7 +113,7 @@ Header 和 Footer 不滚动，`DialogBody` 是窗体唯一主纵向滚动容器�
 层级约束：
 
 - 页面固定导航和普通菜单：40–60。
-- Dialog、Sheet、Drawer 和 Fullscreen：200。
+- Dialog、Sheet、Drawer 和 Fullscreen：从 200 开始，由公共弹窗栈按打开顺序逐层递增。
 - Dialog 内的 Popover、Select 和 Tooltip：220。
 - 全局 Toast 和阻断级通知：300。
 
@@ -171,7 +171,7 @@ History 和 Share，Mentions 和 Graph 不提供可见入口。两种外壳不�
 
 ## 12. 验证原则
 
-基础能力需要验证 Portal、ARIA 关联、初始焦点、焦点圈定、焦点恢复、三种关闭策略、关闭原因、栈顶关闭、滚动锁引用计数、变体样式和 reduced motion。
+基础能力需要验证 Portal、ARIA 关联、初始焦点、焦点圈定、焦点恢复、三种关闭策略、关闭原因、栈顶关闭、视觉层级与栈顺序一致、滚动锁引用计数、变体样式和 reduced motion。
 
 Dialog 的基础验证还必须包含 `renderToString + hydrateRoot`，并断言关闭状态和打开状态在
 hydration 期间都没有 mismatch、pageerror 或 console error。
