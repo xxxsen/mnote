@@ -344,6 +344,7 @@ function NotesContent({
   initialError,
   loadMoreError,
   hasMore,
+  search,
   showShared,
   tagIndex,
   pendingActions,
@@ -380,8 +381,8 @@ function NotesContent({
         description={hasFilter
           ? "Adjust the active search or filter to see other notes."
           : "Notes keep your writing, links, tags, and files together."}
-        actionLabel={hasFilter ? "Clear filters" : "New note"}
-        onAction={hasFilter ? onClearAll : onCreate}
+        actionLabel={search ? undefined : hasFilter ? "Clear filters" : "New note"}
+        onAction={search ? undefined : hasFilter ? onClearAll : onCreate}
       />
     );
   }

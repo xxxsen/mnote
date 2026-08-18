@@ -1,3 +1,5 @@
+import type { Todo } from "@/types";
+
 export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export const INITIAL_MONTH_RADIUS = 2;
 export const EXPAND_BATCH = 2;
@@ -36,6 +38,10 @@ export function isSameMonth(a: Date, b: Date): boolean {
 
 export function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+export function sortTodosByCompletion(todos: Todo[]): Todo[] {
+  return [...todos].sort((left, right) => left.done - right.done);
 }
 
 function mondayBasedWeekday(date: Date): number {

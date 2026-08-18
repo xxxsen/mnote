@@ -18,7 +18,13 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { isTopDialog, registerDialog } from "./dialog-stack";
+import {
+  DIALOG_BASE_Z_INDEX,
+  getDialogZIndex,
+  isTopDialog,
+  registerDialog,
+  subscribeDialogStack,
+} from "./dialog-stack";
 
 export { DialogStatus, type DialogStatusProps } from "./dialog-status";
 
@@ -257,6 +263,7 @@ function getDrawerWidthClass(
 type DialogLayerProps = Required<
   Pick<DialogProps, "open" | "title" | "variant" | "size" | "drawerWidth" | "role">
 > & Pick<DialogProps, "description" | "children"> & {
+  zIndex: number;
   titleId: string;
   descriptionId: string;
   panelRef: RefObject<HTMLDivElement | null>;
@@ -273,6 +280,7 @@ function DialogLayer({
   size,
   drawerWidth,
   role,
+  zIndex,
   titleId,
   descriptionId,
   panelRef,
@@ -291,8 +299,9 @@ function DialogLayer({
       aria-hidden={open ? undefined : "true"}
       data-dialog-overlay=""
       data-state={open ? "open" : "closed"}
+      style={{ zIndex }}
       className={cn(
-        "fixed inset-0 z-[200] flex bg-foreground/55 backdrop-blur-[2px]",
+        "fixed inset-0 flex bg-foreground/55 backdrop-blur-[2px]",
         "transition-[opacity,visibility] duration-[160ms] motion-reduce:transition-none",
         open
           ? "visible opacity-100 delay-0"
@@ -351,6 +360,11 @@ export function Dialog({
   const titleId = useId();
   const descriptionId = useId();
   const stackId = useId();
+  const zIndex = useSyncExternalStore(
+    subscribeDialogStack,
+    () => getDialogZIndex(stackId),
+    () => DIALOG_BASE_Z_INDEX,
+  );
   const dismissDisabled = getDismissDisabled(dismissPolicy, busy);
   const { panelRef, requestClose, handleKeyDown } = useDialogController({
     open,
@@ -377,6 +391,7 @@ export function Dialog({
       size={size}
       drawerWidth={drawerWidth}
       role={role}
+      zIndex={zIndex}
       titleId={titleId}
       descriptionId={descriptionId}
       panelRef={panelRef}

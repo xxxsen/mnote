@@ -83,4 +83,51 @@ body {
   @import "../styles/markdown.css";
   @import "../styles/mermaid.css";
   @import "../styles/toc.css";
+
+  .todo-content-viewport {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .todo-content-scroller {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .todo-calendar-item:is(:hover, :focus-within)
+    .todo-content-viewport[data-scrollable="true"]
+    .todo-content-scroller {
+    width: max-content;
+    min-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    animation: todo-content-scroll var(--todo-scroll-duration, 4s) ease-in-out infinite alternate;
+    will-change: transform;
+  }
+}
+
+@keyframes todo-content-scroll {
+  0%, 15% {
+    transform: translateX(0);
+  }
+
+  85%, 100% {
+    transform: translateX(var(--todo-scroll-distance, 0));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .todo-calendar-item:is(:hover, :focus-within)
+    .todo-content-viewport[data-scrollable="true"]
+    .todo-content-scroller {
+    width: auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    animation: none;
+    transform: none;
+  }
 }

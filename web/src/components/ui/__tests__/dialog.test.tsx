@@ -214,6 +214,34 @@ describe("Dialog", () => {
     expect(document.body.style.overflow).toBe("");
   });
 
+  it("keeps the newest dialog visually above a later-mounted underlying portal", () => {
+    function StackedHarness() {
+      const [detailsOpen, setDetailsOpen] = useState(false);
+      const [deleteOpen, setDeleteOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setDetailsOpen(true)}>Open todo details</button>
+          {detailsOpen ? (
+            <Dialog open title="Todo details">
+              <button type="button" onClick={() => setDeleteOpen(true)}>Request delete</button>
+            </Dialog>
+          ) : null}
+          <Dialog open={deleteOpen} title="Delete todo">
+            <button type="button">Confirm delete</button>
+          </Dialog>
+        </>
+      );
+    }
+
+    render(<StackedHarness />);
+    fireEvent.click(screen.getByRole("button", { name: "Open todo details" }));
+    fireEvent.click(screen.getByRole("button", { name: "Request delete" }));
+
+    const detailsOverlay = screen.getByRole("dialog", { name: "Todo details" }).parentElement;
+    const deleteOverlay = screen.getByRole("dialog", { name: "Delete todo" }).parentElement;
+    expect(Number(deleteOverlay?.style.zIndex)).toBeGreaterThan(Number(detailsOverlay?.style.zIndex));
+  });
+
   it("supports semantic variants, return focus, and status announcements", () => {
     const returnRef = { current: document.createElement("button") };
     document.body.appendChild(returnRef.current);
