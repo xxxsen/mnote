@@ -4,6 +4,36 @@
 
 工程提供 Makefile、本地进程开发启动脚本、显式 Docker 部署入口、前后端构建命令和质量检查。开发环境与生产环境使用不同端口和配置，但前端 API 地址必须始终指向同一轮启动的后端。
 
+### 安全工具链
+
+默认构建工具链如下，开发、CI 和容器发布需同步维护：
+
+| 工具链 | 默认版本 | 版本来源与使用位置 |
+| --- | --- | --- |
+| Go | 1.26.10 | 根目录与 WASM 模块的 `go.mod` 声明最低版本；CI 读取根模块；后端和 WASM Docker 构建阶段固定该补丁版本。 |
+| Node.js | 22.23.4 | 根目录 `.nvmrc` 与前端 CI 任务共用版本；前端依赖安装、构建和生产运行阶段固定同一镜像版本。 |
+
+使用 nvm 时，在仓库根目录执行 `nvm install && nvm use`。`web/package.json` 及锁文件的
+`engines.node` 同步声明已修复的版本范围：22.23.4 至 23 之前、24.22.1 至 25 之前，或
+26.12.1 至 27 之前；npm 的版本警告不能替代实际运行时升级。Go 使用 1.26 分支时至少为
+1.26.10；选择 1.27 分支时至少为 1.27.3，不能仅凭满足模块最低版本判断安全。
+
+版本要求覆盖两项原生运行时安全修复：
+
+- [CVE-2026-111497](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases)：
+  Node.js 内置 Brotli 解码器处理恶意数据时可能越界写入并导致远程代码执行。Node 20 已停止
+  维护，应升级到公告给出的受支持安全版本。22.23.4 回移了 Brotli 修复，不能只凭
+  `process.versions.brotli` 判断补丁是否存在。是否可利用取决于解码路径是否接触恶意输入。
+- [CVE-2026-111943 / GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)：
+  Go 的 `crypto/x509.Certificate.Verify` 加入对已失信中间证书的拒绝列表。后端 OAuth、
+  Embedding Provider 和 S3 客户端使用 HTTPS，需使用包含该修复的 Go 工具链重新编译；
+  具体暴露程度还取决于系统信任库、证书链和攻击者的网络位置。
+
+发布时必须重新编译后端与 WASM，重建前端镜像，并替换运行中的旧容器。仅修改版本声明、更新
+第三方包或重启旧镜像不能替换已编译的运行时。使用 `go version -m <后端二进制>` 和前端
+容器内的 `node --version` 核验产物；同时维护宿主机与容器的 CA 信任库。业务代码回滚时也应
+保留安全工具链，并重新构建产物。
+
 ## 2. `make dev`
 
 `make dev` 是本地全栈快速启动入口，默认端口：
@@ -12,7 +42,7 @@
 - 后端：`8850`。
 - PostgreSQL：`15432`。
 
-本地开发需要 Go 1.24+ 和 Node.js/npm。系统没有 PostgreSQL server tools 时，启动器从已配置的
+本地开发默认使用 Go 1.26.10 和 Node.js 22.23.4/npm。系统没有 PostgreSQL server tools 时，启动器从已配置的
 APT 软件源下载 PostgreSQL 17、客户端和对应的 pgvector 包，解包到已忽略的
 `.cache/mnote-dev-tools`；该过程不需要 root 权限，也不写系统目录。启动逻辑随后在
 `.dev-data/postgres` 创建当前工作区专用的 PostgreSQL cluster，
@@ -95,6 +125,14 @@ npm run build
 ```
 
 前端整体覆盖率门槛当前为 30%，测试应优先覆盖登录、文档保存、草稿恢复、分享权限、导入确认等关键路径，而不是为提高数字测试无业务价值的样板代码。
+
+GitHub Actions 的浏览器 E2E 任务显式启动 PostgreSQL 17 + pgvector 服务，以 `pg_isready`
+确认就绪，并映射到 `127.0.0.1:15432`。数据库、用户和密码与开发启动器的默认配置一致；任务设置
+`MNOTE_DEV_SKIP_DB=1`，由 CI 管理数据库生命周期，`make dev` 负责生成配置和启动前后端。
+维护时需同步数据库服务与启动器配置，不能依赖 runner 预装的 PostgreSQL 或 pgvector 扩展。
+Chromium 系统依赖通过 Ubuntu 官方 HTTPS 源安装，CI 会从 runner 的 APT mirrorlist 移除默认
+Azure 镜像项；更新 runner 时需核对 mirrorlist 的路径与格式。响应式路由矩阵按视口建立独立
+测试，每个视口验证全部产品路由，避免多轮页面导航共用单个用例的时间预算。
 
 ## 6. 前端开发与构建
 

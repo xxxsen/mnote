@@ -1,16 +1,16 @@
-FROM golang:1.25-alpine AS wasm-builder
+FROM golang:1.26.10-alpine AS wasm-builder
 WORKDIR /src
 RUN apk add --no-cache make
 COPY wasm/yaegi-wrapper/ ./wasm/yaegi-wrapper/
 RUN make -C /src/wasm/yaegi-wrapper build OUTPUT=/src/yaegi.wasm
 
-FROM node:20-alpine AS deps
+FROM node:22.23.4-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM node:20-alpine AS builder
+FROM node:22.23.4-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -18,7 +18,7 @@ COPY --from=wasm-builder /src/yaegi.wasm ./public/yaegi.wasm
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM node:22.23.4-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

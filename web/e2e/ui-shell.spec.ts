@@ -34,18 +34,18 @@ test.beforeEach(async ({ page }) => {
   await useStableBrowserState(page);
 });
 
-test("all product routes avoid body overflow across the supported viewport matrix", async ({
-  page,
-}) => {
-  for (const viewport of viewports) {
+for (const viewport of viewports) {
+  test(`all product routes avoid body overflow at ${viewport.width}x${viewport.height}`, async ({
+    page,
+  }) => {
     await page.setViewportSize(viewport);
     for (const route of [...privateRoutes, "/login", "/register", "/share/public"]) {
       await page.goto(route);
       await expect(page.getByRole("main")).toBeVisible();
       await expectNoBodyOverflow(page);
     }
-  }
-});
+  });
+}
 
 test("management and authentication pages expose one named page structure", async ({
   page,

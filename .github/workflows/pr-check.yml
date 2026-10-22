@@ -99,7 +99,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -118,7 +118,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -137,7 +137,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -149,6 +149,22 @@ jobs:
 
   web-e2e:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: mnote
+          POSTGRES_USER: mnote
+          POSTGRES_PASSWORD: mnote_pass
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -U mnote -d mnote"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MNOTE_DEV_SKIP_DB: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -162,12 +178,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
       - name: Install web dependencies
         run: cd web && npm ci
+
+      - name: Use Ubuntu archive mirrors
+        run: sudo sed -i '\|http://azure\.archive\.ubuntu\.com/ubuntu/|d' /etc/apt/apt-mirrors.txt
 
       - name: Install Chromium
         run: cd web && npx playwright install --with-deps chromium

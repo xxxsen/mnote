@@ -56,8 +56,8 @@ MNote 是一个现代化 Markdown 笔记系统，采用 Go + Next.js 构建。�
 
 | 层级 | 技术 |
 |------|------|
-| 后端 | Go 1.24, Gin, PostgreSQL + pgvector, sqlx, JWT, Uber-zap |
-| 前端 | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, CodeMirror |
+| 后端 | Go 1.26.10, Gin, PostgreSQL + pgvector, sqlx, JWT, Uber-zap |
+| 前端 | Node.js 22.23.4, Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, CodeMirror |
 | Embedding | Gemini SDK, OpenRouter, OpenAI 兼容接口 |
 | 测试 | Go testing + sqlmock（后端覆盖率 >= 80%），Vitest + Testing Library（Web 覆盖率 >= 30%，聚焦关键路径） |
 | CI/CD | GitHub Actions (lint / build / test, Docker 镜像自动发布) |
@@ -172,14 +172,16 @@ OAuth 回调地址：
 
 ### 快速启动
 
-本地开发需要 Go 1.24+ 和 Node.js/npm。`make dev` 不调用 Docker：系统未安装 PostgreSQL server
+本地开发默认使用 Go 1.26.10 和 Node.js 22.23.4/npm。使用 nvm 时，先在仓库根目录执行
+`nvm install && nvm use`；其他工具链版本需满足[安全版本要求](docs/017-local-development-build-and-deployment.md#安全工具链)。
+`make dev` 不调用 Docker：系统未安装 PostgreSQL server
 tools 时，它会从当前 APT 软件源把 PostgreSQL 17、客户端和 pgvector 解包到已忽略的
 `.cache/mnote-dev-tools`，不使用 root 权限或修改系统目录；随后在 `.dev-data/postgres` 初始化独立
 数据库目录，依次启动本地 PostgreSQL、当前源码的 Go 后端和 Next.js 前端进程。
 
 ```bash
 # 可选：希望使用系统 PostgreSQL 时（包名可能随发行版调整）
-sudo apt install golang-go postgresql-17 postgresql-17-pgvector
+sudo apt install postgresql-17 postgresql-17-pgvector
 ```
 
 ```bash
