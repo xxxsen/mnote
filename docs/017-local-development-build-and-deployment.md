@@ -130,6 +130,9 @@ GitHub Actions 的浏览器 E2E 任务显式启动 PostgreSQL 17 + pgvector 服�
 确认就绪，并映射到 `127.0.0.1:15432`。数据库、用户和密码与开发启动器的默认配置一致；任务设置
 `MNOTE_DEV_SKIP_DB=1`，由 CI 管理数据库生命周期，`make dev` 负责生成配置和启动前后端。
 维护时需同步数据库服务与启动器配置，不能依赖 runner 预装的 PostgreSQL 或 pgvector 扩展。
+Chromium 系统依赖通过 Ubuntu 官方 HTTPS 源安装，CI 会从 runner 的 APT mirrorlist 移除默认
+Azure 镜像项；更新 runner 时需核对 mirrorlist 的路径与格式。响应式路由矩阵按视口建立独立
+测试，每个视口验证全部产品路由，避免多轮页面导航共用单个用例的时间预算。
 
 ## 6. 前端开发与构建
 
