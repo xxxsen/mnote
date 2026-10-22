@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { renderHook, act, cleanup } from "@testing-library/react";
 
 vi.mock("@/lib/api", () => ({ apiFetch: vi.fn() }));
 
@@ -33,6 +33,8 @@ const makeOpts = (overrides = {}) => ({
 });
 
 beforeEach(() => { vi.clearAllMocks(); stableSearchTags.mockResolvedValue([]); });
+
+afterEach(cleanup);
 
 describe("useTagInput", () => {
   it("initializes with empty query", () => {
